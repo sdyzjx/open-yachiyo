@@ -229,12 +229,14 @@
     const high = Number(features.high) || 0;
     const low = Number(features.low) || 0;
 
+    // Rebalanced against the local aiueo samples: a/o cluster in mid, u in lowMid+mid,
+    // e in high+highMid, and i stays brightest with less reliance on low bands.
     const scores = {
-      a: mid * 1.15 + lowMid * 0.72 + openness * 0.42 + voiceEnergy * 0.2 + (1 - Math.abs(features.spectralBalance || 0)) * 0.08,
-      i: highMid * 1.22 + high * 0.85 + spreadness * 0.38 + centroidNorm * 0.24 + flux * 0.12,
-      u: low * 1.18 + lowMid * 0.78 + roundness * 0.34 + (1 - brightness) * 0.18 + (1 - centroidNorm) * 0.12,
-      e: mid * 0.9 + highMid * 0.96 + spreadness * 0.34 + centroidNorm * 0.16 + flux * 0.1,
-      o: low * 1.02 + mid * 0.82 + roundness * 0.46 + openness * 0.16 + (1 - centroidNorm) * 0.14
+      a: mid * 1.28 + lowMid * 0.34 + openness * 0.34 + voiceEnergy * 0.16 + (1 - brightness) * 0.08,
+      i: high * 1.2 + highMid * 0.9 + spreadness * 0.3 + brightness * 0.2 + centroidNorm * 0.16 + flux * 0.08,
+      u: low * 0.34 + lowMid * 1.02 + mid * 0.76 + roundness * 0.2 + openness * 0.08 + (1 - brightness) * 0.1 + (1 - centroidNorm) * 0.04,
+      e: high * 0.88 + highMid * 0.78 + mid * 0.18 + spreadness * 0.16 + brightness * 0.12 + flux * 0.08,
+      o: low * 0.26 + mid * 1.12 + lowMid * 0.28 + openness * 0.2 + roundness * 0.14 + (1 - brightness) * 0.1 + (1 - centroidNorm) * 0.06
     };
 
     return softmaxScores(scores);

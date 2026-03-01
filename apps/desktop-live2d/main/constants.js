@@ -12,6 +12,7 @@ const DEFAULT_RENDERER_TIMEOUT_MS = 3000;
 const RPC_METHODS_V1 = Object.freeze([
   'state.get',
   'debug.mouthOverride.set',
+  'debug.lipsyncTuning.set',
   'param.set',
   'model.param.set',
   'model.param.batchSet',

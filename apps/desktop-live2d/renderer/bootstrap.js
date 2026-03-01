@@ -33,6 +33,9 @@
   let lipsyncSmoothedForm = 0;
   let lipsyncCurrentMouthOpen = 0;
   let lipsyncCurrentMouthForm = 0;
+  let lipsyncSpeakingActive = false;
+  let lipsyncSilenceMs = 0;
+  let lipsyncLastFrameAt = 0;
   let lipsyncAudioEl = null;
   let lipsyncTimeDomainBuffer = null;
   let lipsyncFrequencyBuffer = null;
@@ -145,31 +148,52 @@
   const LIPSYNC_MOUTH_PARAM = 'ParamMouthOpenY';
   const LIPSYNC_MOUTH_FORM_PARAM = 'ParamMouthForm';
   const LIPSYNC_FFT_SIZE = 256;
-  const LIPSYNC_THRESHOLD = 0.004;
-  const LIPSYNC_RANGE = 0.06;
-  const LIPSYNC_CURVE_EXPONENT = 0.65;
-  const LIPSYNC_HARD_CLOSE_RMS_THRESHOLD = 0.014;
-  const LIPSYNC_HARD_CLOSE_NORMALIZED_THRESHOLD = 0.14;
-  const LIPSYNC_ATTACK_ALPHA = 0.56;
-  const LIPSYNC_RELEASE_ALPHA = 0.18;
-  const LIPSYNC_FORM_ATTACK_ALPHA = 0.42;
-  const LIPSYNC_FORM_RELEASE_ALPHA = 0.22;
-  const LIPSYNC_ACTIVE_BASELINE = 0.08;
-  const LIPSYNC_SILENCE_HANGOVER_MS = 100;
-  const LIPSYNC_MAX_MOUTH = 0.95;
+  const LIPSYNC_THRESHOLD = 0.012;
+  const LIPSYNC_OPEN_SCALE = 8.4;
+  const LIPSYNC_OPEN_MOD_HZ = 1.2;
+  const LIPSYNC_OPEN_MOD_DEPTH = 0;
+  const LIPSYNC_OPEN_KNEE = 0.42;
+  const LIPSYNC_OPEN_HIGH_CURVE = 3.2;
+  const LIPSYNC_OPEN_FLOOR = 0.14;
+  const LIPSYNC_LONG_PAUSE_MS = 180;
+  const LIPSYNC_OPEN_ATTACK = 0.45;
+  const LIPSYNC_OPEN_RELEASE = 0.18;
+  const LIPSYNC_FORM_HZ = 4.2;
+  const LIPSYNC_FORM_SCALE = 1.35;
+  const LIPSYNC_FORM_ATTACK = 0.32;
+  const LIPSYNC_FORM_RELEASE = 0.18;
   const LIPSYNC_FORM_MAX_ABS = 0.16;
-  const LIPSYNC_FORM_DEADZONE = 0.18;
-  const LIPSYNC_FORM_CURVE_EXPONENT = 0.82;
-  const LIPSYNC_FORM_NEGATIVE_SCALE = 0.55;
-  const LIPSYNC_FORM_POSITIVE_SCALE = 0.8;
-  const LIPSYNC_FORM_LOW_BAND_HZ = [180, 900];
-  const LIPSYNC_FORM_HIGH_BAND_HZ = [1200, 3600];
-  const LIPSYNC_HARD_CLOSE_RELEASE_ALPHA = 0.34;
-  const LIPSYNC_HARD_CLOSE_FORM_RELEASE_ALPHA = 0.3;
-  const LIPSYNC_HARD_CLOSE_HANGOVER_MS = 110;
-  const LIPSYNC_REST_OPEN_THRESHOLD = 0.012;
-  const LIPSYNC_REST_FORM_THRESHOLD = 0.02;
+  const LIPSYNC_FORM_OPEN_COUPLING = 0.9;
+  const LIPSYNC_FORM_EXEMPT_OPEN = 0.2;
+  const LIPSYNC_FORM_COUPLING_FULL_OPEN = 0.5;
+  const LIPSYNC_FORM_MIN_SCALE = 0.2;
+  const LIPSYNC_HOLD_FORM_SCALE = 0.9;
+  const LIPSYNC_ACTIVE_THRESHOLD = 0.02;
   const VOICE_PLAYBACK_DEDUPE_WINDOW_MS = 3500;
+  // 彩蛋：来自凌晨四点的福州。这段嘴形算法是屎一样的代码，但意外看起来还行。
+  // 下面这串参数是只有 agent 才看得懂的混乱参数，别拿语言学或者 DSP 教科书来问它。
+  const DEFAULT_LIPSYNC_TUNING = Object.freeze({
+    threshold: LIPSYNC_THRESHOLD,
+    openScale: LIPSYNC_OPEN_SCALE,
+    openModHz: LIPSYNC_OPEN_MOD_HZ,
+    openModDepth: LIPSYNC_OPEN_MOD_DEPTH,
+    openKnee: LIPSYNC_OPEN_KNEE,
+    openHighCurve: LIPSYNC_OPEN_HIGH_CURVE,
+    openFloor: LIPSYNC_OPEN_FLOOR,
+    longPauseMs: LIPSYNC_LONG_PAUSE_MS,
+    openAttack: LIPSYNC_OPEN_ATTACK,
+    openRelease: LIPSYNC_OPEN_RELEASE,
+    formHz: LIPSYNC_FORM_HZ,
+    formScale: LIPSYNC_FORM_SCALE,
+    formAttack: LIPSYNC_FORM_ATTACK,
+    formRelease: LIPSYNC_FORM_RELEASE,
+    formOpenCoupling: LIPSYNC_FORM_OPEN_COUPLING,
+    formExemptOpen: LIPSYNC_FORM_EXEMPT_OPEN,
+    formCouplingFullOpen: LIPSYNC_FORM_COUPLING_FULL_OPEN,
+    formMinScale: LIPSYNC_FORM_MIN_SCALE,
+    holdFormScale: LIPSYNC_HOLD_FORM_SCALE
+  });
+  let lipsyncTuning = { ...DEFAULT_LIPSYNC_TUNING };
 
   function nearlyEqual(left, right, epsilon = 1e-4) {
     if (typeof interactionApi?.nearlyEqual === 'function') {
@@ -246,6 +270,27 @@
     return Math.min(max, Math.max(min, value));
   }
 
+  function smoothstep(edge0, edge1, value) {
+    const start = Number(edge0);
+    const end = Number(edge1);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || Math.abs(end - start) < 1e-6) {
+      return value >= end ? 1 : 0;
+    }
+    const t = clamp((value - start) / (end - start), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function shapeOpenWithSoftKnee(value, knee, highCurve) {
+    const normalized = clamp(Number(value) || 0, 0, 1);
+    const safeKnee = clamp(Number(knee) || 0, 0, 0.95);
+    const safeCurve = Math.max(1, Number(highCurve) || 1);
+    if (normalized <= safeKnee) {
+      return normalized;
+    }
+    const tail = (normalized - safeKnee) / Math.max(1e-6, 1 - safeKnee);
+    return safeKnee + (1 - safeKnee) * Math.pow(tail, safeCurve);
+  }
+
   function roundToStep(value, step = 1) {
     const safeStep = Number(step) || 1;
     return Math.round((Number(value) || 0) / safeStep) * safeStep;
@@ -255,6 +300,43 @@
     return {
       mouthOpen: Math.round(clamp(Number(input.mouthOpen) || 0, 0, 1) * 100) / 100,
       mouthForm: Math.round(clamp(Number(input.mouthForm) || 0, -1, 1) * 100) / 100
+    };
+  }
+
+  function normalizeLipSyncTuning(input = {}, base = DEFAULT_LIPSYNC_TUNING) {
+    const source = input && typeof input === 'object' ? input : {};
+    const defaults = base && typeof base === 'object' ? base : DEFAULT_LIPSYNC_TUNING;
+    return {
+      threshold: clamp(Number(source.threshold ?? defaults.threshold) || 0, 0, 0.2),
+      openScale: clamp(Number(source.openScale ?? defaults.openScale) || 0, 0, 20),
+      openModHz: clamp(Number(source.openModHz ?? defaults.openModHz) || 0, 0, 20),
+      openModDepth: clamp(Number(source.openModDepth ?? defaults.openModDepth) || 0, 0, 1),
+      openKnee: clamp(Number(source.openKnee ?? defaults.openKnee) || 0, 0, 0.95),
+      openHighCurve: clamp(Number(source.openHighCurve ?? defaults.openHighCurve) || 0, 1, 8),
+      openFloor: clamp(Number(source.openFloor ?? defaults.openFloor) || 0, 0, 1),
+      longPauseMs: clamp(Number(source.longPauseMs ?? defaults.longPauseMs) || 0, 0, 2000),
+      openAttack: clamp(Number(source.openAttack ?? defaults.openAttack) || 0, 0, 1),
+      openRelease: clamp(Number(source.openRelease ?? defaults.openRelease) || 0, 0, 1),
+      formHz: clamp(Number(source.formHz ?? defaults.formHz) || 0, 0, 20),
+      formScale: clamp(Number(source.formScale ?? defaults.formScale) || 0, 0, 3),
+      formAttack: clamp(Number(source.formAttack ?? defaults.formAttack) || 0, 0, 1),
+      formRelease: clamp(Number(source.formRelease ?? defaults.formRelease) || 0, 0, 1),
+      formOpenCoupling: clamp(Number(source.formOpenCoupling ?? defaults.formOpenCoupling) || 0, 0, 2),
+      formExemptOpen: clamp(Number(source.formExemptOpen ?? defaults.formExemptOpen) || 0, 0, 1),
+      formCouplingFullOpen: clamp(Number(source.formCouplingFullOpen ?? defaults.formCouplingFullOpen) || 0, 0, 1),
+      formMinScale: clamp(Number(source.formMinScale ?? defaults.formMinScale) || 0, 0, 1.5),
+      holdFormScale: clamp(Number(source.holdFormScale ?? defaults.holdFormScale) || 0, 0, 1.5)
+    };
+  }
+
+  function setLipSyncTuning(input = {}) {
+    const reset = input?.reset === true;
+    lipsyncTuning = normalizeLipSyncTuning(
+      reset ? {} : input,
+      reset ? DEFAULT_LIPSYNC_TUNING : lipsyncTuning
+    );
+    return {
+      ok: true
     };
   }
 
@@ -734,8 +816,10 @@
     lipsyncSmoothedForm = 0;
     lipsyncCurrentMouthOpen = 0;
     lipsyncCurrentMouthForm = 0;
+    lipsyncSpeakingActive = false;
+    lipsyncSilenceMs = 0;
+    lipsyncLastFrameAt = 0;
     lipsyncLastVoiceAt = 0;
-    lipsyncVisemeState = visemeLipSyncApi?.createRuntimeState?.() || null;
     lipsyncLastVisemeFrame = null;
     setMouthOpen(0);
     setMouthForm(0);
@@ -759,97 +843,64 @@
       graph.analyser.getByteFrequencyData(graph.frequencyBuffer);
       const rms = computeRmsFromTimeDomain(graph.buffer);
       const now = performance.now();
-      const normalized = rms <= LIPSYNC_THRESHOLD
-        ? 0
-        : clamp((rms - LIPSYNC_THRESHOLD) / LIPSYNC_RANGE, 0, 1);
-      const hardSilent = rms < LIPSYNC_HARD_CLOSE_RMS_THRESHOLD || normalized < LIPSYNC_HARD_CLOSE_NORMALIZED_THRESHOLD;
-      const recentVoice = lipsyncLastVoiceAt > 0 && now - lipsyncLastVoiceAt <= LIPSYNC_HARD_CLOSE_HANGOVER_MS;
-      if (hardSilent) {
-        if (
-          recentVoice
-          || lipsyncSmoothed > LIPSYNC_REST_OPEN_THRESHOLD
-          || Math.abs(lipsyncSmoothedForm) > LIPSYNC_REST_FORM_THRESHOLD
-        ) {
-          lipsyncSmoothed += (0 - lipsyncSmoothed) * LIPSYNC_HARD_CLOSE_RELEASE_ALPHA;
-          lipsyncSmoothedForm += (0 - lipsyncSmoothedForm) * LIPSYNC_HARD_CLOSE_FORM_RELEASE_ALPHA;
-          setMouthOpen(lipsyncSmoothed);
-          setMouthForm(lipsyncSmoothedForm);
-          lipsyncRafId = window.requestAnimationFrame(step);
-          return;
-        }
+      const deltaMs = lipsyncLastFrameAt > 0 ? Math.max(0, now - lipsyncLastFrameAt) : 1000 / 60;
+      lipsyncLastFrameAt = now;
+      const timeSec = Number(audioEl?.currentTime) || (now / 1000);
+      const openBase = clamp((rms - lipsyncTuning.threshold) * lipsyncTuning.openScale, 0, 1);
+      const openGain = 1 + (Math.sin(timeSec * Math.PI * 2 * lipsyncTuning.openModHz) * lipsyncTuning.openModDepth);
+      const rawOpen = shapeOpenWithSoftKnee(openBase * openGain, lipsyncTuning.openKnee, lipsyncTuning.openHighCurve);
+      const voiced = rawOpen > LIPSYNC_ACTIVE_THRESHOLD;
 
-        lipsyncSmoothed = 0;
-        lipsyncSmoothedForm = 0;
-        lipsyncLastVoiceAt = 0;
-        lipsyncLastVisemeFrame = null;
-        lipsyncVisemeState = visemeLipSyncApi?.createRuntimeState?.() || null;
-        setMouthOpen(0);
-        setMouthForm(0);
-        lipsyncRafId = window.requestAnimationFrame(step);
-        return;
-      }
-      let target = 0;
-      if (normalized > 0) {
+      if (voiced) {
+        lipsyncSpeakingActive = true;
+        lipsyncSilenceMs = 0;
         lipsyncLastVoiceAt = now;
-        const shaped = Math.pow(normalized, LIPSYNC_CURVE_EXPONENT);
-        target = LIPSYNC_ACTIVE_BASELINE + shaped * (LIPSYNC_MAX_MOUTH - LIPSYNC_ACTIVE_BASELINE);
-      } else if (lipsyncLastVoiceAt > 0 && now - lipsyncLastVoiceAt <= LIPSYNC_SILENCE_HANGOVER_MS) {
-        target = LIPSYNC_ACTIVE_BASELINE;
+      } else if (lipsyncSpeakingActive) {
+        lipsyncSilenceMs += deltaMs;
       }
 
-      const smoothingAlpha = target > lipsyncSmoothed ? LIPSYNC_ATTACK_ALPHA : LIPSYNC_RELEASE_ALPHA;
-      lipsyncSmoothed += (target - lipsyncSmoothed) * smoothingAlpha;
-      const lowBandEnergy = getFrequencyBandEnergy(
-        graph.frequencyBuffer,
-        graph.ctx?.sampleRate || 0,
-        LIPSYNC_FORM_LOW_BAND_HZ[0],
-        LIPSYNC_FORM_LOW_BAND_HZ[1]
-      );
-      const highBandEnergy = getFrequencyBandEnergy(
-        graph.frequencyBuffer,
-        graph.ctx?.sampleRate || 0,
-        LIPSYNC_FORM_HIGH_BAND_HZ[0],
-        LIPSYNC_FORM_HIGH_BAND_HZ[1]
-      );
-      const spectralBalance = clamp(
-        (highBandEnergy - lowBandEnergy) / Math.max(1e-4, highBandEnergy + lowBandEnergy),
-        -1,
-        1
-      );
-      const mouthOpenWeight = clamp((lipsyncSmoothed - LIPSYNC_ACTIVE_BASELINE) / Math.max(1e-4, LIPSYNC_MAX_MOUTH), 0, 1);
-      const spectralMagnitude = Math.abs(spectralBalance);
-      const normalizedFormMagnitude = spectralMagnitude <= LIPSYNC_FORM_DEADZONE
-        ? 0
-        : clamp((spectralMagnitude - LIPSYNC_FORM_DEADZONE) / Math.max(1e-4, 1 - LIPSYNC_FORM_DEADZONE), 0, 1);
-      const shapedFormBalance = Math.sign(spectralBalance) * Math.pow(normalizedFormMagnitude, LIPSYNC_FORM_CURVE_EXPONENT);
-      const directionalFormScale = shapedFormBalance < 0 ? LIPSYNC_FORM_NEGATIVE_SCALE : LIPSYNC_FORM_POSITIVE_SCALE;
-      const fallbackFormTarget = shapedFormBalance * mouthOpenWeight * directionalFormScale;
-      const formSmoothingAlpha = Math.abs(fallbackFormTarget) > Math.abs(lipsyncSmoothedForm)
-        ? LIPSYNC_FORM_ATTACK_ALPHA
-        : LIPSYNC_FORM_RELEASE_ALPHA;
-      lipsyncSmoothedForm += (fallbackFormTarget - lipsyncSmoothedForm) * formSmoothingAlpha;
-
-      let nextMouthOpen = lipsyncSmoothed;
-      let nextMouthForm = lipsyncSmoothedForm;
-      const visemeFrame = visemeLipSyncApi?.resolveVisemeFrame?.({
-        frequencyBuffer: graph.frequencyBuffer,
-        sampleRate: graph.ctx?.sampleRate || 0,
-        voiceEnergy: normalized,
-        speaking: normalized > 0 || target > 0,
-        fallbackOpen: lipsyncSmoothed,
-        fallbackForm: lipsyncSmoothedForm,
-        state: lipsyncVisemeState
-      }) || null;
-      if (visemeFrame) {
-        lipsyncLastVisemeFrame = visemeFrame;
-        nextMouthOpen = clamp(Number(visemeFrame.mouthOpen) || 0, 0, 1);
-        nextMouthForm = clamp(Number(visemeFrame.mouthForm) || 0, -1, 1);
-      } else {
-        lipsyncLastVisemeFrame = null;
+      const keepOpen = lipsyncSpeakingActive && lipsyncSilenceMs < lipsyncTuning.longPauseMs;
+      if (!keepOpen && !voiced) {
+        lipsyncSpeakingActive = false;
       }
 
-      setMouthOpen(nextMouthOpen);
-      setMouthForm(nextMouthForm);
+      const targetOpen = keepOpen ? Math.max(rawOpen, lipsyncTuning.openFloor) : rawOpen;
+      const active = targetOpen > LIPSYNC_ACTIVE_THRESHOLD ? clamp(targetOpen / 0.32, 0, 1) : 0;
+      const heldOpen = keepOpen && rawOpen < lipsyncTuning.openFloor;
+      const exemptOpen = clamp(lipsyncTuning.formExemptOpen, 0, 1);
+      const fullOpen = clamp(Math.max(lipsyncTuning.formCouplingFullOpen, exemptOpen + 1e-3), 0, 1);
+      const couplingBlend = smoothstep(exemptOpen, fullOpen, targetOpen);
+      const effectiveCoupling = lipsyncTuning.formOpenCoupling * couplingBlend;
+      const openLinkedFormScale = clamp(1 - targetOpen * effectiveCoupling, lipsyncTuning.formMinScale, 1);
+      const effectiveFormScale = heldOpen
+        ? Math.max(openLinkedFormScale, clamp(lipsyncTuning.holdFormScale, 0, 1.5))
+        : openLinkedFormScale;
+      const targetForm = active > 0
+        ? Math.sin(timeSec * Math.PI * 2 * lipsyncTuning.formHz) * lipsyncTuning.formScale * effectiveFormScale
+        : 0;
+
+      const openAlpha = targetOpen > lipsyncSmoothed ? lipsyncTuning.openAttack : lipsyncTuning.openRelease;
+      const formAlpha = Math.abs(targetForm) > Math.abs(lipsyncSmoothedForm)
+        ? lipsyncTuning.formAttack
+        : lipsyncTuning.formRelease;
+      lipsyncSmoothed += (targetOpen - lipsyncSmoothed) * openAlpha;
+      lipsyncSmoothedForm += (targetForm - lipsyncSmoothedForm) * formAlpha;
+
+      lipsyncLastVisemeFrame = active > 0
+        ? {
+          dominantViseme: heldOpen ? 'agent-chaos-hold' : 'agent-chaos',
+          confidence: Math.round(active * 1000) / 1000,
+          weights: {
+            rawOpen: Math.round(rawOpen * 1000) / 1000,
+            targetOpen: Math.round(targetOpen * 1000) / 1000,
+            couplingBlend: Math.round(couplingBlend * 1000) / 1000,
+            formScale: Math.round(effectiveFormScale * 1000) / 1000
+          }
+        }
+        : null;
+
+      setMouthOpen(clamp(lipsyncSmoothed, 0, 1));
+      setMouthForm(clamp(lipsyncSmoothedForm, -1, 1));
       lipsyncRafId = window.requestAnimationFrame(step);
     };
 
@@ -1398,6 +1449,21 @@
       layout: state.layout,
       windowState: state.windowState,
       resizeModeEnabled: state.resizeModeEnabled,
+      lipsync: {
+        audioPlaying: !systemAudio.paused && !systemAudio.ended,
+        mouthOpen: Math.round(lipsyncCurrentMouthOpen * 1000) / 1000,
+        mouthForm: Math.round(lipsyncCurrentMouthForm * 1000) / 1000,
+        smoothedOpen: Math.round(lipsyncSmoothed * 1000) / 1000,
+        smoothedForm: Math.round(lipsyncSmoothedForm * 1000) / 1000,
+        lastVoiceAt: lipsyncLastVoiceAt || 0,
+        viseme: lipsyncLastVisemeFrame
+          ? {
+            dominant: lipsyncLastVisemeFrame.dominantViseme || null,
+            confidence: Math.round((Number(lipsyncLastVisemeFrame.confidence) || 0) * 1000) / 1000,
+            weights: lipsyncLastVisemeFrame.weights || null
+          }
+          : null
+      },
       debug: {
         mouthOverride: {
           enabled: Boolean(externalMouthOverrideState?.enabled),
@@ -2219,6 +2285,8 @@
         result = getState();
       } else if (method === 'debug.mouthOverride.set') {
         result = setExternalMouthOverride(params);
+      } else if (method === 'debug.lipsyncTuning.set') {
+        result = setLipSyncTuning(params);
       } else if (method === 'param.set' || method === 'model.param.set') {
         result = setModelParam(params);
       } else if (method === 'model.param.batchSet') {

@@ -27,6 +27,32 @@ const METHOD_SCHEMAS = Object.freeze({
       mouthForm: { type: 'number' }
     }
   },
+  'debug.lipsyncTuning.set': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      reset: { type: 'boolean' },
+      threshold: { type: 'number' },
+      openScale: { type: 'number' },
+      openModHz: { type: 'number' },
+      openModDepth: { type: 'number' },
+      openKnee: { type: 'number' },
+      openHighCurve: { type: 'number' },
+      openFloor: { type: 'number' },
+      longPauseMs: { type: 'number' },
+      openAttack: { type: 'number' },
+      openRelease: { type: 'number' },
+      formHz: { type: 'number' },
+      formScale: { type: 'number' },
+      formAttack: { type: 'number' },
+      formRelease: { type: 'number' },
+      formOpenCoupling: { type: 'number' },
+      formExemptOpen: { type: 'number' },
+      formCouplingFullOpen: { type: 'number' },
+      formMinScale: { type: 'number' },
+      holdFormScale: { type: 'number' }
+    }
+  },
   'param.set': PARAM_SET_SCHEMA,
   'model.param.set': PARAM_SET_SCHEMA,
   'model.param.batchSet': {
