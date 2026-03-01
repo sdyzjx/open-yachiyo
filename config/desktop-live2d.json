@@ -16,5 +16,13 @@
   },
   "voice": {
     "path": "electron_native"
+  },
+  "debug": {
+    // Mouth Tuner 调试面板。visible 控制是否显示按钮/面板，
+    // enabled 控制是否默认启用覆盖。默认都关闭，避免影响日常使用。
+    "mouthTuner": {
+      "visible": false,
+      "enabled": false
+    }
   }
 }

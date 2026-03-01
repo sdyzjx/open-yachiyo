@@ -186,6 +186,14 @@ function normalizeUiConfig(raw) {
         ...(raw?.chat?.bubble || {})
       }
     },
+    debug: {
+      ...DEFAULT_UI_CONFIG.debug,
+      ...(raw?.debug || {}),
+      mouthTuner: {
+        ...DEFAULT_UI_CONFIG.debug.mouthTuner,
+        ...(raw?.debug?.mouthTuner || {})
+      }
+    },
     actionQueue: {
       ...DEFAULT_UI_CONFIG.actionQueue,
       ...(raw?.actionQueue || {}),
@@ -233,6 +241,8 @@ function normalizeUiConfig(raw) {
   merged.chat.panel.maxMessages = toPositiveInt(merged.chat.panel.maxMessages, DEFAULT_UI_CONFIG.chat.panel.maxMessages);
   merged.chat.panel.inputEnabled = Boolean(merged.chat.panel.inputEnabled);
   merged.chat.bubble.mirrorToPanel = Boolean(merged.chat.bubble.mirrorToPanel);
+  merged.debug.mouthTuner.visible = Boolean(merged.debug.mouthTuner.visible);
+  merged.debug.mouthTuner.enabled = Boolean(merged.debug.mouthTuner.enabled);
 
   merged.actionQueue.maxQueueSize = toPositiveInt(
     merged.actionQueue.maxQueueSize,

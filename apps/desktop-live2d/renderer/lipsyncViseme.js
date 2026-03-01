@@ -19,12 +19,27 @@
     visemeShape: {
       sharpenPower: 1.55,
       targets: {
-        a: { open: 0.98, form: -0.1 },
-        i: { open: 0.24, form: 0.92 },
-        u: { open: 0.34, form: -0.96 },
-        e: { open: 0.5, form: 0.42 },
-        o: { open: 0.72, form: -1 }
+        a: { open: 0.7, form: 0.24 },
+        i: { open: 0.25, form: 1 },
+        u: { open: 0.6, form: -1 },
+        e: { open: 0.35, form: 1 },
+        o: { open: 0.8, form: -0.35 }
       }
+    },
+    articulation: {
+      minOpenScale: 0.48,
+      maxOpenScale: 1,
+      minFormScale: 0.34,
+      maxFormScale: 0.92,
+      lowEnergyBias: 0.58
+    },
+    settle: {
+      openAttack: 0.7,
+      openRelease: 0.38,
+      formAttack: 0.56,
+      formRelease: 0.32,
+      silenceOpenRelease: 0.44,
+      silenceFormRelease: 0.4
     },
     silence: {
       energyThreshold: 0.045,
@@ -104,7 +119,11 @@
     return {
       previousSpectrum: null,
       smoothedWeights: createNeutralWeights(),
-      lastFeatures: null
+      lastFeatures: null,
+      previousResolved: {
+        mouthOpen: 0,
+        mouthForm: 0
+      }
     };
   }
 
@@ -256,11 +275,35 @@
     );
   }
 
+  function stabilizeResolvedFrame(targetFrame, runtimeState, config = {}, silent = false) {
+    const state = runtimeState && typeof runtimeState === 'object' ? runtimeState : createRuntimeState();
+    const settle = config.settle || DEFAULT_CONFIG.settle;
+    const previous = state.previousResolved || { mouthOpen: 0, mouthForm: 0 };
+    const targetOpen = clamp(Number(targetFrame?.mouthOpen) || 0, 0, 1);
+    const targetForm = clamp(Number(targetFrame?.mouthForm) || 0, -1, 1);
+    const openAlpha = silent
+      ? clamp(settle.silenceOpenRelease, 0, 1)
+      : clamp(targetOpen > previous.mouthOpen ? settle.openAttack : settle.openRelease, 0, 1);
+    const formAlpha = silent
+      ? clamp(settle.silenceFormRelease, 0, 1)
+      : clamp(Math.abs(targetForm) > Math.abs(previous.mouthForm) ? settle.formAttack : settle.formRelease, 0, 1);
+    const stabilized = {
+      mouthOpen: clamp(lerp(previous.mouthOpen, targetOpen, openAlpha), 0, 1),
+      mouthForm: clamp(lerp(previous.mouthForm, targetForm, formAlpha), -1, 1)
+    };
+    state.previousResolved = stabilized;
+    return stabilized;
+  }
+
   function deriveMouthParams(weights, features = {}, config = {}) {
     const safeWeights = normalizeWeights(weights);
     const visemeShape = config.visemeShape || DEFAULT_CONFIG.visemeShape;
+    const articulationConfig = config.articulation || DEFAULT_CONFIG.articulation;
     const targets = visemeShape.targets || DEFAULT_CONFIG.visemeShape.targets;
     const shapedWeights = sharpenWeights(safeWeights, visemeShape.sharpenPower);
+    const voiceEnergy = clamp(Number(features.voiceEnergy) || 0, 0, 1);
+    const opennessHint = clamp(Number(features.opennessHint) || 0, 0, 1);
+    const spectralBalance = clamp(Number(features.spectralBalance) || 0, -1, 1);
     let mouthOpen = 0;
     let mouthForm = 0;
 
@@ -270,15 +313,24 @@
       mouthForm += shapedWeights[name] * clamp(Number(target.form) || 0, -1, 1);
     }
 
+    const articulation = clamp(
+      voiceEnergy * articulationConfig.lowEnergyBias
+      + opennessHint * 0.22
+      + Math.abs(spectralBalance) * 0.2,
+      0,
+      1
+    );
+    const openScale = lerp(articulationConfig.minOpenScale, articulationConfig.maxOpenScale, articulation);
+    const formScale = lerp(articulationConfig.minFormScale, articulationConfig.maxFormScale, articulation);
     mouthOpen = clamp(
-      mouthOpen
-      + (Number(features.voiceEnergy) || 0) * 0.08
-      + Math.max(0, (Number(features.opennessHint) || 0) - 0.45) * 0.08,
+      mouthOpen * openScale
+      + voiceEnergy * 0.05
+      + Math.max(0, opennessHint - 0.5) * 0.05,
       0,
       1
     );
     mouthForm = clamp(
-      mouthForm + (Number(features.spectralBalance) || 0) * 0.06,
+      (mouthForm + spectralBalance * 0.04) * formScale,
       -1,
       1
     );
@@ -306,13 +358,17 @@
     const confidence = speaking ? computeConfidence(features) : 0;
     if (rawVoiceEnergy < silenceConfig.energyThreshold || confidence < silenceConfig.confidenceThreshold) {
       state.smoothedWeights = createNeutralWeights();
+      const settledSilent = stabilizeResolvedFrame({
+        mouthOpen: fallbackOpen * 0.2,
+        mouthForm: fallbackForm * 0.12
+      }, state, input.config, true);
       return {
         confidence: 0,
         features,
         weights: state.smoothedWeights,
         dominantViseme: 'a',
-        mouthOpen: 0,
-        mouthForm: 0
+        mouthOpen: settledSilent.mouthOpen,
+        mouthForm: settledSilent.mouthForm
       };
     }
     const fallbackBlend = lerp(
@@ -327,6 +383,11 @@
       confidence
     );
 
+    const settledFrame = stabilizeResolvedFrame({
+      mouthOpen: clamp(lerp(fallbackOpen * 0.4, derived.mouthOpen, visemeBlend), 0, 1),
+      mouthForm: clamp(lerp(fallbackForm * 0.35, derived.mouthForm, visemeBlend), -1, 1)
+    }, state, input.config);
+
     return {
       confidence,
       features,
@@ -334,8 +395,8 @@
       dominantViseme: VISEME_NAMES.reduce((best, name) => (
         smoothedWeights[name] > smoothedWeights[best] ? name : best
       ), 'a'),
-      mouthOpen: clamp(lerp(fallbackOpen * 0.4, derived.mouthOpen, visemeBlend), 0, 1),
-      mouthForm: clamp(lerp(fallbackForm * 0.35, derived.mouthForm, visemeBlend), -1, 1)
+      mouthOpen: settledFrame.mouthOpen,
+      mouthForm: settledFrame.mouthForm
     };
   }
 

@@ -67,6 +67,17 @@
   const petHideElement = document.getElementById('pet-hide');
   const petCloseElement = document.getElementById('pet-close');
   const resizeModeCloseElement = document.getElementById('resize-mode-close');
+  const mouthTunerToggleElement = document.getElementById('mouth-tuner-toggle');
+  const mouthTunerPanelElement = document.getElementById('mouth-tuner-panel');
+  const mouthTunerCloseElement = document.getElementById('mouth-tuner-close');
+  const mouthTunerEnableElement = document.getElementById('mouth-tuner-enable');
+  const mouthOpenElement = document.getElementById('mouth-open');
+  const mouthFormElement = document.getElementById('mouth-form');
+  const mouthOpenValueElement = document.getElementById('mouth-open-value');
+  const mouthFormValueElement = document.getElementById('mouth-form-value');
+  const mouthNeutralElement = document.getElementById('mouth-neutral');
+  const mouthApplyIElement = document.getElementById('mouth-apply-i');
+  const mouthTunerStatusElement = document.getElementById('mouth-tuner-status');
   const layoutTunerToggleElement = document.getElementById('layout-tuner-toggle');
   const layoutTunerPanelElement = document.getElementById('layout-tuner-panel');
   const layoutTunerCloseElement = document.getElementById('layout-tuner-close');
@@ -83,6 +94,21 @@
   const chatStateApi = window.ChatPanelState;
   let runtimeUiConfig = null;
   let runtimeLive2dPresets = null;
+  let mouthTunerState = {
+    open: false,
+    enabled: false,
+    values: {
+      mouthOpen: 0,
+      mouthForm: 0
+    }
+  };
+  let externalMouthOverrideState = {
+    enabled: false,
+    values: {
+      mouthOpen: 0,
+      mouthForm: 0
+    }
+  };
   let layoutTunerState = null;
   let chatPanelState = null;
   let chatInputComposing = false;
@@ -138,6 +164,11 @@
   const LIPSYNC_FORM_POSITIVE_SCALE = 0.8;
   const LIPSYNC_FORM_LOW_BAND_HZ = [180, 900];
   const LIPSYNC_FORM_HIGH_BAND_HZ = [1200, 3600];
+  const LIPSYNC_HARD_CLOSE_RELEASE_ALPHA = 0.34;
+  const LIPSYNC_HARD_CLOSE_FORM_RELEASE_ALPHA = 0.3;
+  const LIPSYNC_HARD_CLOSE_HANGOVER_MS = 110;
+  const LIPSYNC_REST_OPEN_THRESHOLD = 0.012;
+  const LIPSYNC_REST_FORM_THRESHOLD = 0.02;
   const VOICE_PLAYBACK_DEDUPE_WINDOW_MS = 3500;
 
   function nearlyEqual(left, right, epsilon = 1e-4) {
@@ -218,6 +249,64 @@
   function roundToStep(value, step = 1) {
     const safeStep = Number(step) || 1;
     return Math.round((Number(value) || 0) / safeStep) * safeStep;
+  }
+
+  function normalizeMouthTunerValues(input = {}) {
+    return {
+      mouthOpen: Math.round(clamp(Number(input.mouthOpen) || 0, 0, 1) * 100) / 100,
+      mouthForm: Math.round(clamp(Number(input.mouthForm) || 0, -1, 1) * 100) / 100
+    };
+  }
+
+  function setMouthTunerStatus(message = '') {
+    if (mouthTunerStatusElement) {
+      mouthTunerStatusElement.textContent = String(message || '');
+    }
+  }
+
+  function getMouthTunerRuntimeConfig() {
+    const raw = runtimeUiConfig?.debug?.mouthTuner;
+    const config = raw && typeof raw === 'object' ? raw : {};
+    return {
+      visible: config.visible === true,
+      enabled: config.enabled === true
+    };
+  }
+
+  function setMouthTunerVisible(visible) {
+    const nextVisible = Boolean(visible);
+    document.body.classList.toggle('mouth-tuner-visible', nextVisible);
+    if (mouthTunerToggleElement) {
+      mouthTunerToggleElement.hidden = !nextVisible;
+    }
+    if (mouthTunerPanelElement) {
+      mouthTunerPanelElement.hidden = !nextVisible;
+    }
+    if (!nextVisible) {
+      mouthTunerState.open = false;
+      document.body.classList.remove('mouth-tuner-open');
+    }
+  }
+
+  function syncMouthTunerControls() {
+    const values = mouthTunerState?.values || normalizeMouthTunerValues();
+    if (mouthTunerEnableElement) {
+      mouthTunerEnableElement.checked = Boolean(mouthTunerState?.enabled);
+    }
+    if (mouthOpenElement) mouthOpenElement.value = values.mouthOpen.toFixed(2);
+    if (mouthFormElement) mouthFormElement.value = values.mouthForm.toFixed(2);
+    if (mouthOpenValueElement) mouthOpenValueElement.textContent = values.mouthOpen.toFixed(2);
+    if (mouthFormValueElement) mouthFormValueElement.textContent = values.mouthForm.toFixed(2);
+  }
+
+  function setMouthTunerOpen(open) {
+    if (!document.body.classList.contains('mouth-tuner-visible')) {
+      mouthTunerState.open = false;
+      document.body.classList.remove('mouth-tuner-open');
+      return;
+    }
+    mouthTunerState.open = Boolean(open);
+    document.body.classList.toggle('mouth-tuner-open', mouthTunerState.open);
   }
 
   function normalizeLayoutTunerValues(input = {}) {
@@ -426,6 +515,29 @@
     return { ok: true };
   }
 
+  function applyDebugMouthTunerForCurrentFrame() {
+    if (!mouthTunerState?.enabled) {
+      return;
+    }
+    const values = mouthTunerState.values || { mouthOpen: 0, mouthForm: 0 };
+    applyMouthOpenToModel(values.mouthOpen);
+    applyMouthFormToModel(values.mouthForm);
+  }
+
+  function applyExternalMouthOverrideForCurrentFrame() {
+    if (!externalMouthOverrideState?.enabled) {
+      return;
+    }
+    const values = externalMouthOverrideState.values || { mouthOpen: 0, mouthForm: 0 };
+    applyMouthOpenToModel(values.mouthOpen);
+    applyMouthFormToModel(values.mouthForm);
+  }
+
+  function applyNeutralMouthPoseForCurrentFrame() {
+    applyMouthOpenToModel(0);
+    applyMouthFormToModel(0);
+  }
+
   function setMouthForm(value) {
     lipsyncCurrentMouthForm = clamp(Number(value) || 0, -1, 1);
     return applyMouthFormToModel(lipsyncCurrentMouthForm);
@@ -492,10 +604,19 @@
     }
 
     const tick = () => {
-      if (lipsyncCurrentMouthOpen <= 0) {
+      if (externalMouthOverrideState?.enabled) {
+        applyExternalMouthOverrideForCurrentFrame();
         return;
       }
-      applyLipSyncForCurrentFrame();
+      if (mouthTunerState?.enabled) {
+        applyDebugMouthTunerForCurrentFrame();
+        return;
+      }
+      if (lipsyncCurrentMouthOpen > 0 || Math.abs(lipsyncCurrentMouthForm) > 1e-4) {
+        applyLipSyncForCurrentFrame();
+        return;
+      }
+      applyNeutralMouthPoseForCurrentFrame();
     };
 
     pixiApp.ticker.add(tick);
@@ -514,7 +635,19 @@
     }
 
     const handler = () => {
-      applyLipSyncForCurrentFrame();
+      if (externalMouthOverrideState?.enabled) {
+        applyExternalMouthOverrideForCurrentFrame();
+        return;
+      }
+      if (mouthTunerState?.enabled) {
+        applyDebugMouthTunerForCurrentFrame();
+        return;
+      }
+      if (lipsyncCurrentMouthOpen > 0 || Math.abs(lipsyncCurrentMouthForm) > 1e-4) {
+        applyLipSyncForCurrentFrame();
+        return;
+      }
+      applyNeutralMouthPoseForCurrentFrame();
     };
 
     internalModel.on('beforeModelUpdate', handler);
@@ -630,7 +763,21 @@
         ? 0
         : clamp((rms - LIPSYNC_THRESHOLD) / LIPSYNC_RANGE, 0, 1);
       const hardSilent = rms < LIPSYNC_HARD_CLOSE_RMS_THRESHOLD || normalized < LIPSYNC_HARD_CLOSE_NORMALIZED_THRESHOLD;
+      const recentVoice = lipsyncLastVoiceAt > 0 && now - lipsyncLastVoiceAt <= LIPSYNC_HARD_CLOSE_HANGOVER_MS;
       if (hardSilent) {
+        if (
+          recentVoice
+          || lipsyncSmoothed > LIPSYNC_REST_OPEN_THRESHOLD
+          || Math.abs(lipsyncSmoothedForm) > LIPSYNC_REST_FORM_THRESHOLD
+        ) {
+          lipsyncSmoothed += (0 - lipsyncSmoothed) * LIPSYNC_HARD_CLOSE_RELEASE_ALPHA;
+          lipsyncSmoothedForm += (0 - lipsyncSmoothedForm) * LIPSYNC_HARD_CLOSE_FORM_RELEASE_ALPHA;
+          setMouthOpen(lipsyncSmoothed);
+          setMouthForm(lipsyncSmoothedForm);
+          lipsyncRafId = window.requestAnimationFrame(step);
+          return;
+        }
+
         lipsyncSmoothed = 0;
         lipsyncSmoothedForm = 0;
         lipsyncLastVoiceAt = 0;
@@ -1250,7 +1397,13 @@
       lastError: state.lastError,
       layout: state.layout,
       windowState: state.windowState,
-      resizeModeEnabled: state.resizeModeEnabled
+      resizeModeEnabled: state.resizeModeEnabled,
+      debug: {
+        mouthOverride: {
+          enabled: Boolean(externalMouthOverrideState?.enabled),
+          values: normalizeMouthTunerValues(externalMouthOverrideState?.values || {})
+        }
+      }
     };
   }
 
@@ -1334,6 +1487,122 @@
       applyLayoutTunerValues({
         ...(layoutTunerState?.values || getCurrentLayoutTunerValues()),
         scaleMultiplier: roundToStep(layoutScaleElement.value, 0.01)
+      });
+    });
+  }
+
+  function applyMouthTunerValues(nextValues = {}, { immediate = false, statusMessage = '' } = {}) {
+    mouthTunerState.values = normalizeMouthTunerValues({
+      ...(mouthTunerState?.values || {}),
+      ...nextValues
+    });
+    syncMouthTunerControls();
+    if (statusMessage) {
+      setMouthTunerStatus(statusMessage);
+    }
+    if (immediate && mouthTunerState.enabled) {
+      applyDebugMouthTunerForCurrentFrame();
+    }
+  }
+
+  function setMouthTunerEnabled(enabled, { immediate = false, statusMessage = '' } = {}) {
+    mouthTunerState.enabled = Boolean(enabled);
+    syncMouthTunerControls();
+    if (mouthTunerState.enabled) {
+      setMouthTunerStatus(statusMessage || 'Override active');
+      if (immediate) {
+        applyDebugMouthTunerForCurrentFrame();
+      }
+      return;
+    }
+    setMouthTunerStatus(statusMessage || 'Override disabled');
+  }
+
+  function setExternalMouthOverride(params = {}) {
+    const enabled = params?.enabled === true;
+    externalMouthOverrideState = {
+      enabled,
+      values: normalizeMouthTunerValues({
+        ...(externalMouthOverrideState?.values || {}),
+        ...params
+      })
+    };
+
+    if (enabled) {
+      applyExternalMouthOverrideForCurrentFrame();
+    }
+
+    return {
+      ok: true,
+      enabled,
+      values: externalMouthOverrideState.values
+    };
+  }
+
+  function initMouthTuner() {
+    const mouthTunerConfig = getMouthTunerRuntimeConfig();
+    mouthTunerState = {
+      open: false,
+      enabled: mouthTunerConfig.enabled,
+      values: normalizeMouthTunerValues({
+        mouthOpen: 0,
+        mouthForm: 0
+      })
+    };
+    syncMouthTunerControls();
+    setMouthTunerOpen(false);
+    setMouthTunerVisible(mouthTunerConfig.visible);
+    setMouthTunerStatus(mouthTunerConfig.enabled ? 'Override active' : 'Override disabled');
+
+    if (!mouthTunerConfig.visible) {
+      return;
+    }
+
+    mouthTunerToggleElement?.addEventListener('click', () => {
+      setMouthTunerOpen(!mouthTunerState?.open);
+    });
+    mouthTunerCloseElement?.addEventListener('click', () => {
+      setMouthTunerOpen(false);
+    });
+    mouthTunerEnableElement?.addEventListener('change', () => {
+      setMouthTunerEnabled(mouthTunerEnableElement.checked, {
+        immediate: true
+      });
+    });
+    mouthOpenElement?.addEventListener('input', () => {
+      applyMouthTunerValues({
+        mouthOpen: roundToStep(mouthOpenElement.value, 0.01)
+      }, {
+        immediate: true
+      });
+    });
+    mouthFormElement?.addEventListener('input', () => {
+      applyMouthTunerValues({
+        mouthForm: roundToStep(mouthFormElement.value, 0.01)
+      }, {
+        immediate: true
+      });
+    });
+    mouthNeutralElement?.addEventListener('click', () => {
+      applyMouthTunerValues({
+        mouthOpen: 0,
+        mouthForm: 0
+      }, {
+        immediate: true,
+        statusMessage: 'Neutral mouth'
+      });
+    });
+    mouthApplyIElement?.addEventListener('click', () => {
+      applyMouthTunerValues({
+        mouthOpen: 0.25,
+        mouthForm: 1
+      }, {
+        immediate: true,
+        statusMessage: 'Applied long I debug pose'
+      });
+      setMouthTunerEnabled(true, {
+        immediate: true,
+        statusMessage: 'Override active'
       });
     });
   }
@@ -1948,6 +2217,8 @@
       let result;
       if (method === 'state.get') {
         result = getState();
+      } else if (method === 'debug.mouthOverride.set') {
+        result = setExternalMouthOverride(params);
       } else if (method === 'param.set' || method === 'model.param.set') {
         result = setModelParam(params);
       } else if (method === 'model.param.batchSet') {
@@ -2019,6 +2290,7 @@
       runtimeUiConfig = runtimeConfig.uiConfig || null;
       runtimeLive2dPresets = runtimeConfig.live2dPresets || null;
       initLayoutTuner();
+      initMouthTuner();
       detachWindowStateSync = bridge.onWindowStateSync?.((payload) => {
         applyWindowState(payload);
       }) || null;

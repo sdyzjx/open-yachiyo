@@ -92,6 +92,12 @@
         mirrorToPanel: false
       })
     }),
+    debug: Object.freeze({
+      mouthTuner: Object.freeze({
+        visible: false,
+        enabled: false
+      })
+    }),
     actionQueue: Object.freeze({
       // Live2D action scheduling defaults.
       maxQueueSize: 120,

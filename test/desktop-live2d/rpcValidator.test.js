@@ -47,6 +47,22 @@ test('validateRpcRequest accepts tool.invoke payload', () => {
   assert.equal(result.request.method, 'tool.invoke');
 });
 
+test('validateRpcRequest accepts debug.mouthOverride.set payload', () => {
+  const result = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'mouth-override-1',
+    method: 'debug.mouthOverride.set',
+    params: {
+      enabled: true,
+      mouthOpen: 0.48,
+      mouthForm: -0.32
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.request.method, 'debug.mouthOverride.set');
+});
+
 test('validateRpcRequest rejects non-whitelisted method', () => {
   const result = validateRpcRequest({
     jsonrpc: '2.0',

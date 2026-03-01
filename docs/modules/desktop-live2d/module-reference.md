@@ -118,6 +118,7 @@ DOM 更新
 定义位置：`apps/desktop-live2d/main/constants.js` `RPC_METHODS_V1`
 
 - `state.get`
+- `debug.mouthOverride.set`
 - `param.set` / `model.param.set`
 - `model.param.batchSet`
 - `model.motion.play`
@@ -181,6 +182,12 @@ DOM 更新
 
 - `state.get`
   - `params: {}`
+- `debug.mouthOverride.set`
+  - `params: { "enabled": boolean, "mouthOpen"?: number, "mouthForm"?: number }`
+  - 调试用途：给 renderer 注入一个“每帧持续生效”的外部嘴型覆盖状态。
+  - `enabled: true` 时启用覆盖，并把 `mouthOpen` / `mouthForm` 归一化后写入 `externalMouthOverrideState`。
+  - `enabled: false` 时清除覆盖，renderer 回到正常链路。
+  - 与 `param.set` 的区别：`param.set` 只写当前一帧/当前时刻，而这个接口会进入 renderer 的每帧更新优先级链，因此可用于 Rhubarb / SVM 之类的外部预览。
 - `param.set` / `model.param.set`
   - `params: { "name": string, "value": number }`
 - `model.param.batchSet`
@@ -421,6 +428,10 @@ Renderer 回包：
 - 使用 AJV 编译各 method schema
 - `params` 必须是 object；null/undefined 自动按 `{}` 处理
 - method 白名单来自 `RPC_METHODS_V1`
+- `debug.mouthOverride.set` 的 schema 为：
+  - 必填：`enabled: boolean`
+  - 选填：`mouthOpen: number` `mouthForm: number`
+  - 禁止额外字段（`additionalProperties: false`）
 
 ## 4.7 `apps/desktop-live2d/main/rpcRateLimiter.js`
 
@@ -683,6 +694,7 @@ Renderer 回包：
 
 RPC method -> 实现方法映射：
 - `state.get` -> `getState()`
+- `debug.mouthOverride.set` -> `setExternalMouthOverride()`
 - `param.set` / `model.param.set` -> `setModelParam()`
 - `model.param.batchSet` -> `setModelParamsBatch()`
 - `model.motion.play` -> `playModelMotion()`
@@ -717,6 +729,15 @@ RPC method -> 实现方法映射：
   - transform 数值不变时不重设
   - 布局使用 RAF 合并（避免重复重排）
   - 输入框 Enter 提交增加 IME 组合态保护（`isComposing` / `keyCode=229`），避免中文输入法候选确认时误发送
+- 嘴型写入优先级：
+  - `externalMouthOverrideState.enabled` -> `applyExternalMouthOverrideForCurrentFrame()`
+  - 否则 `mouthTunerState.enabled` -> `applyDebugMouthTunerForCurrentFrame()`
+  - 否则当前正在说话 -> `applyLipSyncForCurrentFrame()`
+  - 否则 -> `applyNeutralMouthPoseForCurrentFrame()`
+- `debug.mouthOverride.set` 的落点：
+  - `handleInvoke(payload)` 接到 RPC 后调用 `setExternalMouthOverride(params)`
+  - `getState()` 会在 `debug.mouthOverride` 字段里返回当前覆盖状态与归一化后的值
+  - 该接口的设计目的是让外部调试脚本通过 renderer 内部统一的每帧链路覆盖嘴型，避免普通 `param.set` 被下一帧的 neutral / lipsync 覆盖回去
 
 ## 6. 启动与运维脚本模块
 

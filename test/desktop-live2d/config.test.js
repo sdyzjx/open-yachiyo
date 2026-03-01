@@ -34,6 +34,8 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.actionQueue.idleAction.type, 'motion');
   assert.equal(config.uiConfig.actionQueue.idleAction.name, 'Idle');
   assert.equal(config.uiConfig.actionQueue.idleAction.args.group, 'Idle');
+  assert.equal(config.uiConfig.debug.mouthTuner.visible, false);
+  assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
 });
 
 test('resolveDesktopLive2dConfig respects env overrides', () => {
@@ -88,6 +90,12 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
           maxMessages: 88
         }
       },
+      debug: {
+        mouthTuner: {
+          visible: true,
+          enabled: false
+        }
+      },
       actionQueue: {
         maxQueueSize: 32,
         overflowPolicy: 'drop_newest',
@@ -116,6 +124,8 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
   assert.equal(config.uiConfig.layout.lockPositionOnResize, false);
   assert.equal(config.uiConfig.chat.panel.defaultVisible, false);
   assert.equal(config.uiConfig.chat.panel.maxMessages, 88);
+  assert.equal(config.uiConfig.debug.mouthTuner.visible, true);
+  assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
   assert.equal(config.uiConfig.actionQueue.maxQueueSize, 32);
   assert.equal(config.uiConfig.actionQueue.overflowPolicy, 'drop_newest');
   assert.equal(config.uiConfig.actionQueue.idleFallbackEnabled, false);
@@ -140,6 +150,11 @@ test('resolveDesktopLive2dConfig accepts comments in desktop-live2d.json', () =>
         "panel": {
           "defaultVisible": false
         }
+      },
+      "debug": {
+        "mouthTuner": {
+          "visible": true
+        }
       }
     }`,
     'utf8'
@@ -153,6 +168,8 @@ test('resolveDesktopLive2dConfig accepts comments in desktop-live2d.json', () =>
   assert.equal(config.uiConfig.window.width, 410);
   assert.equal(config.uiConfig.window.height, 640);
   assert.equal(config.uiConfig.chat.panel.defaultVisible, false);
+  assert.equal(config.uiConfig.debug.mouthTuner.visible, true);
+  assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
 });
 
 test('resolveDesktopLive2dConfig writes generated rpc token back to process.env', () => {

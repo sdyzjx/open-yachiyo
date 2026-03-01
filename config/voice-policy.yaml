@@ -13,7 +13,7 @@ voice_policy:
     - is_troubleshooting == true
 
   limits:
-    max_chars: 220
+    max_chars: 500
     max_duration_sec: 45
-    cooldown_sec_per_session: 20
+    cooldown_sec_per_session: 2
     max_tts_calls_per_minute: 3
