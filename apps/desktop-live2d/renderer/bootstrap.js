@@ -5,6 +5,7 @@
   const actionMutexApi = window.Live2DActionMutex || null;
   const actionQueueApi = window.Live2DActionQueuePlayer || null;
   const actionExecutorApi = window.Live2DActionExecutor || null;
+  const lipsyncApi = window.Live2DVisemeLipSync || null;
   const state = {
     modelLoaded: false,
     modelName: null,
@@ -29,6 +30,9 @@
   let actionQueuePlayer = null;
   let actionExecutionMutex = null;
   let actionExecutor = null;
+  let audioContext = null;
+  let lipsyncState = null;
+  let lipsyncAnimationFrame = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -157,11 +161,96 @@
     }
   }
 
+  function stopLipsync() {
+    if (lipsyncAnimationFrame) {
+      cancelAnimationFrame(lipsyncAnimationFrame);
+      lipsyncAnimationFrame = null;
+    }
+    lipsyncState = null;
+
+    // Reset mouth parameters to neutral
+    if (live2dModel) {
+      try {
+        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
+      } catch (err) {
+        console.warn('[Lipsync] Failed to reset mouth parameters:', err);
+      }
+    }
+  }
+
+  function startLipsync(audioElement) {
+    if (!lipsyncApi || !live2dModel) {
+      console.warn('[Lipsync] Lipsync API or model not available');
+      return;
+    }
+
+    try {
+      // Initialize AudioContext if needed
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      // Create audio source and analyser
+      const source = audioContext.createMediaElementSource(audioElement);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.8;
+
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      // Initialize lipsync state
+      lipsyncState = lipsyncApi.createRuntimeState();
+      const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+
+      // Animation loop
+      function updateLipsync() {
+        if (!lipsyncState || !live2dModel) {
+          stopLipsync();
+          return;
+        }
+
+        analyser.getByteFrequencyData(frequencyData);
+
+        // Extract viseme features from frequency data
+        const features = lipsyncApi.extractVisemeFeatures(frequencyData, audioContext.sampleRate);
+
+        // Infer viseme weights
+        const weights = lipsyncApi.inferVisemeWeights(features);
+
+        // Derive mouth parameters
+        const mouthParams = lipsyncApi.deriveMouthParams(weights);
+
+        // Resolve final frame with smoothing
+        const frame = lipsyncApi.resolveVisemeFrame(lipsyncState, mouthParams);
+
+        // Apply to Live2D model
+        try {
+          live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', frame.openY);
+          live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', frame.form);
+        } catch (err) {
+          console.warn('[Lipsync] Failed to set mouth parameters:', err);
+        }
+
+        lipsyncAnimationFrame = requestAnimationFrame(updateLipsync);
+      }
+
+      updateLipsync();
+    } catch (err) {
+      console.error('[Lipsync] Failed to start lipsync:', err);
+      stopLipsync();
+    }
+  }
+
   async function playVoiceFromBase64({ audioBase64, mimeType = 'audio/ogg' } = {}) {
     const base64 = String(audioBase64 || '').trim();
     if (!base64) {
       throw createRpcError(-32602, 'audioBase64 is required');
     }
+
+    // Stop any existing lipsync
+    stopLipsync();
 
     const binaryString = atob(base64);
     const len = binaryString.length;
@@ -176,9 +265,14 @@
     currentVoiceObjectUrl = objectUrl;
 
     systemAudio.src = objectUrl;
+
+    // Start lipsync before playing
+    startLipsync(systemAudio);
+
     await systemAudio.play();
 
     const cleanup = () => {
+      stopLipsync();
       if (currentVoiceObjectUrl === objectUrl) {
         releaseCurrentVoiceObjectUrl();
       }
