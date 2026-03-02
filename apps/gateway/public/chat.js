@@ -411,6 +411,31 @@ async function renderMarkdownWithMermaid(text) {
   }
 }
 
+function fixMermaidSyntax(code) {
+  // Fix nested brackets in node labels by wrapping them in quotes
+  // This handles cases like: A[text with [nested] brackets] --> B{text}
+
+  // Split by lines to process each line
+  const lines = code.split('\n');
+  const fixedLines = lines.map(line => {
+    // Match node definitions with brackets: NodeId[text] or NodeId{text}
+    // Look for patterns where the text contains nested brackets
+    return line.replace(/(\w+)([\[\{])([^\]\}]*[\[\{][^\]\}]*[\]\}][^\]\}]*)([\]\}])/g,
+      (match, nodeId, openBracket, text, closeBracket) => {
+        // Check if text is already quoted
+        if ((text.startsWith('"') && text.endsWith('"')) ||
+            (text.startsWith("'") && text.endsWith("'"))) {
+          return match;
+        }
+        // Wrap text in quotes and escape any existing quotes
+        const escapedText = text.replace(/"/g, '&quot;');
+        return `${nodeId}${openBracket}"${escapedText}"${closeBracket}`;
+      });
+  });
+
+  return fixedLines.join('\n');
+}
+
 async function renderMermaidDiagrams(container) {
   if (typeof window.mermaid === 'undefined') {
     console.warn('Mermaid library not loaded');
@@ -421,10 +446,12 @@ async function renderMermaidDiagrams(container) {
   console.log(`Found ${diagrams.length} mermaid diagrams to render`);
 
   for (const diagram of diagrams) {
-    const code = diagram.getAttribute('data-mermaid');
+    let code = diagram.getAttribute('data-mermaid');
     if (!code) continue;
 
     try {
+      // Fix common mermaid syntax issues with nested brackets
+      code = fixMermaidSyntax(code);
       console.log('Rendering mermaid diagram:', code.substring(0, 50) + '...');
       // Generate a valid CSS ID (no dots, starts with letter)
       const uniqueId = `mermaid-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
