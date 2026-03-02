@@ -415,22 +415,59 @@ function fixMermaidSyntax(code) {
   // Fix nested brackets in node labels by wrapping them in quotes
   // This handles cases like: A[text with [nested] brackets] --> B{text}
 
-  // Split by lines to process each line
   const lines = code.split('\n');
   const fixedLines = lines.map(line => {
-    // Match node definitions with brackets: NodeId[text] or NodeId{text}
-    // Look for patterns where the text contains nested brackets
-    return line.replace(/(\w+)([\[\{])([^\]\}]*[\[\{][^\]\}]*[\]\}][^\]\}]*)([\]\}])/g,
-      (match, nodeId, openBracket, text, closeBracket) => {
-        // Check if text is already quoted
-        if ((text.startsWith('"') && text.endsWith('"')) ||
-            (text.startsWith("'") && text.endsWith("'"))) {
-          return match;
+    let result = '';
+    let i = 0;
+
+    while (i < line.length) {
+      // Look for node ID followed by [ or {
+      const match = line.substring(i).match(/^(\w+)([\[\{])/);
+      if (!match) {
+        result += line[i];
+        i++;
+        continue;
+      }
+
+      const nodeId = match[1];
+      const openBracket = match[2];
+      const closeBracket = openBracket === '[' ? ']' : '}';
+
+      // Find the matching closing bracket
+      let depth = 1;
+      let j = i + match[0].length;
+      let text = '';
+      let hasNestedBrackets = false;
+
+      while (j < line.length && depth > 0) {
+        const char = line[j];
+        if (char === openBracket) {
+          depth++;
+          hasNestedBrackets = true;
+        } else if (char === closeBracket) {
+          depth--;
+          if (depth === 0) break;
         }
-        // Wrap text in quotes and escape any existing quotes
+        text += char;
+        j++;
+      }
+
+      // Check if text is already quoted
+      const isQuoted = (text.startsWith('"') && text.endsWith('"')) ||
+                       (text.startsWith("'") && text.endsWith("'"));
+
+      // Add quotes if there are nested brackets and not already quoted
+      if (hasNestedBrackets && !isQuoted) {
         const escapedText = text.replace(/"/g, '&quot;');
-        return `${nodeId}${openBracket}"${escapedText}"${closeBracket}`;
-      });
+        result += nodeId + openBracket + '"' + escapedText + '"' + closeBracket;
+      } else {
+        result += nodeId + openBracket + text + closeBracket;
+      }
+
+      i = j + 1;
+    }
+
+    return result;
   });
 
   return fixedLines.join('\n');
