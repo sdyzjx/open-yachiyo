@@ -162,9 +162,17 @@
   }
 
   function stopLipsync() {
+    console.log('[lipsync] stopLipsync called', {
+      hasAnimationFrame: !!lipsyncAnimationFrame,
+      hasState: !!lipsyncState,
+      hasModel: !!live2dModel,
+      hasAudioContext: !!audioContext
+    });
+
     if (lipsyncAnimationFrame) {
       cancelAnimationFrame(lipsyncAnimationFrame);
       lipsyncAnimationFrame = null;
+      console.log('[lipsync] animation frame cancelled');
     }
     lipsyncState = null;
 
@@ -173,15 +181,28 @@
       try {
         live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
         live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
+        console.log('[lipsync] mouth parameters reset to neutral');
       } catch (err) {
-        console.warn('[Lipsync] Failed to reset mouth parameters:', err);
+        console.warn('[lipsync] Failed to reset mouth parameters:', err);
       }
     }
   }
 
   function startLipsync(audioElement) {
-    if (!lipsyncApi || !live2dModel) {
-      console.warn('[Lipsync] Lipsync API or model not available');
+    console.log('[lipsync] startLipsync called', {
+      hasLipsyncApi: !!lipsyncApi,
+      hasModel: !!live2dModel,
+      hasAudioElement: !!audioElement,
+      audioSrc: audioElement?.src?.substring(0, 50)
+    });
+
+    if (!lipsyncApi) {
+      console.error('[lipsync] Lipsync API not available - window.Live2DVisemeLipSync is undefined');
+      return;
+    }
+
+    if (!live2dModel) {
+      console.error('[lipsync] Live2D model not available');
       return;
     }
 
@@ -189,6 +210,17 @@
       // Initialize AudioContext if needed
       if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('[lipsync] AudioContext created', {
+          sampleRate: audioContext.sampleRate,
+          state: audioContext.state
+        });
+      }
+
+      // Resume AudioContext if suspended
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+          console.log('[lipsync] AudioContext resumed');
+        });
       }
 
       // Create audio source and analyser
@@ -200,13 +232,23 @@
       source.connect(analyser);
       analyser.connect(audioContext.destination);
 
+      console.log('[lipsync] Audio nodes connected', {
+        fftSize: analyser.fftSize,
+        frequencyBinCount: analyser.frequencyBinCount,
+        smoothingTimeConstant: analyser.smoothingTimeConstant
+      });
+
       // Initialize lipsync state
       lipsyncState = lipsyncApi.createRuntimeState();
+      console.log('[lipsync] Runtime state created', { state: lipsyncState });
+
       const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+      let frameCount = 0;
 
       // Animation loop
       function updateLipsync() {
         if (!lipsyncState || !live2dModel) {
+          console.log('[lipsync] updateLipsync stopped - missing state or model');
           stopLipsync();
           return;
         }
@@ -225,25 +267,46 @@
         // Resolve final frame with smoothing
         const frame = lipsyncApi.resolveVisemeFrame(lipsyncState, mouthParams);
 
+        // Log every 30 frames (roughly once per second at 60fps)
+        if (frameCount % 30 === 0) {
+          console.log('[lipsync] frame update', {
+            frameCount,
+            features: { energy: features.energy.toFixed(3) },
+            weights: { a: weights.a.toFixed(2), i: weights.i.toFixed(2), u: weights.u.toFixed(2) },
+            mouthParams: { openY: mouthParams.openY.toFixed(3), form: mouthParams.form.toFixed(3) },
+            frame: { openY: frame.openY.toFixed(3), form: frame.form.toFixed(3) }
+          });
+        }
+        frameCount++;
+
         // Apply to Live2D model
         try {
           live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', frame.openY);
           live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', frame.form);
         } catch (err) {
-          console.warn('[Lipsync] Failed to set mouth parameters:', err);
+          console.warn('[lipsync] Failed to set mouth parameters:', err);
         }
 
         lipsyncAnimationFrame = requestAnimationFrame(updateLipsync);
       }
 
       updateLipsync();
+      console.log('[lipsync] Animation loop started');
     } catch (err) {
-      console.error('[Lipsync] Failed to start lipsync:', err);
+      console.error('[lipsync] Failed to start lipsync:', err);
       stopLipsync();
     }
   }
 
   async function playVoiceFromBase64({ audioBase64, mimeType = 'audio/ogg' } = {}) {
+    console.log('[lipsync] playVoiceFromBase64 called', {
+      hasBase64: !!audioBase64,
+      base64Length: audioBase64?.length,
+      mimeType,
+      hasLipsyncApi: !!lipsyncApi,
+      hasModel: !!live2dModel
+    });
+
     const base64 = String(audioBase64 || '').trim();
     if (!base64) {
       throw createRpcError(-32602, 'audioBase64 is required');
@@ -259,6 +322,11 @@
       bytes[i] = binaryString.charCodeAt(i);
     }
 
+    console.log('[lipsync] Audio decoded', {
+      binaryLength: len,
+      bytesLength: bytes.length
+    });
+
     releaseCurrentVoiceObjectUrl();
     const blob = new Blob([bytes], { type: String(mimeType || 'audio/ogg') });
     const objectUrl = URL.createObjectURL(blob);
@@ -266,10 +334,13 @@
 
     systemAudio.src = objectUrl;
 
+    console.log('[lipsync] Audio source set, starting lipsync');
+
     // Start lipsync before playing
     startLipsync(systemAudio);
 
     await systemAudio.play();
+    console.log('[lipsync] Audio playback started');
 
     const cleanup = () => {
       stopLipsync();
