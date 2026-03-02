@@ -1618,8 +1618,6 @@ async function startDesktopSuite({
 
   const qwenTtsClient = new QwenTtsClient();
 
-  const qwenTtsClient = new QwenTtsClient();
-
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
     sessionId: 'desktop-live2d-chat',
