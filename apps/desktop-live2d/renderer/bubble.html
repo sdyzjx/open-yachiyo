@@ -60,7 +60,37 @@
           opacity: 0;
         }
       }
+
+      /* Markdown styles for bubble */
+      #bubble code {
+        background: rgba(255, 255, 255, 0.15);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 12px;
+      }
+
+      #bubble strong {
+        font-weight: 600;
+      }
+
+      #bubble em {
+        font-style: italic;
+      }
+
+      #bubble a {
+        color: #7db3ff;
+        text-decoration: underline;
+      }
+
+      /* LaTeX formula styles for bubble */
+      #bubble .katex {
+        font-size: 1em;
+      }
     </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
   </head>
   <body>
     <div id="bubble"></div>

@@ -114,6 +114,67 @@
       </aside>
 
     </div><!-- /.cv2-main -->
+
+    <!-- ── Desktop Bubble Settings ── -->
+    <section class="cv2-section panel" aria-label="桌面气泡设置" style="margin: 20px; padding: 20px;">
+      <h2 style="margin-top: 0; font-size: 16px; font-weight: 600;">桌面气泡设置</h2>
+
+      <div style="display: grid; gap: 16px;">
+        <label style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="bubbleTruncateEnabled" />
+          <span>启用消息截断</span>
+        </label>
+
+        <div style="display: grid; gap: 8px;">
+          <label for="bubbleMaxLength" style="font-size: 14px;">最大字符数</label>
+          <input
+            type="number"
+            id="bubbleMaxLength"
+            min="50"
+            max="500"
+            value="120"
+            style="padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text);"
+          />
+          <p style="font-size: 12px; color: var(--muted); margin: 0;">
+            当消息超过设定字符数时，气泡将只显示前N个字符
+          </p>
+        </div>
+
+        <div style="display: grid; gap: 8px;">
+          <label for="bubbleTruncateMode" style="font-size: 14px;">截断模式</label>
+          <select
+            id="bubbleTruncateMode"
+            style="padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text);"
+          >
+            <option value="simple">简单模式</option>
+            <option value="smart" selected>智能模式（推荐）</option>
+            <option value="disabled">禁用</option>
+          </select>
+          <p style="font-size: 12px; color: var(--muted); margin: 0;">
+            智能模式会保持单词边界和公式完整性
+          </p>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="bubbleShowHintForComplex" checked />
+          <span>复杂内容显示提示</span>
+        </label>
+        <p style="font-size: 12px; color: var(--muted); margin: 0 0 0 28px;">
+          当消息包含图表或公式时，显示提示而非截断
+        </p>
+
+        <button
+          id="saveBubbleConfig"
+          class="btn btn-primary"
+          type="button"
+          style="width: fit-content;"
+        >
+          保存气泡配置
+        </button>
+        <div id="bubbleConfigHint" style="font-size: 12px; color: var(--muted);"></div>
+      </div>
+    </section>
+
   </div><!-- /.cv2-shell -->
 
   <script src="/config-v2.js"></script>

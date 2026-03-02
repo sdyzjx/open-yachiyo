@@ -19,7 +19,207 @@
     return allowedRoles.has(normalized) ? normalized : 'assistant';
   }
 
-  function renderMessages() {
+  function renderLatex(text) {
+    if (typeof katex === 'undefined') {
+      return text;
+    }
+
+    try {
+      // Replace display math: $$...$$
+      text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
+        try {
+          return katex.renderToString(formula.trim(), {
+            displayMode: true,
+            throwOnError: false
+          });
+        } catch (err) {
+          console.error('KaTeX display math error:', err);
+          return match;
+        }
+      });
+
+      // Replace inline math: $...$
+      text = text.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+        try {
+          return katex.renderToString(formula.trim(), {
+            displayMode: false,
+            throwOnError: false
+          });
+        } catch (err) {
+          console.error('KaTeX inline math error:', err);
+          return match;
+        }
+      });
+
+      return text;
+    } catch (err) {
+      console.error('LaTeX render error:', err);
+      return text;
+    }
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  async function renderMarkdownWithMermaid(text) {
+    if (typeof marked === 'undefined') {
+      return text;
+    }
+    try {
+      // First render LaTeX formulas
+      const textWithLatex = renderLatex(text);
+
+      // Configure marked renderer to handle mermaid code blocks
+      const renderer = new marked.Renderer();
+      const originalCodeRenderer = renderer.code.bind(renderer);
+
+      renderer.code = function(code, language) {
+        if (language === 'mermaid') {
+          // Return mermaid diagram placeholder without pre/code wrapper
+          return `<div class="mermaid-diagram" data-mermaid="${escapeHtml(code)}">${escapeHtml(code)}</div>`;
+        }
+        // Use default renderer for other code blocks
+        return originalCodeRenderer(code, language);
+      };
+
+      return marked.parse(textWithLatex, {
+        breaks: true,
+        gfm: true,
+        renderer: renderer
+      });
+    } catch (err) {
+      console.error('Markdown parse error:', err);
+      return text;
+    }
+  }
+
+  function fixMermaidSyntax(code) {
+    // Fix nested brackets in node labels by wrapping them in quotes
+    // This handles cases like: A[text with [nested] brackets] --> B{text}
+
+    const lines = code.split('\n');
+    const fixedLines = lines.map(line => {
+      let result = '';
+      let i = 0;
+
+      while (i < line.length) {
+        // Look for node ID followed by [ or {
+        const match = line.substring(i).match(/^(\w+)([\[\{])/);
+        if (!match) {
+          result += line[i];
+          i++;
+          continue;
+        }
+
+        const nodeId = match[1];
+        const openBracket = match[2];
+        const closeBracket = openBracket === '[' ? ']' : '}';
+
+        // Find the matching closing bracket
+        let depth = 1;
+        let j = i + match[0].length;
+        let text = '';
+        let hasNestedBrackets = false;
+
+        while (j < line.length && depth > 0) {
+          const char = line[j];
+          if (char === openBracket) {
+            depth++;
+            hasNestedBrackets = true;
+          } else if (char === closeBracket) {
+            depth--;
+            if (depth === 0) break;
+          }
+          text += char;
+          j++;
+        }
+
+        // Check if text is already quoted
+        const isQuoted = (text.startsWith('"') && text.endsWith('"')) ||
+                         (text.startsWith("'") && text.endsWith("'"));
+
+        // Add quotes if there are nested brackets and not already quoted
+        if (hasNestedBrackets && !isQuoted) {
+          const escapedText = text.replace(/"/g, '&quot;');
+          result += nodeId + openBracket + '"' + escapedText + '"' + closeBracket;
+        } else {
+          result += nodeId + openBracket + text + closeBracket;
+        }
+
+        i = j + 1;
+      }
+
+      return result;
+    });
+
+    return fixedLines.join('\n');
+  }
+
+  async function renderMermaidDiagrams(container) {
+    if (typeof window.mermaid === 'undefined') {
+      console.warn('Mermaid library not loaded');
+      return;
+    }
+
+    const diagrams = container.querySelectorAll('.mermaid-diagram:not(.mermaid-rendered):not(.mermaid-error)');
+
+    for (const diagram of diagrams) {
+      let code = diagram.getAttribute('data-mermaid');
+      if (!code) continue;
+
+      try {
+        // Fix common mermaid syntax issues with nested brackets
+        code = fixMermaidSyntax(code);
+        // Generate a valid CSS ID (no dots, starts with letter)
+        const uniqueId = `mermaid-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        const { svg } = await window.mermaid.render(uniqueId, code);
+        diagram.innerHTML = svg;
+        diagram.classList.add('mermaid-rendered');
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+        diagram.innerHTML = `<pre><code>${escapeHtml(code)}</code></pre>`;
+        diagram.classList.add('mermaid-error');
+      }
+    }
+  }
+
+  function renderMarkdown(text) {
+    if (typeof marked === 'undefined') {
+      return text;
+    }
+    try {
+      // First render LaTeX formulas
+      const textWithLatex = renderLatex(text);
+
+      return marked.parse(textWithLatex, {
+        breaks: true,
+        gfm: true
+      });
+    } catch (err) {
+      console.error('Markdown parse error:', err);
+      return text;
+    }
+  }
+
+  function renderToolCall(toolData) {
+    if (!toolData || !toolData.name) {
+      return '';
+    }
+    const name = String(toolData.name || '');
+    const args = toolData.arguments ? JSON.stringify(toolData.arguments, null, 2) : '';
+    return `<div class="tool-call">
+      <div class="tool-call-name">🔧 ${name}</div>
+      ${args ? `<div class="tool-call-args">${args}</div>` : ''}
+    </div>`;
+  }
+
+  async function renderMessages() {
     if (!messagesElement) {
       return;
     }
@@ -28,14 +228,29 @@
     for (const message of state.messages) {
       const node = document.createElement('div');
       node.className = `chat-message ${normalizeRole(message.role)}`;
-      node.textContent = String(message.text || '');
+
+      let content = String(message.text || '');
+
+      // Render tool calls if present
+      if (message.role === 'tool' && message.toolCall) {
+        content = renderToolCall(message.toolCall) + (content ? `<div>${await renderMarkdownWithMermaid(content)}</div>` : '');
+        node.innerHTML = content;
+      } else {
+        // Render markdown with mermaid for all other messages
+        node.innerHTML = await renderMarkdownWithMermaid(content);
+      }
+
       fragment.appendChild(node);
     }
     messagesElement.appendChild(fragment);
+
+    // Render mermaid diagrams after all messages are added
+    await renderMermaidDiagrams(messagesElement);
+
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
 
-  function applyChatState(payload) {
+  async function applyChatState(payload) {
     const nextInputEnabled = payload?.inputEnabled !== false;
     state.inputEnabled = nextInputEnabled;
     state.messages = Array.isArray(payload?.messages) ? payload.messages : [];
@@ -49,7 +264,7 @@
     if (chatSendElement) {
       chatSendElement.disabled = !nextInputEnabled;
     }
-    renderMessages();
+    await renderMessages();
   }
 
   function submitInput() {
@@ -73,7 +288,9 @@
   }
 
   bridge?.onChatStateSync?.((payload) => {
-    applyChatState(payload);
+    applyChatState(payload).catch(err => {
+      console.error('Error applying chat state:', err);
+    });
   });
 
   chatSendElement?.addEventListener('click', submitInput);

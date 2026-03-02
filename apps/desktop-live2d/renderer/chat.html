@@ -139,7 +139,161 @@
         opacity: 0.5;
         cursor: default;
       }
+
+      /* Markdown styles */
+      .chat-message h1,
+      .chat-message h2,
+      .chat-message h3,
+      .chat-message h4,
+      .chat-message h5,
+      .chat-message h6 {
+        margin: 8px 0 4px 0;
+        font-weight: 600;
+      }
+
+      .chat-message h1 { font-size: 16px; }
+      .chat-message h2 { font-size: 15px; }
+      .chat-message h3 { font-size: 14px; }
+      .chat-message h4,
+      .chat-message h5,
+      .chat-message h6 { font-size: 13px; }
+
+      .chat-message p {
+        margin: 4px 0;
+      }
+
+      .chat-message code {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+      }
+
+      .chat-message pre {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 8px;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 6px 0;
+      }
+
+      .chat-message pre code {
+        background: none;
+        padding: 0;
+      }
+
+      .chat-message table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 6px 0;
+        font-size: 11px;
+      }
+
+      .chat-message th,
+      .chat-message td {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 4px 6px;
+        text-align: left;
+      }
+
+      .chat-message th {
+        background: rgba(255, 255, 255, 0.1);
+        font-weight: 600;
+      }
+
+      .chat-message ul,
+      .chat-message ol {
+        margin: 4px 0;
+        padding-left: 20px;
+      }
+
+      .chat-message li {
+        margin: 2px 0;
+      }
+
+      .chat-message blockquote {
+        border-left: 3px solid rgba(255, 255, 255, 0.3);
+        padding-left: 8px;
+        margin: 6px 0;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .chat-message a {
+        color: #7db3ff;
+        text-decoration: underline;
+      }
+
+      .chat-message hr {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        margin: 8px 0;
+      }
+
+      .chat-message .tool-call {
+        background: rgba(101, 222, 191, 0.2);
+        border-left: 3px solid rgba(101, 222, 191, 0.6);
+        padding: 6px 8px;
+        margin: 4px 0;
+        border-radius: 4px;
+        font-size: 11px;
+      }
+
+      .chat-message .tool-call-name {
+        font-weight: 600;
+        color: #65deb f;
+      }
+
+      .chat-message .tool-call-args {
+        margin-top: 4px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+
+      /* LaTeX formula styles */
+      .chat-message .katex {
+        font-size: 1.1em;
+      }
+
+      .chat-message .katex-display {
+        margin: 12px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+
+      /* Mermaid diagram styles */
+      .chat-message .mermaid-diagram {
+        margin: 12px 0;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        overflow-x: auto;
+      }
+
+      .chat-message .mermaid-diagram.mermaid-rendered svg {
+        max-width: 100%;
+        height: auto;
+      }
+
+      .chat-message .mermaid-diagram.mermaid-error {
+        background: rgba(255, 100, 100, 0.15);
+        border-color: rgba(255, 100, 100, 0.3);
+      }
     </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose'
+      });
+      window.mermaid = mermaid;
+    </script>
   </head>
   <body>
     <div id="chat-panel">

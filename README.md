@@ -133,6 +133,28 @@ Detailed construction plan:
 - `docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
 - `docs/modules/desktop-live2d/module-reference.md`
 
+## Desktop Markdown & Mermaid Rendering
+
+Desktop Chat Panel and Bubble now support rich content rendering:
+
+**ChatPanel Features**:
+- Full Markdown support (headers, lists, tables, code blocks, etc.)
+- LaTeX formula rendering with KaTeX (inline `$...$` and display `$$...$$`)
+- Mermaid diagram rendering (flowchart, sequence, class, state, gantt, pie)
+- Tool call visualization with syntax highlighting
+
+**Bubble Smart Truncation**:
+- Configurable message truncation (default: 120 characters)
+- Three modes: simple, smart (recommended), disabled
+- Smart mode preserves word boundaries and formula integrity
+- Complex content (diagrams/formulas) shows hint instead of truncating
+- Emoji and multi-byte character aware
+
+**Configuration**:
+- Edit `~/yachiyo/config/desktop-live2d.json`
+- Or use WebUI at `/config-v2.html` (Desktop Bubble Settings section)
+- See `docs/DESKTOP_MARKDOWN_MERMAID_FEATURE.md` for full documentation
+
 ## Multimodal Image Input
 
 Chat UI supports image upload with multimodal model calls:

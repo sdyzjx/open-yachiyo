@@ -89,7 +89,15 @@
       }),
       bubble: Object.freeze({
         // Whether assistant bubble messages should also be mirrored into chat history.
-        mirrorToPanel: false
+        mirrorToPanel: false,
+        // Message truncation settings for bubble display
+        truncate: Object.freeze({
+          enabled: true,
+          maxLength: 120,
+          mode: 'smart', // 'simple' | 'smart' | 'disabled'
+          suffix: '...',
+          showHintForComplex: true // Show hint instead of truncating complex content
+        })
       })
     }),
     actionQueue: Object.freeze({
