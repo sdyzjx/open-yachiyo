@@ -1,6 +1,7 @@
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 300;
+const { ToolCallAccumulator } = require('./toolCallAccumulator');
 
 function parseToolArgs(raw) {
   if (!raw) return {};
@@ -176,7 +177,14 @@ class OpenAIReasoner {
     );
   }
 
-  async decideStream({ messages, tools, onDelta = null }) {
+  async decideStream({
+    messages,
+    tools,
+    onDelta = null,
+    onToolCallDelta = null,
+    onToolCallStable = null,
+    onToolCallParseError = null
+  }) {
     const payload = this.buildPayload({ messages, tools, stream: true });
 
     let lastError = null;
@@ -213,7 +221,11 @@ class OpenAIReasoner {
         let buffer = '';
         let sawDone = false;
         let textOutput = '';
-        const toolCallMap = new Map();
+        const accumulator = new ToolCallAccumulator({
+          onDelta: onToolCallDelta,
+          onStable: onToolCallStable,
+          onParseError: onToolCallParseError
+        });
 
         const emitDelta = (value) => {
           const delta = String(value || '');
@@ -239,25 +251,7 @@ class OpenAIReasoner {
 
           if (Array.isArray(delta.tool_calls)) {
             for (const tc of delta.tool_calls) {
-              const index = Number.isFinite(Number(tc?.index)) ? Number(tc.index) : 0;
-              const existing = toolCallMap.get(index) || {
-                index,
-                id: '',
-                name: '',
-                argsRaw: ''
-              };
-              if (typeof tc?.id === 'string' && tc.id) {
-                existing.id = tc.id;
-              }
-              const nameDelta = tc?.function?.name;
-              if (typeof nameDelta === 'string' && nameDelta) {
-                existing.name += nameDelta;
-              }
-              const argsDelta = tc?.function?.arguments;
-              if (typeof argsDelta === 'string' && argsDelta) {
-                existing.argsRaw += argsDelta;
-              }
-              toolCallMap.set(index, existing);
+              accumulator.append(tc);
             }
           }
         };
@@ -305,16 +299,15 @@ class OpenAIReasoner {
           }
         }
 
-        const toolCalls = Array.from(toolCallMap.values())
-          .sort((a, b) => a.index - b.index)
-          .map((item, idx) => ({
-            id: item.id || `call_stream_${idx + 1}`,
-            type: 'function',
-            function: {
-              name: item.name || 'unknown_tool',
-              arguments: item.argsRaw || '{}'
-            }
-          }));
+        const { toolCalls: resolvedToolCalls, parseErrors } = accumulator.finalize();
+        const toolCalls = resolvedToolCalls.map((item, idx) => ({
+          id: item.call_id || `call_stream_${idx + 1}`,
+          type: 'function',
+          function: {
+            name: item.name || 'unknown_tool',
+            arguments: item.args_raw || '{}'
+          }
+        }));
 
         const assistantMessage = {
           role: 'assistant',
@@ -322,7 +315,32 @@ class OpenAIReasoner {
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
         };
 
-        return this.buildDecisionFromAssistantMessage(assistantMessage);
+        if (resolvedToolCalls.length > 0) {
+          const toolsDecision = resolvedToolCalls.map((item) => ({
+            call_id: item.call_id,
+            name: item.name,
+            args: item.args
+          }));
+          return {
+            type: 'tool',
+            assistantMessage,
+            tool: toolsDecision[0],
+            tools: toolsDecision,
+            stream_meta: {
+              tool_parse_errors: parseErrors.length,
+              parse_errors: parseErrors
+            }
+          };
+        }
+
+        const decision = this.buildDecisionFromAssistantMessage(assistantMessage);
+        return {
+          ...decision,
+          stream_meta: {
+            tool_parse_errors: parseErrors.length,
+            parse_errors: parseErrors
+          }
+        };
       } catch (err) {
         lastError = err;
         if (attempt < this.maxRetries && this.isRetriableNetworkError(err)) {

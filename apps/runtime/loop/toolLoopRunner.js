@@ -300,6 +300,22 @@ class ToolLoopRunner {
         let decision = null;
         const useStreamingDecision = this.runtimeStreamingEnabled && typeof reasoner.decideStream === 'function';
         if (useStreamingDecision) {
+          const emittedParseErrorKeys = new Set();
+          const emitParseError = (parseError) => {
+            const payload = parseError && typeof parseError === 'object' ? parseError : {};
+            const key = [
+              payload.index ?? '',
+              payload.call_id ?? '',
+              payload.name ?? '',
+              payload.parse_reason ?? '',
+              payload.args_raw ?? ''
+            ].join('|');
+            if (emittedParseErrorKeys.has(key)) return;
+            emittedParseErrorKeys.add(key);
+            runMetrics.tool_parse_error += 1;
+            emit('tool_call.parse_error', payload);
+          };
+
           emit('llm.stream.start', {
             mode: 'decision_stream'
           });
@@ -310,8 +326,22 @@ class ToolLoopRunner {
               emit('llm.stream.delta', {
                 delta: String(delta || '')
               });
+            },
+            onToolCallDelta: (delta) => {
+              emit('tool_call.delta', delta || {});
+            },
+            onToolCallStable: (stableCall) => {
+              markMetricIfUnset('first_tool_stable_ms');
+              emit('tool_call.stable', stableCall || {});
+            },
+            onToolCallParseError: (parseError) => {
+              emitParseError(parseError);
             }
           });
+          const parseErrors = Array.isArray(decision?.stream_meta?.parse_errors)
+            ? decision.stream_meta.parse_errors
+            : [];
+          parseErrors.forEach((item) => emitParseError(item));
           emit('llm.stream.end', {
             mode: 'decision_stream'
           });
@@ -331,7 +361,8 @@ class ToolLoopRunner {
 
         emit('llm.final', {
           decision: formatDecisionEvent(decision),
-          streamed: useStreamingDecision
+          streamed: useStreamingDecision,
+          stream_meta: decision?.stream_meta || null
         });
 
         if (decision.type === 'final') {

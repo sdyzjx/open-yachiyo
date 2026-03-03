@@ -192,6 +192,113 @@ test('ToolLoopRunner emits llm.stream events when streaming decision is enabled'
   dispatcher.stop();
 });
 
+test('ToolLoopRunner emits tool_call delta/stable events in streaming mode', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decideStream({ onDelta, onToolCallDelta, onToolCallStable }) {
+      onDelta?.('处理中');
+      onToolCallDelta?.({
+        index: 0,
+        call_id: 'call-stream-tool-1',
+        name: 'add',
+        args_raw: '{"a":1'
+      });
+      onToolCallStable?.({
+        index: 0,
+        call_id: 'call-stream-tool-1',
+        name: 'add',
+        args_raw: '{"a":1,"b":2}',
+        args: { a: 1, b: 2 }
+      });
+      return {
+        type: 'final',
+        output: 'stream-tool-events-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-stream-tool-events',
+    input: 'stream tool event',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'stream-tool-events-ok');
+  assert.ok(events.some((evt) => evt.event === 'tool_call.delta'));
+  assert.ok(events.some((evt) => evt.event === 'tool_call.stable'));
+  assert.equal(Number.isFinite(result.metrics.first_tool_stable_ms), true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner counts parse error once when callback and stream_meta both carry same error', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const parseErrorPayload = {
+    index: 0,
+    call_id: 'call-parse-1',
+    name: 'broken',
+    args_raw: '{"x":1',
+    parse_reason: 'Unexpected end of JSON input'
+  };
+
+  const reasoner = {
+    async decideStream({ onToolCallParseError }) {
+      onToolCallParseError?.(parseErrorPayload);
+      return {
+        type: 'final',
+        output: 'done-with-parse-error',
+        stream_meta: {
+          tool_parse_errors: 1,
+          parse_errors: [parseErrorPayload]
+        }
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-stream-parse-error',
+    input: 'stream parse error',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-with-parse-error');
+  assert.equal(result.metrics.tool_parse_error, 1);
+  const parseErrorEvents = events.filter((evt) => evt.event === 'tool_call.parse_error');
+  assert.equal(parseErrorEvents.length, 1);
+
+  dispatcher.stop();
+});
+
 
 
 test('ToolLoopRunner executes multiple tool calls in one step serially', async () => {
