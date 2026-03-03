@@ -1119,27 +1119,31 @@ async function processVoiceRequestedOnDesktop({
   });
 
   try {
+    const preferStreamingPlayback = String(process.env.DESKTOP_VOICE_STREAMING_PLAYBACK || 'true')
+      .trim()
+      .toLowerCase() !== 'false';
     const synthesis = await ttsClient.synthesizeNonStreaming({
       text,
       model,
       voice,
       timeoutMs: timeoutSec * 1000
     });
+    let audioUrlHost = null;
+    try {
+      audioUrlHost = new URL(String(synthesis.audioUrl || '')).host || null;
+    } catch {
+      audioUrlHost = null;
+    }
 
-    const audioBuffer = await ttsClient.fetchAudioBuffer({
-      audioUrl: synthesis.audioUrl,
-      timeoutMs: timeoutSec * 1000
-    });
-
-    const audioBase64 = audioBuffer.toString('base64');
-
-    emitDebug?.('chain.electron.voice.synthesis.completed', 'electron main synthesized voice and fetched audio buffer', {
+    emitDebug?.('chain.electron.voice.synthesis.completed', 'electron main synthesized voice and resolved audio playback source', {
       request_id: requestId,
       session_id: sessionId,
       trace_id: traceId,
-      bytes: audioBuffer.length,
+      bytes: null,
       mime_type: synthesis.mimeType || null,
-      model: synthesis.model || null
+      model: synthesis.model || null,
+      playback_route: preferStreamingPlayback ? 'remote_stream' : 'memory_buffer',
+      audio_url_host: audioUrlHost
     });
 
     rpcServerRef?.notify({
@@ -1149,26 +1153,47 @@ async function processVoiceRequestedOnDesktop({
         timestamp: Date.now(),
         data: {
           request_id: requestId,
-          bytes: audioBuffer.length,
+          bytes: null,
           mime_type: synthesis.mimeType,
-          model: synthesis.model
+          model: synthesis.model,
+          playback_route: preferStreamingPlayback ? 'remote_stream' : 'memory_buffer'
         }
       }
     });
 
     if (!avatarWindow.isDestroyed()) {
-      avatarWindow.webContents.send('desktop:voice:play-memory', {
-        requestId,
-        audioBase64,
-        mimeType: synthesis.mimeType || 'audio/ogg'
-      });
-      emitDebug?.('chain.electron.voice.ipc.dispatched', 'electron main dispatched memory voice playback to renderer', {
-        request_id: requestId,
-        session_id: sessionId,
-        trace_id: traceId,
-        mime_type: synthesis.mimeType || 'audio/ogg',
-        base64_chars: audioBase64.length
-      });
+      if (preferStreamingPlayback) {
+        avatarWindow.webContents.send('desktop:voice:play-remote', {
+          requestId,
+          audioUrl: synthesis.audioUrl,
+          mimeType: synthesis.mimeType || 'audio/ogg'
+        });
+        emitDebug?.('chain.electron.voice.ipc.dispatched_remote', 'electron main dispatched remote voice playback to renderer', {
+          request_id: requestId,
+          session_id: sessionId,
+          trace_id: traceId,
+          mime_type: synthesis.mimeType || 'audio/ogg',
+          audio_url_host: audioUrlHost
+        });
+      } else {
+        const audioBuffer = await ttsClient.fetchAudioBuffer({
+          audioUrl: synthesis.audioUrl,
+          timeoutMs: timeoutSec * 1000
+        });
+        const audioBytes = new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength);
+        avatarWindow.webContents.send('desktop:voice:play-memory', {
+          requestId,
+          audioBytes,
+          mimeType: synthesis.mimeType || 'audio/ogg'
+        });
+        emitDebug?.('chain.electron.voice.ipc.dispatched', 'electron main dispatched memory voice playback to renderer', {
+          request_id: requestId,
+          session_id: sessionId,
+          trace_id: traceId,
+          mime_type: synthesis.mimeType || 'audio/ogg',
+          bytes: audioBytes.byteLength
+        });
+      }
       rpcServerRef?.notify({
         method: 'desktop.event',
         params: {

@@ -758,16 +758,272 @@
     }
   }
 
-  async function playVoiceFromBase64({ audioBase64, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+  function coerceAudioBytes(rawValue) {
+    if (!rawValue) {
+      return null;
+    }
+    if (rawValue instanceof Uint8Array) {
+      return rawValue;
+    }
+    if (rawValue instanceof ArrayBuffer) {
+      return new Uint8Array(rawValue);
+    }
+    if (ArrayBuffer.isView(rawValue)) {
+      return new Uint8Array(rawValue.buffer, rawValue.byteOffset, rawValue.byteLength);
+    }
+    if (Array.isArray(rawValue)) {
+      return Uint8Array.from(rawValue);
+    }
+    if (typeof rawValue === 'object') {
+      if (Array.isArray(rawValue.data)) {
+        return Uint8Array.from(rawValue.data);
+      }
+      if (Array.isArray(rawValue.bytes)) {
+        return Uint8Array.from(rawValue.bytes);
+      }
+      if (rawValue.buffer && Number.isFinite(Number(rawValue.byteLength))) {
+        const offset = Number(rawValue.byteOffset) || 0;
+        const length = Number(rawValue.byteLength);
+        try {
+          return new Uint8Array(rawValue.buffer, offset, length);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  function decodeVoiceMemoryPayload({ audioBytes = null, audioBase64 = null } = {}) {
+    const binary = coerceAudioBytes(audioBytes);
+    if (binary && binary.byteLength > 0) {
+      return {
+        bytes: binary,
+        source: 'audio_bytes'
+      };
+    }
+    const base64 = String(audioBase64 || '').trim();
+    if (!base64) {
+      return {
+        bytes: null,
+        source: 'missing'
+      };
+    }
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i += 1) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return {
+      bytes,
+      source: 'audio_base64'
+    };
+  }
+
+  async function playVoiceFromRemote({ audioUrl = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+    const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    const normalizedAudioUrl = String(audioUrl || '').trim();
+    let playbackErrorReported = false;
+    let audioUrlHost = null;
+    try {
+      audioUrlHost = new URL(normalizedAudioUrl).host || null;
+    } catch {
+      audioUrlHost = null;
+    }
+    emitRendererDebug('voice_remote.playback_enter', {
+      request_id: nextRequestId,
+      mime_type: String(mimeType || 'audio/ogg'),
+      audio_url_host: audioUrlHost
+    });
+    emitLipsyncTelemetry('playback.requested', {
+      request_id: nextRequestId,
+      bytes: 0,
+      base64_chars: 0,
+      mime_type: String(mimeType || 'audio/ogg'),
+      has_lipsync_api: !!lipsyncApi,
+      has_model: !!live2dModel
+    });
+    if (!normalizedAudioUrl) {
+      emitLipsyncTelemetry('playback.invalid_payload', {
+        request_id: nextRequestId,
+        reason: 'missing_audio_remote_url'
+      });
+      throw createRpcError(-32602, 'audioUrl is required for remote voice playback');
+    }
+
+    if (activeVoiceRequestId && activeVoiceRequestId !== nextRequestId) {
+      emitLipsyncTelemetry('playback.interrupted', {
+        request_id: activeVoiceRequestId,
+        reason: 'superseded_by_new_request'
+      });
+    }
+    stopLipsync('superseded_before_new_playback', {
+      next_request_id: nextRequestId
+    });
+    activeVoiceRequestId = nextRequestId;
+    try {
+      try {
+        systemAudio.pause();
+      } catch {
+        // ignore pause errors
+      }
+      systemAudio.currentTime = 0;
+
+      releaseCurrentVoiceObjectUrl();
+      currentVoiceObjectUrl = null;
+      try {
+        systemAudio.crossOrigin = 'anonymous';
+      } catch {
+        // ignore crossOrigin set failures
+      }
+      systemAudio.src = normalizedAudioUrl;
+      systemAudio.muted = false;
+      systemAudio.volume = 1;
+      systemAudio.playbackRate = 1;
+
+      emitLipsyncTelemetry('playback.source_ready', {
+        request_id: nextRequestId,
+        mime_type: String(mimeType || 'audio/ogg'),
+        has_audio_element: true
+      });
+      emitRendererDebug('voice_remote.source_ready', {
+        request_id: nextRequestId,
+        audio_url_host: audioUrlHost,
+        ...snapshotSystemAudioState()
+      });
+
+      // Start lipsync asynchronously so remote playback is never blocked by lipsync init.
+      void startLipsync(systemAudio).then((lipsyncStarted) => {
+        if (!lipsyncStarted) {
+          emitLipsyncTelemetry('playback.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false',
+            has_lipsync_api: !!lipsyncApi,
+            has_model: !!live2dModel
+          });
+          emitRendererDebug('voice_remote.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false'
+          });
+        } else {
+          emitRendererDebug('voice_remote.lipsync_started', {
+            request_id: nextRequestId
+          });
+        }
+      }).catch((err) => {
+        emitLipsyncTelemetry('playback.lipsync_inactive', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.lipsync_failed', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+      });
+
+      try {
+        emitRendererDebug('voice_remote.play_attempt', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+        await systemAudio.play();
+        emitLipsyncTelemetry('playback.started', {
+          request_id: nextRequestId,
+          has_audio_element: true
+        });
+        emitRendererDebug('voice_remote.playback_started', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+      } catch (err) {
+        playbackErrorReported = true;
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_play_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error'),
+          ...snapshotSystemAudioState()
+        });
+        stopLipsync('audio_play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        throw err;
+      }
+
+      const handleEnded = () => {
+        emitLipsyncTelemetry('playback.ended', {
+          request_id: nextRequestId,
+          reason: 'audio_ended'
+        });
+        stopLipsync('audio_ended', { request_id: nextRequestId });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      const handleError = () => {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_element_error'
+        });
+        stopLipsync('audio_element_error', { request_id: nextRequestId });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      systemAudio.addEventListener('ended', handleEnded);
+      systemAudio.addEventListener('error', handleError);
+    } catch (err) {
+      if (!playbackErrorReported) {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.playback_failed', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        stopLipsync('playback_pipeline_failed', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+      }
+      throw err;
+    }
+  }
+
+  async function playVoiceFromMemory({ audioBytes = null, audioBase64 = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
     const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
     let objectUrl = null;
     let playbackErrorReported = false;
+    const coarseBytes = coerceAudioBytes(audioBytes);
     emitRendererDebug('voice_memory.playback_enter', {
       request_id: nextRequestId,
       mime_type: String(mimeType || 'audio/ogg'),
+      bytes: Number(coarseBytes?.byteLength) || 0,
       base64_chars: Number(audioBase64?.length) || 0
     });
-    console.log('[lipsync] playVoiceFromBase64 called', {
+    console.log('[lipsync] playVoiceFromMemory called', {
+      hasAudioBytes: !!coarseBytes,
+      bytes: Number(coarseBytes?.byteLength) || 0,
       hasBase64: !!audioBase64,
       base64Length: audioBase64?.length,
       mimeType,
@@ -777,19 +1033,24 @@
     });
     emitLipsyncTelemetry('playback.requested', {
       request_id: nextRequestId,
+      bytes: Number(coarseBytes?.byteLength) || 0,
       base64_chars: Number(audioBase64?.length) || 0,
       mime_type: String(mimeType || 'audio/ogg'),
       has_lipsync_api: !!lipsyncApi,
       has_model: !!live2dModel
     });
 
-    const base64 = String(audioBase64 || '').trim();
-    if (!base64) {
+    const decodedPayload = decodeVoiceMemoryPayload({
+      audioBytes,
+      audioBase64
+    });
+    const bytes = decodedPayload.bytes;
+    if (!bytes || bytes.byteLength === 0) {
       emitLipsyncTelemetry('playback.invalid_payload', {
         request_id: nextRequestId,
-        reason: 'missing_audio_base64'
+        reason: 'missing_audio_memory_payload'
       });
-      throw createRpcError(-32602, 'audioBase64 is required');
+      throw createRpcError(-32602, 'audio payload is required (audioBytes or audioBase64)');
     }
 
     // Stop any existing lipsync
@@ -811,16 +1072,17 @@
       }
       systemAudio.currentTime = 0;
 
-      const binaryString = atob(base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i += 1) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      const len = bytes.byteLength;
 
       console.log('[lipsync] Audio decoded', {
+        source: decodedPayload.source,
         binaryLength: len,
         bytesLength: bytes.length
+      });
+      emitRendererDebug('voice_memory.decoded', {
+        request_id: nextRequestId,
+        source: decodedPayload.source,
+        bytes: len
       });
       emitLipsyncTelemetry('playback.decoded', {
         request_id: nextRequestId,
@@ -1849,6 +2111,7 @@
       emitRendererDebug('bootstrap.start', {
         has_bridge: true,
         has_on_voice_play_memory: typeof bridge.onVoicePlayMemory === 'function',
+        has_on_voice_play_remote: typeof bridge.onVoicePlayRemote === 'function',
         has_send_lipsync_telemetry: typeof bridge.sendLipsyncTelemetry === 'function'
       });
 
@@ -1875,12 +2138,14 @@
 
       bridge.onVoicePlayMemory?.((payload) => {
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
+        const coarseBytes = coerceAudioBytes(payload?.audioBytes);
         emitRendererDebug('voice_memory.received', {
           request_id: requestId,
           mime_type: String(payload?.mimeType || payload?.mime_type || ''),
+          bytes: Number(coarseBytes?.byteLength) || 0,
           base64_chars: Number(payload?.audioBase64?.length) || 0
         });
-        void playVoiceFromBase64(payload).catch((err) => {
+        void playVoiceFromMemory(payload).catch((err) => {
           console.error('[Renderer] voice memory playback failed', err);
           emitRendererDebug('voice_memory.failed', {
             request_id: requestId,
@@ -1894,6 +2159,35 @@
         });
       } else {
         emitRendererDebug('voice_memory.listener_registered', { ok: true });
+      }
+
+      bridge.onVoicePlayRemote?.((payload) => {
+        const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
+        emitRendererDebug('voice_remote.received', {
+          request_id: requestId,
+          mime_type: String(payload?.mimeType || payload?.mime_type || ''),
+          audio_url_host: (() => {
+            try {
+              return new URL(String(payload?.audioUrl || payload?.audio_url || '')).host || null;
+            } catch {
+              return null;
+            }
+          })()
+        });
+        void playVoiceFromRemote(payload).catch((err) => {
+          console.error('[Renderer] voice remote playback failed', err);
+          emitRendererDebug('voice_remote.failed', {
+            request_id: requestId,
+            error: err?.message || String(err || 'unknown error')
+          });
+        });
+      });
+      if (typeof bridge.onVoicePlayRemote !== 'function') {
+        emitRendererDebug('voice_remote.listener_missing', {
+          reason: 'bridge.onVoicePlayRemote is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_remote.listener_registered', { ok: true });
       }
 
       bridge.notifyReady({ ok: true });

@@ -89,5 +89,11 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.off(channel, listener);
+  },
+  onVoicePlayRemote(handler) {
+    const channel = 'desktop:voice:play-remote';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
   }
 });
