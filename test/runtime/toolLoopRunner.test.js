@@ -379,6 +379,100 @@ test('ToolLoopRunner dispatches stable tool call early when toolEarlyDispatch is
   dispatcher.stop();
 });
 
+test('ToolLoopRunner skips early dispatch until stable args satisfy schema', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor({
+    'live2d.gesture': {
+      type: 'local',
+      description: 'gesture tool',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          duration_sec: { type: 'number' },
+          queue_policy: { type: 'string' }
+        },
+        required: ['type'],
+        additionalProperties: false
+      },
+      run: async () => 'gesture-result'
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let streamStep = 0;
+  const reasoner = {
+    async decideStream({ onToolCallStable }) {
+      streamStep += 1;
+      if (streamStep === 1) {
+        onToolCallStable?.({
+          index: 0,
+          call_id: 'gesture-call-1',
+          name: 'live2d.gesture',
+          args: {}
+        });
+        await delay(10);
+        onToolCallStable?.({
+          index: 0,
+          call_id: 'gesture-call-1',
+          name: 'live2d.gesture',
+          args: {
+            type: 'greet',
+            duration_sec: 6,
+            queue_policy: 'replace'
+          }
+        });
+        await delay(20);
+        return {
+          type: 'tool',
+          tool: {
+            call_id: 'gesture-call-1',
+            name: 'live2d.gesture',
+            args: {
+              type: 'greet',
+              duration_sec: 6,
+              queue_policy: 'replace'
+            }
+          }
+        };
+      }
+      return {
+        type: 'final',
+        output: 'gesture-early-dispatch-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true,
+    toolEarlyDispatch: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-gesture-early-skip',
+    input: 'gesture with delayed args',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'gesture-early-dispatch-ok');
+  assert.equal(events.some((evt) => evt.event === 'tool.call.early_skipped' && evt.payload.reason === 'args_not_ready'), true);
+  assert.equal(events.some((evt) => evt.event === 'tool.call.early_dispatched' && evt.payload.call_id === 'gesture-call-1'), true);
+  const toolErrors = events.filter((evt) => evt.event === 'tool.error');
+  assert.equal(toolErrors.length, 0);
+
+  dispatcher.stop();
+});
+
 
 
 test('ToolLoopRunner executes multiple tool calls in one step serially', async () => {
@@ -502,6 +596,82 @@ test('ToolLoopRunner runs side_effect_level=none tools in parallel when enabled'
   assert.equal(result.state, 'DONE');
   assert.equal(result.output, 'done-parallel');
   assert.equal(Math.abs(starts.a - starts.b) < 50, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'parallel');
+  assert.equal(modeEvent.payload.chunk_width, 2);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner runs voice.tts_aliyun_vc and live2d.expression.set in parallel when metadata allows', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const executor = new ToolExecutor({
+    'voice.tts_aliyun_vc': {
+      type: 'local',
+      description: 'voice tts',
+      side_effect_level: 'none',
+      requires_lock: false,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.voice = Date.now();
+        await delay(80);
+        return 'voice-ok';
+      }
+    },
+    'live2d.expression.set': {
+      type: 'local',
+      description: 'expression set',
+      side_effect_level: 'none',
+      requires_lock: false,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.expression = Date.now();
+        await delay(80);
+        return 'expression-ok';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-voice', name: 'voice.tts_aliyun_vc', args: {} },
+            { call_id: 'call-expression', name: 'live2d.expression.set', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-voice-expression-parallel' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-voice-expression-parallel',
+    input: 'voice and expression',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-voice-expression-parallel');
+  assert.equal(Math.abs(starts.voice - starts.expression) < 50, true);
   const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
   assert.equal(modeEvent.payload.mode, 'parallel');
   assert.equal(modeEvent.payload.chunk_width, 2);

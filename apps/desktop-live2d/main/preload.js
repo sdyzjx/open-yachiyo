@@ -9,6 +9,7 @@ const CHANNELS = {
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
+  chatStreamSync: 'live2d:chat:stream-sync',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
   modelBoundsUpdate: 'live2d:model:bounds-update',
@@ -58,6 +59,11 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(CHANNELS.chatStateSync, listener);
     return () => ipcRenderer.off(CHANNELS.chatStateSync, listener);
+  },
+  onChatStreamSync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.chatStreamSync, listener);
+    return () => ipcRenderer.off(CHANNELS.chatStreamSync, listener);
   },
   onBubbleStateSync(handler) {
     const listener = (_event, payload) => handler(payload);

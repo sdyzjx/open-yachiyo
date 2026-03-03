@@ -180,8 +180,8 @@ const runner = new ToolLoopRunner({
   maxStep: 8,
   toolResultTimeoutMs: 10000,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
-  toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'serial'),
-  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', false),
+  toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
+  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', true),
   maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
 });
 

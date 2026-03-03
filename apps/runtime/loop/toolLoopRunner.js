@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const Ajv = require('ajv');
 const { RuntimeState, RuntimeStateMachine } = require('./stateMachine');
 const { publishChainEvent } = require('../bus/chainDebug');
 
@@ -308,10 +309,32 @@ class ToolLoopRunner {
 
     try {
       const reasoner = this.getReasoner();
+      const schemaAjv = new Ajv({ allErrors: true, strict: false });
+      const schemaValidatorCache = new Map();
+      const getSchemaValidator = (toolDef) => {
+        const toolName = String(toolDef?.name || '').trim();
+        if (!toolName) return null;
+        if (schemaValidatorCache.has(toolName)) {
+          return schemaValidatorCache.get(toolName);
+        }
+        const schema = toolDef?.input_schema || {
+          type: 'object',
+          properties: {},
+          additionalProperties: true
+        };
+        const validate = schemaAjv.compile(schema);
+        schemaValidatorCache.set(toolName, validate);
+        return validate;
+      };
 
       while (ctx.stepIndex < this.maxStep) {
         ctx.stepIndex += 1;
         const availableTools = this.listTools();
+        const toolDefByName = new Map(
+          (Array.isArray(availableTools) ? availableTools : [])
+            .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
+            .map((tool) => [tool.name, tool])
+        );
         publishChainEvent(this.bus, 'loop.decide.start', {
           session_id: sessionId,
           trace_id: traceId,
@@ -445,6 +468,38 @@ class ToolLoopRunner {
               markMetricIfUnset('first_tool_stable_ms');
               emit('tool_call.stable', stableCall || {});
               if (this.toolEarlyDispatch) {
+                const stableToolName = String(stableCall?.name || '').trim();
+                if (!stableToolName) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'missing_call_id_or_name',
+                    call_id: stableCall?.call_id || null,
+                    name: stableCall?.name || null
+                  });
+                  return;
+                }
+                const stableToolDef = toolDefByName.get(stableToolName) || null;
+                if (!stableToolDef) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'tool_not_found',
+                    call_id: stableCall?.call_id || null,
+                    name: stableToolName
+                  });
+                  return;
+                }
+                const validate = getSchemaValidator(stableToolDef);
+                const stableArgs = stableCall?.args && typeof stableCall.args === 'object' && !Array.isArray(stableCall.args)
+                  ? stableCall.args
+                  : {};
+                const argsReady = validate ? validate(stableArgs) : true;
+                if (!argsReady) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'args_not_ready',
+                    call_id: stableCall?.call_id || null,
+                    name: stableToolName,
+                    validation_errors: validate?.errors || []
+                  });
+                  return;
+                }
                 const earlyPromise = dispatchToolCall({
                   call_id: stableCall?.call_id || '',
                   name: stableCall?.name || '',

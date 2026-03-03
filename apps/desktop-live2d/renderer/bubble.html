@@ -19,7 +19,8 @@
 
       #bubble {
         opacity: 0;
-        transition: opacity 160ms ease;
+        transform: translateY(10px) scale(0.982);
+        transition: opacity 140ms ease-out, transform 140ms cubic-bezier(0.22, 0.86, 0.28, 1);
         position: absolute;
         left: 0;
         top: 0;
@@ -30,70 +31,86 @@
         border-radius: 16px;
         padding: 10px 14px;
         line-height: 1.45;
-        font-size: 14px;
+        font-size: 16px;
         box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-        white-space: pre-wrap;
-        word-break: break-word;
-        width: max-content;
-        max-width: 320px;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: stretch;
+        /* Fade the top 5% of the bubble into transparency. */
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0) 0%,
+          rgba(0, 0, 0, 1) 5%,
+          rgba(0, 0, 0, 1) 100%
+        );
+        mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0) 0%,
+          rgba(0, 0, 0, 1) 5%,
+          rgba(0, 0, 0, 1) 100%
+        );
+      }
+
+      #bubble-lines {
+        margin-top: 0;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 4px;
+        overflow: hidden;
       }
 
       #bubble.visible {
         opacity: 1;
+        transform: translateY(0) scale(1);
       }
 
-      #bubble.streaming::after {
-        content: '';
-        display: inline-block;
-        width: 2px;
-        height: 1em;
-        background: rgba(255, 255, 255, 0.7);
-        margin-left: 2px;
-        animation: blink 1s step-end infinite;
+      #bubble.pop-in {
+        animation: bubblePopIn 120ms cubic-bezier(0.2, 0.88, 0.2, 1);
       }
 
-      @keyframes blink {
-        0%, 50% {
-          opacity: 1;
+      .bubble-line {
+        white-space: nowrap;
+        overflow: hidden;
+        line-height: 1.45;
+        flex: 0 0 auto;
+        opacity: 1;
+        transform: translateY(0);
+        transition: opacity 110ms ease, transform 110ms ease;
+      }
+
+      .bubble-line.line-enter {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      .bubble-line.line-exit {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+
+      @keyframes bubblePopIn {
+        0% {
+          transform: translateY(10px) scale(0.972);
         }
-        51%, 100% {
-          opacity: 0;
+        70% {
+          transform: translateY(0) scale(1.006);
         }
-      }
-
-      /* Markdown styles for bubble */
-      #bubble code {
-        background: rgba(255, 255, 255, 0.15);
-        padding: 2px 4px;
-        border-radius: 3px;
-        font-family: 'Monaco', 'Menlo', monospace;
-        font-size: 12px;
-      }
-
-      #bubble strong {
-        font-weight: 600;
-      }
-
-      #bubble em {
-        font-style: italic;
-      }
-
-      #bubble a {
-        color: #7db3ff;
-        text-decoration: underline;
-      }
-
-      /* LaTeX formula styles for bubble */
-      #bubble .katex {
-        font-size: 1em;
+        100% {
+          transform: translateY(0) scale(1);
+        }
       }
     </style>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
   </head>
   <body>
-    <div id="bubble"></div>
+    <div id="bubble">
+      <div id="bubble-lines"></div>
+    </div>
     <script src="./bubble.js"></script>
   </body>
 </html>

@@ -148,8 +148,8 @@ tools:
     description: >
       Generate speech audio via Qwen3-TTS-VC (Aliyun DashScope).
       Only provide text and voiceTag. Model and voice are managed by the qwen3_tts provider config and must NOT be passed.
-    side_effect_level: write
-    requires_lock: true
+    side_effect_level: none
+    requires_lock: false
     input_schema:
       type: object
       properties:
@@ -263,8 +263,8 @@ tools:
       Set one Live2D expression by name.
       Supported expressions: smile, tear_drop, tears, narrow_eyes.
       Always set duration_sec to match current chat context.
-    side_effect_level: write
-    requires_lock: true
+    side_effect_level: none
+    requires_lock: false
     input_schema:
       type: object
       properties:
