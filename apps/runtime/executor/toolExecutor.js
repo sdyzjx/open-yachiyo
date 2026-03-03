@@ -35,7 +35,9 @@ class ToolExecutor {
           name,
           type: tool.type || 'local',
           description: tool.description || '',
-          input_schema: tool.input_schema || { type: 'object', properties: {}, additionalProperties: true }
+          input_schema: tool.input_schema || { type: 'object', properties: {}, additionalProperties: true },
+          side_effect_level: tool.side_effect_level || null,
+          requires_lock: Boolean(tool.requires_lock)
         }))
       };
       this.policy = { allow: [], deny: [], byProvider: {} };

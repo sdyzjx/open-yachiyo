@@ -134,6 +134,14 @@ function parseToolAsyncMode(rawValue, fallback = 'serial') {
   return String(fallback);
 }
 
+function parsePositiveIntEnv(name, fallback = 1) {
+  const value = Number.parseInt(process.env[name], 10);
+  if (!Number.isFinite(value) || value < 1) {
+    return Math.max(1, Number.parseInt(fallback, 10) || 1);
+  }
+  return value;
+}
+
 async function persistSessionInputImages(sessionId, inputImages = []) {
   if (!Array.isArray(inputImages) || inputImages.length === 0) return [];
 
@@ -173,7 +181,8 @@ const runner = new ToolLoopRunner({
   toolResultTimeoutMs: 10000,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', false),
   toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'serial'),
-  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', false)
+  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', false),
+  maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
 });
 
 const dispatcher = new ToolCallDispatcher({
@@ -234,6 +243,7 @@ app.get('/health', async (_, res) => {
       streaming_enabled: runner.runtimeStreamingEnabled,
       tool_async_mode: runner.toolAsyncMode,
       tool_early_dispatch: runner.toolEarlyDispatch,
+      max_parallel_tools: runner.maxParallelTools,
       tool_call_dedup_ttl_ms: dispatcher.dedupTtlMs
     },
     llm: llmManager.getConfigSummary(),

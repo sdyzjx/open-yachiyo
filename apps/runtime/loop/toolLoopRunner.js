@@ -104,6 +104,18 @@ function normalizeAsyncMode(value, fallback = 'serial') {
   return String(fallback || 'serial');
 }
 
+function normalizePositiveInt(value, fallback = 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return Math.max(1, Number.parseInt(fallback, 10) || 1);
+  return parsed;
+}
+
+function normalizeSideEffectLevel(value, fallback = 'write') {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === 'none' || raw === 'read' || raw === 'write') return raw;
+  return String(fallback || 'write');
+}
+
 class ToolLoopRunner {
   constructor({
     bus,
@@ -115,7 +127,8 @@ class ToolLoopRunner {
     toolResultTimeoutMs = 10000,
     runtimeStreamingEnabled = false,
     toolAsyncMode = 'serial',
-    toolEarlyDispatch = false
+    toolEarlyDispatch = false,
+    maxParallelTools = 3
   }) {
     this.bus = bus;
     this.getReasoner = getReasoner;
@@ -127,6 +140,7 @@ class ToolLoopRunner {
     this.runtimeStreamingEnabled = normalizeBoolean(runtimeStreamingEnabled, false);
     this.toolAsyncMode = normalizeAsyncMode(toolAsyncMode, 'serial');
     this.toolEarlyDispatch = normalizeBoolean(toolEarlyDispatch, false);
+    this.maxParallelTools = normalizePositiveInt(maxParallelTools, 3);
   }
 
   async run({ sessionId, input, inputImages = [], seedMessages = [], runtimeContext = {}, onEvent }) {
@@ -147,12 +161,20 @@ class ToolLoopRunner {
     const runtimeFlags = {
       streaming_enabled: this.runtimeStreamingEnabled,
       tool_async_mode: this.toolAsyncMode,
-      tool_early_dispatch: this.toolEarlyDispatch
+      tool_early_dispatch: this.toolEarlyDispatch,
+      max_parallel_tools: this.maxParallelTools
     };
 
     const markMetricIfUnset = (key) => {
       if (runMetrics[key] !== null && runMetrics[key] !== undefined) return;
       runMetrics[key] = Math.max(0, Date.now() - runStartedAtMs);
+    };
+
+    const markMetricAtTimeIfUnset = (key, timestampMs) => {
+      if (runMetrics[key] !== null && runMetrics[key] !== undefined) return;
+      const ts = Number(timestampMs);
+      if (!Number.isFinite(ts)) return;
+      runMetrics[key] = Math.max(0, ts - runStartedAtMs);
     };
 
     const finalizeMetrics = () => {
@@ -409,7 +431,27 @@ class ToolLoopRunner {
           ctx.messages.push(decision.assistantMessage);
         }
 
-        for (const call of toolCalls) {
+        const toolMetaByName = new Map(
+          (Array.isArray(availableTools) ? availableTools : [])
+            .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
+            .map((tool) => [tool.name, tool])
+        );
+        const canRunParallel = this.toolAsyncMode === 'parallel'
+          && toolCalls.length > 1
+          && toolCalls.every((call) => {
+            const meta = toolMetaByName.get(call.name) || {};
+            const sideEffectLevel = normalizeSideEffectLevel(meta.side_effect_level, 'write');
+            const requiresLock = normalizeBoolean(meta.requires_lock, false);
+            return sideEffectLevel === 'none' && !requiresLock;
+          });
+        const chunkWidth = canRunParallel ? Math.min(this.maxParallelTools, toolCalls.length) : 1;
+        emit('tool.dispatch.mode', {
+          mode: canRunParallel ? 'parallel' : 'serial',
+          total_calls: toolCalls.length,
+          chunk_width: chunkWidth
+        });
+
+        const dispatchAndWait = (call) => {
           const toolCallPayload = {
             trace_id: traceId,
             session_id: sessionId,
@@ -436,6 +478,16 @@ class ToolLoopRunner {
             tool_name: call.name
           });
 
+          const waitPromise = this.bus.waitFor(
+            'tool.call.result',
+            (payload) => payload.trace_id === traceId && payload.call_id === call.call_id,
+            this.toolResultTimeoutMs
+          ).then((toolResult) => ({
+            call,
+            toolResult,
+            resolved_at_ms: Date.now()
+          }));
+
           this.bus.publish('tool.call.requested', toolCallPayload);
 
           publishChainEvent(this.bus, 'loop.tool.waiting_result', {
@@ -445,45 +497,61 @@ class ToolLoopRunner {
             call_id: call.call_id,
             tool_name: call.name
           });
-          const toolResult = await this.bus.waitFor(
-            'tool.call.result',
-            (payload) => payload.trace_id === traceId && payload.call_id === call.call_id,
-            this.toolResultTimeoutMs
-          );
-          publishChainEvent(this.bus, 'loop.tool.result_received', {
-            session_id: sessionId,
-            trace_id: traceId,
-            step_index: ctx.stepIndex,
-            call_id: call.call_id,
-            tool_name: call.name,
-            ok: Boolean(toolResult?.ok),
-            code: toolResult?.code || null
-          });
 
-          if (!toolResult.ok) {
-            sm.transition(RuntimeState.ERROR);
-            emit('tool.error', { call_id: call.call_id, error: toolResult.error, name: call.name, code: toolResult.code });
-            return { output: `工具执行失败：${toolResult.error}`, traceId, state: sm.state };
+          return waitPromise;
+        };
+
+        for (let start = 0; start < toolCalls.length; start += chunkWidth) {
+          const chunk = toolCalls.slice(start, start + chunkWidth);
+          const chunkResults = await Promise.all(chunk.map((call) => dispatchAndWait(call)));
+          const earliestResolvedAtMs = chunkResults.reduce((acc, current) => {
+            const ts = Number(current?.resolved_at_ms);
+            if (!Number.isFinite(ts)) return acc;
+            if (!Number.isFinite(acc)) return ts;
+            return Math.min(acc, ts);
+          }, Number.NaN);
+          markMetricAtTimeIfUnset('first_tool_result_ms', earliestResolvedAtMs);
+
+          for (const { call, toolResult } of chunkResults) {
+            publishChainEvent(this.bus, 'loop.tool.result_received', {
+              session_id: sessionId,
+              trace_id: traceId,
+              step_index: ctx.stepIndex,
+              call_id: call.call_id,
+              tool_name: call.name,
+              ok: Boolean(toolResult?.ok),
+              code: toolResult?.code || null
+            });
+
+            if (!toolResult.ok) {
+              sm.transition(RuntimeState.ERROR);
+              emit('tool.error', { call_id: call.call_id, error: toolResult.error, name: call.name, code: toolResult.code });
+              return { output: `工具执行失败：${toolResult.error}`, traceId, state: sm.state };
+            }
+
+            if (toolResult?.dedup_hit) {
+              runMetrics.tool_dedup_hit += 1;
+            }
+
+            ctx.messages.push({
+              role: 'tool',
+              tool_call_id: call.call_id,
+              name: call.name,
+              content: String(toolResult.result)
+            });
+
+            ctx.observations.push({
+              call_id: call.call_id,
+              name: call.name,
+              result: toolResult.result
+            });
+
+            emit('tool.result', {
+              call_id: call.call_id,
+              name: call.name,
+              result: toolResult.result
+            });
           }
-
-          ctx.messages.push({
-            role: 'tool',
-            tool_call_id: call.call_id,
-            name: call.name,
-            content: String(toolResult.result)
-          });
-
-          ctx.observations.push({
-            call_id: call.call_id,
-            name: call.name,
-            result: toolResult.result
-          });
-
-          emit('tool.result', {
-            call_id: call.call_id,
-            name: call.name,
-            result: toolResult.result
-          });
         }
       }
 

@@ -40,6 +40,7 @@ tools:
     type: local
     adapter: builtin.get_time
     description: Get local time.
+    side_effect_level: none
     input_schema:
       type: object
       properties: {}
@@ -49,6 +50,7 @@ tools:
     type: local
     adapter: builtin.add
     description: Add two numbers.
+    side_effect_level: none
     input_schema:
       type: object
       properties:
@@ -61,6 +63,7 @@ tools:
     type: local
     adapter: builtin.echo
     description: Echo input text.
+    side_effect_level: none
     input_schema:
       type: object
       properties:
@@ -72,6 +75,8 @@ tools:
     type: local
     adapter: memory.write
     description: Write durable long-term memory entry.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -86,6 +91,7 @@ tools:
     type: local
     adapter: memory.search
     description: Search long-term memory by keywords.
+    side_effect_level: read
     input_schema:
       type: object
       properties:
@@ -98,6 +104,8 @@ tools:
     type: local
     adapter: fs.write_file
     description: Write content to file under workspace.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -111,6 +119,8 @@ tools:
     type: local
     adapter: shell.exec
     description: Execute safe shell command under workspace.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -123,6 +133,8 @@ tools:
     type: local
     adapter: builtin.persona_update_via_curl
     description: Update global persona profile by calling gateway persona API via curl.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -136,6 +148,8 @@ tools:
     description: >
       Generate speech audio via Qwen3-TTS-VC (Aliyun DashScope).
       Only provide text and voiceTag. Model and voice are managed by the qwen3_tts provider config and must NOT be passed.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -161,6 +175,7 @@ tools:
     type: local
     adapter: voice.asr_aliyun
     description: Transcribe audio to text with Aliyun ASR and feed into session loop.
+    side_effect_level: read
     input_schema:
       type: object
       properties:
@@ -178,6 +193,7 @@ tools:
     type: local
     adapter: voice.stats
     description: Return in-memory voice pipeline metrics snapshot.
+    side_effect_level: read
     input_schema:
       type: object
       properties: {}
@@ -187,6 +203,8 @@ tools:
     type: local
     adapter: live2d.param.set
     description: Set one Live2D model parameter by name.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -199,6 +217,8 @@ tools:
     type: local
     adapter: live2d.param.batch_set
     description: Set multiple Live2D model parameters in one call.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -223,6 +243,8 @@ tools:
       Play one Live2D motion group/index.
       Supported group/index pairs: Idle/0, Greet/0, ReactError/0.
       Always set duration_sec to match current chat context.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -241,6 +263,8 @@ tools:
       Set one Live2D expression by name.
       Supported expressions: smile, tear_drop, tears, narrow_eyes.
       Always set duration_sec to match current chat context.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -259,6 +283,8 @@ tools:
       Supported presets: happy(low|medium|high), sad(medium only), happy_soft(low|medium|high),
       happy_bright(low|medium|high), sad_soft(low|medium|high), cry(low|medium|high), shy(low|medium|high).
       Always set duration_sec to match current chat context.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -285,6 +311,8 @@ tools:
       Trigger semantic gesture preset and map to motion/expression.
       Supported gesture types: greet, think, greet_fast, think_focus, apologize, panic, calm_down.
       Always set duration_sec to match current chat context.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:
@@ -303,6 +331,8 @@ tools:
       Trigger semantic reaction preset sequence.
       Supported intents: success, error, waiting, apologize, panic, calm_down.
       Always set duration_sec to match current chat context.
+    side_effect_level: write
+    requires_lock: true
     input_schema:
       type: object
       properties:

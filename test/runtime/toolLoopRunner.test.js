@@ -7,6 +7,10 @@ const localTools = require('../../apps/runtime/executor/localTools');
 const { ToolCallDispatcher } = require('../../apps/runtime/orchestrator/toolCallDispatcher');
 const { ToolLoopRunner } = require('../../apps/runtime/loop/toolLoopRunner');
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test('ToolLoopRunner performs tool call through event bus and completes', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
@@ -97,7 +101,8 @@ test('ToolLoopRunner emits seq/runtime flags and returns metrics', async () => {
   assert.deepEqual(plan.payload.runtime_flags, {
     streaming_enabled: true,
     tool_async_mode: 'parallel',
-    tool_early_dispatch: true
+    tool_early_dispatch: true,
+    max_parallel_tools: 3
   });
   for (let i = 1; i < events.length; i += 1) {
     assert.equal(events[i].seq, events[i - 1].seq + 1);
@@ -351,6 +356,163 @@ test('ToolLoopRunner executes multiple tool calls in one step serially', async (
 
   dispatcher.stop();
 });
+
+test('ToolLoopRunner runs side_effect_level=none tools in parallel when enabled', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const ends = {};
+  const executor = new ToolExecutor({
+    slow_a: {
+      type: 'local',
+      description: 'slow A',
+      side_effect_level: 'none',
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.a = Date.now();
+        await delay(90);
+        ends.a = Date.now();
+        return 'A';
+      }
+    },
+    slow_b: {
+      type: 'local',
+      description: 'slow B',
+      side_effect_level: 'none',
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.b = Date.now();
+        await delay(90);
+        ends.b = Date.now();
+        return 'B';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-pa', name: 'slow_a', args: {} },
+            { call_id: 'call-pb', name: 'slow_b', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-parallel' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-parallel',
+    input: 'parallel',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-parallel');
+  assert.equal(Math.abs(starts.a - starts.b) < 50, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'parallel');
+  assert.equal(modeEvent.payload.chunk_width, 2);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner keeps serial execution for write tools even in parallel mode', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const ends = {};
+  const executor = new ToolExecutor({
+    write_a: {
+      type: 'local',
+      description: 'write A',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.a = Date.now();
+        await delay(70);
+        ends.a = Date.now();
+        return 'WA';
+      }
+    },
+    write_b: {
+      type: 'local',
+      description: 'write B',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.b = Date.now();
+        await delay(70);
+        ends.b = Date.now();
+        return 'WB';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-sa', name: 'write_a', args: {} },
+            { call_id: 'call-sb', name: 'write_b', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-serial-fallback' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-serial-fallback',
+    input: 'serial fallback',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-serial-fallback');
+  assert.equal(starts.b >= ends.a, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'serial');
+  assert.equal(modeEvent.payload.chunk_width, 1);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner returns error when tool dispatch fails', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
