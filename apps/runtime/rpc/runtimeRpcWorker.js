@@ -279,7 +279,8 @@ class RuntimeRpcWorker {
       session_id: sessionId,
       output: result.output,
       trace_id: result.traceId,
-      state: result.state
+      state: result.state,
+      metrics: result.metrics || null
     };
     publishChainEvent(this.bus, 'worker.runner.completed', {
       request_id: request?.id ?? null,

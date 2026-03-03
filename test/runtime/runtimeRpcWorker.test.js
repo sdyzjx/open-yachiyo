@@ -17,7 +17,16 @@ test('RuntimeRpcWorker processes runtime.run and emits rpc result', async () => 
       runtimeContextSeen = runtimeContext;
       onEvent({ event: 'plan', payload: { input } });
       onEvent({ event: 'llm.final', payload: { decision: { type: 'final', preview: 'ok:hello' } }, trace_id: 't-1', step_index: 1 });
-      return { output: `ok:${input}`, traceId: 't-1', state: 'DONE', sessionId };
+      return {
+        output: `ok:${input}`,
+        traceId: 't-1',
+        state: 'DONE',
+        sessionId,
+        metrics: {
+          final_ms: 12,
+          first_token_ms: 7
+        }
+      };
     }
   };
 
@@ -71,12 +80,15 @@ test('RuntimeRpcWorker processes runtime.run and emits rpc result', async () => 
   const response = sends.find((item) => item.id === 'rpc-1');
   assert.ok(response);
   assert.equal(response.result.output, 'ok:hello');
+  assert.deepEqual(response.result.metrics, { final_ms: 12, first_token_ms: 7 });
 
   const hasStart = sendEvents.some((evt) => evt.method === 'runtime.start');
   const hasFinal = sendEvents.some((evt) => evt.method === 'runtime.final');
+  const finalEvent = sendEvents.find((evt) => evt.method === 'runtime.final');
   const deltaEvent = sendEvents.find((evt) => evt.method === 'message.delta');
   assert.equal(hasStart, true);
   assert.equal(hasFinal, true);
+  assert.deepEqual(finalEvent.params.metrics, { final_ms: 12, first_token_ms: 7 });
   assert.ok(deltaEvent);
   assert.equal(deltaEvent.params.delta, 'ok:hello');
   assert.equal(startHookCalled, true);

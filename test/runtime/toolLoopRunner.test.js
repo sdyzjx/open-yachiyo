@@ -55,6 +55,98 @@ test('ToolLoopRunner performs tool call through event bus and completes', async 
   dispatcher.stop();
 });
 
+test('ToolLoopRunner emits seq/runtime flags and returns metrics', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decide() {
+      return {
+        type: 'final',
+        output: 'done-with-metrics'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true,
+    toolAsyncMode: 'parallel',
+    toolEarlyDispatch: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-metrics',
+    input: 'ping',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-with-metrics');
+  assert.ok(result.metrics);
+  assert.equal(Number.isFinite(result.metrics.final_ms), true);
+  const plan = events.find((evt) => evt.event === 'plan');
+  assert.ok(plan);
+  assert.deepEqual(plan.payload.runtime_flags, {
+    streaming_enabled: true,
+    tool_async_mode: 'parallel',
+    tool_early_dispatch: true
+  });
+  for (let i = 1; i < events.length; i += 1) {
+    assert.equal(events[i].seq, events[i - 1].seq + 1);
+  }
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner marks first_tool_result_ms when tool result arrives', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tool: { call_id: 'call-ms-1', name: 'add', args: { a: 1, b: 2 } }
+        };
+      }
+      return { type: 'final', output: 'ok-tool-ms' };
+    }
+  };
+
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-tool-metrics',
+    input: 'add now'
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-tool-ms');
+  assert.ok(result.metrics);
+  assert.equal(Number.isFinite(result.metrics.first_tool_result_ms), true);
+
+  dispatcher.stop();
+});
+
 
 
 test('ToolLoopRunner executes multiple tool calls in one step serially', async () => {

@@ -121,6 +121,19 @@ function decodeImageDataUrl(dataUrl) {
   return Buffer.from(base64Payload, 'base64');
 }
 
+function parseBooleanEnv(name, fallback = false) {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return Boolean(fallback);
+}
+
+function parseToolAsyncMode(rawValue, fallback = 'serial') {
+  const raw = String(rawValue || fallback).trim().toLowerCase();
+  if (raw === 'serial' || raw === 'parallel') return raw;
+  return String(fallback);
+}
+
 async function persistSessionInputImages(sessionId, inputImages = []) {
   if (!Array.isArray(inputImages) || inputImages.length === 0) return [];
 
@@ -157,7 +170,10 @@ const runner = new ToolLoopRunner({
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
   maxStep: 8,
-  toolResultTimeoutMs: 10000
+  toolResultTimeoutMs: 10000,
+  runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', false),
+  toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'serial'),
+  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', false)
 });
 
 const dispatcher = new ToolCallDispatcher({ bus, executor });
@@ -210,6 +226,11 @@ app.get('/health', async (_, res) => {
     ok: true,
     uptime_seconds: Math.floor(process.uptime()),
     queue_size: queue.size(),
+    runtime: {
+      streaming_enabled: runner.runtimeStreamingEnabled,
+      tool_async_mode: runner.toolAsyncMode,
+      tool_early_dispatch: runner.toolEarlyDispatch
+    },
     llm: llmManager.getConfigSummary(),
     tools: toolConfigManager.getSummary(),
     session_store: sessionStats,

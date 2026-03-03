@@ -90,8 +90,33 @@ function shouldHintPersonaTool(input) {
   return keywords.some((kw) => text.includes(kw));
 }
 
+function normalizeBoolean(value, fallback = false) {
+  if (value === true || value === false) return value;
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return Boolean(fallback);
+}
+
+function normalizeAsyncMode(value, fallback = 'serial') {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === 'parallel' || raw === 'serial') return raw;
+  return String(fallback || 'serial');
+}
+
 class ToolLoopRunner {
-  constructor({ bus, getReasoner, listTools, resolvePersonaContext, resolveSkillsContext, maxStep = 8, toolResultTimeoutMs = 10000 }) {
+  constructor({
+    bus,
+    getReasoner,
+    listTools,
+    resolvePersonaContext,
+    resolveSkillsContext,
+    maxStep = 8,
+    toolResultTimeoutMs = 10000,
+    runtimeStreamingEnabled = false,
+    toolAsyncMode = 'serial',
+    toolEarlyDispatch = false
+  }) {
     this.bus = bus;
     this.getReasoner = getReasoner;
     this.listTools = listTools;
@@ -99,11 +124,44 @@ class ToolLoopRunner {
     this.resolveSkillsContext = resolveSkillsContext;
     this.maxStep = maxStep;
     this.toolResultTimeoutMs = toolResultTimeoutMs;
+    this.runtimeStreamingEnabled = normalizeBoolean(runtimeStreamingEnabled, false);
+    this.toolAsyncMode = normalizeAsyncMode(toolAsyncMode, 'serial');
+    this.toolEarlyDispatch = normalizeBoolean(toolEarlyDispatch, false);
   }
 
   async run({ sessionId, input, inputImages = [], seedMessages = [], runtimeContext = {}, onEvent }) {
     const sm = new RuntimeStateMachine();
     const traceId = uuidv4();
+    const runStartedAtMs = Date.now();
+    let eventSeq = 0;
+    const runMetrics = {
+      run_started_ms: runStartedAtMs,
+      first_token_ms: null,
+      first_tool_stable_ms: null,
+      first_tool_result_ms: null,
+      final_ms: null,
+      out_of_order_events: 0,
+      tool_dedup_hit: 0,
+      tool_parse_error: 0
+    };
+    const runtimeFlags = {
+      streaming_enabled: this.runtimeStreamingEnabled,
+      tool_async_mode: this.toolAsyncMode,
+      tool_early_dispatch: this.toolEarlyDispatch
+    };
+
+    const markMetricIfUnset = (key) => {
+      if (runMetrics[key] !== null && runMetrics[key] !== undefined) return;
+      runMetrics[key] = Math.max(0, Date.now() - runStartedAtMs);
+    };
+
+    const finalizeMetrics = () => {
+      if (runMetrics.final_ms === null || runMetrics.final_ms === undefined) {
+        runMetrics.final_ms = Math.max(0, Date.now() - runStartedAtMs);
+      }
+      return { ...runMetrics };
+    };
+
     const priorMessages = Array.isArray(seedMessages)
       ? seedMessages.filter((msg) => (
         msg
@@ -173,11 +231,19 @@ class ToolLoopRunner {
     };
 
     const emit = (event, payload = {}) => {
+      if (event === 'llm.final' && payload?.decision?.type === 'final') {
+        markMetricIfUnset('first_token_ms');
+      }
+      if (event === 'tool.result') {
+        markMetricIfUnset('first_tool_result_ms');
+      }
+
       const envelope = {
         trace_id: traceId,
         session_id: sessionId,
         task_id: null,
         step_index: ctx.stepIndex,
+        seq: ++eventSeq,
         event,
         source: 'runtime',
         latency_budget_ms: 1200,
@@ -211,7 +277,8 @@ class ToolLoopRunner {
       context_messages: priorMessages.length,
       persona_mode: personaContext?.mode || null,
       skills_selected: skillsContext?.selected?.length || 0,
-      skills_clipped_by: skillsContext?.clippedBy || null
+      skills_clipped_by: skillsContext?.clippedBy || null,
+      runtime_flags: runtimeFlags
     });
 
     try {
@@ -252,8 +319,9 @@ class ToolLoopRunner {
             step_index: ctx.stepIndex,
             state: sm.state
           });
-          emit('done', { output: decision.output, state: sm.state });
-          return { output: decision.output, traceId, state: sm.state };
+          const metrics = finalizeMetrics();
+          emit('done', { output: decision.output, state: sm.state, metrics });
+          return { output: decision.output, traceId, state: sm.state, metrics };
         }
 
         const toolCalls = normalizeToolCalls(decision);
@@ -368,8 +436,9 @@ class ToolLoopRunner {
         trace_id: traceId,
         max_step: this.maxStep
       });
-      emit('done', { output: fallback, state: sm.state });
-      return { output: fallback, traceId, state: sm.state };
+      const metrics = finalizeMetrics();
+      emit('done', { output: fallback, state: sm.state, metrics });
+      return { output: fallback, traceId, state: sm.state, metrics };
     } catch (err) {
       sm.transition(RuntimeState.ERROR);
       publishChainEvent(this.bus, 'loop.error', {
@@ -378,7 +447,8 @@ class ToolLoopRunner {
         error: err?.message || String(err)
       });
       emit('tool.error', { error: err.message || String(err) });
-      return { output: `运行错误：${err.message || String(err)}`, traceId, state: sm.state };
+      const metrics = finalizeMetrics();
+      return { output: `运行错误：${err.message || String(err)}`, traceId, state: sm.state, metrics };
     } finally {
       passthroughUnsubs.forEach((unsub) => unsub());
     }
