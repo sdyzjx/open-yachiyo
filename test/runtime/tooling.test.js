@@ -25,6 +25,19 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
 });
 
+test('ToolRegistry keeps scheduling metadata from config', () => {
+  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
+  const config = store.load();
+  const registry = new ToolRegistry({ config });
+  const tools = registry.list();
+
+  const getTime = tools.find((tool) => tool.name === 'get_time');
+  const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
+
+  assert.equal(getTime?.side_effect_level, 'none');
+  assert.equal(Boolean(live2dGesture?.requires_lock), true);
+});
+
 test('ToolExecutor rejects invalid args by schema', async () => {
   const executor = buildExecutor();
   const result = await executor.execute({ name: 'add', args: { a: 'x', b: 1 } });

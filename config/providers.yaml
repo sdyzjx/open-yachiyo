@@ -19,5 +19,8 @@ providers:
     type: tts_dashscope
     tts_model: qwen3-tts-vc-2026-01-22
     tts_voice: qwen-tts-vc-yachiyo-voice-20260224022238839-5679
+    # Optional realtime defaults for desktop-live2d realtime transport.
+    tts_realtime_model: qwen3-tts-vc-realtime-2026-01-15
+    tts_realtime_voice: Cherry
     base_url: https://dashscope.aliyuncs.com/api/v1
     api_key_env: DASHSCOPE_API_KEY

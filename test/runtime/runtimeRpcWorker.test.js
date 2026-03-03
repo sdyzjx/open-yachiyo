@@ -17,7 +17,16 @@ test('RuntimeRpcWorker processes runtime.run and emits rpc result', async () => 
       runtimeContextSeen = runtimeContext;
       onEvent({ event: 'plan', payload: { input } });
       onEvent({ event: 'llm.final', payload: { decision: { type: 'final', preview: 'ok:hello' } }, trace_id: 't-1', step_index: 1 });
-      return { output: `ok:${input}`, traceId: 't-1', state: 'DONE', sessionId };
+      return {
+        output: `ok:${input}`,
+        traceId: 't-1',
+        state: 'DONE',
+        sessionId,
+        metrics: {
+          final_ms: 12,
+          first_token_ms: 7
+        }
+      };
     }
   };
 
@@ -71,12 +80,15 @@ test('RuntimeRpcWorker processes runtime.run and emits rpc result', async () => 
   const response = sends.find((item) => item.id === 'rpc-1');
   assert.ok(response);
   assert.equal(response.result.output, 'ok:hello');
+  assert.deepEqual(response.result.metrics, { final_ms: 12, first_token_ms: 7 });
 
   const hasStart = sendEvents.some((evt) => evt.method === 'runtime.start');
   const hasFinal = sendEvents.some((evt) => evt.method === 'runtime.final');
+  const finalEvent = sendEvents.find((evt) => evt.method === 'runtime.final');
   const deltaEvent = sendEvents.find((evt) => evt.method === 'message.delta');
   assert.equal(hasStart, true);
   assert.equal(hasFinal, true);
+  assert.deepEqual(finalEvent.params.metrics, { final_ms: 12, first_token_ms: 7 });
   assert.ok(deltaEvent);
   assert.equal(deltaEvent.params.delta, 'ok:hello');
   assert.equal(startHookCalled, true);
@@ -138,6 +150,103 @@ test('RuntimeRpcWorker does not emit message.delta for non-final llm decisions',
   await new Promise((resolve) => setTimeout(resolve, 60));
   const deltaEvents = sendEvents.filter((evt) => evt.method === 'message.delta');
   assert.equal(deltaEvents.length, 0);
+
+  worker.stop();
+});
+
+test('RuntimeRpcWorker forwards llm.stream.delta and skips duplicated streamed llm.final delta', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+
+  const runner = {
+    async run({ onEvent }) {
+      onEvent({ event: 'llm.stream.delta', payload: { delta: '你' }, trace_id: 't-stream-1', step_index: 1 });
+      onEvent({ event: 'llm.stream.delta', payload: { delta: '好' }, trace_id: 't-stream-1', step_index: 1 });
+      onEvent({
+        event: 'llm.final',
+        payload: { streamed: true, decision: { type: 'final', preview: '你好' } },
+        trace_id: 't-stream-1',
+        step_index: 1
+      });
+      return { output: '你好', traceId: 't-stream-1', state: 'DONE' };
+    }
+  };
+
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+
+  const sendEvents = [];
+  await queue.submit({
+    jsonrpc: '2.0',
+    id: 'stream-evt-1',
+    method: 'runtime.run',
+    params: { input: 'stream it' }
+  }, {
+    send: () => {},
+    sendEvent: (payload) => sendEvents.push(payload)
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const deltaEvents = sendEvents.filter((evt) => evt.method === 'message.delta');
+  assert.equal(deltaEvents.length, 2);
+  assert.deepEqual(deltaEvents.map((evt) => evt.params.delta), ['你', '好']);
+
+  worker.stop();
+});
+
+test('RuntimeRpcWorker forwards tool_call runtime events as tool_call.event', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+
+  const runner = {
+    async run({ onEvent }) {
+      onEvent({
+        event: 'tool_call.delta',
+        payload: { call_id: 'call-1', name: 'add', args_raw: '{"a":1' },
+        trace_id: 't-tool-call-1',
+        step_index: 1,
+        seq: 3
+      });
+      onEvent({
+        event: 'tool_call.stable',
+        payload: { call_id: 'call-1', name: 'add', args: { a: 1, b: 2 } },
+        trace_id: 't-tool-call-1',
+        step_index: 1,
+        seq: 4
+      });
+      onEvent({
+        event: 'tool_call.parse_error',
+        payload: { call_id: 'call-2', parse_reason: 'invalid json' },
+        trace_id: 't-tool-call-1',
+        step_index: 1,
+        seq: 5
+      });
+      return { output: 'ok:tool-events', traceId: 't-tool-call-1', state: 'DONE' };
+    }
+  };
+
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+
+  const sendEvents = [];
+  await queue.submit({
+    jsonrpc: '2.0',
+    id: 'tool-call-evt-1',
+    method: 'runtime.run',
+    params: { input: 'emit tool events' }
+  }, {
+    send: () => {},
+    sendEvent: (payload) => sendEvents.push(payload)
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const toolCallEvents = sendEvents.filter((evt) => evt.method === 'tool_call.event');
+  assert.equal(toolCallEvents.length, 3);
+  assert.deepEqual(toolCallEvents.map((evt) => evt.params.type), [
+    'tool_call.delta',
+    'tool_call.stable',
+    'tool_call.parse_error'
+  ]);
 
   worker.stop();
 });

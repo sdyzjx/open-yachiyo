@@ -10,6 +10,7 @@ const { IpcRpcBridge } = require('./ipcBridge');
 const { GatewayRuntimeClient, createDesktopSessionId } = require('./gatewayRuntimeClient');
 const { listDesktopTools, resolveToolInvoke } = require('./toolRegistry');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
+const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -25,6 +26,7 @@ const CHANNELS = Object.freeze({
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
+  chatStreamSync: 'live2d:chat:stream-sync',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
   modelBoundsUpdate: 'live2d:model:bounds-update',
@@ -38,6 +40,18 @@ const CHANNELS = Object.freeze({
 });
 
 const AVATAR_WINDOW_MAX_OFFSCREEN_RATIO = 0.8;
+const BUBBLE_DEFAULT_LINE_DURATION_MS = 2000;
+const BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS = 300;
+const BUBBLE_DEFAULT_WIDTH = 560;
+const BUBBLE_DEFAULT_HEIGHT = 236;
+const BUBBLE_MIN_WIDTH = 240;
+const BUBBLE_MIN_HEIGHT = 120;
+const BUBBLE_FONT_SIZE_PX = 16;
+const BUBBLE_LINE_HEIGHT_RATIO = 1.45;
+const BUBBLE_PADDING_HORIZONTAL_PX = 14;
+const BUBBLE_PADDING_VERTICAL_PX = 10;
+const BUBBLE_MIN_TEXT_UNITS_PER_LINE = 12;
+const BUBBLE_UNFILLED_DRAIN_DELAY_MS = 3000;
 
 function normalizeLive2dPresetConfig(config = {}) {
   const safe = config && typeof config === 'object' && !Array.isArray(config) ? config : {};
@@ -1084,6 +1098,8 @@ async function forwardLive2dActionEvent({
 async function processVoiceRequestedOnDesktop({
   eventPayload,
   ttsClient,
+  realtimeTtsClient,
+  voiceConfig,
   avatarWindow,
   rpcServerRef,
   emitDebug = null,
@@ -1098,6 +1114,10 @@ async function processVoiceRequestedOnDesktop({
   const voice = String(eventPayload?.voiceId || '');
   const sessionId = String(eventPayload?.session_id || '').trim() || null;
   const traceId = String(eventPayload?.trace_id || '').trim() || null;
+  const voiceTransport = String(voiceConfig?.transport || 'non_streaming').trim().toLowerCase();
+  const fallbackOnRealtimeError = voiceConfig?.fallbackOnRealtimeError !== false;
+  const realtimePrebufferMs = Math.max(40, Number(voiceConfig?.realtime?.prebufferMs) || 160);
+  const realtimeIdleTimeoutMs = Math.max(1000, Number(voiceConfig?.realtime?.idleTimeoutMs) || 8000);
 
   emitDebug?.('chain.electron.voice.requested', 'electron main received voice.requested', {
     request_id: requestId,
@@ -1106,7 +1126,9 @@ async function processVoiceRequestedOnDesktop({
     text_chars: text.length,
     timeout_sec: timeoutSec,
     model: model || null,
-    voice_id: voice || null
+    voice_id: voice || null,
+    transport: voiceTransport,
+    fallback_on_realtime_error: fallbackOnRealtimeError
   });
 
   rpcServerRef?.notify({
@@ -1119,6 +1141,169 @@ async function processVoiceRequestedOnDesktop({
   });
 
   try {
+    if (voiceTransport === 'realtime') {
+      if (!realtimeTtsClient || typeof realtimeTtsClient.streamSynthesis !== 'function') {
+        emitDebug?.(
+          'chain.electron.voice.realtime.unavailable',
+          'realtime transport requested but realtime client is unavailable, fallback to non-streaming',
+          {
+            request_id: requestId,
+            session_id: sessionId,
+            trace_id: traceId
+          }
+        );
+      } else {
+        const realtimeTimeoutMs = Math.max(8000, Math.min(timeoutSec * 1000, 60000));
+        emitDebug?.(
+          'chain.electron.voice.realtime.stream_started',
+          'realtime transport stream started',
+          {
+            request_id: requestId,
+            session_id: sessionId,
+            trace_id: traceId,
+            requested_model: model || null,
+            effective_model_source: 'provider_tts_realtime_model',
+            timeout_ms: realtimeTimeoutMs,
+            prebuffer_ms: realtimePrebufferMs,
+            idle_timeout_ms: realtimeIdleTimeoutMs
+          }
+        );
+        try {
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-start', {
+              requestId,
+              sampleRate: 24000,
+              mimeType: 'audio/pcm',
+              prebufferMs: realtimePrebufferMs,
+              idleTimeoutMs: realtimeIdleTimeoutMs
+            });
+            rpcServerRef?.notify({
+              method: 'desktop.event',
+              params: {
+                type: 'voice.playback.started',
+                timestamp: Date.now(),
+                data: { request_id: requestId }
+              }
+            });
+          }
+
+          const result = await realtimeTtsClient.streamSynthesis({
+            text,
+            voice,
+            timeoutMs: realtimeTimeoutMs,
+            onEvent: (event) => {
+              if (event.type === 'chunk') {
+                const chunkIndex = Number(event.chunk_index || 0);
+                if (!avatarWindow.isDestroyed()) {
+                  avatarWindow.webContents.send('desktop:voice:stream-chunk', {
+                    requestId,
+                    seq: chunkIndex,
+                    audioBase64: String(event.audio_base64 || ''),
+                    audioBytes: Number(event.audio_bytes || 0),
+                    totalAudioBytes: Number(event.total_audio_bytes || 0)
+                  });
+                }
+                if (chunkIndex <= 3 || chunkIndex % 10 === 0) {
+                  emitDebug?.(
+                    'chain.electron.voice.realtime.chunk',
+                    'realtime transport chunk dispatched to renderer',
+                    {
+                      request_id: requestId,
+                      session_id: sessionId,
+                      trace_id: traceId,
+                      chunk_index: chunkIndex,
+                      audio_bytes: Number(event.audio_bytes || 0),
+                      total_audio_bytes: Number(event.total_audio_bytes || 0)
+                    }
+                  );
+                }
+                return;
+              }
+              emitDebug?.(
+                `chain.electron.voice.realtime.${event.type}`,
+                'realtime transport event',
+                {
+                  request_id: requestId,
+                  session_id: sessionId,
+                  trace_id: traceId,
+                  ...event
+                }
+              );
+            }
+          });
+
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-end', {
+              requestId,
+              reason: 'completed'
+            });
+          }
+
+          emitDebug?.(
+            'chain.electron.voice.realtime.stream_completed',
+            'realtime transport stream completed',
+            {
+              request_id: requestId,
+              session_id: sessionId,
+              trace_id: traceId,
+              result
+            }
+          );
+          rpcServerRef?.notify({
+            method: 'desktop.event',
+            params: {
+              type: 'voice.synthesis.completed',
+              timestamp: Date.now(),
+              data: {
+                request_id: requestId,
+                bytes: Number(result?.totalAudioBytes) || null,
+                mime_type: 'audio/pcm',
+                model: result?.model || null,
+                playback_route: 'realtime_stream'
+              }
+            }
+          });
+          return;
+        } catch (err) {
+          const code = String(err?.code || 'TTS_REALTIME_FAILED');
+          const errorText = String(err?.message || 'unknown realtime error');
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-error', {
+              requestId,
+              code,
+              error: errorText
+            });
+          }
+          emitDebug?.(
+            'chain.electron.voice.realtime.stream_failed',
+            'realtime transport stream failed',
+            {
+              request_id: requestId,
+              session_id: sessionId,
+              trace_id: traceId,
+              code,
+              error: errorText
+            }
+          );
+          if (!fallbackOnRealtimeError) {
+            rpcServerRef?.notify({
+              method: 'desktop.event',
+              params: {
+                type: 'voice.synthesis.failed',
+                timestamp: Date.now(),
+                data: {
+                  request_id: requestId,
+                  code,
+                  error: errorText
+                }
+              }
+            });
+            return;
+          }
+        }
+      }
+    }
+
     const preferStreamingPlayback = String(process.env.DESKTOP_VOICE_STREAMING_PLAYBACK || 'true')
       .trim()
       .toLowerCase() !== 'false';
@@ -1297,6 +1482,14 @@ async function startDesktopSuite({
     initialSizeOverride: persistedWindowState
   });
   const avatarWindowBounds = avatarWindow.getBounds();
+  const bubbleUiConfig = config.uiConfig?.chat?.bubble || {};
+  const bubbleStreamConfig = bubbleUiConfig.stream || {};
+  const bubbleRuntimeConfig = {
+    width: Math.max(BUBBLE_MIN_WIDTH, toPositiveInt(bubbleUiConfig.width, BUBBLE_DEFAULT_WIDTH)),
+    height: Math.max(BUBBLE_MIN_HEIGHT, toPositiveInt(bubbleUiConfig.height, BUBBLE_DEFAULT_HEIGHT)),
+    lineDurationMs: Math.max(400, toPositiveInt(bubbleStreamConfig.lineDurationMs, BUBBLE_DEFAULT_LINE_DURATION_MS)),
+    launchIntervalMs: Math.max(80, toPositiveInt(bubbleStreamConfig.launchIntervalMs, BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS))
+  };
 
   const chatWindow = createChatWindow({
     BrowserWindow,
@@ -1309,7 +1502,9 @@ async function startDesktopSuite({
     BrowserWindow,
     preloadPath: path.join(__dirname, 'preload.js'),
     avatarBounds: avatarWindowBounds,
-    display
+    display,
+    bubbleWidth: bubbleRuntimeConfig.width,
+    bubbleHeight: bubbleRuntimeConfig.height
   });
   await chatWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
   await bubbleWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
@@ -1325,8 +1520,11 @@ async function startDesktopSuite({
   const bubbleState = {
     visible: false,
     text: '',
-    width: 320,
-    height: 160
+    lines: [],
+    streaming: false,
+    lineCapacity: 1,
+    width: bubbleRuntimeConfig.width,
+    height: bubbleRuntimeConfig.height
   };
   let bubbleHideTimer = null;
   const fitWindowConfig = {
@@ -1357,13 +1555,23 @@ async function startDesktopSuite({
     chatWindow.webContents.send(CHANNELS.chatStateSync, buildChatStateSnapshot());
   }
 
+  function syncChatStreamToRenderer(payload = {}) {
+    if (chatWindow.isDestroyed()) {
+      return;
+    }
+    chatWindow.webContents.send(CHANNELS.chatStreamSync, payload);
+  }
+
   function syncBubbleStateToRenderer() {
     if (bubbleWindow.isDestroyed()) {
       return;
     }
     bubbleWindow.webContents.send(CHANNELS.bubbleStateSync, {
       visible: bubbleState.visible,
-      text: bubbleState.text
+      text: bubbleState.text,
+      lines: bubbleState.lines,
+      streaming: bubbleState.streaming,
+      line_capacity: Math.max(1, Number(bubbleState.lineCapacity) || 1)
     });
   }
 
@@ -1543,107 +1751,63 @@ async function startDesktopSuite({
     }
     bubbleState.visible = false;
     bubbleState.text = '';
+    bubbleState.lines = [];
     bubbleState.streaming = false;
+    bubbleState.lineCapacity = 1;
     syncBubbleStateToRenderer();
     if (!bubbleWindow.isDestroyed()) {
       bubbleWindow.hide();
     }
   }
 
-  // Streaming state for bubble
-  let streamingState = {
-    active: false,
-    sessionId: null,
-    traceId: null,
-    accumulatedText: '',
-    lastUpdateTime: 0
-  };
-  let bubbleStreamingThrottle = null;
-
-  function updateBubbleStreaming(delta) {
-    const currentSessionId = streamingState.sessionId;
-    const currentTraceId = streamingState.traceId;
-
-    if (!streamingState.active) {
-      streamingState.active = true;
-      streamingState.accumulatedText = '';
-      emitDesktopDebug('chain.electron.bubble.streaming_started', 'bubble streaming started', {
-        session_id: currentSessionId,
-        trace_id: currentTraceId
-      });
-    }
-
-    streamingState.accumulatedText += delta;
-    streamingState.lastUpdateTime = Date.now();
-
-    // Throttle updates to avoid excessive IPC
-    if (bubbleStreamingThrottle) {
-      clearTimeout(bubbleStreamingThrottle);
-    }
-
-    bubbleStreamingThrottle = setTimeout(() => {
-      bubbleStreamingThrottle = null;
-      showBubble({
-        text: streamingState.accumulatedText,
-        durationMs: 30000, // Keep visible during streaming
-        streaming: true
-      });
-      emitDesktopDebug('chain.electron.bubble.streaming_update', 'bubble streaming update', {
-        session_id: currentSessionId,
-        trace_id: currentTraceId,
-        accumulated_chars: streamingState.accumulatedText.length
-      });
-    }, 50); // 50ms throttle
-  }
-
-  function finishBubbleStreaming(finalText) {
-    if (bubbleStreamingThrottle) {
-      clearTimeout(bubbleStreamingThrottle);
-      bubbleStreamingThrottle = null;
-    }
-
-    const currentSessionId = streamingState.sessionId;
-    const currentTraceId = streamingState.traceId;
-
-    streamingState.active = false;
-    const accumulatedChars = streamingState.accumulatedText.length;
-    streamingState.accumulatedText = '';
-
-    showBubble({
-      text: finalText,
-      durationMs: 5000,
-      streaming: false
-    });
-
-    emitDesktopDebug('chain.electron.bubble.streaming_finished', 'bubble streaming finished', {
-      session_id: currentSessionId,
-      trace_id: currentTraceId,
-      accumulated_chars: accumulatedChars,
-      final_chars: finalText.length
-    });
-  }
-
   function showBubble(params) {
-    const text = String(params?.text || '').trim();
-    if (!text) {
+    const inputLines = Array.isArray(params?.lines)
+      ? params.lines
+          .map((item) => {
+            if (item && typeof item === 'object' && !Array.isArray(item)) {
+              return {
+                id: String(item.id || ''),
+                text: String(item.text || '').trim()
+              };
+            }
+            return {
+              id: '',
+              text: String(item || '').trim()
+            };
+          })
+          .filter((item) => item.text)
+      : [];
+    const text = inputLines.length > 0
+      ? inputLines.map((item) => item.text).join('\n')
+      : String(params?.text || '').trim();
+    const currentBounds = !bubbleWindow.isDestroyed() ? bubbleWindow.getBounds() : null;
+    bubbleState.width = Math.max(
+      BUBBLE_MIN_WIDTH,
+      Number(currentBounds?.width) || Number(bubbleState.width) || bubbleRuntimeConfig.width
+    );
+    bubbleState.height = Math.max(
+      BUBBLE_MIN_HEIGHT,
+      Number(currentBounds?.height) || Number(bubbleState.height) || bubbleRuntimeConfig.height
+    );
+    const maxVisibleLines = getBubbleVisibleLineCapacity();
+    const normalizedLines = inputLines.length > 0
+      ? inputLines.slice(0, maxVisibleLines)
+      : buildBubbleTextLines(text, { maxLines: maxVisibleLines }).map((line, index) => ({
+        id: `bubble-line-${index + 1}`,
+        text: line
+      }));
+    if (!text && inputLines.length === 0) {
       return { ok: false };
     }
     const durationMs = Number.isFinite(Number(params?.durationMs))
       ? Math.max(500, Math.min(30000, Number(params.durationMs)))
       : 5000;
     const streaming = Boolean(params?.streaming);
-
     bubbleState.visible = true;
     bubbleState.text = text;
+    bubbleState.lines = normalizedLines;
     bubbleState.streaming = streaming;
-    const roughLines = Math.max(
-      1,
-      text.split('\n').length + Math.floor(text.length / 20)
-    );
-    const workArea = resolveAvatarDisplay(avatarWindow.getBounds())?.workArea;
-    const maxBubbleHeight = Math.max(44, (Number(workArea?.height) || 1000) - 32);
-    bubbleState.width = 320;
-    bubbleState.height = clamp(44 + roughLines * 24, 60, maxBubbleHeight);
+    bubbleState.lineCapacity = maxVisibleLines;
     updateBubbleWindowBounds();
     syncBubbleStateToRenderer();
     bubbleWindow.showInactive();
@@ -1660,6 +1824,496 @@ async function startDesktopSuite({
     }
 
     return { ok: true, expiresAt: Date.now() + durationMs, streaming };
+  }
+
+  // Streaming state for bubble (multi-slot parallel sentence playback)
+  let streamingState = {
+    active: false,
+    sessionId: null,
+    traceId: null,
+    receivedText: '',
+    bufferedText: '',
+    sentenceQueue: [],
+    visibleItems: [],
+    lastUpdateTime: 0,
+    lastLaunchAtMs: 0,
+    avgLaunchIntervalMs: 0,
+    launchTimer: null,
+    drainTimer: null,
+    drainDelayTimer: null,
+    drainDelayApplied: false,
+    everFilledCapacity: false,
+    streamEnded: false,
+    displayedSentences: 0,
+    nextSentenceId: 1
+  };
+
+  function getBubbleVisibleLineCapacity() {
+    const totalHeight = Math.max(BUBBLE_MIN_HEIGHT, Number(bubbleState.height) || bubbleRuntimeConfig.height);
+    const usableHeight = Math.max(1, totalHeight - (BUBBLE_PADDING_VERTICAL_PX * 2));
+    const lineHeightPx = BUBBLE_FONT_SIZE_PX * BUBBLE_LINE_HEIGHT_RATIO;
+    return Math.max(1, Math.floor(usableHeight / Math.max(1, lineHeightPx)));
+  }
+
+  function getBubbleTextUnitsPerLine() {
+    const totalWidth = Math.max(BUBBLE_MIN_WIDTH, Number(bubbleState.width) || bubbleRuntimeConfig.width);
+    const usableWidth = Math.max(1, totalWidth - (BUBBLE_PADDING_HORIZONTAL_PX * 2));
+    const unitPx = 8;
+    return Math.max(BUBBLE_MIN_TEXT_UNITS_PER_LINE, Math.floor(usableWidth / unitPx));
+  }
+
+  function toDisplayUnits(char) {
+    const codePoint = String(char || '').codePointAt(0) || 0;
+    const isAscii = codePoint > 0 && codePoint <= 0x7f;
+    return isAscii ? 1 : 2;
+  }
+
+  function splitCompletedSentences(text, { flushAll = false } = {}) {
+    const source = String(text || '');
+    if (!source) {
+      return { sentences: [], rest: '' };
+    }
+
+    const sentences = [];
+    let start = 0;
+    const isTerminal = (char) => /[。！？!?；;\n]/.test(char);
+    const isTrailing = (char) => /["'”’）】》」』\s]/.test(char);
+
+    for (let i = 0; i < source.length; i += 1) {
+      const current = source[i];
+      if (!isTerminal(current)) {
+        continue;
+      }
+
+      let end = i + 1;
+      while (end < source.length && isTrailing(source[end])) {
+        end += 1;
+      }
+      const sentence = source.slice(start, end).trim();
+      if (sentence) {
+        sentences.push(sentence);
+      }
+      start = end;
+      i = end - 1;
+    }
+
+    let rest = source.slice(start);
+    if (flushAll) {
+      const tail = rest.trim();
+      if (tail) {
+        sentences.push(tail);
+      }
+      rest = '';
+    }
+
+    return { sentences, rest };
+  }
+
+  function chunkSentenceByLength(sentence, maxUnits = getBubbleTextUnitsPerLine()) {
+    const normalized = String(sentence || '').trim();
+    if (!normalized) {
+      return [];
+    }
+    const chars = Array.from(normalized);
+    if (chars.length === 0) {
+      return [];
+    }
+
+    const safeMaxUnits = Math.max(BUBBLE_MIN_TEXT_UNITS_PER_LINE, Number(maxUnits) || BUBBLE_MIN_TEXT_UNITS_PER_LINE);
+    let currentUnits = 0;
+    let currentChunk = '';
+    const chunks = [];
+
+    for (const char of chars) {
+      const units = toDisplayUnits(char);
+      if (currentChunk && currentUnits + units > safeMaxUnits) {
+        const trimmed = currentChunk.trim();
+        if (trimmed) {
+          chunks.push(trimmed);
+        }
+        currentChunk = char;
+        currentUnits = units;
+        continue;
+      }
+      currentChunk += char;
+      currentUnits += units;
+    }
+
+    const tail = currentChunk.trim();
+    if (tail) {
+      chunks.push(tail);
+    }
+
+    if (chunks.length === 0) {
+      return [normalized];
+    }
+    return chunks;
+  }
+
+  function buildBubbleTextLines(text, { maxLines = getBubbleVisibleLineCapacity() } = {}) {
+    const source = String(text || '').replace(/\r/g, '').trim();
+    if (!source) {
+      return [];
+    }
+    const safeMaxLines = Math.max(1, Number(maxLines) || 1);
+    const maxUnits = getBubbleTextUnitsPerLine();
+    const lines = [];
+    for (const segment of source.split('\n')) {
+      const chunks = chunkSentenceByLength(segment, maxUnits);
+      if (chunks.length > 0) {
+        lines.push(...chunks);
+      }
+      if (lines.length >= safeMaxLines) {
+        break;
+      }
+    }
+    return lines.slice(0, safeMaxLines);
+  }
+
+  function enqueueStreamSentences(sentences = []) {
+    const maxUnits = getBubbleTextUnitsPerLine();
+    for (const sentence of sentences) {
+      const chunks = chunkSentenceByLength(sentence, maxUnits);
+      if (chunks.length > 0) {
+        streamingState.sentenceQueue.push(...chunks);
+      }
+    }
+  }
+
+  function renderStreamingBubble() {
+    if (!streamingState.active) {
+      return;
+    }
+    const lines = streamingState.visibleItems
+      .map((item) => ({
+        id: item.id,
+        text: item.text
+      }))
+      .filter((item) => item.text);
+    if (lines.length === 0) {
+      hideBubbleWindow();
+      return;
+    }
+    showBubble({
+      lines,
+      durationMs: 30000,
+      streaming: true
+    });
+  }
+
+  function finishBubbleStreamingIfDone(reason = 'completed') {
+    if (!streamingState.active) {
+      return;
+    }
+    if (streamingState.sentenceQueue.length > 0 || streamingState.visibleItems.length > 0) {
+      return;
+    }
+    if (!streamingState.streamEnded) {
+      return;
+    }
+
+    const payload = {
+      session_id: streamingState.sessionId,
+      trace_id: streamingState.traceId,
+      reason,
+      accumulated_chars: streamingState.receivedText.length,
+      displayed_sentences: streamingState.displayedSentences
+    };
+
+    if (streamingState.launchTimer) {
+      clearInterval(streamingState.launchTimer);
+      streamingState.launchTimer = null;
+    }
+    if (streamingState.drainTimer) {
+      clearInterval(streamingState.drainTimer);
+      streamingState.drainTimer = null;
+    }
+    if (streamingState.drainDelayTimer) {
+      clearTimeout(streamingState.drainDelayTimer);
+      streamingState.drainDelayTimer = null;
+    }
+
+    streamingState.active = false;
+    streamingState.receivedText = '';
+    streamingState.bufferedText = '';
+    streamingState.sentenceQueue = [];
+    streamingState.visibleItems = [];
+    streamingState.lastUpdateTime = 0;
+    streamingState.lastLaunchAtMs = 0;
+    streamingState.avgLaunchIntervalMs = 0;
+    streamingState.drainDelayApplied = false;
+    streamingState.everFilledCapacity = false;
+    streamingState.streamEnded = false;
+    streamingState.displayedSentences = 0;
+    streamingState.nextSentenceId = 1;
+    hideBubbleWindow();
+
+    emitDesktopDebug('chain.electron.bubble.streaming_finished', 'bubble streaming finished', payload);
+  }
+
+  function ensureStreamingDrainTimer() {
+    if (!streamingState.active || !streamingState.streamEnded) {
+      return;
+    }
+    if (streamingState.sentenceQueue.length > 0 || streamingState.visibleItems.length === 0) {
+      finishBubbleStreamingIfDone('drain_ready_check');
+      return;
+    }
+    if (streamingState.drainTimer) {
+      return;
+    }
+    const visibleCapacity = getBubbleVisibleLineCapacity();
+    const shouldDelayForUnfilledWindow = !streamingState.everFilledCapacity
+      && streamingState.displayedSentences > 0
+      && streamingState.displayedSentences < visibleCapacity;
+
+    if (shouldDelayForUnfilledWindow && !streamingState.drainDelayApplied) {
+      streamingState.drainDelayApplied = true;
+      streamingState.drainDelayTimer = setTimeout(() => {
+        streamingState.drainDelayTimer = null;
+        ensureStreamingDrainTimer();
+      }, BUBBLE_UNFILLED_DRAIN_DELAY_MS);
+      emitDesktopDebug('chain.electron.bubble.streaming_drain_delayed', 'bubble streaming drain delayed for unfilled window', {
+        session_id: streamingState.sessionId,
+        trace_id: streamingState.traceId,
+        displayed_sentences: streamingState.displayedSentences,
+        visible_capacity: visibleCapacity,
+        delay_ms: BUBBLE_UNFILLED_DRAIN_DELAY_MS
+      });
+      return;
+    }
+    if (streamingState.drainDelayTimer) {
+      return;
+    }
+    const fallbackStepMs = Math.max(
+      60,
+      Number(bubbleRuntimeConfig.launchIntervalMs) || BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS
+    );
+    const observedStepMs = Number(streamingState.avgLaunchIntervalMs);
+    const drainStepMs = Math.max(
+      120,
+      Number.isFinite(observedStepMs) && observedStepMs > 0 ? Math.round(observedStepMs) : fallbackStepMs
+    );
+    streamingState.drainTimer = setInterval(() => {
+      if (!streamingState.active) {
+        clearInterval(streamingState.drainTimer);
+        streamingState.drainTimer = null;
+        return;
+      }
+      if (!streamingState.streamEnded || streamingState.sentenceQueue.length > 0) {
+        clearInterval(streamingState.drainTimer);
+        streamingState.drainTimer = null;
+        return;
+      }
+      if (streamingState.visibleItems.length === 0) {
+        clearInterval(streamingState.drainTimer);
+        streamingState.drainTimer = null;
+        finishBubbleStreamingIfDone('drain_empty');
+        return;
+      }
+      // Drain from the bottom line first after stream end.
+      streamingState.visibleItems.pop();
+      renderStreamingBubble();
+      if (streamingState.visibleItems.length === 0) {
+        clearInterval(streamingState.drainTimer);
+        streamingState.drainTimer = null;
+        finishBubbleStreamingIfDone('drain_completed');
+      }
+    }, drainStepMs);
+  }
+
+  function launchNextStreamingSentence() {
+    if (!streamingState.active) {
+      return;
+    }
+    if (streamingState.sentenceQueue.length === 0) {
+      finishBubbleStreamingIfDone('queue_dry');
+      return;
+    }
+    const maxVisibleLines = getBubbleVisibleLineCapacity();
+    if (streamingState.visibleItems.length >= maxVisibleLines) {
+      streamingState.visibleItems.shift();
+    }
+
+    const text = String(streamingState.sentenceQueue.shift() || '').trim();
+    if (!text) {
+      return;
+    }
+
+    const item = {
+      id: streamingState.nextSentenceId++,
+      text
+    };
+    const launchedAt = Date.now();
+    if (streamingState.lastLaunchAtMs > 0) {
+      const launchGapMs = Math.max(20, launchedAt - streamingState.lastLaunchAtMs);
+      if (streamingState.avgLaunchIntervalMs > 0) {
+        streamingState.avgLaunchIntervalMs = Math.round((streamingState.avgLaunchIntervalMs * 0.7) + (launchGapMs * 0.3));
+      } else {
+        streamingState.avgLaunchIntervalMs = launchGapMs;
+      }
+    }
+    streamingState.lastLaunchAtMs = launchedAt;
+    streamingState.visibleItems.push(item);
+    streamingState.displayedSentences += 1;
+    if (streamingState.displayedSentences >= maxVisibleLines) {
+      streamingState.everFilledCapacity = true;
+    }
+    // Render once per launch cycle to avoid visual jitter.
+    renderStreamingBubble();
+    emitDesktopDebug('chain.electron.bubble.streaming_sentence', 'bubble streaming sentence rendered', {
+      session_id: streamingState.sessionId,
+      trace_id: streamingState.traceId,
+      sentence_chars: text.length,
+      queue_size: streamingState.sentenceQueue.length,
+      visible_count: streamingState.visibleItems.length,
+      visible_capacity: maxVisibleLines,
+      displayed_sentences: streamingState.displayedSentences
+    });
+    if (streamingState.streamEnded && streamingState.sentenceQueue.length === 0) {
+      ensureStreamingDrainTimer();
+    }
+  }
+
+  function ensureStreamingLaunchTimer() {
+    if (!streamingState.active || streamingState.launchTimer) {
+      return;
+    }
+    const launchIntervalMs = Math.max(60, Number(bubbleRuntimeConfig.launchIntervalMs) || BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS);
+    streamingState.launchTimer = setInterval(() => {
+      if (!streamingState.active) {
+        clearInterval(streamingState.launchTimer);
+        streamingState.launchTimer = null;
+        return;
+      }
+      launchNextStreamingSentence();
+      ensureStreamingDrainTimer();
+      finishBubbleStreamingIfDone('interval_tick');
+    }, launchIntervalMs);
+  }
+
+  function resetBubbleStreamingState({ reason = 'reset', hideBubble = false } = {}) {
+    const hadActive = streamingState.active;
+    if (streamingState.launchTimer) {
+      clearInterval(streamingState.launchTimer);
+      streamingState.launchTimer = null;
+    }
+    if (streamingState.drainTimer) {
+      clearInterval(streamingState.drainTimer);
+      streamingState.drainTimer = null;
+    }
+    if (streamingState.drainDelayTimer) {
+      clearTimeout(streamingState.drainDelayTimer);
+      streamingState.drainDelayTimer = null;
+    }
+
+    const payload = {
+      session_id: streamingState.sessionId,
+      trace_id: streamingState.traceId,
+      reason,
+      accumulated_chars: streamingState.receivedText.length,
+      displayed_sentences: streamingState.displayedSentences
+    };
+
+    streamingState.active = false;
+    streamingState.receivedText = '';
+    streamingState.bufferedText = '';
+    streamingState.sentenceQueue = [];
+    streamingState.visibleItems = [];
+    streamingState.lastUpdateTime = 0;
+    streamingState.lastLaunchAtMs = 0;
+    streamingState.avgLaunchIntervalMs = 0;
+    streamingState.drainDelayApplied = false;
+    streamingState.everFilledCapacity = false;
+    streamingState.streamEnded = false;
+    streamingState.displayedSentences = 0;
+    streamingState.nextSentenceId = 1;
+
+    if (hideBubble) {
+      hideBubbleWindow();
+    }
+
+    if (hadActive) {
+      emitDesktopDebug('chain.electron.bubble.streaming_reset', 'bubble streaming reset', payload);
+    }
+  }
+
+  function updateBubbleStreaming(delta) {
+    const currentSessionId = streamingState.sessionId;
+    const currentTraceId = streamingState.traceId;
+    const textDelta = String(delta || '');
+    if (!textDelta) {
+      return;
+    }
+
+    if (!streamingState.active) {
+      streamingState.active = true;
+      streamingState.receivedText = '';
+      streamingState.bufferedText = '';
+      streamingState.sentenceQueue = [];
+      streamingState.visibleItems = [];
+      streamingState.streamEnded = false;
+      streamingState.displayedSentences = 0;
+      streamingState.nextSentenceId = 1;
+      streamingState.lastLaunchAtMs = 0;
+      streamingState.avgLaunchIntervalMs = 0;
+      streamingState.drainDelayApplied = false;
+      streamingState.everFilledCapacity = false;
+      emitDesktopDebug('chain.electron.bubble.streaming_started', 'bubble streaming started', {
+        session_id: currentSessionId,
+        trace_id: currentTraceId
+      });
+    }
+
+    streamingState.receivedText += textDelta;
+    streamingState.bufferedText += textDelta;
+    streamingState.lastUpdateTime = Date.now();
+
+    const consumed = splitCompletedSentences(streamingState.bufferedText, { flushAll: false });
+    streamingState.bufferedText = consumed.rest;
+    if (consumed.sentences.length > 0) {
+      enqueueStreamSentences(consumed.sentences);
+      emitDesktopDebug('chain.electron.bubble.streaming_update', 'bubble streaming queued sentences', {
+        session_id: currentSessionId,
+        trace_id: currentTraceId,
+        queued_sentences: consumed.sentences.length,
+        queue_size: streamingState.sentenceQueue.length,
+        accumulated_chars: streamingState.receivedText.length
+      });
+    }
+
+    ensureStreamingLaunchTimer();
+    if (streamingState.visibleItems.length === 0) {
+      launchNextStreamingSentence();
+    }
+  }
+
+  function finishBubbleStreaming(finalText) {
+    if (!streamingState.active) {
+      return;
+    }
+
+    const normalizedFinal = String(finalText || '');
+    if (normalizedFinal && normalizedFinal.startsWith(streamingState.receivedText)) {
+      const remainder = normalizedFinal.slice(streamingState.receivedText.length);
+      if (remainder) {
+        streamingState.receivedText += remainder;
+        streamingState.bufferedText += remainder;
+      }
+    }
+
+    const consumed = splitCompletedSentences(streamingState.bufferedText, { flushAll: true });
+    streamingState.bufferedText = consumed.rest;
+    if (consumed.sentences.length > 0) {
+      enqueueStreamSentences(consumed.sentences);
+    }
+    streamingState.streamEnded = true;
+    ensureStreamingLaunchTimer();
+    if (streamingState.visibleItems.length === 0) {
+      launchNextStreamingSentence();
+    }
+    ensureStreamingDrainTimer();
+    finishBubbleStreamingIfDone('stream_end');
   }
 
   function hidePetWindows() {
@@ -1804,11 +2458,8 @@ async function startDesktopSuite({
   const bubbleMetricsListener = createBubbleMetricsListener({
     window: bubbleWindow,
     onBubbleMetrics: (metrics) => {
-      const workArea = resolveAvatarDisplay(avatarWindow.getBounds())?.workArea;
-      const maxBubbleWidth = Math.max(120, (Number(workArea?.width) || 520) - 32);
-      const maxBubbleHeight = Math.max(44, (Number(workArea?.height) || 1000) - 32);
-      bubbleState.width = clamp(metrics.width + 20, 120, maxBubbleWidth);
-      bubbleState.height = clamp(metrics.height + 24, 44, maxBubbleHeight);
+      bubbleState.width = Math.max(BUBBLE_MIN_WIDTH, Number(metrics?.width) || bubbleRuntimeConfig.width);
+      bubbleState.height = Math.max(BUBBLE_MIN_HEIGHT, Number(metrics?.height) || bubbleRuntimeConfig.height);
       if (bubbleState.visible) {
         updateBubbleWindowBounds();
       }
@@ -1852,6 +2503,7 @@ async function startDesktopSuite({
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
 
   const qwenTtsClient = new QwenTtsClient();
+  const qwenTtsRealtimeClient = new QwenTtsRealtimeClient();
   const recentVoiceRequestIds = new Map();
   const VOICE_REQUEST_DEDUP_TTL_MS = 120000;
 
@@ -1922,6 +2574,8 @@ async function startDesktopSuite({
           void processVoiceRequestedOnDesktop({
             eventPayload: voicePayload,
             ttsClient: qwenTtsClient,
+            realtimeTtsClient: qwenTtsRealtimeClient,
+            voiceConfig: config.uiConfig?.voice || {},
             avatarWindow,
             rpcServerRef,
             emitDebug: emitDesktopDebug,
@@ -1941,7 +2595,7 @@ async function startDesktopSuite({
 
       // Handle message.delta for streaming bubble output
       if (desktopEvent.type === 'message.delta') {
-        const delta = String(desktopEvent.data?.delta || '').trim();
+        const delta = String(desktopEvent.data?.delta || '');
         const currentSessionId = desktopEvent.data?.session_id;
         const currentTraceId = desktopEvent.data?.trace_id;
 
@@ -1949,14 +2603,12 @@ async function startDesktopSuite({
         if (streamingState.active &&
             (streamingState.sessionId !== currentSessionId ||
              streamingState.traceId !== currentTraceId)) {
-          emitDesktopDebug('chain.electron.bubble.streaming_reset', 'bubble streaming reset due to session/trace change', {
-            old_session_id: streamingState.sessionId,
-            old_trace_id: streamingState.traceId,
-            new_session_id: currentSessionId,
-            new_trace_id: currentTraceId
+          resetBubbleStreamingState({ reason: 'session_or_trace_changed', hideBubble: true });
+          syncChatStreamToRenderer({
+            type: 'reset',
+            sessionId: currentSessionId || null,
+            traceId: currentTraceId || null
           });
-          streamingState.active = false;
-          streamingState.accumulatedText = '';
         }
 
         streamingState.sessionId = currentSessionId;
@@ -1964,6 +2616,12 @@ async function startDesktopSuite({
 
         if (delta) {
           updateBubbleStreaming(delta);
+          syncChatStreamToRenderer({
+            type: 'delta',
+            sessionId: currentSessionId || null,
+            traceId: currentTraceId || null,
+            delta
+          });
         }
         return;
       }
@@ -1974,6 +2632,11 @@ async function startDesktopSuite({
 
       const output = String(desktopEvent.data?.output || '').trim();
       if (!output) {
+        syncChatStreamToRenderer({
+          type: 'reset',
+          sessionId: desktopEvent?.data?.session_id || null,
+          traceId: desktopEvent?.data?.trace_id || null
+        });
         emitDesktopDebug('chain.electron.notification.final_empty', 'electron main received empty final output', {
           session_id: desktopEvent?.data?.session_id || null,
           trace_id: desktopEvent?.data?.trace_id || null
@@ -1981,21 +2644,28 @@ async function startDesktopSuite({
         return;
       }
 
+      syncChatStreamToRenderer({
+        type: 'reset',
+        sessionId: desktopEvent?.data?.session_id || null,
+        traceId: desktopEvent?.data?.trace_id || null
+      });
       appendChatMessage({
         role: 'assistant',
         text: output,
         timestamp: Date.now()
       }, 'assistant');
 
+      const wasStreaming = streamingState.active;
+
       // Handle streaming vs non-streaming mode
-      if (streamingState.active) {
+      if (wasStreaming) {
         // Streaming mode: finish with final output
         finishBubbleStreaming(output);
       } else {
         // Non-streaming mode: show bubble directly
         showBubble({
           text: output,
-          durationMs: 5000
+          durationMs: bubbleRuntimeConfig.lineDurationMs
         });
       }
 
@@ -2003,7 +2673,7 @@ async function startDesktopSuite({
         session_id: desktopEvent?.data?.session_id || null,
         trace_id: desktopEvent?.data?.trace_id || null,
         output_chars: output.length,
-        was_streaming: streamingState.active
+        was_streaming: wasStreaming
       });
     }
   });
@@ -2452,11 +3122,18 @@ function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, 
   });
 }
 
-function createBubbleWindow({ BrowserWindow, preloadPath, avatarBounds, display }) {
+function createBubbleWindow({
+  BrowserWindow,
+  preloadPath,
+  avatarBounds,
+  display,
+  bubbleWidth = BUBBLE_DEFAULT_WIDTH,
+  bubbleHeight = BUBBLE_DEFAULT_HEIGHT
+}) {
   const bounds = computeBubbleWindowBounds({
     avatarBounds,
-    bubbleWidth: 320,
-    bubbleHeight: 160,
+    bubbleWidth,
+    bubbleHeight,
     display
   });
 

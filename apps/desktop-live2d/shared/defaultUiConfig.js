@@ -90,13 +90,23 @@
       bubble: Object.freeze({
         // Whether assistant bubble messages should also be mirrored into chat history.
         mirrorToPanel: false,
-        // Message truncation settings for bubble display
+        // Bubble window geometry.
+        width: 560,
+        height: 236,
+        // Streaming subtitle behavior.
+        stream: Object.freeze({
+          // Lifetime for one subtitle line.
+          lineDurationMs: 2000,
+          // Launch cadence of incoming lines.
+          launchIntervalMs: 300
+        }),
+        // Message truncation settings for bubble display (disabled by default)
         truncate: Object.freeze({
-          enabled: true,
-          maxLength: 120,
-          mode: 'smart', // 'simple' | 'smart' | 'disabled'
+          enabled: false,
+          maxLength: 100000,
+          mode: 'disabled', // 'simple' | 'smart' | 'disabled'
           suffix: '...',
-          showHintForComplex: true // Show hint instead of truncating complex content
+          showHintForComplex: false
         })
       })
     }),
@@ -112,6 +122,20 @@
           group: 'Idle',
           index: 0
         })
+      })
+    }),
+    voice: Object.freeze({
+      // Runtime voice routing mode: keep electron-native event path by default.
+      path: 'electron_native',
+      // Playback transport mode for desktop side execution.
+      transport: 'non_streaming',
+      // If realtime transport fails, fallback to non-streaming playback route.
+      fallbackOnRealtimeError: true,
+      realtime: Object.freeze({
+        // Jitter buffer before first audible chunk.
+        prebufferMs: 160,
+        // Stream idle timeout for auto-stop protection.
+        idleTimeoutMs: 8000
       })
     })
   });

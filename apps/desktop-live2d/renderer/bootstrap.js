@@ -42,6 +42,7 @@
   let lipsyncApplyMode = 'raf_direct';
   let activeVoiceRequestId = null;
   let systemAudioDebugBound = false;
+  let realtimeVoicePlayer = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -214,6 +215,29 @@
         // ignore revoke errors
       }
       currentVoiceObjectUrl = null;
+    }
+  }
+
+  function ensureRealtimeVoicePlayer() {
+    if (realtimeVoicePlayer) {
+      return realtimeVoicePlayer;
+    }
+    const PlayerCtor = window.RealtimeVoicePlayer;
+    if (typeof PlayerCtor !== 'function') {
+      return null;
+    }
+    realtimeVoicePlayer = new PlayerCtor();
+    return realtimeVoicePlayer;
+  }
+
+  function interruptRealtimeVoicePlayer(reason = 'interrupted') {
+    if (!realtimeVoicePlayer || typeof realtimeVoicePlayer.interruptSession !== 'function') {
+      return;
+    }
+    try {
+      realtimeVoicePlayer.interruptSession({ reason: String(reason || 'interrupted') });
+    } catch {
+      // ignore realtime interrupt failures
     }
   }
 
@@ -488,19 +512,27 @@
     });
   }
 
-  async function startLipsync(audioElement) {
+  async function startLipsync(audioElement, options = {}) {
+    const externalAnalyser = options?.analyserNode || null;
+    const externalAudioContext = options?.audioContextInstance || null;
+    const speakingResolver = typeof options?.isSpeaking === 'function' ? options.isSpeaking : null;
+    const sourceLabel = String(options?.sourceLabel || (audioElement ? 'media_element' : 'external_analyser'));
     console.log('[lipsync] startLipsync called', {
       hasLipsyncApi: !!lipsyncApi,
       hasModel: !!live2dModel,
       hasAudioElement: !!audioElement,
+      hasExternalAnalyser: !!externalAnalyser,
       audioSrc: audioElement?.src?.substring(0, 50),
-      hasExistingSource: !!lipsyncAudioSource
+      hasExistingSource: !!lipsyncAudioSource,
+      sourceLabel
     });
     emitLipsyncTelemetry('sync.start', {
       has_lipsync_api: !!lipsyncApi,
       has_model: !!live2dModel,
       has_audio_element: !!audioElement,
-      has_audio_source: !!lipsyncAudioSource
+      has_audio_source: !!lipsyncAudioSource,
+      has_external_analyser: !!externalAnalyser,
+      source_label: sourceLabel
     });
 
     if (!lipsyncApi) {
@@ -539,6 +571,10 @@
         });
       }
 
+      if (externalAudioContext) {
+        audioContext = externalAudioContext;
+      }
+
       // Initialize AudioContext if needed
       if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -563,7 +599,16 @@
         });
       }
 
-      if (!lipsyncAudioSource || !lipsyncAnalyser) {
+      if (externalAnalyser) {
+        lipsyncAudioSource = null;
+        lipsyncAnalyser = externalAnalyser;
+        emitLipsyncTelemetry('sync.graph_ready', {
+          has_audio_context: true,
+          has_audio_source: false,
+          has_analyser: !!lipsyncAnalyser,
+          source_label: sourceLabel
+        });
+      } else if (!lipsyncAudioSource || !lipsyncAnalyser) {
         // MediaElementSource can only be created once for the same audio element.
         lipsyncAudioSource = audioContext.createMediaElementSource(audioElement);
         lipsyncAnalyser = audioContext.createAnalyser();
@@ -581,7 +626,8 @@
           has_audio_source: !!lipsyncAudioSource,
           has_analyser: !!lipsyncAnalyser,
           fft_size: lipsyncAnalyser.fftSize,
-          frequency_bin_count: lipsyncAnalyser.frequencyBinCount
+          frequency_bin_count: lipsyncAnalyser.frequencyBinCount,
+          source_label: sourceLabel
         });
       }
 
@@ -629,18 +675,23 @@
 
         lipsyncAnalyser.getByteFrequencyData(frequencyData);
         const voiceEnergy = estimateVoiceEnergy(frequencyData);
+        const speaking = speakingResolver
+          ? Boolean(speakingResolver())
+          : !(audioElement?.paused || audioElement?.ended);
+        const paused = audioElement ? !!audioElement.paused : !speaking;
+        const ended = audioElement ? !!audioElement.ended : false;
+        const readyState = audioElement ? Number(audioElement.readyState) : null;
         const frame = lipsyncApi.resolveVisemeFrame({
           frequencyBuffer: frequencyData,
           sampleRate: audioContext.sampleRate,
           voiceEnergy,
-          speaking: !(audioElement.paused || audioElement.ended),
+          speaking,
           fallbackOpen: 0,
           fallbackForm: 0,
           state: lipsyncState
         }) || {};
         const rawMouthOpen = clamp(Number(frame.mouthOpen) || 0, 0, 1);
         const rawMouthForm = clamp(Number(frame.mouthForm) || 0, -1, 1);
-        const speaking = !(audioElement.paused || audioElement.ended);
         const enhanced = enhanceMouthParams({
           mouthOpen: rawMouthOpen,
           mouthForm: rawMouthForm,
@@ -687,18 +738,18 @@
             mouth_form: mouthForm,
             confidence: Number(frame.confidence) || 0,
             apply_mode: lipsyncApplyMode,
-            paused: !!audioElement.paused,
-            ended: !!audioElement.ended,
-            ready_state: Number(audioElement.readyState)
+            paused,
+            ended,
+            ready_state: readyState
           });
-          if (!(audioElement.paused || audioElement.ended) && voiceEnergy < 0.005) {
+          if (speaking && voiceEnergy < 0.005) {
             emitRendererDebug('lipsync.frame_low_energy', {
               request_id: activeVoiceRequestId,
               frame: frameCount,
               voice_energy: voiceEnergy,
-              paused: !!audioElement.paused,
-              ended: !!audioElement.ended,
-              ready_state: Number(audioElement.readyState)
+              paused,
+              ended,
+              ready_state: readyState
             });
           }
         }
@@ -858,6 +909,7 @@
         reason: 'superseded_by_new_request'
       });
     }
+    interruptRealtimeVoicePlayer('superseded_by_non_streaming_playback');
     stopLipsync('superseded_before_new_playback', {
       next_request_id: nextRequestId
     });
@@ -1060,6 +1112,7 @@
         reason: 'superseded_by_new_request'
       });
     }
+    interruptRealtimeVoicePlayer('superseded_by_non_streaming_playback');
     stopLipsync('superseded_before_new_playback', {
       next_request_id: nextRequestId
     });
@@ -1240,6 +1293,239 @@
       }
       throw err;
     }
+  }
+
+  async function startRealtimeVoicePlayback({
+    requestId = null,
+    request_id = null,
+    sampleRate = 24000,
+    prebufferMs = 160,
+    idleTimeoutMs = 8000
+  } = {}) {
+    const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    if (!nextRequestId) {
+      return;
+    }
+
+    emitRendererDebug('voice_stream.playback_enter', {
+      request_id: nextRequestId,
+      sample_rate: Number(sampleRate) || 24000,
+      prebuffer_ms: Number(prebufferMs) || 160,
+      idle_timeout_ms: Number(idleTimeoutMs) || 8000
+    });
+    emitLipsyncTelemetry('playback.requested', {
+      request_id: nextRequestId,
+      bytes: 0,
+      base64_chars: 0,
+      mime_type: 'audio/pcm',
+      has_lipsync_api: !!lipsyncApi,
+      has_model: !!live2dModel
+    });
+
+    if (activeVoiceRequestId && activeVoiceRequestId !== nextRequestId) {
+      emitLipsyncTelemetry('playback.interrupted', {
+        request_id: activeVoiceRequestId,
+        reason: 'superseded_by_new_request'
+      });
+    }
+
+    interruptRealtimeVoicePlayer('superseded_by_new_stream');
+    stopLipsync('superseded_before_new_playback', { next_request_id: nextRequestId });
+    activeVoiceRequestId = nextRequestId;
+
+    try {
+      try {
+        systemAudio.pause();
+      } catch {
+        // ignore pause errors
+      }
+      systemAudio.currentTime = 0;
+      releaseCurrentVoiceObjectUrl();
+
+      const player = ensureRealtimeVoicePlayer();
+      if (!player) {
+        throw new Error('RealtimeVoicePlayer is unavailable');
+      }
+
+      await player.startSession({
+        requestId: nextRequestId,
+        sampleRate,
+        prebufferMs,
+        idleTimeoutMs,
+        onFirstAudio: () => {
+          emitLipsyncTelemetry('playback.started', {
+            request_id: nextRequestId,
+            has_audio_element: false,
+            source: 'realtime_stream'
+          });
+          emitRendererDebug('voice_stream.playback_started', {
+            request_id: nextRequestId
+          });
+
+          void startLipsync(null, {
+            analyserNode: player.getAnalyserNode(),
+            audioContextInstance: player.getAudioContext(),
+            isSpeaking: () => player.isSpeaking(nextRequestId),
+            sourceLabel: 'realtime_stream'
+          }).then((lipsyncStarted) => {
+            if (!lipsyncStarted) {
+              emitLipsyncTelemetry('playback.lipsync_inactive', {
+                request_id: nextRequestId,
+                reason: 'start_lipsync_returned_false',
+                has_lipsync_api: !!lipsyncApi,
+                has_model: !!live2dModel
+              });
+              emitRendererDebug('voice_stream.lipsync_inactive', {
+                request_id: nextRequestId,
+                reason: 'start_lipsync_returned_false'
+              });
+            } else {
+              emitRendererDebug('voice_stream.lipsync_started', {
+                request_id: nextRequestId
+              });
+            }
+          }).catch((err) => {
+            emitLipsyncTelemetry('playback.lipsync_inactive', {
+              request_id: nextRequestId,
+              reason: 'start_lipsync_rejected',
+              error: err?.message || String(err || 'unknown error')
+            });
+            emitRendererDebug('voice_stream.lipsync_failed', {
+              request_id: nextRequestId,
+              reason: 'start_lipsync_rejected',
+              error: err?.message || String(err || 'unknown error')
+            });
+          });
+        },
+        onEnded: ({ reason }) => {
+          emitLipsyncTelemetry('playback.ended', {
+            request_id: nextRequestId,
+            reason: String(reason || 'audio_ended')
+          });
+          stopLipsync('audio_ended', {
+            request_id: nextRequestId,
+            reason: String(reason || 'audio_ended')
+          });
+          if (activeVoiceRequestId === nextRequestId) {
+            activeVoiceRequestId = null;
+          }
+        },
+        onError: ({ code, error }) => {
+          emitLipsyncTelemetry('playback.error', {
+            request_id: nextRequestId,
+            reason: String(code || 'realtime_stream_failed'),
+            error: String(error || 'realtime stream failed')
+          });
+          emitRendererDebug('voice_stream.playback_failed', {
+            request_id: nextRequestId,
+            code: String(code || 'realtime_stream_failed'),
+            error: String(error || 'realtime stream failed')
+          });
+          stopLipsync('audio_element_error', {
+            request_id: nextRequestId,
+            reason: String(code || 'realtime_stream_failed'),
+            error: String(error || 'realtime stream failed')
+          });
+          if (activeVoiceRequestId === nextRequestId) {
+            activeVoiceRequestId = null;
+          }
+        },
+        onInterrupted: ({ reason }) => {
+          emitLipsyncTelemetry('playback.interrupted', {
+            request_id: nextRequestId,
+            reason: String(reason || 'interrupted')
+          });
+          if (activeVoiceRequestId === nextRequestId) {
+            activeVoiceRequestId = null;
+          }
+        }
+      });
+
+      emitLipsyncTelemetry('playback.source_ready', {
+        request_id: nextRequestId,
+        mime_type: 'audio/pcm',
+        has_audio_element: false
+      });
+    } catch (err) {
+      emitLipsyncTelemetry('playback.error', {
+        request_id: nextRequestId,
+        reason: 'playback_pipeline_failed',
+        error: err?.message || String(err || 'unknown error')
+      });
+      emitRendererDebug('voice_stream.playback_setup_failed', {
+        request_id: nextRequestId,
+        reason: 'playback_pipeline_failed',
+        error: err?.message || String(err || 'unknown error')
+      });
+      stopLipsync('playback_pipeline_failed', {
+        request_id: nextRequestId,
+        error: err?.message || String(err || 'unknown error')
+      });
+      if (activeVoiceRequestId === nextRequestId) {
+        activeVoiceRequestId = null;
+      }
+    }
+  }
+
+  function appendRealtimeVoiceChunk({ requestId = null, request_id = null, seq = 0, audioBase64 = '', audio_base64 = '' } = {}) {
+    const normalizedRequestId = normalizeVoiceRequestId(requestId || request_id);
+    const player = realtimeVoicePlayer;
+    if (!player || !normalizedRequestId) {
+      return;
+    }
+    const payloadBase64 = String(audioBase64 || audio_base64 || '');
+    const accepted = player.appendChunk({
+      requestId: normalizedRequestId,
+      audioBase64: payloadBase64
+    });
+    if (!accepted) {
+      emitRendererDebug('voice_stream.chunk_dropped', {
+        request_id: normalizedRequestId,
+        seq: Number(seq) || 0,
+        reason: 'player_rejected'
+      });
+      return;
+    }
+    const chunkIndex = Number(seq) || 0;
+    if (chunkIndex <= 3 || chunkIndex % 10 === 0) {
+      emitRendererDebug('voice_stream.chunk', {
+        request_id: normalizedRequestId,
+        seq: chunkIndex,
+        base64_chars: payloadBase64.length
+      });
+    }
+  }
+
+  function endRealtimeVoicePlayback({ requestId = null, request_id = null, reason = 'completed' } = {}) {
+    const normalizedRequestId = normalizeVoiceRequestId(requestId || request_id);
+    if (!realtimeVoicePlayer || !normalizedRequestId) {
+      return;
+    }
+    emitRendererDebug('voice_stream.end_received', {
+      request_id: normalizedRequestId,
+      reason: String(reason || 'completed')
+    });
+    realtimeVoicePlayer.endSession({
+      requestId: normalizedRequestId,
+      reason: String(reason || 'completed')
+    });
+  }
+
+  function failRealtimeVoicePlayback({ requestId = null, request_id = null, code = 'REALTIME_STREAM_FAILED', error = 'realtime stream failed' } = {}) {
+    const normalizedRequestId = normalizeVoiceRequestId(requestId || request_id);
+    if (!realtimeVoicePlayer || !normalizedRequestId) {
+      return;
+    }
+    emitRendererDebug('voice_stream.error_received', {
+      request_id: normalizedRequestId,
+      code: String(code || 'REALTIME_STREAM_FAILED'),
+      error: String(error || 'realtime stream failed')
+    });
+    realtimeVoicePlayer.failSession({
+      requestId: normalizedRequestId,
+      code: String(code || 'REALTIME_STREAM_FAILED'),
+      error: String(error || 'realtime stream failed')
+    });
   }
 
   function positionBubbleNearModelHead() {
@@ -2112,6 +2398,10 @@
         has_bridge: true,
         has_on_voice_play_memory: typeof bridge.onVoicePlayMemory === 'function',
         has_on_voice_play_remote: typeof bridge.onVoicePlayRemote === 'function',
+        has_on_voice_stream_start: typeof bridge.onVoiceStreamStart === 'function',
+        has_on_voice_stream_chunk: typeof bridge.onVoiceStreamChunk === 'function',
+        has_on_voice_stream_end: typeof bridge.onVoiceStreamEnd === 'function',
+        has_on_voice_stream_error: typeof bridge.onVoiceStreamError === 'function',
         has_send_lipsync_telemetry: typeof bridge.sendLipsyncTelemetry === 'function'
       });
 
@@ -2188,6 +2478,57 @@
         });
       } else {
         emitRendererDebug('voice_remote.listener_registered', { ok: true });
+      }
+
+      bridge.onVoiceStreamStart?.((payload) => {
+        const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
+        emitRendererDebug('voice_stream.start_received', {
+          request_id: requestId,
+          sample_rate: Number(payload?.sampleRate) || 24000,
+          prebuffer_ms: Number(payload?.prebufferMs) || 160,
+          idle_timeout_ms: Number(payload?.idleTimeoutMs) || 8000
+        });
+        void startRealtimeVoicePlayback(payload);
+      });
+      if (typeof bridge.onVoiceStreamStart !== 'function') {
+        emitRendererDebug('voice_stream_start.listener_missing', {
+          reason: 'bridge.onVoiceStreamStart is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_stream_start.listener_registered', { ok: true });
+      }
+
+      bridge.onVoiceStreamChunk?.((payload) => {
+        appendRealtimeVoiceChunk(payload);
+      });
+      if (typeof bridge.onVoiceStreamChunk !== 'function') {
+        emitRendererDebug('voice_stream_chunk.listener_missing', {
+          reason: 'bridge.onVoiceStreamChunk is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_stream_chunk.listener_registered', { ok: true });
+      }
+
+      bridge.onVoiceStreamEnd?.((payload) => {
+        endRealtimeVoicePlayback(payload);
+      });
+      if (typeof bridge.onVoiceStreamEnd !== 'function') {
+        emitRendererDebug('voice_stream_end.listener_missing', {
+          reason: 'bridge.onVoiceStreamEnd is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_stream_end.listener_registered', { ok: true });
+      }
+
+      bridge.onVoiceStreamError?.((payload) => {
+        failRealtimeVoicePlayback(payload);
+      });
+      if (typeof bridge.onVoiceStreamError !== 'function') {
+        emitRendererDebug('voice_stream_error.listener_missing', {
+          reason: 'bridge.onVoiceStreamError is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_stream_error.listener_registered', { ok: true });
       }
 
       bridge.notifyReady({ ok: true });

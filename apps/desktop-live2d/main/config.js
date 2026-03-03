@@ -159,6 +159,8 @@ function stripJsonComments(input) {
 }
 
 function normalizeUiConfig(raw) {
+  const rawVoice = isPlainObject(raw?.voice) ? raw.voice : {};
+  const rawRealtimeVoice = isPlainObject(rawVoice.realtime) ? rawVoice.realtime : {};
   const merged = {
     window: {
       ...DEFAULT_UI_CONFIG.window,
@@ -183,7 +185,17 @@ function normalizeUiConfig(raw) {
       },
       bubble: {
         ...DEFAULT_UI_CONFIG.chat.bubble,
-        ...(raw?.chat?.bubble || {})
+        ...(raw?.chat?.bubble || {}),
+        stream: {
+          ...DEFAULT_UI_CONFIG.chat.bubble.stream,
+          ...(
+            raw?.chat?.bubble?.stream
+            && typeof raw.chat.bubble.stream === 'object'
+            && !Array.isArray(raw.chat.bubble.stream)
+              ? raw.chat.bubble.stream
+              : {}
+          )
+        }
       }
     },
     actionQueue: {
@@ -196,6 +208,14 @@ function normalizeUiConfig(raw) {
           ...DEFAULT_UI_CONFIG.actionQueue.idleAction.args,
           ...(raw?.actionQueue?.idleAction?.args || {})
         }
+      }
+    },
+    voice: {
+      ...DEFAULT_UI_CONFIG.voice,
+      ...rawVoice,
+      realtime: {
+        ...DEFAULT_UI_CONFIG.voice.realtime,
+        ...rawRealtimeVoice
       }
     }
   };
@@ -233,6 +253,16 @@ function normalizeUiConfig(raw) {
   merged.chat.panel.maxMessages = toPositiveInt(merged.chat.panel.maxMessages, DEFAULT_UI_CONFIG.chat.panel.maxMessages);
   merged.chat.panel.inputEnabled = Boolean(merged.chat.panel.inputEnabled);
   merged.chat.bubble.mirrorToPanel = Boolean(merged.chat.bubble.mirrorToPanel);
+  merged.chat.bubble.width = toPositiveInt(merged.chat.bubble.width, DEFAULT_UI_CONFIG.chat.bubble.width);
+  merged.chat.bubble.height = toPositiveInt(merged.chat.bubble.height, DEFAULT_UI_CONFIG.chat.bubble.height);
+  merged.chat.bubble.stream.lineDurationMs = toPositiveInt(
+    merged.chat.bubble.stream.lineDurationMs,
+    DEFAULT_UI_CONFIG.chat.bubble.stream.lineDurationMs
+  );
+  merged.chat.bubble.stream.launchIntervalMs = toPositiveInt(
+    merged.chat.bubble.stream.launchIntervalMs,
+    DEFAULT_UI_CONFIG.chat.bubble.stream.launchIntervalMs
+  );
 
   merged.actionQueue.maxQueueSize = toPositiveInt(
     merged.actionQueue.maxQueueSize,
@@ -266,6 +296,34 @@ function normalizeUiConfig(raw) {
   } else if (merged.actionQueue.idleAction.type === 'expression') {
     merged.actionQueue.idleAction.args = {};
   }
+
+  const voicePath = String(merged.voice.path || '').trim();
+  merged.voice.path = ['electron_native', 'runtime_legacy'].includes(voicePath)
+    ? voicePath
+    : DEFAULT_UI_CONFIG.voice.path;
+
+  const voiceTransport = String(merged.voice.transport || '').trim();
+  merged.voice.transport = ['non_streaming', 'realtime'].includes(voiceTransport)
+    ? voiceTransport
+    : DEFAULT_UI_CONFIG.voice.transport;
+
+  const fallbackOnRealtimeError = Object.prototype.hasOwnProperty.call(rawVoice, 'fallback_on_realtime_error')
+    ? rawVoice.fallback_on_realtime_error
+    : merged.voice.fallbackOnRealtimeError;
+  merged.voice.fallbackOnRealtimeError = fallbackOnRealtimeError !== false;
+
+  const prebufferMs = Object.prototype.hasOwnProperty.call(rawRealtimeVoice, 'prebuffer_ms')
+    ? rawRealtimeVoice.prebuffer_ms
+    : merged.voice.realtime.prebufferMs;
+  merged.voice.realtime.prebufferMs = toPositiveInt(prebufferMs, DEFAULT_UI_CONFIG.voice.realtime.prebufferMs);
+
+  const idleTimeoutMs = Object.prototype.hasOwnProperty.call(rawRealtimeVoice, 'idle_timeout_ms')
+    ? rawRealtimeVoice.idle_timeout_ms
+    : merged.voice.realtime.idleTimeoutMs;
+  merged.voice.realtime.idleTimeoutMs = toPositiveInt(
+    idleTimeoutMs,
+    DEFAULT_UI_CONFIG.voice.realtime.idleTimeoutMs
+  );
 
   return merged;
 }

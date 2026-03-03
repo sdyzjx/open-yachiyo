@@ -9,7 +9,18 @@
 
   const state = {
     inputEnabled: true,
-    messages: []
+    messages: [],
+    stream: {
+      active: false,
+      sessionId: null,
+      traceId: null,
+      text: '',
+      stagedDelta: '',
+      flushTimer: null,
+      deltaCount: 0,
+      previewNode: null,
+      previewBody: null
+    }
   };
   let chatInputComposing = false;
   const allowedRoles = new Set(['user', 'assistant', 'system', 'tool']);
@@ -17,6 +28,145 @@
   function normalizeRole(role) {
     const normalized = String(role || '').trim();
     return allowedRoles.has(normalized) ? normalized : 'assistant';
+  }
+
+  function scrollMessagesToBottom() {
+    if (!messagesElement) {
+      return;
+    }
+    messagesElement.scrollTop = messagesElement.scrollHeight;
+  }
+
+  function clearStreamingPreviewNode() {
+    const { previewNode } = state.stream;
+    if (previewNode && previewNode.parentNode) {
+      previewNode.parentNode.removeChild(previewNode);
+    }
+    state.stream.previewNode = null;
+    state.stream.previewBody = null;
+  }
+
+  function resetStreamingPreview() {
+    if (state.stream.flushTimer) {
+      clearTimeout(state.stream.flushTimer);
+      state.stream.flushTimer = null;
+    }
+    state.stream.active = false;
+    state.stream.sessionId = null;
+    state.stream.traceId = null;
+    state.stream.text = '';
+    state.stream.stagedDelta = '';
+    state.stream.deltaCount = 0;
+    clearStreamingPreviewNode();
+  }
+
+  function ensureStreamingPreviewBody() {
+    if (!messagesElement) {
+      return null;
+    }
+    if (state.stream.previewBody && state.stream.previewBody.isConnected) {
+      return state.stream.previewBody;
+    }
+    const node = document.createElement('div');
+    node.className = 'chat-message assistant streaming';
+    const body = document.createElement('div');
+    body.className = 'chat-streaming-body';
+    node.appendChild(body);
+    messagesElement.appendChild(node);
+    state.stream.previewNode = node;
+    state.stream.previewBody = body;
+    return body;
+  }
+
+  function renderStreamingPreview() {
+    if (!state.stream.active) {
+      clearStreamingPreviewNode();
+      return;
+    }
+    if (!state.stream.text) {
+      return;
+    }
+    const body = ensureStreamingPreviewBody();
+    if (!body) {
+      return;
+    }
+    body.textContent = state.stream.text;
+    scrollMessagesToBottom();
+  }
+
+  function flushStreamingPreviewDelta() {
+    if (!state.stream.active) {
+      return;
+    }
+    if (state.stream.flushTimer) {
+      clearTimeout(state.stream.flushTimer);
+      state.stream.flushTimer = null;
+    }
+    const chunk = String(state.stream.stagedDelta || '');
+    if (!chunk) {
+      return;
+    }
+    state.stream.stagedDelta = '';
+    state.stream.text += chunk;
+    renderStreamingPreview();
+  }
+
+  function handleChatStreamSync(payload = {}) {
+    const type = String(payload?.type || '').trim().toLowerCase();
+    if (!type) {
+      return;
+    }
+
+    if (type === 'reset') {
+      resetStreamingPreview();
+      return;
+    }
+
+    if (type !== 'delta') {
+      return;
+    }
+
+    const delta = String(payload?.delta || '');
+    if (!delta) {
+      return;
+    }
+
+    const nextSessionId = payload?.sessionId ?? null;
+    const nextTraceId = payload?.traceId ?? null;
+
+    if (
+      state.stream.active &&
+      (
+        (nextSessionId && state.stream.sessionId && nextSessionId !== state.stream.sessionId) ||
+        (nextTraceId && state.stream.traceId && nextTraceId !== state.stream.traceId)
+      )
+    ) {
+      resetStreamingPreview();
+    }
+
+    if (!state.stream.active) {
+      state.stream.active = true;
+      state.stream.sessionId = nextSessionId;
+      state.stream.traceId = nextTraceId;
+      state.stream.text = '';
+      state.stream.stagedDelta = '';
+      state.stream.deltaCount = 0;
+    } else {
+      if (!state.stream.sessionId && nextSessionId) {
+        state.stream.sessionId = nextSessionId;
+      }
+      if (!state.stream.traceId && nextTraceId) {
+        state.stream.traceId = nextTraceId;
+      }
+    }
+    state.stream.stagedDelta += delta;
+    state.stream.deltaCount += 1;
+    if (!state.stream.flushTimer) {
+      const flushDelay = state.stream.deltaCount === 1 ? 20 : 45;
+      state.stream.flushTimer = setTimeout(() => {
+        flushStreamingPreviewDelta();
+      }, flushDelay);
+    }
   }
 
   function renderLatex(text) {
@@ -223,6 +373,8 @@
     if (!messagesElement) {
       return;
     }
+    state.stream.previewNode = null;
+    state.stream.previewBody = null;
     messagesElement.innerHTML = '';
     const fragment = document.createDocumentFragment();
     for (const message of state.messages) {
@@ -247,7 +399,7 @@
     // Render mermaid diagrams after all messages are added
     await renderMermaidDiagrams(messagesElement);
 
-    messagesElement.scrollTop = messagesElement.scrollHeight;
+    scrollMessagesToBottom();
   }
 
   async function applyChatState(payload) {
@@ -265,6 +417,8 @@
       chatSendElement.disabled = !nextInputEnabled;
     }
     await renderMessages();
+    flushStreamingPreviewDelta();
+    renderStreamingPreview();
   }
 
   function submitInput() {
@@ -291,6 +445,9 @@
     applyChatState(payload).catch(err => {
       console.error('Error applying chat state:', err);
     });
+  });
+  bridge?.onChatStreamSync?.((payload) => {
+    handleChatStreamSync(payload);
   });
 
   chatSendElement?.addEventListener('click', submitInput);

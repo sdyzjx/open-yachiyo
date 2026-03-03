@@ -7,6 +7,10 @@ const localTools = require('../../apps/runtime/executor/localTools');
 const { ToolCallDispatcher } = require('../../apps/runtime/orchestrator/toolCallDispatcher');
 const { ToolLoopRunner } = require('../../apps/runtime/loop/toolLoopRunner');
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test('ToolLoopRunner performs tool call through event bus and completes', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
@@ -51,6 +55,420 @@ test('ToolLoopRunner performs tool call through event bus and completes', async 
   assert.ok(events.includes('tool.call'));
   assert.ok(events.includes('tool.result'));
   assert.ok(events.includes('done'));
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner emits seq/runtime flags and returns metrics', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decide() {
+      return {
+        type: 'final',
+        output: 'done-with-metrics'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true,
+    toolAsyncMode: 'parallel',
+    toolEarlyDispatch: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-metrics',
+    input: 'ping',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-with-metrics');
+  assert.ok(result.metrics);
+  assert.equal(Number.isFinite(result.metrics.final_ms), true);
+  const plan = events.find((evt) => evt.event === 'plan');
+  assert.ok(plan);
+  assert.deepEqual(plan.payload.runtime_flags, {
+    streaming_enabled: true,
+    tool_async_mode: 'parallel',
+    tool_early_dispatch: true,
+    max_parallel_tools: 3
+  });
+  for (let i = 1; i < events.length; i += 1) {
+    assert.equal(events[i].seq, events[i - 1].seq + 1);
+  }
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner marks first_tool_result_ms when tool result arrives', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tool: { call_id: 'call-ms-1', name: 'add', args: { a: 1, b: 2 } }
+        };
+      }
+      return { type: 'final', output: 'ok-tool-ms' };
+    }
+  };
+
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-tool-metrics',
+    input: 'add now'
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-tool-ms');
+  assert.ok(result.metrics);
+  assert.equal(Number.isFinite(result.metrics.first_tool_result_ms), true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner emits llm.stream events when streaming decision is enabled', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decideStream({ onDelta }) {
+      onDelta?.('你好');
+      onDelta?.('，世界');
+      return {
+        type: 'final',
+        output: '你好，世界'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-stream',
+    input: 'stream hello',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, '你好，世界');
+  assert.ok(events.some((evt) => evt.event === 'llm.stream.start'));
+  assert.ok(events.some((evt) => evt.event === 'llm.stream.end'));
+  const deltas = events.filter((evt) => evt.event === 'llm.stream.delta').map((evt) => evt.payload.delta);
+  assert.deepEqual(deltas, ['你好', '，世界']);
+  const finalEvent = events.find((evt) => evt.event === 'llm.final');
+  assert.equal(finalEvent.payload.streamed, true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner emits tool_call delta/stable events in streaming mode', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decideStream({ onDelta, onToolCallDelta, onToolCallStable }) {
+      onDelta?.('处理中');
+      onToolCallDelta?.({
+        index: 0,
+        call_id: 'call-stream-tool-1',
+        name: 'add',
+        args_raw: '{"a":1'
+      });
+      onToolCallStable?.({
+        index: 0,
+        call_id: 'call-stream-tool-1',
+        name: 'add',
+        args_raw: '{"a":1,"b":2}',
+        args: { a: 1, b: 2 }
+      });
+      return {
+        type: 'final',
+        output: 'stream-tool-events-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-stream-tool-events',
+    input: 'stream tool event',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'stream-tool-events-ok');
+  assert.ok(events.some((evt) => evt.event === 'tool_call.delta'));
+  assert.ok(events.some((evt) => evt.event === 'tool_call.stable'));
+  assert.equal(Number.isFinite(result.metrics.first_tool_stable_ms), true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner counts parse error once when callback and stream_meta both carry same error', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const parseErrorPayload = {
+    index: 0,
+    call_id: 'call-parse-1',
+    name: 'broken',
+    args_raw: '{"x":1',
+    parse_reason: 'Unexpected end of JSON input'
+  };
+
+  const reasoner = {
+    async decideStream({ onToolCallParseError }) {
+      onToolCallParseError?.(parseErrorPayload);
+      return {
+        type: 'final',
+        output: 'done-with-parse-error',
+        stream_meta: {
+          tool_parse_errors: 1,
+          parse_errors: [parseErrorPayload]
+        }
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-stream-parse-error',
+    input: 'stream parse error',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-with-parse-error');
+  assert.equal(result.metrics.tool_parse_error, 1);
+  const parseErrorEvents = events.filter((evt) => evt.event === 'tool_call.parse_error');
+  assert.equal(parseErrorEvents.length, 1);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner dispatches stable tool call early when toolEarlyDispatch is enabled', async () => {
+  const bus = new RuntimeEventBus();
+  let toolStartedAt = 0;
+  const executor = new ToolExecutor({
+    slow_tool: {
+      type: 'local',
+      description: 'slow tool',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        toolStartedAt = Date.now();
+        await delay(80);
+        return 'slow-result';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let streamStep = 0;
+  let stepOneReturnedAt = 0;
+  const reasoner = {
+    async decideStream({ onToolCallStable }) {
+      streamStep += 1;
+      if (streamStep === 1) {
+        onToolCallStable?.({
+          index: 0,
+          call_id: 'early-call-1',
+          name: 'slow_tool',
+          args: {}
+        });
+        await delay(60);
+        stepOneReturnedAt = Date.now();
+        return {
+          type: 'tool',
+          tool: { call_id: 'early-call-1', name: 'slow_tool', args: {} }
+        };
+      }
+      return {
+        type: 'final',
+        output: 'early-dispatch-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 3000,
+    runtimeStreamingEnabled: true,
+    toolEarlyDispatch: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-early-dispatch',
+    input: 'dispatch early',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'early-dispatch-ok');
+  assert.equal(toolStartedAt > 0, true);
+  assert.equal(stepOneReturnedAt > 0, true);
+  assert.equal(toolStartedAt < stepOneReturnedAt, true);
+  assert.equal(events.some((evt) => evt.event === 'tool.call.early_dispatched'), true);
+  const toolCallEvents = events.filter((evt) => evt.event === 'tool.call' && evt.payload.call_id === 'early-call-1');
+  assert.equal(toolCallEvents.length, 1);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner skips early dispatch until stable args satisfy schema', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor({
+    'live2d.gesture': {
+      type: 'local',
+      description: 'gesture tool',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          duration_sec: { type: 'number' },
+          queue_policy: { type: 'string' }
+        },
+        required: ['type'],
+        additionalProperties: false
+      },
+      run: async () => 'gesture-result'
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let streamStep = 0;
+  const reasoner = {
+    async decideStream({ onToolCallStable }) {
+      streamStep += 1;
+      if (streamStep === 1) {
+        onToolCallStable?.({
+          index: 0,
+          call_id: 'gesture-call-1',
+          name: 'live2d.gesture',
+          args: {}
+        });
+        await delay(10);
+        onToolCallStable?.({
+          index: 0,
+          call_id: 'gesture-call-1',
+          name: 'live2d.gesture',
+          args: {
+            type: 'greet',
+            duration_sec: 6,
+            queue_policy: 'replace'
+          }
+        });
+        await delay(20);
+        return {
+          type: 'tool',
+          tool: {
+            call_id: 'gesture-call-1',
+            name: 'live2d.gesture',
+            args: {
+              type: 'greet',
+              duration_sec: 6,
+              queue_policy: 'replace'
+            }
+          }
+        };
+      }
+      return {
+        type: 'final',
+        output: 'gesture-early-dispatch-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    runtimeStreamingEnabled: true,
+    toolEarlyDispatch: true
+  });
+
+  const result = await runner.run({
+    sessionId: 's-gesture-early-skip',
+    input: 'gesture with delayed args',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'gesture-early-dispatch-ok');
+  assert.equal(events.some((evt) => evt.event === 'tool.call.early_skipped' && evt.payload.reason === 'args_not_ready'), true);
+  assert.equal(events.some((evt) => evt.event === 'tool.call.early_dispatched' && evt.payload.call_id === 'gesture-call-1'), true);
+  const toolErrors = events.filter((evt) => evt.event === 'tool.error');
+  assert.equal(toolErrors.length, 0);
 
   dispatcher.stop();
 });
@@ -107,6 +525,239 @@ test('ToolLoopRunner executes multiple tool calls in one step serially', async (
 
   dispatcher.stop();
 });
+
+test('ToolLoopRunner runs side_effect_level=none tools in parallel when enabled', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const ends = {};
+  const executor = new ToolExecutor({
+    slow_a: {
+      type: 'local',
+      description: 'slow A',
+      side_effect_level: 'none',
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.a = Date.now();
+        await delay(90);
+        ends.a = Date.now();
+        return 'A';
+      }
+    },
+    slow_b: {
+      type: 'local',
+      description: 'slow B',
+      side_effect_level: 'none',
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.b = Date.now();
+        await delay(90);
+        ends.b = Date.now();
+        return 'B';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-pa', name: 'slow_a', args: {} },
+            { call_id: 'call-pb', name: 'slow_b', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-parallel' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-parallel',
+    input: 'parallel',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-parallel');
+  assert.equal(Math.abs(starts.a - starts.b) < 50, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'parallel');
+  assert.equal(modeEvent.payload.chunk_width, 2);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner runs voice.tts_aliyun_vc and live2d.expression.set in parallel when metadata allows', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const executor = new ToolExecutor({
+    'voice.tts_aliyun_vc': {
+      type: 'local',
+      description: 'voice tts',
+      side_effect_level: 'none',
+      requires_lock: false,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.voice = Date.now();
+        await delay(80);
+        return 'voice-ok';
+      }
+    },
+    'live2d.expression.set': {
+      type: 'local',
+      description: 'expression set',
+      side_effect_level: 'none',
+      requires_lock: false,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.expression = Date.now();
+        await delay(80);
+        return 'expression-ok';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-voice', name: 'voice.tts_aliyun_vc', args: {} },
+            { call_id: 'call-expression', name: 'live2d.expression.set', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-voice-expression-parallel' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-voice-expression-parallel',
+    input: 'voice and expression',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-voice-expression-parallel');
+  assert.equal(Math.abs(starts.voice - starts.expression) < 50, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'parallel');
+  assert.equal(modeEvent.payload.chunk_width, 2);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner keeps serial execution for write tools even in parallel mode', async () => {
+  const bus = new RuntimeEventBus();
+  const starts = {};
+  const ends = {};
+  const executor = new ToolExecutor({
+    write_a: {
+      type: 'local',
+      description: 'write A',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.a = Date.now();
+        await delay(70);
+        ends.a = Date.now();
+        return 'WA';
+      }
+    },
+    write_b: {
+      type: 'local',
+      description: 'write B',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        starts.b = Date.now();
+        await delay(70);
+        ends.b = Date.now();
+        return 'WB';
+      }
+    }
+  });
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let decideCount = 0;
+  const reasoner = {
+    async decide() {
+      decideCount += 1;
+      if (decideCount === 1) {
+        return {
+          type: 'tool',
+          tools: [
+            { call_id: 'call-sa', name: 'write_a', args: {} },
+            { call_id: 'call-sb', name: 'write_b', args: {} }
+          ]
+        };
+      }
+      return { type: 'final', output: 'done-serial-fallback' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 2000,
+    toolAsyncMode: 'parallel',
+    maxParallelTools: 2
+  });
+
+  const result = await runner.run({
+    sessionId: 's-serial-fallback',
+    input: 'serial fallback',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'done-serial-fallback');
+  assert.equal(starts.b >= ends.a, true);
+  const modeEvent = events.find((evt) => evt.event === 'tool.dispatch.mode');
+  assert.equal(modeEvent.payload.mode, 'serial');
+  assert.equal(modeEvent.payload.chunk_width, 1);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner returns error when tool dispatch fails', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

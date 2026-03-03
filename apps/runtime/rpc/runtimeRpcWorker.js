@@ -45,7 +45,12 @@ function normalizeInputAudio(value) {
 
 function extractMessageDeltaFromRuntimeEvent(event) {
   if (!event || typeof event !== 'object') return '';
+  if (event.event === 'llm.stream.delta') {
+    const delta = typeof event.payload?.delta === 'string' ? event.payload.delta : '';
+    return delta.trim() ? delta : '';
+  }
   if (event.event !== 'llm.final') return '';
+  if (event.payload?.streamed === true) return '';
 
   const decision = event.payload?.decision;
   if (!decision || typeof decision !== 'object') return '';
@@ -53,6 +58,20 @@ function extractMessageDeltaFromRuntimeEvent(event) {
 
   const preview = typeof decision.preview === 'string' ? decision.preview.trim() : '';
   return preview;
+}
+
+function extractToolCallEventFromRuntimeEvent(event) {
+  if (!event || typeof event !== 'object') return null;
+  const eventType = String(event.event || '');
+  if (!eventType.startsWith('tool_call.')) return null;
+  return {
+    session_id: event.session_id || null,
+    trace_id: event.trace_id || null,
+    step_index: event.step_index ?? null,
+    seq: event.seq ?? null,
+    type: eventType,
+    payload: event.payload || {}
+  };
 }
 
 class RuntimeRpcWorker {
@@ -272,6 +291,11 @@ class RuntimeRpcWorker {
             delta
           }));
         }
+
+        const toolCallEvent = extractToolCallEventFromRuntimeEvent(event);
+        if (toolCallEvent) {
+          context.sendEvent?.(toRpcEvent('tool_call.event', toolCallEvent));
+        }
       }
     });
 
@@ -279,7 +303,8 @@ class RuntimeRpcWorker {
       session_id: sessionId,
       output: result.output,
       trace_id: result.traceId,
-      state: result.state
+      state: result.state,
+      metrics: result.metrics || null
     };
     publishChainEvent(this.bus, 'worker.runner.completed', {
       request_id: request?.id ?? null,

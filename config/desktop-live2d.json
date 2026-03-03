@@ -46,7 +46,13 @@
       "inputEnabled": true
     },
     "bubble": {
-      "mirrorToPanel": false
+      "mirrorToPanel": false,
+      "width": 560,
+      "height": 236,
+      "stream": {
+        "lineDurationMs": 2000,
+        "launchIntervalMs": 300
+      }
     }
   },
   "actionQueue": {
@@ -63,6 +69,12 @@
     }
   },
   "voice": {
-    "path": "electron_native"
+    "path": "electron_native",
+    "transport": "non_streaming",
+    "fallbackOnRealtimeError": true,
+    "realtime": {
+      "prebufferMs": 160,
+      "idleTimeoutMs": 8000
+    }
   }
 }

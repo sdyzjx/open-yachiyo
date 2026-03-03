@@ -9,6 +9,7 @@ const CHANNELS = {
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
+  chatStreamSync: 'live2d:chat:stream-sync',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
   modelBoundsUpdate: 'live2d:model:bounds-update',
@@ -59,6 +60,11 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
     ipcRenderer.on(CHANNELS.chatStateSync, listener);
     return () => ipcRenderer.off(CHANNELS.chatStateSync, listener);
   },
+  onChatStreamSync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.chatStreamSync, listener);
+    return () => ipcRenderer.off(CHANNELS.chatStreamSync, listener);
+  },
   onBubbleStateSync(handler) {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(CHANNELS.bubbleStateSync, listener);
@@ -92,6 +98,30 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   onVoicePlayRemote(handler) {
     const channel = 'desktop:voice:play-remote';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamStart(handler) {
+    const channel = 'desktop:voice:stream-start';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamChunk(handler) {
+    const channel = 'desktop:voice:stream-chunk';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamEnd(handler) {
+    const channel = 'desktop:voice:stream-end';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamError(handler) {
+    const channel = 'desktop:voice:stream-error';
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.off(channel, listener);
