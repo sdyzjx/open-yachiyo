@@ -328,12 +328,18 @@ function addMessage(session, role, content, options = {}) {
   return message;
 }
 
-function updateMessage(session, messageId, patch) {
+function updateMessage(session, messageId, patch, options = {}) {
   const msg = session.messages.find((m) => m.id === messageId);
   if (!msg) return;
   Object.assign(msg, patch);
-  session.updatedAt = nowIso();
-  persist();
+  const shouldBumpUpdatedAt = options.bumpUpdatedAt !== false;
+  const shouldPersist = options.persist !== false;
+  if (shouldBumpUpdatedAt) {
+    session.updatedAt = nowIso();
+  }
+  if (shouldPersist) {
+    persist();
+  }
 }
 
 function escapeHtml(text) {
@@ -970,15 +976,124 @@ function appendStreamingDelta({ sessionId, delta, source = 'delta', seq = null }
   if (!pendingSession) return;
 
   state.pending.streamOutput = `${state.pending.streamOutput || ''}${textDelta}`;
-  const currentText = state.pending.streamOutput;
-  updateMessage(pendingSession, state.pending.assistantMsgId, { content: currentText });
+  state.pending.deltaCount = Number(state.pending.deltaCount || 0) + 1;
+  updateMessage(
+    pendingSession,
+    state.pending.assistantMsgId,
+    { content: state.pending.streamOutput },
+    { persist: false, bumpUpdatedAt: false }
+  );
 
-  if (!patchRenderedMessageText(state.pending.assistantMsgId, currentText)) {
-    render();
-    setTimeout(() => {
-      patchRenderedMessageText(state.pending?.assistantMsgId || null, state.pending?.streamOutput || '');
-    }, 0);
+  if (!state.pending.renderScheduled) {
+    state.pending.renderScheduled = true;
+    requestAnimationFrame(() => {
+      if (!state.pending) return;
+      state.pending.renderScheduled = false;
+      const ok = patchRenderedMessageText(state.pending.assistantMsgId, state.pending.streamOutput);
+      if (!ok) {
+        render();
+        setTimeout(() => {
+          patchRenderedMessageText(state.pending?.assistantMsgId || null, state.pending?.streamOutput || '');
+        }, 0);
+      }
+
+      const c = Number(state.pending?.deltaCount || 0);
+      if (c === 1 || c % 20 === 0) {
+        emitClientDebug('chain.webui.stream.patched', 'webui applied stream patch', {
+          session_id: state.pending?.sessionId || null,
+          delta_count: c,
+          output_chars: String(state.pending?.streamOutput || '').length,
+          stream_source: state.pending?.streamSource || null
+        });
+      }
+    });
   }
+
+  const count = Number(state.pending.deltaCount || 0);
+  if (count === 1 || count % 20 === 0) {
+    emitClientDebug('chain.webui.stream.appended', 'webui appended streaming delta', {
+      session_id: state.pending.sessionId,
+      delta_count: count,
+      delta_chars: textDelta.length,
+      output_chars: String(state.pending.streamOutput || '').length,
+      stream_source: state.pending.streamSource
+    });
+  }
+}
+
+function maybeHandleStreamEventPayload(data) {
+  const eventName = data?.event || data?.name || null;
+  const payload = data?.payload || data?.data || {};
+  const sessionId = data?.session_id || payload?.session_id || null;
+  if (eventName !== 'llm.stream.delta') return false;
+  appendStreamingDelta({
+    sessionId: sessionId || state.pending?.sessionId || null,
+    delta: payload?.delta || '',
+    source: 'runtime.event',
+    seq: data?.seq
+  });
+  setStatus('Streaming...');
+  return true;
+}
+
+function maybeHandleWsStreamFrame(msg) {
+  if (!state.pending) return false;
+
+  if (msg.type === 'delta') {
+    appendStreamingDelta({
+      sessionId: msg.session_id || state.pending.sessionId,
+      delta: msg.delta || '',
+      source: 'delta'
+    });
+    setStatus('Streaming...');
+    emitClientDebug('chain.webui.ws.delta_received', 'webui received message.delta frame', {
+      session_id: msg.session_id || state.pending.sessionId,
+      delta_chars: String(msg.delta || '').length
+    });
+    return true;
+  }
+
+  if (msg.type === 'event') {
+    if (msg.data?.session_id && msg.data.session_id !== state.pending.sessionId) return false;
+    const handled = maybeHandleStreamEventPayload(msg.data || {});
+    if (handled) {
+      emitClientDebug('chain.webui.ws.stream_event_received', 'webui received runtime stream event', {
+        session_id: msg.data?.session_id || state.pending.sessionId,
+        seq: msg.data?.seq ?? null
+      });
+      return true;
+    }
+  }
+
+  if (msg?.method === 'runtime.event' && msg?.params) {
+    const paramsSessionId = msg.params?.session_id || null;
+    if (paramsSessionId && paramsSessionId !== state.pending.sessionId) return false;
+    const handled = maybeHandleStreamEventPayload(msg.params);
+    if (handled) {
+      emitClientDebug('chain.webui.ws.stream_event_received', 'webui received rpc runtime stream event', {
+        session_id: paramsSessionId || state.pending.sessionId,
+        seq: msg.params?.seq ?? null
+      });
+      return true;
+    }
+  }
+
+  if (msg?.method === 'message.delta' && msg?.params) {
+    const params = msg.params || {};
+    appendStreamingDelta({
+      sessionId: params.session_id || state.pending.sessionId,
+      delta: params.delta || '',
+      source: 'delta'
+    });
+    setStatus('Streaming...');
+    emitClientDebug('chain.webui.ws.delta_received', 'webui received rpc message.delta frame', {
+      session_id: params.session_id || state.pending.sessionId,
+      delta_chars: String(params.delta || '').length
+    });
+    return true;
+  }
+
+  return false;
 }
 
 function renderHeader() {
@@ -1004,6 +1119,8 @@ function resolvePendingSession() {
 function finishPendingResponse({ content, statusText }) {
   const pendingSession = resolvePendingSession();
   const assistantMsgId = state.pending?.assistantMsgId || null;
+  const deltaCount = Number(state.pending?.deltaCount || 0);
+  const streamSource = state.pending?.streamSource || null;
   if (pendingSession) {
     updateMessage(pendingSession, state.pending.assistantMsgId, { content: String(content || '') });
   }
@@ -1018,6 +1135,11 @@ function finishPendingResponse({ content, statusText }) {
     return;
   }
   void patchRenderedMessageMarkdown(assistantMsgId, String(content || ''));
+  emitClientDebug('chain.webui.stream.finalized', 'webui finalized stream output', {
+    delta_count: deltaCount,
+    stream_source: streamSource,
+    output_chars: String(content || '').length
+  });
 }
 
 function connectWs() {
@@ -1068,35 +1190,19 @@ function connectWs() {
 
     if (!state.pending) return;
 
+    if (maybeHandleWsStreamFrame(msg)) {
+      return;
+    }
+
     if (msg.type === 'event') {
       emitClientDebug('chain.webui.ws.event', 'webui received runtime event', {
         event: msg.data?.event || null,
         session_id: msg.data?.session_id || null
       });
       if (msg.data?.session_id && msg.data.session_id !== state.pending.sessionId) return;
-      if (msg.data?.event === 'llm.stream.delta') {
-        appendStreamingDelta({
-          sessionId: msg.data?.session_id || state.pending.sessionId,
-          delta: msg.data?.payload?.delta || '',
-          source: 'runtime.event',
-          seq: msg.data?.seq
-        });
-        setStatus('Streaming...');
-        return;
-      }
       if (msg.data?.event === 'tool.call') {
         setStatus(`Running tool: ${msg.data.payload?.name || 'unknown'}`);
       }
-      return;
-    }
-
-    if (msg.type === 'delta') {
-      appendStreamingDelta({
-        sessionId: msg.session_id || state.pending.sessionId,
-        delta: msg.delta || '',
-        source: 'delta'
-      });
-      setStatus('Streaming...');
       return;
     }
 
@@ -1167,7 +1273,9 @@ function sendMessage() {
     assistantMsgId: assistantMsg.id,
     streamOutput: '',
     streamSource: null,
-    lastRuntimeDeltaSeq: 0
+    lastRuntimeDeltaSeq: 0,
+    renderScheduled: false,
+    deltaCount: 0
   };
 
   elements.chatInput.value = '';
@@ -1243,6 +1351,9 @@ async function syncSessionDetailFromServer(sessionId) {
 }
 
 async function syncSessionsFromServer() {
+  if (state.pending) {
+    return;
+  }
   const payload = await fetchJson('/api/sessions?limit=80');
   if (!payload?.ok || !payload?.data || !Array.isArray(payload.data.items)) {
     return;
