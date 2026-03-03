@@ -849,6 +849,7 @@ async function renderMessages() {
   for (const msg of session.messages) {
     const wrap = document.createElement('div');
     wrap.className = `message-wrap ${msg.role}`;
+    wrap.dataset.messageId = msg.id;
 
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
@@ -918,6 +919,31 @@ async function renderMessages() {
   }
 }
 
+function findRenderedMessageBody(messageId) {
+  if (!messageId) return null;
+  const wrap = elements.messageList.querySelector(`.message-wrap[data-message-id="${messageId}"]`);
+  if (!(wrap instanceof HTMLElement)) return null;
+  const body = wrap.querySelector('.message-body');
+  return body instanceof HTMLElement ? body : null;
+}
+
+function patchRenderedMessageText(messageId, text) {
+  const body = findRenderedMessageBody(messageId);
+  if (!body) return false;
+  body.textContent = String(text || '');
+  elements.messageList.scrollTop = elements.messageList.scrollHeight;
+  return true;
+}
+
+async function patchRenderedMessageMarkdown(messageId, text) {
+  const body = findRenderedMessageBody(messageId);
+  if (!body) return false;
+  body.innerHTML = await renderMarkdownWithMermaid(String(text || ''));
+  await renderMermaidDiagrams(body);
+  elements.messageList.scrollTop = elements.messageList.scrollHeight;
+  return true;
+}
+
 function renderHeader() {
   const session = getActiveSession();
   elements.activeSessionName.textContent = session?.name || 'New chat';
@@ -940,6 +966,7 @@ function resolvePendingSession() {
 
 function finishPendingResponse({ content, statusText }) {
   const pendingSession = resolvePendingSession();
+  const assistantMsgId = state.pending?.assistantMsgId || null;
   if (pendingSession) {
     updateMessage(pendingSession, state.pending.assistantMsgId, { content: String(content || '') });
   }
@@ -947,7 +974,13 @@ function finishPendingResponse({ content, statusText }) {
   state.pending = null;
   setStatus(statusText);
   updateComposerState();
-  render();
+  renderSessions();
+  renderHeader();
+  if (!patchRenderedMessageText(assistantMsgId, String(content || ''))) {
+    render();
+    return;
+  }
+  void patchRenderedMessageMarkdown(assistantMsgId, String(content || ''));
 }
 
 function connectWs() {
@@ -1007,6 +1040,21 @@ function connectWs() {
       if (msg.data?.event === 'tool.call') {
         setStatus(`Running tool: ${msg.data.payload?.name || 'unknown'}`);
       }
+      return;
+    }
+
+    if (msg.type === 'delta') {
+      if (msg.session_id && msg.session_id !== state.pending.sessionId) return;
+      const pendingSession = resolvePendingSession();
+      if (!pendingSession) return;
+      const delta = String(msg.delta || '');
+      if (!delta) return;
+      state.pending.streamOutput = `${state.pending.streamOutput || ''}${delta}`;
+      updateMessage(pendingSession, state.pending.assistantMsgId, {
+        content: state.pending.streamOutput
+      });
+      patchRenderedMessageText(state.pending.assistantMsgId, state.pending.streamOutput);
+      setStatus('Streaming...');
       return;
     }
 
@@ -1074,7 +1122,8 @@ function sendMessage() {
   state.pending = {
     sessionId: session.id,
     userMsgId: userMsg.id,
-    assistantMsgId: assistantMsg.id
+    assistantMsgId: assistantMsg.id,
+    streamOutput: ''
   };
 
   elements.chatInput.value = '';
