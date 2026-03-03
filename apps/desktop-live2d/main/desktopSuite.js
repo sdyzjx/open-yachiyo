@@ -29,6 +29,7 @@ const CHANNELS = Object.freeze({
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
   modelBoundsUpdate: 'live2d:model:bounds-update',
   actionTelemetry: 'live2d:action:telemetry',
+  lipsyncTelemetry: 'live2d:lipsync:telemetry',
   windowDrag: 'live2d:window:drag',
   windowControl: 'live2d:window:control',
   chatPanelVisibility: 'live2d:chat:panel-visibility',
@@ -688,6 +689,151 @@ function createActionTelemetryListener({ window, onTelemetry = null } = {}) {
   };
 }
 
+function normalizeLipsyncTelemetryPayload(payload) {
+  const event = String(payload?.event || '').trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:\.[a-z0-9_]+){0,6}$/.test(event)) {
+    return null;
+  }
+
+  const timestamp = Number(payload?.timestamp);
+  const normalized = {
+    event,
+    timestamp: Number.isFinite(timestamp) ? Math.max(0, Math.floor(timestamp)) : Date.now()
+  };
+
+  const requestId = String(payload?.request_id || payload?.requestId || '').trim();
+  if (requestId) {
+    normalized.request_id = requestId.slice(0, 128);
+  }
+
+  const fieldsString = ['mime_type', 'reason', 'error'];
+  for (const key of fieldsString) {
+    if (payload?.[key] != null) {
+      normalized[key] = String(payload[key]).slice(0, 512);
+    }
+  }
+
+  const fieldsBoolean = [
+    'has_lipsync_api',
+    'has_model',
+    'has_audio_element',
+    'has_animation_frame',
+    'has_state',
+    'has_audio_context',
+    'has_audio_source',
+    'has_analyser'
+  ];
+  for (const key of fieldsBoolean) {
+    if (typeof payload?.[key] === 'boolean') {
+      normalized[key] = payload[key];
+    }
+  }
+
+  const fieldsNumber = [
+    'base64_chars',
+    'bytes',
+    'binary_length',
+    'frame',
+    'sample_rate',
+    'fft_size',
+    'frequency_bin_count',
+    'voice_energy',
+    'mouth_open',
+    'mouth_form',
+    'confidence'
+  ];
+  for (const key of fieldsNumber) {
+    const value = Number(payload?.[key]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    if (['voice_energy', 'mouth_open', 'mouth_form', 'confidence'].includes(key)) {
+      normalized[key] = Math.round(value * 1000) / 1000;
+    } else {
+      normalized[key] = Math.round(value);
+    }
+  }
+
+  return normalized;
+}
+
+function createLipsyncTelemetryListener({ window, onTelemetry = null } = {}) {
+  return (event, payload) => {
+    if (!window || window.isDestroyed() || event?.sender !== window.webContents) {
+      return;
+    }
+    const normalized = normalizeLipsyncTelemetryPayload(payload);
+    if (!normalized) {
+      return;
+    }
+    onTelemetry?.(normalized);
+  };
+}
+
+function normalizeRendererDebugEventName(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!/^[a-z0-9_]+(?:\.[a-z0-9_]+){0,6}$/.test(normalized)) {
+    return 'unknown';
+  }
+  return normalized;
+}
+
+function parseRendererDebugConsoleMessage(message) {
+  const prefix = '[renderer-debug] ';
+  const raw = String(message || '');
+  if (!raw.startsWith(prefix)) {
+    return null;
+  }
+  const body = raw.slice(prefix.length);
+  try {
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        event: 'unknown',
+        data: { raw: body }
+      };
+    }
+    const { event, ...rest } = parsed;
+    const normalizedEvent = normalizeRendererDebugEventName(event);
+    return {
+      event: normalizedEvent,
+      data: normalizedEvent === 'unknown'
+        ? { raw_event: event == null ? null : String(event), ...rest }
+        : rest
+    };
+  } catch {
+    return {
+      event: 'unknown',
+      data: { raw: body }
+    };
+  }
+}
+
+function summarizeProviderErrorMeta(meta) {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return {};
+  }
+  const status = Number(meta.status);
+  let bodyPreview = '';
+  if (typeof meta.body === 'string') {
+    bodyPreview = meta.body;
+  } else if (meta.body && typeof meta.body === 'object') {
+    try {
+      bodyPreview = JSON.stringify(meta.body);
+    } catch {
+      bodyPreview = '[unserializable body]';
+    }
+  }
+  const normalized = {};
+  if (Number.isFinite(status)) {
+    normalized.provider_status = Math.round(status);
+  }
+  if (bodyPreview) {
+    normalized.provider_body = bodyPreview.slice(0, 800);
+  }
+  return normalized;
+}
+
 function createChatPanelVisibilityListener({ window, windowMetrics, screen, display, margin = 8 } = {}) {
   let lastVisible = null;
   return (event, payload) => {
@@ -940,6 +1086,7 @@ async function processVoiceRequestedOnDesktop({
   ttsClient,
   avatarWindow,
   rpcServerRef,
+  emitDebug = null,
   logger = console
 } = {}) {
   const requestId = String(eventPayload?.request_id || `${Date.now()}-voice`);
@@ -949,6 +1096,18 @@ async function processVoiceRequestedOnDesktop({
   const timeoutSec = Math.max(1, Number(eventPayload?.timeoutSec || 45));
   const model = String(eventPayload?.model || '');
   const voice = String(eventPayload?.voiceId || '');
+  const sessionId = String(eventPayload?.session_id || '').trim() || null;
+  const traceId = String(eventPayload?.trace_id || '').trim() || null;
+
+  emitDebug?.('chain.electron.voice.requested', 'electron main received voice.requested', {
+    request_id: requestId,
+    session_id: sessionId,
+    trace_id: traceId,
+    text_chars: text.length,
+    timeout_sec: timeoutSec,
+    model: model || null,
+    voice_id: voice || null
+  });
 
   rpcServerRef?.notify({
     method: 'desktop.event',
@@ -960,19 +1119,32 @@ async function processVoiceRequestedOnDesktop({
   });
 
   try {
+    const preferStreamingPlayback = String(process.env.DESKTOP_VOICE_STREAMING_PLAYBACK || 'true')
+      .trim()
+      .toLowerCase() !== 'false';
     const synthesis = await ttsClient.synthesizeNonStreaming({
       text,
       model,
       voice,
       timeoutMs: timeoutSec * 1000
     });
+    let audioUrlHost = null;
+    try {
+      audioUrlHost = new URL(String(synthesis.audioUrl || '')).host || null;
+    } catch {
+      audioUrlHost = null;
+    }
 
-    const audioBuffer = await ttsClient.fetchAudioBuffer({
-      audioUrl: synthesis.audioUrl,
-      timeoutMs: timeoutSec * 1000
+    emitDebug?.('chain.electron.voice.synthesis.completed', 'electron main synthesized voice and resolved audio playback source', {
+      request_id: requestId,
+      session_id: sessionId,
+      trace_id: traceId,
+      bytes: null,
+      mime_type: synthesis.mimeType || null,
+      model: synthesis.model || null,
+      playback_route: preferStreamingPlayback ? 'remote_stream' : 'memory_buffer',
+      audio_url_host: audioUrlHost
     });
-
-    const audioBase64 = audioBuffer.toString('base64');
 
     rpcServerRef?.notify({
       method: 'desktop.event',
@@ -981,19 +1153,47 @@ async function processVoiceRequestedOnDesktop({
         timestamp: Date.now(),
         data: {
           request_id: requestId,
-          bytes: audioBuffer.length,
+          bytes: null,
           mime_type: synthesis.mimeType,
-          model: synthesis.model
+          model: synthesis.model,
+          playback_route: preferStreamingPlayback ? 'remote_stream' : 'memory_buffer'
         }
       }
     });
 
     if (!avatarWindow.isDestroyed()) {
-      avatarWindow.webContents.send('desktop:voice:play-memory', {
-        requestId,
-        audioBase64,
-        mimeType: synthesis.mimeType || 'audio/ogg'
-      });
+      if (preferStreamingPlayback) {
+        avatarWindow.webContents.send('desktop:voice:play-remote', {
+          requestId,
+          audioUrl: synthesis.audioUrl,
+          mimeType: synthesis.mimeType || 'audio/ogg'
+        });
+        emitDebug?.('chain.electron.voice.ipc.dispatched_remote', 'electron main dispatched remote voice playback to renderer', {
+          request_id: requestId,
+          session_id: sessionId,
+          trace_id: traceId,
+          mime_type: synthesis.mimeType || 'audio/ogg',
+          audio_url_host: audioUrlHost
+        });
+      } else {
+        const audioBuffer = await ttsClient.fetchAudioBuffer({
+          audioUrl: synthesis.audioUrl,
+          timeoutMs: timeoutSec * 1000
+        });
+        const audioBytes = new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength);
+        avatarWindow.webContents.send('desktop:voice:play-memory', {
+          requestId,
+          audioBytes,
+          mimeType: synthesis.mimeType || 'audio/ogg'
+        });
+        emitDebug?.('chain.electron.voice.ipc.dispatched', 'electron main dispatched memory voice playback to renderer', {
+          request_id: requestId,
+          session_id: sessionId,
+          trace_id: traceId,
+          mime_type: synthesis.mimeType || 'audio/ogg',
+          bytes: audioBytes.byteLength
+        });
+      }
       rpcServerRef?.notify({
         method: 'desktop.event',
         params: {
@@ -1004,10 +1204,20 @@ async function processVoiceRequestedOnDesktop({
       });
     }
   } catch (err) {
+    const providerMeta = summarizeProviderErrorMeta(err?.meta);
     logger.error?.('[desktop-live2d] voice requested process failed', {
       requestId,
       code: err?.code,
-      error: err?.message || String(err)
+      error: err?.message || String(err),
+      ...providerMeta
+    });
+    emitDebug?.('chain.electron.voice.failed', 'electron main voice.requested processing failed', {
+      request_id: requestId,
+      session_id: sessionId,
+      trace_id: traceId,
+      code: String(err?.code || 'TTS_PROVIDER_DOWN'),
+      error: String(err?.message || 'unknown tts error'),
+      ...providerMeta
     });
 
     rpcServerRef?.notify({
@@ -1018,7 +1228,8 @@ async function processVoiceRequestedOnDesktop({
         data: {
           request_id: requestId,
           code: String(err?.code || 'TTS_PROVIDER_DOWN'),
-          error: String(err?.message || 'unknown tts error')
+          error: String(err?.message || 'unknown tts error'),
+          ...providerMeta
         }
       }
     });
@@ -1504,6 +1715,25 @@ async function startDesktopSuite({
     });
   }
 
+  function publishLipsyncTelemetry(payload = {}) {
+    const normalized = normalizeLipsyncTelemetryPayload(payload);
+    if (!normalized) {
+      return;
+    }
+    emitDesktopDebug(`chain.lipsync.${normalized.event}`, 'renderer lipsync telemetry', {
+      source_file: 'apps/desktop-live2d/renderer/bootstrap.js',
+      ...normalized
+    });
+    rpcServerRef?.notify({
+      method: 'desktop.event',
+      params: {
+        type: 'lipsync.telemetry',
+        timestamp: Date.now(),
+        data: normalized
+      }
+    });
+  }
+
   avatarWindow.on('move', () => {
     updateBubbleWindowBounds();
     syncWindowStateToRenderer();
@@ -1590,6 +1820,11 @@ async function startDesktopSuite({
     onTelemetry: publishLive2dActionTelemetry
   });
   ipcMain.on(CHANNELS.actionTelemetry, actionTelemetryListener);
+  const lipsyncTelemetryListener = createLipsyncTelemetryListener({
+    window: avatarWindow,
+    onTelemetry: publishLipsyncTelemetry
+  });
+  ipcMain.on(CHANNELS.lipsyncTelemetry, lipsyncTelemetryListener);
 
   const windowControlListener = createWindowControlListener({
     windows: [avatarWindow, chatWindow],
@@ -1617,6 +1852,22 @@ async function startDesktopSuite({
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
 
   const qwenTtsClient = new QwenTtsClient();
+  const recentVoiceRequestIds = new Map();
+  const VOICE_REQUEST_DEDUP_TTL_MS = 120000;
+
+  const rendererConsoleListener = (_event, level, message, line, sourceId) => {
+    const parsed = parseRendererDebugConsoleMessage(message);
+    if (!parsed) {
+      return;
+    }
+    emitDesktopDebug(`chain.renderer.${parsed.event}`, 'renderer emitted debug marker', {
+      level: Number.isFinite(Number(level)) ? Number(level) : null,
+      source_line: Number.isFinite(Number(line)) ? Number(line) : null,
+      source_id: sourceId ? String(sourceId) : null,
+      ...(parsed.data || {})
+    });
+  };
+  avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
@@ -1649,11 +1900,31 @@ async function startDesktopSuite({
             logger
           });
         } else if (eventName === 'voice.requested') {
+          const voicePayload = desktopEvent.data.data;
+          const requestId = String(voicePayload?.request_id || voicePayload?.requestId || '').trim();
+          if (requestId) {
+            const now = Date.now();
+            for (const [id, ts] of recentVoiceRequestIds.entries()) {
+              if (!Number.isFinite(ts) || now - ts > VOICE_REQUEST_DEDUP_TTL_MS) {
+                recentVoiceRequestIds.delete(id);
+              }
+            }
+            const previousTimestamp = recentVoiceRequestIds.get(requestId);
+            if (Number.isFinite(previousTimestamp) && now - previousTimestamp < VOICE_REQUEST_DEDUP_TTL_MS) {
+              emitDesktopDebug('chain.electron.voice.duplicate_ignored', 'electron main ignored duplicated voice.requested', {
+                request_id: requestId,
+                duplicate_gap_ms: now - previousTimestamp
+              });
+              return;
+            }
+            recentVoiceRequestIds.set(requestId, now);
+          }
           void processVoiceRequestedOnDesktop({
-            eventPayload: desktopEvent.data.data,
+            eventPayload: voicePayload,
             ttsClient: qwenTtsClient,
             avatarWindow,
             rpcServerRef,
+            emitDebug: emitDesktopDebug,
             logger
           });
         } else if (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.')) {
@@ -1665,23 +1936,6 @@ async function startDesktopSuite({
             },
             timeoutMs: config.rendererTimeoutMs
           }).catch(() => { });
-        }
-      }
-
-      // backward-compatible legacy voice playback event
-      if (desktopEvent.type === 'runtime.event') {
-        const eventName = desktopEvent.data?.event || desktopEvent.data?.payload?.event;
-        if (eventName === 'voice.playback.electron') {
-          const payload = desktopEvent.data?.payload || desktopEvent.data;
-          const audioRef = payload?.audio_ref || payload?.audioRef;
-          if (audioRef && !avatarWindow.isDestroyed()) {
-            logger.info?.('[desktop-live2d] voice_playback_electron_ipc', { audioRef: audioRef.split('/').pop() });
-            avatarWindow.webContents.send('desktop:voice:play', {
-              audioRef,
-              format: payload?.format || 'ogg',
-              gatewayUrl: config.gatewayUrl
-            });
-          }
         }
       }
 
@@ -1753,12 +2007,12 @@ async function startDesktopSuite({
       });
     }
   });
-  const emitDesktopDebug = (topic, msg, meta = {}) => {
+  function emitDesktopDebug(topic, msg, meta = {}) {
     void gatewayRuntimeClient.emitDebug(topic, msg, {
       source_file: 'apps/desktop-live2d/main/desktopSuite.js',
       ...(meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {})
     });
-  };
+  }
   const initialSessionId = createDesktopSessionId();
   gatewayRuntimeClient.setSessionId(initialSessionId);
   emitDesktopDebug('chain.electron.session.initialized', 'electron main initialized session id', {
@@ -1946,9 +2200,11 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.modelBoundsUpdate, modelBoundsListener);
     ipcMain.off(CHANNELS.bubbleMetricsUpdate, bubbleMetricsListener);
     ipcMain.off(CHANNELS.actionTelemetry, actionTelemetryListener);
+    ipcMain.off(CHANNELS.lipsyncTelemetry, lipsyncTelemetryListener);
     ipcMain.off(CHANNELS.windowControl, windowControlListener);
     ipcMain.off(CHANNELS.windowResizeRequest, windowResizeListener);
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
+    avatarWindow.webContents.off('console-message', rendererConsoleListener);
 
     if (rpcServerRef) {
       await rpcServerRef.stop();
@@ -2055,17 +2311,6 @@ async function handleDesktopRpcRequest({
       tool: resolved.toolName,
       result
     };
-  }
-
-  if (request.method === 'voice.play.test') {
-    const audioRef = String(request.params?.audioRef || '');
-    const gatewayUrl = String(request.params?.gatewayUrl || 'http://127.0.0.1:3000');
-    if (!audioRef) return { ok: false, error: 'audioRef required' };
-    if (!avatarWindow.isDestroyed()) {
-      avatarWindow.webContents.send('desktop:voice:play', { audioRef, format: 'ogg', gatewayUrl });
-      return { ok: true, audioRef };
-    }
-    return { ok: false, error: 'avatarWindow not available' };
   }
 
   if (request.method === 'chat.show' || request.method === 'chat.bubble.show') {

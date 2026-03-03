@@ -5,7 +5,7 @@
   const actionMutexApi = window.Live2DActionMutex || null;
   const actionQueueApi = window.Live2DActionQueuePlayer || null;
   const actionExecutorApi = window.Live2DActionExecutor || null;
-  const visemeLipSyncApi = window.Live2DVisemeLipSync || null;
+  const lipsyncApi = window.Live2DVisemeLipSync || null;
   const state = {
     modelLoaded: false,
     modelName: null,
@@ -13,9 +13,7 @@
     chatPanelVisible: false,
     chatHistorySize: 0,
     lastError: null,
-    layout: null,
-    windowState: null,
-    resizeModeEnabled: false
+    layout: null
   };
 
   let pixiApp = null;
@@ -23,38 +21,27 @@
   let hideBubbleTimer = null;
   const systemAudio = new Audio();
   systemAudio.autoplay = true;
-  systemAudio.preload = 'auto';
   let currentVoiceObjectUrl = null;
-  let lipsyncCtx = null;
-  let lipsyncAnalyser = null;
-  let lipsyncSource = null;
-  let lipsyncRafId = 0;
-  let lipsyncSmoothed = 0;
-  let lipsyncSmoothedForm = 0;
-  let lipsyncCurrentMouthOpen = 0;
-  let lipsyncCurrentMouthForm = 0;
-  let lipsyncAudioEl = null;
-  let lipsyncTimeDomainBuffer = null;
-  let lipsyncFrequencyBuffer = null;
-  let lipsyncParamMetaCache = null;
-  let lipsyncVisemeState = visemeLipSyncApi?.createRuntimeState?.() || null;
-  let lipsyncLastVisemeFrame = null;
-  let recentVoicePlaybackKeys = new Map();
-  let detachLipSyncPlaybackListeners = null;
-  let detachLipSyncTicker = null;
-  let detachLipSyncModelHook = null;
-  let lastLipSyncDebugLogAt = 0;
-  let lipsyncLastVoiceAt = 0;
   let dragPointerState = null;
   let suppressModelTapUntil = 0;
   let stableModelScale = null;
   let stableModelPose = null;
-  let resizeModeScaleFactor = 1;
-  let lastResizeModeRequest = null;
   let modelBaseBounds = null;
   let actionQueuePlayer = null;
   let actionExecutionMutex = null;
   let actionExecutor = null;
+  let audioContext = null;
+  let lipsyncState = null;
+  let lipsyncAnimationFrame = null;
+  let lipsyncAudioSource = null;
+  let lipsyncAnalyser = null;
+  let lipsyncCurrentMouthOpen = 0;
+  let lipsyncCurrentMouthForm = 0;
+  let lipsyncDetachModelHook = null;
+  let lipsyncDetachTickerHook = null;
+  let lipsyncApplyMode = 'raf_direct';
+  let activeVoiceRequestId = null;
+  let systemAudioDebugBound = false;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -66,24 +53,10 @@
   const chatComposerElement = document.getElementById('chat-panel-composer');
   const petHideElement = document.getElementById('pet-hide');
   const petCloseElement = document.getElementById('pet-close');
-  const resizeModeCloseElement = document.getElementById('resize-mode-close');
-  const layoutTunerToggleElement = document.getElementById('layout-tuner-toggle');
-  const layoutTunerPanelElement = document.getElementById('layout-tuner-panel');
-  const layoutTunerCloseElement = document.getElementById('layout-tuner-close');
-  const layoutOffsetXElement = document.getElementById('layout-offset-x');
-  const layoutOffsetYElement = document.getElementById('layout-offset-y');
-  const layoutScaleElement = document.getElementById('layout-scale');
-  const layoutOffsetXValueElement = document.getElementById('layout-offset-x-value');
-  const layoutOffsetYValueElement = document.getElementById('layout-offset-y-value');
-  const layoutScaleValueElement = document.getElementById('layout-scale-value');
-  const layoutResetElement = document.getElementById('layout-reset');
-  const layoutSaveElement = document.getElementById('layout-save');
-  const layoutTunerStatusElement = document.getElementById('layout-tuner-status');
 
   const chatStateApi = window.ChatPanelState;
   let runtimeUiConfig = null;
   let runtimeLive2dPresets = null;
-  let layoutTunerState = null;
   let chatPanelState = null;
   let chatInputComposing = false;
   let chatPanelEnabled = false;
@@ -94,12 +67,6 @@
   let chatPanelShowResizeListener = null;
   let layoutRafToken = 0;
   let lastReportedModelBounds = null;
-  let detachWindowStateSync = null;
-  const layoutTunerDefaults = window.DesktopLive2dDefaults?.DEFAULT_LAYOUT_CONFIG || {
-    offsetX: 0,
-    offsetY: 0,
-    scaleMultiplier: 1
-  };
   const modelTapToggleGate = typeof interactionApi?.createCooldownGate === 'function'
     ? interactionApi.createCooldownGate({ cooldownMs: 220 })
     : {
@@ -116,29 +83,13 @@
   const CHAT_PANEL_SHOW_WAIT_RESIZE_TIMEOUT_MS = 220;
   const MODEL_TAP_SUPPRESS_AFTER_DRAG_MS = 220;
   const MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS = 240;
-  const LIPSYNC_MOUTH_PARAM = 'ParamMouthOpenY';
-  const LIPSYNC_MOUTH_FORM_PARAM = 'ParamMouthForm';
-  const LIPSYNC_FFT_SIZE = 256;
-  const LIPSYNC_THRESHOLD = 0.004;
-  const LIPSYNC_RANGE = 0.06;
-  const LIPSYNC_CURVE_EXPONENT = 0.65;
-  const LIPSYNC_HARD_CLOSE_RMS_THRESHOLD = 0.014;
-  const LIPSYNC_HARD_CLOSE_NORMALIZED_THRESHOLD = 0.14;
-  const LIPSYNC_ATTACK_ALPHA = 0.56;
-  const LIPSYNC_RELEASE_ALPHA = 0.18;
-  const LIPSYNC_FORM_ATTACK_ALPHA = 0.42;
-  const LIPSYNC_FORM_RELEASE_ALPHA = 0.22;
-  const LIPSYNC_ACTIVE_BASELINE = 0.08;
-  const LIPSYNC_SILENCE_HANGOVER_MS = 100;
-  const LIPSYNC_MAX_MOUTH = 0.95;
-  const LIPSYNC_FORM_MAX_ABS = 0.16;
-  const LIPSYNC_FORM_DEADZONE = 0.18;
-  const LIPSYNC_FORM_CURVE_EXPONENT = 0.82;
-  const LIPSYNC_FORM_NEGATIVE_SCALE = 0.55;
-  const LIPSYNC_FORM_POSITIVE_SCALE = 0.8;
-  const LIPSYNC_FORM_LOW_BAND_HZ = [180, 900];
-  const LIPSYNC_FORM_HIGH_BAND_HZ = [1200, 3600];
-  const VOICE_PLAYBACK_DEDUPE_WINDOW_MS = 3500;
+  const LIPSYNC_OPEN_GAIN_MIN = 1.35;
+  const LIPSYNC_OPEN_GAIN_MAX = 1.95;
+  const LIPSYNC_FORM_GAIN_MIN = 1.2;
+  const LIPSYNC_FORM_GAIN_MAX = 1.7;
+  const LIPSYNC_OPEN_GAMMA = 0.78;
+  const LIPSYNC_ACTIVE_ENERGY_MIN = 0.018;
+  const LIPSYNC_MIN_OPEN_WHEN_SPEAKING = 0.12;
 
   function nearlyEqual(left, right, epsilon = 1e-4) {
     if (typeof interactionApi?.nearlyEqual === 'function') {
@@ -215,663 +166,44 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  function roundToStep(value, step = 1) {
-    const safeStep = Number(step) || 1;
-    return Math.round((Number(value) || 0) / safeStep) * safeStep;
+  function lerp(min, max, t) {
+    const ratio = clamp(Number(t) || 0, 0, 1);
+    return min + (max - min) * ratio;
   }
 
-  function normalizeLayoutTunerValues(input = {}) {
-    return {
-      offsetX: Math.round(clamp(Number(input.offsetX) || 0, -120, 120)),
-      offsetY: Math.round(clamp(Number(input.offsetY) || 0, -120, 120)),
-      scaleMultiplier: Math.round(clamp(Number(input.scaleMultiplier) || 1, 0.7, 1.5) * 100) / 100
-    };
-  }
-
-  function toLayoutDisplayValues(values = {}) {
-    return {
-      offsetX: Math.round((Number(values.offsetX) || 0) - (Number(layoutTunerDefaults.offsetX) || 0)),
-      offsetY: Math.round((Number(values.offsetY) || 0) - (Number(layoutTunerDefaults.offsetY) || 0)),
-      scaleMultiplier: Math.round((Number(values.scaleMultiplier) || 1) * 100) / 100
-    };
-  }
-
-  function fromLayoutDisplayValues(values = {}) {
-    return normalizeLayoutTunerValues({
-      offsetX: (Number(layoutTunerDefaults.offsetX) || 0) + (Number(values.offsetX) || 0),
-      offsetY: (Number(layoutTunerDefaults.offsetY) || 0) + (Number(values.offsetY) || 0),
-      scaleMultiplier: Number(values.scaleMultiplier) || Number(layoutTunerDefaults.scaleMultiplier) || 1
-    });
-  }
-
-  function ensureRuntimeLayoutConfig() {
-    runtimeUiConfig = runtimeUiConfig && typeof runtimeUiConfig === 'object' ? runtimeUiConfig : {};
-    runtimeUiConfig.layout = {
-      ...(layoutTunerDefaults || {}),
-      ...(runtimeUiConfig.layout || {})
-    };
-    return runtimeUiConfig.layout;
-  }
-
-  function getCurrentLayoutTunerValues() {
-    const layoutConfig = ensureRuntimeLayoutConfig();
-    return normalizeLayoutTunerValues({
-      offsetX: layoutConfig.offsetX ?? layoutTunerDefaults.offsetX,
-      offsetY: layoutConfig.offsetY ?? layoutTunerDefaults.offsetY,
-      scaleMultiplier: layoutConfig.scaleMultiplier ?? layoutTunerDefaults.scaleMultiplier
-    });
-  }
-
-  function setLayoutTunerStatus(message = '') {
-    if (layoutTunerStatusElement) {
-      layoutTunerStatusElement.textContent = String(message || '');
-    }
-  }
-
-  function syncLayoutTunerControls() {
-    if (!layoutTunerState?.values) {
-      return;
-    }
-    const { offsetX, offsetY, scaleMultiplier } = toLayoutDisplayValues(layoutTunerState.values);
-    if (layoutOffsetXElement) layoutOffsetXElement.value = String(offsetX);
-    if (layoutOffsetYElement) layoutOffsetYElement.value = String(offsetY);
-    if (layoutScaleElement) layoutScaleElement.value = String(scaleMultiplier);
-    if (layoutOffsetXValueElement) layoutOffsetXValueElement.textContent = String(offsetX);
-    if (layoutOffsetYValueElement) layoutOffsetYValueElement.textContent = String(offsetY);
-    if (layoutScaleValueElement) layoutScaleValueElement.textContent = scaleMultiplier.toFixed(2);
-  }
-
-  function setLayoutTunerOpen(open) {
-    const nextOpen = Boolean(open) && state.resizeModeEnabled;
-    if (!layoutTunerState) {
-      layoutTunerState = {
-        open: nextOpen,
-        values: getCurrentLayoutTunerValues()
-      };
-    } else {
-      layoutTunerState.open = nextOpen;
-    }
-    document.body.classList.toggle('layout-tuner-open', nextOpen);
-    if (layoutTunerToggleElement) {
-      layoutTunerToggleElement.textContent = nextOpen ? 'Close Layout' : 'Adjust Layout';
-    }
-    if (!nextOpen) {
-      setLayoutTunerStatus('');
-    }
-  }
-
-  function applyLayoutTunerValues(nextValues, { showStatus = false, statusMessage = '' } = {}) {
-    const normalized = normalizeLayoutTunerValues(nextValues);
-    const layoutConfig = ensureRuntimeLayoutConfig();
-    layoutConfig.offsetX = normalized.offsetX;
-    layoutConfig.offsetY = normalized.offsetY;
-    layoutConfig.scaleMultiplier = normalized.scaleMultiplier;
-    if (!layoutTunerState) {
-      layoutTunerState = { open: false, values: normalized };
-    } else {
-      layoutTunerState.values = normalized;
-    }
-    syncLayoutTunerControls();
-    scheduleAdaptiveLayout();
-    if (showStatus) {
-      setLayoutTunerStatus(statusMessage);
-    }
-  }
-
-  function resetLayoutTunerValues() {
-    applyLayoutTunerValues({
-      offsetX: layoutTunerDefaults.offsetX,
-      offsetY: layoutTunerDefaults.offsetY,
-      scaleMultiplier: layoutTunerDefaults.scaleMultiplier
-    }, {
-      showStatus: true,
-      statusMessage: 'Preview reset to defaults'
-    });
-  }
-
-  function saveLayoutTunerValues() {
-    const values = layoutTunerState?.values || getCurrentLayoutTunerValues();
-    bridge?.sendWindowControl?.({
-      action: 'save_layout_overrides',
-      layout: values
-    });
-    setLayoutTunerStatus('Saved to desktop-live2d.json');
-  }
-
-  function getCoreModel() {
-    return live2dModel?.internalModel?.coreModel || null;
-  }
-
-  function getLipSyncParamMeta(parameterId) {
-    const coreModel = getCoreModel();
-    if (
-      !coreModel
-      || typeof coreModel.getParameterIndex !== 'function'
-      || typeof coreModel.getParameterDefaultValue !== 'function'
-      || typeof coreModel.getParameterMinimumValue !== 'function'
-      || typeof coreModel.getParameterMaximumValue !== 'function'
-    ) {
-      return null;
-    }
-
-    if (!lipsyncParamMetaCache) {
-      lipsyncParamMetaCache = new Map();
-    }
-    if (lipsyncParamMetaCache.has(parameterId)) {
-      return lipsyncParamMetaCache.get(parameterId);
-    }
-
-    const parameterIndex = coreModel.getParameterIndex(parameterId);
-    if (!Number.isInteger(parameterIndex) || parameterIndex < 0) {
-      lipsyncParamMetaCache.set(parameterId, null);
-      return null;
-    }
-
-    const meta = {
-      defaultValue: Number(coreModel.getParameterDefaultValue(parameterIndex)),
-      minValue: Number(coreModel.getParameterMinimumValue(parameterIndex)),
-      maxValue: Number(coreModel.getParameterMaximumValue(parameterIndex))
-    };
-    lipsyncParamMetaCache.set(parameterId, meta);
-    return meta;
-  }
-
-  function applyMouthOpenToModel(value) {
-    if (!state.modelLoaded) {
-      return { ok: false, skipped: true, reason: 'model_not_loaded' };
-    }
-
-    const coreModel = getCoreModel();
-    if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
-      return { ok: false, skipped: true, reason: 'core_model_unavailable' };
-    }
-
-    coreModel.setParameterValueById(LIPSYNC_MOUTH_PARAM, clamp(Number(value) || 0, 0, 1));
-    return { ok: true };
-  }
-
-  function setMouthOpen(value) {
-    lipsyncCurrentMouthOpen = clamp(Number(value) || 0, 0, 1);
-    return applyMouthOpenToModel(lipsyncCurrentMouthOpen);
-  }
-
-  function applyMouthFormToModel(value) {
-    if (!state.modelLoaded) {
-      return { ok: false, skipped: true, reason: 'model_not_loaded' };
-    }
-
-    const coreModel = getCoreModel();
-    if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
-      return { ok: false, skipped: true, reason: 'core_model_unavailable' };
-    }
-
-    const normalizedValue = clamp(Number(value) || 0, -1, 1);
-    const meta = getLipSyncParamMeta(LIPSYNC_MOUTH_FORM_PARAM);
-    if (!meta) {
-      coreModel.setParameterValueById(
-        LIPSYNC_MOUTH_FORM_PARAM,
-        clamp(normalizedValue * LIPSYNC_FORM_MAX_ABS, -LIPSYNC_FORM_MAX_ABS, LIPSYNC_FORM_MAX_ABS)
-      );
-      return { ok: true, calibrated: false };
-    }
-
-    const positiveSpan = Math.max(0, Math.min(meta.maxValue - meta.defaultValue, LIPSYNC_FORM_MAX_ABS));
-    const negativeSpan = Math.max(0, Math.min(meta.defaultValue - meta.minValue, LIPSYNC_FORM_MAX_ABS));
-    const delta = normalizedValue >= 0
-      ? normalizedValue * positiveSpan
-      : normalizedValue * negativeSpan;
-    const calibratedValue = clamp(meta.defaultValue + delta, meta.minValue, meta.maxValue);
-
-    coreModel.setParameterValueById(LIPSYNC_MOUTH_FORM_PARAM, calibratedValue);
-    return { ok: true };
-  }
-
-  function setMouthForm(value) {
-    lipsyncCurrentMouthForm = clamp(Number(value) || 0, -1, 1);
-    return applyMouthFormToModel(lipsyncCurrentMouthForm);
-  }
-
-  function getFrequencyBandEnergy(buffer, sampleRate, minHz, maxHz) {
-    if (!buffer || !buffer.length || !Number.isFinite(sampleRate) || sampleRate <= 0) {
-      return 0;
-    }
-
-    const nyquist = sampleRate / 2;
-    const minIndex = clamp(Math.floor((minHz / nyquist) * buffer.length), 0, buffer.length - 1);
-    const maxIndex = clamp(Math.ceil((maxHz / nyquist) * buffer.length), minIndex + 1, buffer.length);
+  function estimateVoiceEnergy(frequencyData) {
+    if (!frequencyData || frequencyData.length === 0) return 0;
     let sum = 0;
-    let count = 0;
-    for (let index = minIndex; index < maxIndex; index += 1) {
-      sum += buffer[index] / 255;
-      count += 1;
+    for (let i = 0; i < frequencyData.length; i += 1) {
+      sum += Number(frequencyData[i]) || 0;
     }
-    return count > 0 ? sum / count : 0;
+    return clamp(sum / (frequencyData.length * 255), 0, 1);
   }
 
-  function applyLipSyncForCurrentFrame() {
-    if (lipsyncCurrentMouthOpen <= 0 && Math.abs(lipsyncCurrentMouthForm) <= 1e-4) {
-      return;
+  function enhanceMouthParams({ mouthOpen = 0, mouthForm = 0, voiceEnergy = 0, speaking = false } = {}) {
+    const rawOpen = clamp(Number(mouthOpen) || 0, 0, 1);
+    const rawForm = clamp(Number(mouthForm) || 0, -1, 1);
+    const energy = clamp(Number(voiceEnergy) || 0, 0, 1);
+    const active = Boolean(speaking) && energy >= LIPSYNC_ACTIVE_ENERGY_MIN;
+    const intensity = clamp((energy - LIPSYNC_ACTIVE_ENERGY_MIN) / 0.08, 0, 1);
+
+    if (!active) {
+      return {
+        mouthOpen: rawOpen,
+        mouthForm: rawForm
+      };
     }
 
-    const coreModel = getCoreModel();
-    if (!coreModel) {
-      return;
-    }
-
-    if (typeof coreModel.addParameterValueById === 'function') {
-      coreModel.addParameterValueById(LIPSYNC_MOUTH_PARAM, lipsyncCurrentMouthOpen, 1);
-      applyMouthFormToModel(lipsyncCurrentMouthForm);
-      const now = Date.now();
-      if (now - lastLipSyncDebugLogAt >= 1000 && typeof coreModel.getParameterValueById === 'function') {
-        const formMeta = getLipSyncParamMeta(LIPSYNC_MOUTH_FORM_PARAM);
-        lastLipSyncDebugLogAt = now;
-        console.log('[lipsync] apply frame', JSON.stringify({
-          source: 'beforeModelUpdate',
-          target: lipsyncCurrentMouthOpen,
-          current: coreModel.getParameterValueById(LIPSYNC_MOUTH_PARAM),
-          form_target: lipsyncCurrentMouthForm,
-          form_current: coreModel.getParameterValueById(LIPSYNC_MOUTH_FORM_PARAM),
-          form_default: formMeta?.defaultValue ?? null,
-          form_min: formMeta?.minValue ?? null,
-          form_max: formMeta?.maxValue ?? null,
-          viseme: lipsyncLastVisemeFrame?.dominantViseme ?? null,
-          viseme_confidence: lipsyncLastVisemeFrame?.confidence ?? null,
-          viseme_weights: lipsyncLastVisemeFrame?.weights ?? null
-        }));
-      }
-      return;
-    }
-
-    applyMouthOpenToModel(lipsyncCurrentMouthOpen);
-    applyMouthFormToModel(lipsyncCurrentMouthForm);
-  }
-
-  function bindLipSyncTicker() {
-    if (!pixiApp?.ticker || typeof pixiApp.ticker.add !== 'function' || detachLipSyncTicker) {
-      return;
-    }
-
-    const tick = () => {
-      if (lipsyncCurrentMouthOpen <= 0) {
-        return;
-      }
-      applyLipSyncForCurrentFrame();
-    };
-
-    pixiApp.ticker.add(tick);
-    detachLipSyncTicker = () => {
-      if (pixiApp?.ticker && typeof pixiApp.ticker.remove === 'function') {
-        pixiApp.ticker.remove(tick);
-      }
-      detachLipSyncTicker = null;
-    };
-  }
-
-  function bindLipSyncModelHook() {
-    const internalModel = live2dModel?.internalModel;
-    if (!internalModel || typeof internalModel.on !== 'function' || detachLipSyncModelHook) {
-      return false;
-    }
-
-    const handler = () => {
-      applyLipSyncForCurrentFrame();
-    };
-
-    internalModel.on('beforeModelUpdate', handler);
-    detachLipSyncModelHook = () => {
-      if (typeof internalModel.off === 'function') {
-        internalModel.off('beforeModelUpdate', handler);
-      } else if (typeof internalModel.removeListener === 'function') {
-        internalModel.removeListener('beforeModelUpdate', handler);
-      }
-      detachLipSyncModelHook = null;
-    };
-    return true;
-  }
-
-  function computeRmsFromTimeDomain(buffer) {
-    if (!buffer || buffer.length === 0) {
-      return 0;
-    }
-
-    let sumSquares = 0;
-    for (let index = 0; index < buffer.length; index += 1) {
-      const normalized = (buffer[index] - 128) / 128;
-      sumSquares += normalized * normalized;
-    }
-    return Math.sqrt(sumSquares / buffer.length);
-  }
-
-  async function ensureLipSyncGraph(audioEl) {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) {
-      throw createRpcError(-32005, 'AudioContext is unavailable');
-    }
-
-    if (!lipsyncCtx || lipsyncCtx.state === 'closed') {
-      lipsyncCtx = new AudioContextCtor();
-      lipsyncAnalyser = null;
-      lipsyncSource = null;
-      lipsyncAudioEl = null;
-      lipsyncTimeDomainBuffer = null;
-      lipsyncFrequencyBuffer = null;
-    }
-
-    if (lipsyncCtx.state === 'suspended') {
-      await lipsyncCtx.resume();
-    }
-
-    if (!lipsyncAnalyser) {
-      lipsyncAnalyser = lipsyncCtx.createAnalyser();
-      lipsyncAnalyser.fftSize = LIPSYNC_FFT_SIZE;
-      lipsyncTimeDomainBuffer = new Uint8Array(lipsyncAnalyser.fftSize);
-      lipsyncFrequencyBuffer = new Uint8Array(lipsyncAnalyser.frequencyBinCount);
-    }
-
-    if (!lipsyncSource) {
-      lipsyncSource = lipsyncCtx.createMediaElementSource(audioEl);
-      lipsyncAudioEl = audioEl;
-      lipsyncSource.connect(lipsyncAnalyser);
-      lipsyncAnalyser.connect(lipsyncCtx.destination);
-    } else if (lipsyncAudioEl !== audioEl) {
-      throw createRpcError(-32005, 'lip sync source is already bound to another audio element');
-    }
+    const openGain = lerp(LIPSYNC_OPEN_GAIN_MIN, LIPSYNC_OPEN_GAIN_MAX, intensity);
+    const formGain = lerp(LIPSYNC_FORM_GAIN_MIN, LIPSYNC_FORM_GAIN_MAX, intensity);
+    const widenedOpen = Math.pow(rawOpen, LIPSYNC_OPEN_GAMMA) * openGain + Math.abs(rawForm) * 0.08 * intensity;
+    const boostedOpen = Math.max(clamp(widenedOpen, 0, 1), LIPSYNC_MIN_OPEN_WHEN_SPEAKING);
+    const boostedForm = clamp(rawForm * formGain, -1, 1);
 
     return {
-      ctx: lipsyncCtx,
-      analyser: lipsyncAnalyser,
-      buffer: lipsyncTimeDomainBuffer,
-      frequencyBuffer: lipsyncFrequencyBuffer
+      mouthOpen: boostedOpen,
+      mouthForm: boostedForm
     };
-  }
-
-  function teardownLipSyncPlaybackListeners() {
-    if (typeof detachLipSyncPlaybackListeners === 'function') {
-      detachLipSyncPlaybackListeners();
-      detachLipSyncPlaybackListeners = null;
-    }
-  }
-
-  function stopLipSyncFrame() {
-    if (lipsyncRafId) {
-      window.cancelAnimationFrame(lipsyncRafId);
-      lipsyncRafId = 0;
-    }
-    lipsyncSmoothed = 0;
-    lipsyncSmoothedForm = 0;
-    lipsyncCurrentMouthOpen = 0;
-    lipsyncCurrentMouthForm = 0;
-    lipsyncLastVoiceAt = 0;
-    lipsyncVisemeState = visemeLipSyncApi?.createRuntimeState?.() || null;
-    lipsyncLastVisemeFrame = null;
-    setMouthOpen(0);
-    setMouthForm(0);
-  }
-
-  function stopLipSync() {
-    stopLipSyncFrame();
-    teardownLipSyncPlaybackListeners();
-  }
-
-  async function startLipSyncWithAudio(audioEl) {
-    const graph = await ensureLipSyncGraph(audioEl);
-    stopLipSyncFrame();
-
-    const step = () => {
-      if (!graph.analyser || !graph.buffer || !graph.frequencyBuffer) {
-        return;
-      }
-
-      graph.analyser.getByteTimeDomainData(graph.buffer);
-      graph.analyser.getByteFrequencyData(graph.frequencyBuffer);
-      const rms = computeRmsFromTimeDomain(graph.buffer);
-      const now = performance.now();
-      const normalized = rms <= LIPSYNC_THRESHOLD
-        ? 0
-        : clamp((rms - LIPSYNC_THRESHOLD) / LIPSYNC_RANGE, 0, 1);
-      const hardSilent = rms < LIPSYNC_HARD_CLOSE_RMS_THRESHOLD || normalized < LIPSYNC_HARD_CLOSE_NORMALIZED_THRESHOLD;
-      if (hardSilent) {
-        lipsyncSmoothed = 0;
-        lipsyncSmoothedForm = 0;
-        lipsyncLastVoiceAt = 0;
-        lipsyncLastVisemeFrame = null;
-        lipsyncVisemeState = visemeLipSyncApi?.createRuntimeState?.() || null;
-        setMouthOpen(0);
-        setMouthForm(0);
-        lipsyncRafId = window.requestAnimationFrame(step);
-        return;
-      }
-      let target = 0;
-      if (normalized > 0) {
-        lipsyncLastVoiceAt = now;
-        const shaped = Math.pow(normalized, LIPSYNC_CURVE_EXPONENT);
-        target = LIPSYNC_ACTIVE_BASELINE + shaped * (LIPSYNC_MAX_MOUTH - LIPSYNC_ACTIVE_BASELINE);
-      } else if (lipsyncLastVoiceAt > 0 && now - lipsyncLastVoiceAt <= LIPSYNC_SILENCE_HANGOVER_MS) {
-        target = LIPSYNC_ACTIVE_BASELINE;
-      }
-
-      const smoothingAlpha = target > lipsyncSmoothed ? LIPSYNC_ATTACK_ALPHA : LIPSYNC_RELEASE_ALPHA;
-      lipsyncSmoothed += (target - lipsyncSmoothed) * smoothingAlpha;
-      const lowBandEnergy = getFrequencyBandEnergy(
-        graph.frequencyBuffer,
-        graph.ctx?.sampleRate || 0,
-        LIPSYNC_FORM_LOW_BAND_HZ[0],
-        LIPSYNC_FORM_LOW_BAND_HZ[1]
-      );
-      const highBandEnergy = getFrequencyBandEnergy(
-        graph.frequencyBuffer,
-        graph.ctx?.sampleRate || 0,
-        LIPSYNC_FORM_HIGH_BAND_HZ[0],
-        LIPSYNC_FORM_HIGH_BAND_HZ[1]
-      );
-      const spectralBalance = clamp(
-        (highBandEnergy - lowBandEnergy) / Math.max(1e-4, highBandEnergy + lowBandEnergy),
-        -1,
-        1
-      );
-      const mouthOpenWeight = clamp((lipsyncSmoothed - LIPSYNC_ACTIVE_BASELINE) / Math.max(1e-4, LIPSYNC_MAX_MOUTH), 0, 1);
-      const spectralMagnitude = Math.abs(spectralBalance);
-      const normalizedFormMagnitude = spectralMagnitude <= LIPSYNC_FORM_DEADZONE
-        ? 0
-        : clamp((spectralMagnitude - LIPSYNC_FORM_DEADZONE) / Math.max(1e-4, 1 - LIPSYNC_FORM_DEADZONE), 0, 1);
-      const shapedFormBalance = Math.sign(spectralBalance) * Math.pow(normalizedFormMagnitude, LIPSYNC_FORM_CURVE_EXPONENT);
-      const directionalFormScale = shapedFormBalance < 0 ? LIPSYNC_FORM_NEGATIVE_SCALE : LIPSYNC_FORM_POSITIVE_SCALE;
-      const fallbackFormTarget = shapedFormBalance * mouthOpenWeight * directionalFormScale;
-      const formSmoothingAlpha = Math.abs(fallbackFormTarget) > Math.abs(lipsyncSmoothedForm)
-        ? LIPSYNC_FORM_ATTACK_ALPHA
-        : LIPSYNC_FORM_RELEASE_ALPHA;
-      lipsyncSmoothedForm += (fallbackFormTarget - lipsyncSmoothedForm) * formSmoothingAlpha;
-
-      let nextMouthOpen = lipsyncSmoothed;
-      let nextMouthForm = lipsyncSmoothedForm;
-      const visemeFrame = visemeLipSyncApi?.resolveVisemeFrame?.({
-        frequencyBuffer: graph.frequencyBuffer,
-        sampleRate: graph.ctx?.sampleRate || 0,
-        voiceEnergy: normalized,
-        speaking: normalized > 0 || target > 0,
-        fallbackOpen: lipsyncSmoothed,
-        fallbackForm: lipsyncSmoothedForm,
-        state: lipsyncVisemeState
-      }) || null;
-      if (visemeFrame) {
-        lipsyncLastVisemeFrame = visemeFrame;
-        nextMouthOpen = clamp(Number(visemeFrame.mouthOpen) || 0, 0, 1);
-        nextMouthForm = clamp(Number(visemeFrame.mouthForm) || 0, -1, 1);
-      } else {
-        lipsyncLastVisemeFrame = null;
-      }
-
-      setMouthOpen(nextMouthOpen);
-      setMouthForm(nextMouthForm);
-      lipsyncRafId = window.requestAnimationFrame(step);
-    };
-
-    step();
-  }
-
-  function normalizeFileUrl(rawValue) {
-    const normalized = String(rawValue || '').trim();
-    if (!normalized) {
-      return '';
-    }
-    if (/^(file|https?|data|blob):/i.test(normalized)) {
-      return normalized;
-    }
-    if (normalized.startsWith('/')) {
-      return `file://${encodeURI(normalized)}`;
-    }
-    return '';
-  }
-
-  function resolveAudioPlaybackUrl(data = {}) {
-    const directRef = normalizeFileUrl(data.audio_ref || data.audioRef || data.audioPath);
-    if (directRef) {
-      return directRef;
-    }
-
-    const gatewayUrl = String(data.gatewayUrl || '').trim();
-    const audioRef = String(data.audio_ref || data.audioRef || '').trim();
-    if (gatewayUrl && audioRef) {
-      try {
-        const url = new URL('/api/audio', gatewayUrl);
-        url.searchParams.set('path', audioRef);
-        return url.toString();
-      } catch {
-        return '';
-      }
-    }
-
-    return '';
-  }
-
-  function buildVoicePlaybackKey(payload = {}, audioUrl = '') {
-    const idempotencyKey = String(payload.idempotencyKey || payload.idempotency_key || '').trim();
-    if (idempotencyKey) {
-      return `idem:${idempotencyKey}`;
-    }
-
-    const turnId = String(payload.turnId || payload.turn_id || '').trim();
-    if (turnId && audioUrl) {
-      return `turn:${turnId}|url:${audioUrl}`;
-    }
-    if (turnId) {
-      return `turn:${turnId}`;
-    }
-
-    return audioUrl ? `url:${audioUrl}` : '';
-  }
-
-  function shouldSkipDuplicateVoicePlayback(playbackKey) {
-    if (!playbackKey) {
-      return false;
-    }
-
-    const now = Date.now();
-    for (const [key, timestamp] of recentVoicePlaybackKeys.entries()) {
-      if (!Number.isFinite(timestamp) || now - timestamp > VOICE_PLAYBACK_DEDUPE_WINDOW_MS) {
-        recentVoicePlaybackKeys.delete(key);
-      }
-    }
-
-    const previousSeenAt = recentVoicePlaybackKeys.get(playbackKey);
-    if (Number.isFinite(previousSeenAt) && now - previousSeenAt <= VOICE_PLAYBACK_DEDUPE_WINDOW_MS) {
-      return true;
-    }
-
-    recentVoicePlaybackKeys.set(playbackKey, now);
-    return false;
-  }
-
-  async function playAudioWithLipSync(audioUrl) {
-    if (!audioUrl) {
-      throw createRpcError(-32602, 'audio url is required for lip sync playback');
-    }
-
-    stopLipSync();
-    try {
-      systemAudio.pause();
-    } catch {
-      // no-op
-    }
-
-    systemAudio.currentTime = 0;
-    const previousAutoplay = systemAudio.autoplay;
-    systemAudio.autoplay = false;
-    systemAudio.src = audioUrl;
-    systemAudio.load();
-
-    const onPlaybackFinished = () => {
-      stopLipSync();
-      systemAudio.autoplay = previousAutoplay;
-    };
-    systemAudio.addEventListener('ended', onPlaybackFinished);
-    systemAudio.addEventListener('pause', onPlaybackFinished);
-    systemAudio.addEventListener('error', onPlaybackFinished);
-    detachLipSyncPlaybackListeners = () => {
-      systemAudio.removeEventListener('ended', onPlaybackFinished);
-      systemAudio.removeEventListener('pause', onPlaybackFinished);
-      systemAudio.removeEventListener('error', onPlaybackFinished);
-      systemAudio.autoplay = previousAutoplay;
-    };
-
-    await ensureLipSyncGraph(systemAudio);
-    await systemAudio.play();
-    await startLipSyncWithAudio(systemAudio);
-
-    return { ok: true, audioUrl };
-  }
-
-  async function handleVoicePlaybackRequest(payload = {}) {
-    const audioUrl = resolveAudioPlaybackUrl(payload);
-    if (!audioUrl) {
-      throw createRpcError(-32602, 'voice playback requires audio_ref, audioRef, or audioPath');
-    }
-    const playbackKey = buildVoicePlaybackKey(payload, audioUrl);
-    if (shouldSkipDuplicateVoicePlayback(playbackKey)) {
-      console.log('[lipsync] skip duplicate voice playback', JSON.stringify({
-        playbackKey,
-        turnId: payload.turnId || payload.turn_id || null,
-        idempotencyKey: payload.idempotencyKey || payload.idempotency_key || null
-      }));
-      return { ok: true, deduplicated: true, audioUrl };
-    }
-    return playAudioWithLipSync(audioUrl);
-  }
-
-  async function handleVoicePlaybackMemoryRequest(payload = {}) {
-    const audioBase64 = String(payload.audioBase64 || '').trim();
-    if (!audioBase64) {
-      throw createRpcError(-32602, 'voice playback memory requires audioBase64');
-    }
-    const mimeType = String(payload.mimeType || payload.mime_type || 'audio/ogg');
-    const requestId = String(payload.requestId || payload.request_id || `${Date.now()}-voice`);
-    
-    const playbackKey = buildVoicePlaybackKey({
-      idempotencyKey: requestId,
-      turnId: payload.turnId || payload.turn_id
-    }, `blob:memory:${requestId}`);
-    
-    if (shouldSkipDuplicateVoicePlayback(playbackKey)) {
-      console.log('[lipsync] skip duplicate voice playback (memory)', JSON.stringify({
-        playbackKey,
-        requestId
-      }));
-      return { ok: true, deduplicated: true, requestId };
-    }
-    
-    const binaryString = atob(audioBase64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i += 1) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    releaseCurrentVoiceObjectUrl();
-    const blob = new Blob([bytes], { type: mimeType });
-    const objectUrl = URL.createObjectURL(blob);
-    currentVoiceObjectUrl = objectUrl;
-    
-    return playAudioWithLipSync(objectUrl);
   }
 
   function releaseCurrentVoiceObjectUrl() {
@@ -882,6 +214,1031 @@
         // ignore revoke errors
       }
       currentVoiceObjectUrl = null;
+    }
+  }
+
+  function normalizeVoiceRequestId(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return null;
+    }
+    return normalized.slice(0, 128);
+  }
+
+  function emitLipsyncTelemetry(eventName, meta = {}) {
+    if (typeof bridge?.sendLipsyncTelemetry !== 'function') {
+      return;
+    }
+    const event = String(eventName || '').trim().toLowerCase();
+    if (!event) {
+      return;
+    }
+    const payload = {
+      event,
+      timestamp: Date.now()
+    };
+    const requestId = normalizeVoiceRequestId(meta.request_id || meta.requestId) || activeVoiceRequestId;
+    if (requestId) {
+      payload.request_id = requestId;
+    }
+    for (const [key, value] of Object.entries(meta)) {
+      if (key === 'request_id' || key === 'requestId' || value === undefined) {
+        continue;
+      }
+      payload[key] = value;
+    }
+    try {
+      bridge.sendLipsyncTelemetry(payload);
+    } catch (err) {
+      console.warn('[lipsync] failed to send telemetry', err);
+    }
+  }
+
+  function emitRendererDebug(eventName, meta = {}) {
+    const event = String(eventName || '').trim().toLowerCase();
+    if (!event) {
+      return;
+    }
+    const payload = {
+      event,
+      timestamp: Date.now(),
+      ...meta
+    };
+    try {
+      console.log(`[renderer-debug] ${JSON.stringify(payload)}`);
+    } catch {
+      // ignore debug serialization errors
+    }
+  }
+
+  function snapshotSystemAudioState() {
+    return {
+      paused: !!systemAudio.paused,
+      muted: !!systemAudio.muted,
+      volume: Number(systemAudio.volume),
+      current_time: Number(systemAudio.currentTime) || 0,
+      duration: Number.isFinite(Number(systemAudio.duration)) ? Number(systemAudio.duration) : null,
+      ready_state: Number(systemAudio.readyState),
+      network_state: Number(systemAudio.networkState)
+    };
+  }
+
+  function probeModelMouthParams() {
+    const summary = {
+      has_model: !!live2dModel,
+      has_core_model: false,
+      has_parameter_ids_api: false,
+      has_mouth_open_param: null,
+      has_mouth_form_param: null,
+      parameter_count: null,
+      error: null
+    };
+    try {
+      const coreModel = live2dModel?.internalModel?.coreModel;
+      if (!coreModel) {
+        return summary;
+      }
+      summary.has_core_model = true;
+      const ids = coreModel.getParameterIds?.();
+      if (Array.isArray(ids)) {
+        summary.has_parameter_ids_api = true;
+        summary.parameter_count = ids.length;
+        summary.has_mouth_open_param = ids.includes('ParamMouthOpenY');
+        summary.has_mouth_form_param = ids.includes('ParamMouthForm');
+      }
+      return summary;
+    } catch (err) {
+      summary.error = err?.message || String(err || 'unknown error');
+      return summary;
+    }
+  }
+
+  function bindSystemAudioDebugEvents() {
+    if (systemAudioDebugBound) {
+      return;
+    }
+    systemAudioDebugBound = true;
+    const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause', 'stalled', 'suspend', 'waiting', 'ended', 'error'];
+    for (const eventName of events) {
+      systemAudio.addEventListener(eventName, () => {
+        emitRendererDebug('voice_memory.audio_event', {
+          event_type: eventName,
+          ...snapshotSystemAudioState(),
+          error_code: systemAudio.error?.code || null,
+          error_message: systemAudio.error?.message || null
+        });
+      });
+    }
+  }
+
+  function applyLipsyncValuesToModel({ source = 'unknown' } = {}) {
+    const coreModel = live2dModel?.internalModel?.coreModel;
+    if (!coreModel) {
+      return false;
+    }
+    const mouthOpen = clamp(Number(lipsyncCurrentMouthOpen) || 0, 0, 1);
+    const mouthForm = clamp(Number(lipsyncCurrentMouthForm) || 0, -1, 1);
+    try {
+      if (typeof coreModel.addParameterValueById === 'function') {
+        coreModel.addParameterValueById('ParamMouthOpenY', mouthOpen, 1);
+        coreModel.addParameterValueById('ParamMouthForm', mouthForm, 1);
+      } else {
+        coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
+        coreModel.setParameterValueById('ParamMouthForm', mouthForm);
+      }
+      return true;
+    } catch (err) {
+      emitLipsyncTelemetry('frame.apply_failed', {
+        error: err?.message || String(err || 'unknown error'),
+        mouth_open: mouthOpen,
+        mouth_form: mouthForm,
+        reason: `apply_${source}_failed`
+      });
+      return false;
+    }
+  }
+
+  function detachLipsyncModelHook() {
+    if (typeof lipsyncDetachModelHook === 'function') {
+      lipsyncDetachModelHook();
+      lipsyncDetachModelHook = null;
+      emitRendererDebug('lipsync.model_hook_detached', {
+        request_id: activeVoiceRequestId
+      });
+    }
+  }
+
+  function detachLipsyncTickerHook() {
+    if (typeof lipsyncDetachTickerHook === 'function') {
+      lipsyncDetachTickerHook();
+      lipsyncDetachTickerHook = null;
+      emitRendererDebug('lipsync.ticker_hook_detached', {
+        request_id: activeVoiceRequestId
+      });
+    }
+  }
+
+  function bindLipsyncModelHook() {
+    if (typeof lipsyncDetachModelHook === 'function') {
+      return true;
+    }
+    const internalModel = live2dModel?.internalModel;
+    if (!internalModel || typeof internalModel.on !== 'function') {
+      return false;
+    }
+    const handler = () => {
+      applyLipsyncValuesToModel({ source: 'before_model_update' });
+    };
+    internalModel.on('beforeModelUpdate', handler);
+    lipsyncDetachModelHook = () => {
+      if (typeof internalModel.off === 'function') {
+        internalModel.off('beforeModelUpdate', handler);
+      } else if (typeof internalModel.removeListener === 'function') {
+        internalModel.removeListener('beforeModelUpdate', handler);
+      }
+    };
+    emitRendererDebug('lipsync.model_hook_bound', {
+      request_id: activeVoiceRequestId
+    });
+    return true;
+  }
+
+  function bindLipsyncTickerHook() {
+    if (typeof lipsyncDetachTickerHook === 'function') {
+      return true;
+    }
+    if (!pixiApp?.ticker || typeof pixiApp.ticker.add !== 'function') {
+      return false;
+    }
+    const tick = () => {
+      applyLipsyncValuesToModel({ source: 'ticker' });
+    };
+    pixiApp.ticker.add(tick);
+    lipsyncDetachTickerHook = () => {
+      if (pixiApp?.ticker && typeof pixiApp.ticker.remove === 'function') {
+        pixiApp.ticker.remove(tick);
+      }
+    };
+    emitRendererDebug('lipsync.ticker_hook_bound', {
+      request_id: activeVoiceRequestId
+    });
+    return true;
+  }
+
+  function stopLipsync(reason = 'unspecified', meta = {}) {
+    const stopState = {
+      reason: String(reason || 'unspecified'),
+      request_id: activeVoiceRequestId,
+      has_animation_frame: !!lipsyncAnimationFrame,
+      has_state: !!lipsyncState,
+      has_model: !!live2dModel,
+      has_audio_context: !!audioContext,
+      has_audio_source: !!lipsyncAudioSource,
+      has_analyser: !!lipsyncAnalyser,
+      ...meta
+    };
+    console.log('[lipsync] stopLipsync called', {
+      reason: stopState.reason,
+      requestId: stopState.request_id,
+      hasAnimationFrame: stopState.has_animation_frame,
+      hasState: stopState.has_state,
+      hasModel: stopState.has_model,
+      hasAudioContext: stopState.has_audio_context,
+      hasAudioSource: stopState.has_audio_source,
+      hasAnalyser: stopState.has_analyser
+    });
+    emitRendererDebug('lipsync.sync_stop', {
+      ...stopState,
+      ...snapshotSystemAudioState()
+    });
+    emitLipsyncTelemetry('sync.stop', stopState);
+
+    if (lipsyncAnimationFrame) {
+      cancelAnimationFrame(lipsyncAnimationFrame);
+      lipsyncAnimationFrame = null;
+      console.log('[lipsync] animation frame cancelled');
+      emitLipsyncTelemetry('sync.loop_cancelled', {
+        has_animation_frame: true,
+        reason: stopState.reason
+      });
+    }
+    detachLipsyncModelHook();
+    detachLipsyncTickerHook();
+    lipsyncState = null;
+    lipsyncCurrentMouthOpen = 0;
+    lipsyncCurrentMouthForm = 0;
+    lipsyncApplyMode = 'raf_direct';
+
+    // Reset mouth parameters to neutral
+    if (live2dModel) {
+      try {
+        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
+        console.log('[lipsync] mouth parameters reset to neutral');
+        emitLipsyncTelemetry('sync.reset_neutral', { has_model: true, mouth_open: 0, mouth_form: 0 });
+      } catch (err) {
+        console.warn('[lipsync] Failed to reset mouth parameters:', err);
+        emitLipsyncTelemetry('sync.reset_failed', { has_model: true, error: err?.message || String(err || 'unknown error') });
+      }
+    }
+    emitRendererDebug('lipsync.sync_stopped', {
+      request_id: stopState.request_id,
+      reason: stopState.reason,
+      ...snapshotSystemAudioState()
+    });
+  }
+
+  async function startLipsync(audioElement) {
+    console.log('[lipsync] startLipsync called', {
+      hasLipsyncApi: !!lipsyncApi,
+      hasModel: !!live2dModel,
+      hasAudioElement: !!audioElement,
+      audioSrc: audioElement?.src?.substring(0, 50),
+      hasExistingSource: !!lipsyncAudioSource
+    });
+    emitLipsyncTelemetry('sync.start', {
+      has_lipsync_api: !!lipsyncApi,
+      has_model: !!live2dModel,
+      has_audio_element: !!audioElement,
+      has_audio_source: !!lipsyncAudioSource
+    });
+
+    if (!lipsyncApi) {
+      console.error('[lipsync] Lipsync API not available - window.Live2DVisemeLipSync is undefined');
+      emitLipsyncTelemetry('sync.unavailable', {
+        reason: 'missing_lipsync_api',
+        has_lipsync_api: false,
+        has_model: !!live2dModel,
+        has_audio_element: !!audioElement
+      });
+      return false;
+    }
+
+    if (!live2dModel) {
+      console.error('[lipsync] Live2D model not available');
+      emitLipsyncTelemetry('sync.unavailable', {
+        reason: 'missing_live2d_model',
+        has_lipsync_api: true,
+        has_model: false,
+        has_audio_element: !!audioElement
+      });
+      return false;
+    }
+
+    try {
+      const modelProbe = probeModelMouthParams();
+      emitRendererDebug('lipsync.model_param_probe', {
+        request_id: activeVoiceRequestId,
+        ...modelProbe
+      });
+      if (modelProbe.has_mouth_open_param === false || modelProbe.has_mouth_form_param === false) {
+        emitLipsyncTelemetry('sync.unavailable', {
+          reason: 'missing_mouth_params',
+          has_model: modelProbe.has_model,
+          has_audio_element: !!audioElement
+        });
+      }
+
+      // Initialize AudioContext if needed
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('[lipsync] AudioContext created', {
+          sampleRate: audioContext.sampleRate,
+          state: audioContext.state
+        });
+        emitLipsyncTelemetry('sync.audio_context_ready', {
+          sample_rate: audioContext.sampleRate,
+          has_audio_context: true,
+          reason: String(audioContext.state || 'unknown')
+        });
+      }
+
+      // Resume AudioContext if suspended
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+        console.log('[lipsync] AudioContext resumed');
+        emitLipsyncTelemetry('sync.audio_context_resumed', {
+          sample_rate: audioContext.sampleRate,
+          has_audio_context: true
+        });
+      }
+
+      if (!lipsyncAudioSource || !lipsyncAnalyser) {
+        // MediaElementSource can only be created once for the same audio element.
+        lipsyncAudioSource = audioContext.createMediaElementSource(audioElement);
+        lipsyncAnalyser = audioContext.createAnalyser();
+        lipsyncAnalyser.fftSize = 2048;
+        lipsyncAnalyser.smoothingTimeConstant = 0.8;
+        lipsyncAudioSource.connect(lipsyncAnalyser);
+        lipsyncAnalyser.connect(audioContext.destination);
+        console.log('[lipsync] Audio nodes connected', {
+          fftSize: lipsyncAnalyser.fftSize,
+          frequencyBinCount: lipsyncAnalyser.frequencyBinCount,
+          smoothingTimeConstant: lipsyncAnalyser.smoothingTimeConstant
+        });
+        emitLipsyncTelemetry('sync.graph_ready', {
+          has_audio_context: true,
+          has_audio_source: !!lipsyncAudioSource,
+          has_analyser: !!lipsyncAnalyser,
+          fft_size: lipsyncAnalyser.fftSize,
+          frequency_bin_count: lipsyncAnalyser.frequencyBinCount
+        });
+      }
+
+      // Initialize lipsync state
+      lipsyncState = lipsyncApi.createRuntimeState();
+      console.log('[lipsync] Runtime state created', { state: lipsyncState });
+      emitLipsyncTelemetry('sync.runtime_ready', { has_state: !!lipsyncState });
+      if (bindLipsyncModelHook()) {
+        lipsyncApplyMode = 'before_model_update';
+      } else if (bindLipsyncTickerHook()) {
+        lipsyncApplyMode = 'ticker';
+      } else {
+        lipsyncApplyMode = 'raf_direct';
+      }
+      emitRendererDebug('lipsync.apply_mode', {
+        request_id: activeVoiceRequestId,
+        mode: lipsyncApplyMode
+      });
+
+      const frequencyData = new Uint8Array(lipsyncAnalyser.frequencyBinCount);
+      let frameCount = 0;
+
+      // Animation loop
+      function updateLipsync() {
+        if (!lipsyncState || !live2dModel) {
+          console.log('[lipsync] updateLipsync stopped - missing state or model');
+          emitLipsyncTelemetry('sync.loop_stopped', {
+            reason: 'missing_state_or_model',
+            has_state: !!lipsyncState,
+            has_model: !!live2dModel
+          });
+          stopLipsync('missing_state_or_model');
+          return;
+        }
+        if (!lipsyncAnalyser || !audioContext) {
+          console.log('[lipsync] updateLipsync stopped - missing analyser or context');
+          emitLipsyncTelemetry('sync.loop_stopped', {
+            reason: 'missing_analyser_or_context',
+            has_analyser: !!lipsyncAnalyser,
+            has_audio_context: !!audioContext
+          });
+          stopLipsync('missing_analyser_or_context');
+          return;
+        }
+
+        lipsyncAnalyser.getByteFrequencyData(frequencyData);
+        const voiceEnergy = estimateVoiceEnergy(frequencyData);
+        const frame = lipsyncApi.resolveVisemeFrame({
+          frequencyBuffer: frequencyData,
+          sampleRate: audioContext.sampleRate,
+          voiceEnergy,
+          speaking: !(audioElement.paused || audioElement.ended),
+          fallbackOpen: 0,
+          fallbackForm: 0,
+          state: lipsyncState
+        }) || {};
+        const rawMouthOpen = clamp(Number(frame.mouthOpen) || 0, 0, 1);
+        const rawMouthForm = clamp(Number(frame.mouthForm) || 0, -1, 1);
+        const speaking = !(audioElement.paused || audioElement.ended);
+        const enhanced = enhanceMouthParams({
+          mouthOpen: rawMouthOpen,
+          mouthForm: rawMouthForm,
+          voiceEnergy,
+          speaking
+        });
+        const mouthOpen = enhanced.mouthOpen;
+        const mouthForm = enhanced.mouthForm;
+        lipsyncCurrentMouthOpen = mouthOpen;
+        lipsyncCurrentMouthForm = mouthForm;
+
+        // Log every 30 frames (roughly once per second at 60fps)
+        if (frameCount % 30 === 0) {
+          console.log('[lipsync] frame update', {
+            frameCount,
+            features: { energy: (Number(frame.features?.voiceEnergy) || voiceEnergy).toFixed(3) },
+            weights: {
+              a: (Number(frame.weights?.a) || 0).toFixed(2),
+              i: (Number(frame.weights?.i) || 0).toFixed(2),
+              u: (Number(frame.weights?.u) || 0).toFixed(2)
+            },
+            frame: {
+              rawOpenY: rawMouthOpen.toFixed(3),
+              rawForm: rawMouthForm.toFixed(3),
+              openY: mouthOpen.toFixed(3),
+              form: mouthForm.toFixed(3)
+            }
+          });
+          emitLipsyncTelemetry('frame.sample', {
+            frame: frameCount,
+            voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
+            mouth_open: mouthOpen,
+            mouth_form: mouthForm,
+            confidence: Number(frame.confidence) || 0
+          });
+          emitRendererDebug('lipsync.frame_sample', {
+            request_id: activeVoiceRequestId,
+            frame: frameCount,
+            speaking,
+            voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
+            raw_mouth_open: rawMouthOpen,
+            raw_mouth_form: rawMouthForm,
+            mouth_open: mouthOpen,
+            mouth_form: mouthForm,
+            confidence: Number(frame.confidence) || 0,
+            apply_mode: lipsyncApplyMode,
+            paused: !!audioElement.paused,
+            ended: !!audioElement.ended,
+            ready_state: Number(audioElement.readyState)
+          });
+          if (!(audioElement.paused || audioElement.ended) && voiceEnergy < 0.005) {
+            emitRendererDebug('lipsync.frame_low_energy', {
+              request_id: activeVoiceRequestId,
+              frame: frameCount,
+              voice_energy: voiceEnergy,
+              paused: !!audioElement.paused,
+              ended: !!audioElement.ended,
+              ready_state: Number(audioElement.readyState)
+            });
+          }
+        }
+        frameCount++;
+
+        // If hooks are unavailable, fallback to direct RAF application.
+        if (lipsyncApplyMode === 'raf_direct') {
+          applyLipsyncValuesToModel({ source: 'raf_direct' });
+        }
+        try {
+          if (frameCount % 60 === 0) {
+            let appliedOpen = null;
+            let appliedForm = null;
+            try {
+              const coreModel = live2dModel.internalModel.coreModel;
+              appliedOpen = Number(coreModel.getParameterValueById?.('ParamMouthOpenY'));
+              appliedForm = Number(coreModel.getParameterValueById?.('ParamMouthForm'));
+            } catch {
+              // ignore readback failures
+            }
+            emitRendererDebug('lipsync.frame_applied', {
+              request_id: activeVoiceRequestId,
+              frame: frameCount,
+              target_mouth_open: mouthOpen,
+              target_mouth_form: mouthForm,
+              apply_mode: lipsyncApplyMode,
+              applied_mouth_open: Number.isFinite(appliedOpen) ? appliedOpen : null,
+              applied_mouth_form: Number.isFinite(appliedForm) ? appliedForm : null
+            });
+          }
+        } catch {
+          // ignore readback failures
+        }
+
+        lipsyncAnimationFrame = requestAnimationFrame(updateLipsync);
+      }
+
+      updateLipsync();
+      console.log('[lipsync] Animation loop started');
+      emitLipsyncTelemetry('sync.loop_started', {
+        has_audio_context: !!audioContext,
+        has_state: !!lipsyncState
+      });
+      return true;
+    } catch (err) {
+      console.error('[lipsync] Failed to start lipsync:', err);
+      emitLipsyncTelemetry('sync.failed', {
+        error: err?.message || String(err || 'unknown error'),
+        has_audio_context: !!audioContext,
+        has_audio_source: !!lipsyncAudioSource,
+        has_analyser: !!lipsyncAnalyser
+      });
+      stopLipsync('start_failed', {
+        error: err?.message || String(err || 'unknown error')
+      });
+      return false;
+    }
+  }
+
+  function coerceAudioBytes(rawValue) {
+    if (!rawValue) {
+      return null;
+    }
+    if (rawValue instanceof Uint8Array) {
+      return rawValue;
+    }
+    if (rawValue instanceof ArrayBuffer) {
+      return new Uint8Array(rawValue);
+    }
+    if (ArrayBuffer.isView(rawValue)) {
+      return new Uint8Array(rawValue.buffer, rawValue.byteOffset, rawValue.byteLength);
+    }
+    if (Array.isArray(rawValue)) {
+      return Uint8Array.from(rawValue);
+    }
+    if (typeof rawValue === 'object') {
+      if (Array.isArray(rawValue.data)) {
+        return Uint8Array.from(rawValue.data);
+      }
+      if (Array.isArray(rawValue.bytes)) {
+        return Uint8Array.from(rawValue.bytes);
+      }
+      if (rawValue.buffer && Number.isFinite(Number(rawValue.byteLength))) {
+        const offset = Number(rawValue.byteOffset) || 0;
+        const length = Number(rawValue.byteLength);
+        try {
+          return new Uint8Array(rawValue.buffer, offset, length);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  function decodeVoiceMemoryPayload({ audioBytes = null, audioBase64 = null } = {}) {
+    const binary = coerceAudioBytes(audioBytes);
+    if (binary && binary.byteLength > 0) {
+      return {
+        bytes: binary,
+        source: 'audio_bytes'
+      };
+    }
+    const base64 = String(audioBase64 || '').trim();
+    if (!base64) {
+      return {
+        bytes: null,
+        source: 'missing'
+      };
+    }
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i += 1) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return {
+      bytes,
+      source: 'audio_base64'
+    };
+  }
+
+  async function playVoiceFromRemote({ audioUrl = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+    const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    const normalizedAudioUrl = String(audioUrl || '').trim();
+    let playbackErrorReported = false;
+    let audioUrlHost = null;
+    try {
+      audioUrlHost = new URL(normalizedAudioUrl).host || null;
+    } catch {
+      audioUrlHost = null;
+    }
+    emitRendererDebug('voice_remote.playback_enter', {
+      request_id: nextRequestId,
+      mime_type: String(mimeType || 'audio/ogg'),
+      audio_url_host: audioUrlHost
+    });
+    emitLipsyncTelemetry('playback.requested', {
+      request_id: nextRequestId,
+      bytes: 0,
+      base64_chars: 0,
+      mime_type: String(mimeType || 'audio/ogg'),
+      has_lipsync_api: !!lipsyncApi,
+      has_model: !!live2dModel
+    });
+    if (!normalizedAudioUrl) {
+      emitLipsyncTelemetry('playback.invalid_payload', {
+        request_id: nextRequestId,
+        reason: 'missing_audio_remote_url'
+      });
+      throw createRpcError(-32602, 'audioUrl is required for remote voice playback');
+    }
+
+    if (activeVoiceRequestId && activeVoiceRequestId !== nextRequestId) {
+      emitLipsyncTelemetry('playback.interrupted', {
+        request_id: activeVoiceRequestId,
+        reason: 'superseded_by_new_request'
+      });
+    }
+    stopLipsync('superseded_before_new_playback', {
+      next_request_id: nextRequestId
+    });
+    activeVoiceRequestId = nextRequestId;
+    try {
+      try {
+        systemAudio.pause();
+      } catch {
+        // ignore pause errors
+      }
+      systemAudio.currentTime = 0;
+
+      releaseCurrentVoiceObjectUrl();
+      currentVoiceObjectUrl = null;
+      try {
+        systemAudio.crossOrigin = 'anonymous';
+      } catch {
+        // ignore crossOrigin set failures
+      }
+      systemAudio.src = normalizedAudioUrl;
+      systemAudio.muted = false;
+      systemAudio.volume = 1;
+      systemAudio.playbackRate = 1;
+
+      emitLipsyncTelemetry('playback.source_ready', {
+        request_id: nextRequestId,
+        mime_type: String(mimeType || 'audio/ogg'),
+        has_audio_element: true
+      });
+      emitRendererDebug('voice_remote.source_ready', {
+        request_id: nextRequestId,
+        audio_url_host: audioUrlHost,
+        ...snapshotSystemAudioState()
+      });
+
+      // Start lipsync asynchronously so remote playback is never blocked by lipsync init.
+      void startLipsync(systemAudio).then((lipsyncStarted) => {
+        if (!lipsyncStarted) {
+          emitLipsyncTelemetry('playback.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false',
+            has_lipsync_api: !!lipsyncApi,
+            has_model: !!live2dModel
+          });
+          emitRendererDebug('voice_remote.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false'
+          });
+        } else {
+          emitRendererDebug('voice_remote.lipsync_started', {
+            request_id: nextRequestId
+          });
+        }
+      }).catch((err) => {
+        emitLipsyncTelemetry('playback.lipsync_inactive', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.lipsync_failed', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+      });
+
+      try {
+        emitRendererDebug('voice_remote.play_attempt', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+        await systemAudio.play();
+        emitLipsyncTelemetry('playback.started', {
+          request_id: nextRequestId,
+          has_audio_element: true
+        });
+        emitRendererDebug('voice_remote.playback_started', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+      } catch (err) {
+        playbackErrorReported = true;
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_play_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error'),
+          ...snapshotSystemAudioState()
+        });
+        stopLipsync('audio_play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        throw err;
+      }
+
+      const handleEnded = () => {
+        emitLipsyncTelemetry('playback.ended', {
+          request_id: nextRequestId,
+          reason: 'audio_ended'
+        });
+        stopLipsync('audio_ended', { request_id: nextRequestId });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      const handleError = () => {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_element_error'
+        });
+        stopLipsync('audio_element_error', { request_id: nextRequestId });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      systemAudio.addEventListener('ended', handleEnded);
+      systemAudio.addEventListener('error', handleError);
+    } catch (err) {
+      if (!playbackErrorReported) {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_remote.playback_failed', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        stopLipsync('playback_pipeline_failed', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+      }
+      throw err;
+    }
+  }
+
+  async function playVoiceFromMemory({ audioBytes = null, audioBase64 = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+    const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    let objectUrl = null;
+    let playbackErrorReported = false;
+    const coarseBytes = coerceAudioBytes(audioBytes);
+    emitRendererDebug('voice_memory.playback_enter', {
+      request_id: nextRequestId,
+      mime_type: String(mimeType || 'audio/ogg'),
+      bytes: Number(coarseBytes?.byteLength) || 0,
+      base64_chars: Number(audioBase64?.length) || 0
+    });
+    console.log('[lipsync] playVoiceFromMemory called', {
+      hasAudioBytes: !!coarseBytes,
+      bytes: Number(coarseBytes?.byteLength) || 0,
+      hasBase64: !!audioBase64,
+      base64Length: audioBase64?.length,
+      mimeType,
+      requestId: nextRequestId,
+      hasLipsyncApi: !!lipsyncApi,
+      hasModel: !!live2dModel
+    });
+    emitLipsyncTelemetry('playback.requested', {
+      request_id: nextRequestId,
+      bytes: Number(coarseBytes?.byteLength) || 0,
+      base64_chars: Number(audioBase64?.length) || 0,
+      mime_type: String(mimeType || 'audio/ogg'),
+      has_lipsync_api: !!lipsyncApi,
+      has_model: !!live2dModel
+    });
+
+    const decodedPayload = decodeVoiceMemoryPayload({
+      audioBytes,
+      audioBase64
+    });
+    const bytes = decodedPayload.bytes;
+    if (!bytes || bytes.byteLength === 0) {
+      emitLipsyncTelemetry('playback.invalid_payload', {
+        request_id: nextRequestId,
+        reason: 'missing_audio_memory_payload'
+      });
+      throw createRpcError(-32602, 'audio payload is required (audioBytes or audioBase64)');
+    }
+
+    // Stop any existing lipsync
+    if (activeVoiceRequestId && activeVoiceRequestId !== nextRequestId) {
+      emitLipsyncTelemetry('playback.interrupted', {
+        request_id: activeVoiceRequestId,
+        reason: 'superseded_by_new_request'
+      });
+    }
+    stopLipsync('superseded_before_new_playback', {
+      next_request_id: nextRequestId
+    });
+    activeVoiceRequestId = nextRequestId;
+    try {
+      try {
+        systemAudio.pause();
+      } catch {
+        // ignore pause errors
+      }
+      systemAudio.currentTime = 0;
+
+      const len = bytes.byteLength;
+
+      console.log('[lipsync] Audio decoded', {
+        source: decodedPayload.source,
+        binaryLength: len,
+        bytesLength: bytes.length
+      });
+      emitRendererDebug('voice_memory.decoded', {
+        request_id: nextRequestId,
+        source: decodedPayload.source,
+        bytes: len
+      });
+      emitLipsyncTelemetry('playback.decoded', {
+        request_id: nextRequestId,
+        binary_length: len,
+        bytes: bytes.length,
+        mime_type: String(mimeType || 'audio/ogg')
+      });
+
+      releaseCurrentVoiceObjectUrl();
+      const blob = new Blob([bytes], { type: String(mimeType || 'audio/ogg') });
+      objectUrl = URL.createObjectURL(blob);
+      currentVoiceObjectUrl = objectUrl;
+
+      systemAudio.src = objectUrl;
+      systemAudio.muted = false;
+      systemAudio.volume = 1;
+      systemAudio.playbackRate = 1;
+
+      console.log('[lipsync] Audio source set, starting lipsync');
+      emitLipsyncTelemetry('playback.source_ready', {
+        request_id: nextRequestId,
+        mime_type: String(mimeType || 'audio/ogg'),
+        has_audio_element: true
+      });
+      emitRendererDebug('voice_memory.source_ready', {
+        request_id: nextRequestId,
+        ...snapshotSystemAudioState()
+      });
+
+      // Start lipsync asynchronously so audio playback is never blocked by lipsync init.
+      void startLipsync(systemAudio).then((lipsyncStarted) => {
+        if (!lipsyncStarted) {
+          emitLipsyncTelemetry('playback.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false',
+            has_lipsync_api: !!lipsyncApi,
+            has_model: !!live2dModel
+          });
+          emitRendererDebug('voice_memory.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_returned_false'
+          });
+        } else {
+          emitRendererDebug('voice_memory.lipsync_started', {
+            request_id: nextRequestId
+          });
+        }
+      }).catch((err) => {
+        emitLipsyncTelemetry('playback.lipsync_inactive', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_memory.lipsync_failed', {
+          request_id: nextRequestId,
+          reason: 'start_lipsync_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+      });
+
+      try {
+        emitRendererDebug('voice_memory.play_attempt', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+        await systemAudio.play();
+        console.log('[lipsync] Audio playback started');
+        emitLipsyncTelemetry('playback.started', {
+          request_id: nextRequestId,
+          has_audio_element: true
+        });
+        emitRendererDebug('voice_memory.playback_started', {
+          request_id: nextRequestId,
+          ...snapshotSystemAudioState()
+        });
+      } catch (err) {
+        playbackErrorReported = true;
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_play_rejected',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_memory.play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error'),
+          ...snapshotSystemAudioState()
+        });
+        stopLipsync('audio_play_rejected', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (currentVoiceObjectUrl === objectUrl) {
+          releaseCurrentVoiceObjectUrl();
+        }
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        throw err;
+      }
+
+      const handleEnded = () => {
+        emitLipsyncTelemetry('playback.ended', {
+          request_id: nextRequestId,
+          reason: 'audio_ended'
+        });
+        stopLipsync('audio_ended', { request_id: nextRequestId });
+        if (currentVoiceObjectUrl === objectUrl) {
+          releaseCurrentVoiceObjectUrl();
+        }
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      const handleError = () => {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'audio_element_error'
+        });
+        stopLipsync('audio_element_error', { request_id: nextRequestId });
+        if (currentVoiceObjectUrl === objectUrl) {
+          releaseCurrentVoiceObjectUrl();
+        }
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+        systemAudio.removeEventListener('ended', handleEnded);
+        systemAudio.removeEventListener('error', handleError);
+      };
+      systemAudio.addEventListener('ended', handleEnded);
+      systemAudio.addEventListener('error', handleError);
+    } catch (err) {
+      if (!playbackErrorReported) {
+        emitLipsyncTelemetry('playback.error', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        emitRendererDebug('voice_memory.playback_failed', {
+          request_id: nextRequestId,
+          reason: 'playback_pipeline_failed',
+          error: err?.message || String(err || 'unknown error')
+        });
+        stopLipsync('playback_pipeline_failed', {
+          request_id: nextRequestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+        if (currentVoiceObjectUrl === objectUrl) {
+          releaseCurrentVoiceObjectUrl();
+        }
+        if (activeVoiceRequestId === nextRequestId) {
+          activeVoiceRequestId = null;
+        }
+      }
+      throw err;
     }
   }
 
@@ -1248,94 +1605,8 @@
       chatPanelVisible: state.chatPanelVisible,
       chatHistorySize: state.chatHistorySize,
       lastError: state.lastError,
-      layout: state.layout,
-      windowState: state.windowState,
-      resizeModeEnabled: state.resizeModeEnabled
+      layout: state.layout
     };
-  }
-
-  function applyWindowState(payload) {
-    if (!payload || typeof payload !== 'object') {
-      return;
-    }
-
-    state.windowState = {
-      width: Number(payload.width) || null,
-      height: Number(payload.height) || null,
-      x: Number(payload.x) || null,
-      y: Number(payload.y) || null,
-      minWidth: Number(payload.minWidth) || null,
-      minHeight: Number(payload.minHeight) || null,
-      maxWidth: Number(payload.maxWidth) || null,
-      maxHeight: Number(payload.maxHeight) || null,
-      defaultWidth: Number(payload.defaultWidth) || null,
-      defaultHeight: Number(payload.defaultHeight) || null,
-      aspectRatio: Number(payload.aspectRatio) || null
-    };
-    state.resizeModeEnabled = payload?.resizeModeEnabled === true;
-    document.body.classList.toggle('resize-mode-active', state.resizeModeEnabled);
-    const baseWidth = Number(state.windowState.defaultWidth) || Number(state.windowState.width) || null;
-    const baseHeight = Number(state.windowState.defaultHeight) || Number(state.windowState.height) || null;
-    const currentWidth = Number(state.windowState.width) || baseWidth;
-    const currentHeight = Number(state.windowState.height) || baseHeight;
-    if (Number.isFinite(baseWidth) && baseWidth > 0 && Number.isFinite(baseHeight) && baseHeight > 0) {
-      const nextScaleFactor = Math.max(currentWidth / baseWidth, currentHeight / baseHeight);
-      if (Number.isFinite(nextScaleFactor) && nextScaleFactor > 0) {
-        resizeModeScaleFactor = nextScaleFactor;
-      }
-    }
-    if (!state.resizeModeEnabled) {
-      resizeModeScaleFactor = 1;
-      lastResizeModeRequest = null;
-      setLayoutTunerOpen(false);
-    }
-  }
-
-  function requestWindowResize(payload = {}) {
-    bridge?.sendWindowResize?.(payload);
-  }
-
-  function initLayoutTuner() {
-    layoutTunerState = {
-      open: false,
-      values: getCurrentLayoutTunerValues()
-    };
-    syncLayoutTunerControls();
-    setLayoutTunerOpen(false);
-
-    layoutTunerToggleElement?.addEventListener('click', () => {
-      setLayoutTunerOpen(!layoutTunerState?.open);
-    });
-    layoutTunerCloseElement?.addEventListener('click', () => {
-      setLayoutTunerOpen(false);
-    });
-    layoutResetElement?.addEventListener('click', () => {
-      resetLayoutTunerValues();
-    });
-    layoutSaveElement?.addEventListener('click', () => {
-      saveLayoutTunerValues();
-    });
-
-    layoutOffsetXElement?.addEventListener('input', () => {
-      const displayValues = toLayoutDisplayValues(layoutTunerState?.values || getCurrentLayoutTunerValues());
-      applyLayoutTunerValues(fromLayoutDisplayValues({
-        ...displayValues,
-        offsetX: roundToStep(layoutOffsetXElement.value, 1)
-      }));
-    });
-    layoutOffsetYElement?.addEventListener('input', () => {
-      const displayValues = toLayoutDisplayValues(layoutTunerState?.values || getCurrentLayoutTunerValues());
-      applyLayoutTunerValues(fromLayoutDisplayValues({
-        ...displayValues,
-        offsetY: roundToStep(layoutOffsetYElement.value, 1)
-      }));
-    });
-    layoutScaleElement?.addEventListener('input', () => {
-      applyLayoutTunerValues({
-        ...(layoutTunerState?.values || getCurrentLayoutTunerValues()),
-        scaleMultiplier: roundToStep(layoutScaleElement.value, 0.01)
-      });
-    });
   }
 
   function initChatPanel(config) {
@@ -1362,10 +1633,6 @@
         chatPanelElement.style.height = `${height}px`;
       }
     }
-
-    resizeModeCloseElement?.addEventListener('click', () => {
-      bridge?.sendWindowControl?.({ action: 'close_resize_mode' });
-    });
 
     if (!chatPanelEnabled) {
       chatPanelElement?.remove();
@@ -1504,9 +1771,6 @@
     bindModelInteraction();
 
     pixiApp.stage.addChild(live2dModel);
-    if (!bindLipSyncModelHook()) {
-      bindLipSyncTicker();
-    }
     const initialBounds = live2dModel.getLocalBounds?.();
     if (
       initialBounds
@@ -1543,9 +1807,6 @@
       live2dModel.interactive = true;
     }
     live2dModel.on('pointertap', () => {
-      if (state.resizeModeEnabled) {
-        return;
-      }
       const now = Date.now();
       if (now < suppressModelTapUntil) {
         return;
@@ -1579,17 +1840,10 @@
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        startScreenX: event.screenX,
-        startScreenY: event.screenY,
-        startWindowWidth: Number(state.windowState?.width) || window.innerWidth || 460,
         dragging: false
       };
       if (typeof targetElement.setPointerCapture === 'function') {
         targetElement.setPointerCapture(event.pointerId);
-      }
-      if (state.resizeModeEnabled) {
-        event.preventDefault();
-        return;
       }
       bridge.sendWindowDrag({
         action: 'start',
@@ -1611,19 +1865,11 @@
       if (!dragPointerState.dragging) {
         return;
       }
-      if (state.resizeModeEnabled) {
-        const deltaWidth = dragPointerState.startScreenX - event.screenX;
-        requestResizeModeWindowFit({
-          requestedWidth: dragPointerState.startWindowWidth + deltaWidth,
-          persist: false
-        });
-      } else {
-        bridge.sendWindowDrag({
-          action: 'move',
-          screenX: event.screenX,
-          screenY: event.screenY
-        });
-      }
+      bridge.sendWindowDrag({
+        action: 'move',
+        screenX: event.screenX,
+        screenY: event.screenY
+      });
       event.preventDefault();
     });
 
@@ -1631,18 +1877,11 @@
       if (!dragPointerState || event.pointerId !== dragPointerState.pointerId) {
         return;
       }
-      if (!state.resizeModeEnabled) {
-        bridge.sendWindowDrag({
-          action: 'end',
-          screenX: event.screenX,
-          screenY: event.screenY
-        });
-      } else if (dragPointerState.dragging) {
-        requestResizeModeWindowFit({
-          requestedWidth: lastResizeModeRequest?.width || Number(state.windowState?.width) || dragPointerState.startWindowWidth,
-          persist: true
-        });
-      }
+      bridge.sendWindowDrag({
+        action: 'end',
+        screenX: event.screenX,
+        screenY: event.screenY
+      });
       if (dragPointerState.dragging) {
         suppressModelTap(MODEL_TAP_SUPPRESS_AFTER_DRAG_MS);
       }
@@ -1669,81 +1908,6 @@
     };
   }
 
-  function getResizeModeBaseWindowSize() {
-    const baseWidth = Math.max(1, Number(state.windowState?.defaultWidth) || Number(state.windowState?.width) || window.innerWidth || 460);
-    const baseHeight = Math.max(1, Number(state.windowState?.defaultHeight) || Number(state.windowState?.height) || window.innerHeight || 620);
-    return {
-      baseWidth,
-      baseHeight,
-      aspectRatio: Number(state.windowState?.aspectRatio) || (baseWidth / baseHeight)
-    };
-  }
-
-  function getResizeModeWindowScaleFactor() {
-    const { baseWidth, baseHeight } = getResizeModeBaseWindowSize();
-    const currentWidth = Math.max(1, Number(state.windowState?.width) || window.innerWidth || baseWidth);
-    const currentHeight = Math.max(1, Number(state.windowState?.height) || window.innerHeight || baseHeight);
-    return Math.max(currentWidth / baseWidth, currentHeight / baseHeight);
-  }
-
-  function computeResizeModeReferenceLayout(bounds, layoutConfig) {
-    if (!window.Live2DLayout?.computeModelLayout) {
-      return null;
-    }
-    const { baseWidth, baseHeight } = getResizeModeBaseWindowSize();
-    return window.Live2DLayout.computeModelLayout({
-      stageWidth: baseWidth,
-      stageHeight: baseHeight,
-      boundsX: bounds.x,
-      boundsY: bounds.y,
-      boundsWidth: bounds.width,
-      boundsHeight: bounds.height,
-      ...layoutConfig
-    });
-  }
-
-  function clampResizeModeWindowWidth(requestedWidth) {
-    const { baseWidth, baseHeight, aspectRatio } = getResizeModeBaseWindowSize();
-    const minWidth = Number(state.windowState?.minWidth) || 180;
-    const minHeight = Number(state.windowState?.minHeight) || 260;
-    const maxWidth = Number(state.windowState?.maxWidth) || 900;
-    const maxHeight = Number(state.windowState?.maxHeight) || 1400;
-    const safeAspectRatio = Number(aspectRatio) || (baseWidth / baseHeight);
-    const minAllowedWidth = Math.max(minWidth, Math.ceil(minHeight * safeAspectRatio));
-    const maxAllowedWidth = Math.min(maxWidth, Math.floor(maxHeight * safeAspectRatio));
-    return clamp(Number(requestedWidth) || baseWidth, minAllowedWidth, maxAllowedWidth);
-  }
-
-  function computeResizeModeWindowSize({ requestedWidth }) {
-    const { baseWidth, baseHeight, aspectRatio } = getResizeModeBaseWindowSize();
-    const safeAspectRatio = Number(aspectRatio) || (baseWidth / baseHeight);
-    const safeWidth = clampResizeModeWindowWidth(requestedWidth);
-    return {
-      width: Math.max(1, Math.round(safeWidth)),
-      height: Math.max(1, Math.round(safeWidth / safeAspectRatio))
-    };
-  }
-
-  function requestResizeModeWindowFit({ requestedWidth, persist = false }) {
-    const nextSize = computeResizeModeWindowSize({ requestedWidth });
-    const last = lastResizeModeRequest;
-    const changed = !last
-      || Math.abs(last.width - nextSize.width) >= 2
-      || Math.abs(last.height - nextSize.height) >= 2
-      || persist;
-    if (!changed) {
-      return;
-    }
-    lastResizeModeRequest = nextSize;
-    requestWindowResize({
-      action: 'set',
-      source: 'resize-drag',
-      width: nextSize.width,
-      height: nextSize.height,
-      persist
-    });
-  }
-
   function applyAdaptiveLayout() {
     if (!live2dModel || !window.Live2DLayout?.computeModelLayout) return;
     const bounds = modelBaseBounds || live2dModel.getLocalBounds?.();
@@ -1764,24 +1928,12 @@
       boundsHeight: bounds.height,
       ...layoutConfig
     });
-    const resizeModeReferenceLayout = state.resizeModeEnabled
-      ? (computeResizeModeReferenceLayout(bounds, layoutConfig) || layout)
-      : null;
 
     if (stableModelScale === null || !Number.isFinite(stableModelScale)) {
       stableModelScale = layout.scale;
     }
-    if (!state.resizeModeEnabled) {
-      resizeModeScaleFactor = 1;
-      lastResizeModeRequest = null;
-      stableModelScale = layout.scale;
-    }
-
-    const shouldFollowWindowScale = !lockScaleOnResize;
-    const nextScale = state.resizeModeEnabled
-      ? resizeModeReferenceLayout.scale * getResizeModeWindowScaleFactor()
-      : (shouldFollowWindowScale ? layout.scale : Math.min(stableModelScale, layout.scale));
-    if (!state.resizeModeEnabled && shouldFollowWindowScale) {
+    const nextScale = lockScaleOnResize ? stableModelScale : layout.scale;
+    if (!lockScaleOnResize) {
       stableModelScale = layout.scale;
     }
 
@@ -1800,13 +1952,9 @@
       };
     }
 
-    let nextPositionX = state.resizeModeEnabled
-      ? resizeModeReferenceLayout.positionX * getResizeModeWindowScaleFactor()
-      : layout.positionX;
-    let nextPositionY = state.resizeModeEnabled
-      ? resizeModeReferenceLayout.positionY * getResizeModeWindowScaleFactor()
-      : layout.positionY;
-    if (!state.resizeModeEnabled && lockPositionOnResize) {
+    let nextPositionX = layout.positionX;
+    let nextPositionY = layout.positionY;
+    if (lockPositionOnResize) {
       const deltaWidth = stageSize.width - stableModelPose.stageWidth;
       const deltaHeight = stageSize.height - stableModelPose.stageHeight;
       nextPositionX = stableModelPose.positionX + deltaWidth;
@@ -1826,36 +1974,6 @@
       };
     }
 
-    const clampedPose = typeof window.Live2DLayout?.clampModelPositionToViewport === 'function'
-      ? window.Live2DLayout.clampModelPositionToViewport({
-        stageWidth: stageSize.width,
-        stageHeight: stageSize.height,
-        positionX: nextPositionX,
-        positionY: nextPositionY,
-        scale: nextScale,
-        boundsX: bounds.x,
-        boundsY: bounds.y,
-        boundsWidth: bounds.width,
-        boundsHeight: bounds.height,
-        pivotX: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
-        pivotY: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
-        visibleMarginLeft: Number(layoutConfig.visibleMarginLeft),
-        visibleMarginRight: Number(layoutConfig.visibleMarginRight),
-        visibleMarginTop: Number(layoutConfig.visibleMarginTop),
-        visibleMarginBottom: Number(layoutConfig.visibleMarginBottom)
-      })
-      : null;
-    if (clampedPose) {
-      nextPositionX = clampedPose.positionX;
-      nextPositionY = clampedPose.positionY;
-      stableModelPose = {
-        positionX: nextPositionX,
-        positionY: nextPositionY,
-        stageWidth: stageSize.width,
-        stageHeight: stageSize.height
-      };
-    }
-
     if (
       typeof live2dModel.scale?.set === 'function'
       && shouldUpdate2DTransform(live2dModel.scale?.x, live2dModel.scale?.y, nextScale, nextScale, 1e-5)
@@ -1864,18 +1982,9 @@
     }
     if (
       typeof live2dModel.pivot?.set === 'function'
-      && shouldUpdate2DTransform(
-        live2dModel.pivot?.x,
-        live2dModel.pivot?.y,
-        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
-        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
-        1e-5
-      )
+      && shouldUpdate2DTransform(live2dModel.pivot?.x, live2dModel.pivot?.y, layout.pivotX, layout.pivotY, 1e-5)
     ) {
-      live2dModel.pivot.set(
-        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
-        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY
-      );
+      live2dModel.pivot.set(layout.pivotX, layout.pivotY);
     }
     if (
       typeof live2dModel.position?.set === 'function'
@@ -1888,8 +1997,8 @@
       scale: nextScale,
       positionX: nextPositionX,
       positionY: nextPositionY,
-      pivotX: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
-      pivotY: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
+      pivotX: layout.pivotX,
+      pivotY: layout.pivotY,
       ...layout.debug
     };
 
@@ -1906,7 +2015,6 @@
       && Number.isFinite(worldBounds.height)
       && worldBounds.width > 4
       && worldBounds.height > 4
-      && !state.resizeModeEnabled
       && typeof bridge?.sendModelBounds === 'function'
     ) {
       const payload = {
@@ -1979,13 +2087,7 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        if (name === 'voice.play') {
-          result = await handleVoicePlaybackRequest(data || {});
-        } else if (name === 'voice.playback.electron') {
-          result = await handleVoicePlaybackRequest(data || {});
-        } else {
-          result = { ok: true, ignored: true };
-        }
+        result = { ok: true, ignored: true, name, data };
       } else {
         throw createRpcError(-32601, `method not found: ${method}`);
       }
@@ -2005,6 +2107,13 @@
       if (!bridge) {
         throw new Error('desktopLive2dBridge is unavailable');
       }
+      bindSystemAudioDebugEvents();
+      emitRendererDebug('bootstrap.start', {
+        has_bridge: true,
+        has_on_voice_play_memory: typeof bridge.onVoicePlayMemory === 'function',
+        has_on_voice_play_remote: typeof bridge.onVoicePlayRemote === 'function',
+        has_send_lipsync_telemetry: typeof bridge.sendLipsyncTelemetry === 'function'
+      });
 
       window.addEventListener('focus', () => {
         suppressModelTap(MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS);
@@ -2018,10 +2127,6 @@
       const runtimeConfig = await bridge.getRuntimeConfig();
       runtimeUiConfig = runtimeConfig.uiConfig || null;
       runtimeLive2dPresets = runtimeConfig.live2dPresets || null;
-      initLayoutTuner();
-      detachWindowStateSync = bridge.onWindowStateSync?.((payload) => {
-        applyWindowState(payload);
-      }) || null;
       initChatPanel(runtimeUiConfig?.chat || {});
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);
@@ -2030,44 +2135,70 @@
       bridge.onInvoke((payload) => {
         void handleInvoke(payload);
       });
-      bridge.onVoicePlay?.((payload) => {
-        void handleVoicePlaybackRequest(payload).catch((err) => {
-          console.error('[Renderer] desktop:voice:play failed', err);
-        });
-      });
+
       bridge.onVoicePlayMemory?.((payload) => {
-        void handleVoicePlaybackMemoryRequest(payload).catch((err) => {
-          console.error('[Renderer] desktop:voice:play-memory failed', err);
+        const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
+        const coarseBytes = coerceAudioBytes(payload?.audioBytes);
+        emitRendererDebug('voice_memory.received', {
+          request_id: requestId,
+          mime_type: String(payload?.mimeType || payload?.mime_type || ''),
+          bytes: Number(coarseBytes?.byteLength) || 0,
+          base64_chars: Number(payload?.audioBase64?.length) || 0
+        });
+        void playVoiceFromMemory(payload).catch((err) => {
+          console.error('[Renderer] voice memory playback failed', err);
+          emitRendererDebug('voice_memory.failed', {
+            request_id: requestId,
+            error: err?.message || String(err || 'unknown error')
+          });
         });
       });
+      if (typeof bridge.onVoicePlayMemory !== 'function') {
+        emitRendererDebug('voice_memory.listener_missing', {
+          reason: 'bridge.onVoicePlayMemory is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_memory.listener_registered', { ok: true });
+      }
+
+      bridge.onVoicePlayRemote?.((payload) => {
+        const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
+        emitRendererDebug('voice_remote.received', {
+          request_id: requestId,
+          mime_type: String(payload?.mimeType || payload?.mime_type || ''),
+          audio_url_host: (() => {
+            try {
+              return new URL(String(payload?.audioUrl || payload?.audio_url || '')).host || null;
+            } catch {
+              return null;
+            }
+          })()
+        });
+        void playVoiceFromRemote(payload).catch((err) => {
+          console.error('[Renderer] voice remote playback failed', err);
+          emitRendererDebug('voice_remote.failed', {
+            request_id: requestId,
+            error: err?.message || String(err || 'unknown error')
+          });
+        });
+      });
+      if (typeof bridge.onVoicePlayRemote !== 'function') {
+        emitRendererDebug('voice_remote.listener_missing', {
+          reason: 'bridge.onVoicePlayRemote is not a function'
+        });
+      } else {
+        emitRendererDebug('voice_remote.listener_registered', { ok: true });
+      }
 
       bridge.notifyReady({ ok: true });
     } catch (err) {
       state.lastError = err?.message || String(err || 'renderer bootstrap failed');
+      emitRendererDebug('bootstrap.failed', {
+        error: state.lastError
+      });
       bridge?.notifyError({ message: state.lastError });
     }
   }
-
-  window.addEventListener('beforeunload', () => {
-    if (typeof detachWindowStateSync === 'function') {
-      detachWindowStateSync();
-    }
-    stopLipSync();
-    if (typeof detachLipSyncModelHook === 'function') {
-      detachLipSyncModelHook();
-    }
-    if (typeof detachLipSyncTicker === 'function') {
-      detachLipSyncTicker();
-    }
-    if (lipsyncCtx && lipsyncCtx.state !== 'closed') {
-      void lipsyncCtx.close().catch(() => { });
-    }
-  });
-
-  window.Live2DDesktopWindow = {
-    getWindowState: () => state.windowState,
-    requestResize: requestWindowResize
-  };
 
   void main();
 })();
