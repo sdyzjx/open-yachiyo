@@ -77,6 +77,37 @@ node scripts/test-voice-lipsync.js
 
 在 DevTools 的 Console 标签中，过滤 `lipsync` 关键字。
 
+### 5. 使用 SSE 调试器追踪口型管理器调用
+
+先开启 Debug Stream：
+
+```bash
+curl -s -X PUT http://127.0.0.1:3000/api/debug/mode \
+  -H "content-type: application/json" \
+  -d '{"debug":true}' | jq
+```
+
+然后在单独终端订阅口型链路 topic（按文档规范使用精确 topic）：
+
+```bash
+curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.renderer.bootstrap.start,chain.renderer.bootstrap.failed,chain.renderer.voice_memory.listener_registered,chain.renderer.voice_memory.listener_missing,chain.renderer.voice_memory.received,chain.renderer.voice_memory.playback_enter,chain.renderer.voice_memory.source_ready,chain.renderer.voice_memory.play_attempt,chain.renderer.voice_memory.playback_started,chain.renderer.voice_memory.play_rejected,chain.renderer.voice_memory.audio_event,chain.renderer.voice_memory.lipsync_started,chain.renderer.voice_memory.lipsync_inactive,chain.renderer.voice_memory.lipsync_failed,chain.renderer.voice_memory.playback_failed,chain.renderer.voice_memory.failed,chain.electron.voice.requested,chain.electron.voice.duplicate_ignored,chain.electron.voice.synthesis.completed,chain.electron.voice.ipc.dispatched,chain.electron.voice.failed,chain.lipsync.playback.requested,chain.lipsync.playback.decoded,chain.lipsync.playback.source_ready,chain.lipsync.playback.started,chain.lipsync.playback.ended,chain.lipsync.playback.error,chain.lipsync.playback.invalid_payload,chain.lipsync.playback.interrupted,chain.lipsync.playback.lipsync_inactive,chain.lipsync.sync.start,chain.lipsync.sync.unavailable,chain.lipsync.sync.audio_context_ready,chain.lipsync.sync.audio_context_resumed,chain.lipsync.sync.graph_ready,chain.lipsync.sync.runtime_ready,chain.lipsync.sync.loop_started,chain.lipsync.sync.loop_stopped,chain.lipsync.sync.loop_cancelled,chain.lipsync.sync.reset_neutral,chain.lipsync.sync.reset_failed,chain.lipsync.sync.failed,chain.lipsync.sync.stop,chain.lipsync.frame.sample,chain.lipsync.frame.apply_failed"
+```
+
+关注字段：
+
+1. `request_id`：串联一轮 voice 播放与口型调用。
+2. `event/topic`：确认中断点发生在哪个阶段。
+3. `has_lipsync_api`、`has_model`、`has_audio_context`、`has_analyser`：快速判断依赖是否就绪。
+4. `voice_energy`、`mouth_open`、`mouth_form`：确认口型管理器是否在持续输出帧。
+
+推荐判定顺序：
+
+1. 有 `chain.electron.voice.ipc.dispatched` 但没有 `chain.renderer.voice_memory.received`：渲染层未收到 `desktop:voice:play-memory`。
+2. 有 `chain.renderer.voice_memory.received` 但没有 `chain.lipsync.playback.requested`：渲染层回调触发了，但口型链路没有进入 `playVoiceFromBase64`。
+3. 有 `chain.lipsync.sync.start` 但出现 `chain.lipsync.sync.unavailable`：API 或模型未就绪。
+4. 有 `chain.lipsync.sync.runtime_ready` 但没有 `chain.lipsync.frame.sample`：动画循环未真正运行。
+5. `chain.lipsync.frame.sample` 正常出现但视觉无口型：检查模型参数映射（`ParamMouthOpenY` / `ParamMouthForm`）或后续覆盖。
+
 ## 预期日志流
 
 ### 正常情况
