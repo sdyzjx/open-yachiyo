@@ -63,6 +63,12 @@
     }
   },
   "voice": {
-    "path": "electron_native"
+    "path": "electron_native",
+    "transport": "non_streaming",
+    "fallbackOnRealtimeError": true,
+    "realtime": {
+      "prebufferMs": 160,
+      "idleTimeoutMs": 8000
+    }
   }
 }

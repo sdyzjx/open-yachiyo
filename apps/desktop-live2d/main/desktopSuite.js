@@ -10,6 +10,7 @@ const { IpcRpcBridge } = require('./ipcBridge');
 const { GatewayRuntimeClient, createDesktopSessionId } = require('./gatewayRuntimeClient');
 const { listDesktopTools, resolveToolInvoke } = require('./toolRegistry');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
+const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -1084,6 +1085,8 @@ async function forwardLive2dActionEvent({
 async function processVoiceRequestedOnDesktop({
   eventPayload,
   ttsClient,
+  realtimeTtsClient,
+  voiceConfig,
   avatarWindow,
   rpcServerRef,
   emitDebug = null,
@@ -1098,6 +1101,10 @@ async function processVoiceRequestedOnDesktop({
   const voice = String(eventPayload?.voiceId || '');
   const sessionId = String(eventPayload?.session_id || '').trim() || null;
   const traceId = String(eventPayload?.trace_id || '').trim() || null;
+  const voiceTransport = String(voiceConfig?.transport || 'non_streaming').trim().toLowerCase();
+  const fallbackOnRealtimeError = voiceConfig?.fallbackOnRealtimeError !== false;
+  const realtimePrebufferMs = Math.max(40, Number(voiceConfig?.realtime?.prebufferMs) || 160);
+  const realtimeIdleTimeoutMs = Math.max(1000, Number(voiceConfig?.realtime?.idleTimeoutMs) || 8000);
 
   emitDebug?.('chain.electron.voice.requested', 'electron main received voice.requested', {
     request_id: requestId,
@@ -1106,7 +1113,9 @@ async function processVoiceRequestedOnDesktop({
     text_chars: text.length,
     timeout_sec: timeoutSec,
     model: model || null,
-    voice_id: voice || null
+    voice_id: voice || null,
+    transport: voiceTransport,
+    fallback_on_realtime_error: fallbackOnRealtimeError
   });
 
   rpcServerRef?.notify({
@@ -1119,6 +1128,169 @@ async function processVoiceRequestedOnDesktop({
   });
 
   try {
+    if (voiceTransport === 'realtime') {
+      if (!realtimeTtsClient || typeof realtimeTtsClient.streamSynthesis !== 'function') {
+        emitDebug?.(
+          'chain.electron.voice.realtime.unavailable',
+          'realtime transport requested but realtime client is unavailable, fallback to non-streaming',
+          {
+            request_id: requestId,
+            session_id: sessionId,
+            trace_id: traceId
+          }
+        );
+      } else {
+        const realtimeTimeoutMs = Math.max(8000, Math.min(timeoutSec * 1000, 60000));
+        emitDebug?.(
+          'chain.electron.voice.realtime.stream_started',
+          'realtime transport stream started',
+          {
+            request_id: requestId,
+            session_id: sessionId,
+            trace_id: traceId,
+            requested_model: model || null,
+            effective_model_source: 'provider_tts_realtime_model',
+            timeout_ms: realtimeTimeoutMs,
+            prebuffer_ms: realtimePrebufferMs,
+            idle_timeout_ms: realtimeIdleTimeoutMs
+          }
+        );
+        try {
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-start', {
+              requestId,
+              sampleRate: 24000,
+              mimeType: 'audio/pcm',
+              prebufferMs: realtimePrebufferMs,
+              idleTimeoutMs: realtimeIdleTimeoutMs
+            });
+            rpcServerRef?.notify({
+              method: 'desktop.event',
+              params: {
+                type: 'voice.playback.started',
+                timestamp: Date.now(),
+                data: { request_id: requestId }
+              }
+            });
+          }
+
+          const result = await realtimeTtsClient.streamSynthesis({
+            text,
+            voice,
+            timeoutMs: realtimeTimeoutMs,
+            onEvent: (event) => {
+              if (event.type === 'chunk') {
+                const chunkIndex = Number(event.chunk_index || 0);
+                if (!avatarWindow.isDestroyed()) {
+                  avatarWindow.webContents.send('desktop:voice:stream-chunk', {
+                    requestId,
+                    seq: chunkIndex,
+                    audioBase64: String(event.audio_base64 || ''),
+                    audioBytes: Number(event.audio_bytes || 0),
+                    totalAudioBytes: Number(event.total_audio_bytes || 0)
+                  });
+                }
+                if (chunkIndex <= 3 || chunkIndex % 10 === 0) {
+                  emitDebug?.(
+                    'chain.electron.voice.realtime.chunk',
+                    'realtime transport chunk dispatched to renderer',
+                    {
+                      request_id: requestId,
+                      session_id: sessionId,
+                      trace_id: traceId,
+                      chunk_index: chunkIndex,
+                      audio_bytes: Number(event.audio_bytes || 0),
+                      total_audio_bytes: Number(event.total_audio_bytes || 0)
+                    }
+                  );
+                }
+                return;
+              }
+              emitDebug?.(
+                `chain.electron.voice.realtime.${event.type}`,
+                'realtime transport event',
+                {
+                  request_id: requestId,
+                  session_id: sessionId,
+                  trace_id: traceId,
+                  ...event
+                }
+              );
+            }
+          });
+
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-end', {
+              requestId,
+              reason: 'completed'
+            });
+          }
+
+          emitDebug?.(
+            'chain.electron.voice.realtime.stream_completed',
+            'realtime transport stream completed',
+            {
+              request_id: requestId,
+              session_id: sessionId,
+              trace_id: traceId,
+              result
+            }
+          );
+          rpcServerRef?.notify({
+            method: 'desktop.event',
+            params: {
+              type: 'voice.synthesis.completed',
+              timestamp: Date.now(),
+              data: {
+                request_id: requestId,
+                bytes: Number(result?.totalAudioBytes) || null,
+                mime_type: 'audio/pcm',
+                model: result?.model || null,
+                playback_route: 'realtime_stream'
+              }
+            }
+          });
+          return;
+        } catch (err) {
+          const code = String(err?.code || 'TTS_REALTIME_FAILED');
+          const errorText = String(err?.message || 'unknown realtime error');
+          if (!avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('desktop:voice:stream-error', {
+              requestId,
+              code,
+              error: errorText
+            });
+          }
+          emitDebug?.(
+            'chain.electron.voice.realtime.stream_failed',
+            'realtime transport stream failed',
+            {
+              request_id: requestId,
+              session_id: sessionId,
+              trace_id: traceId,
+              code,
+              error: errorText
+            }
+          );
+          if (!fallbackOnRealtimeError) {
+            rpcServerRef?.notify({
+              method: 'desktop.event',
+              params: {
+                type: 'voice.synthesis.failed',
+                timestamp: Date.now(),
+                data: {
+                  request_id: requestId,
+                  code,
+                  error: errorText
+                }
+              }
+            });
+            return;
+          }
+        }
+      }
+    }
+
     const preferStreamingPlayback = String(process.env.DESKTOP_VOICE_STREAMING_PLAYBACK || 'true')
       .trim()
       .toLowerCase() !== 'false';
@@ -1852,6 +2024,7 @@ async function startDesktopSuite({
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
 
   const qwenTtsClient = new QwenTtsClient();
+  const qwenTtsRealtimeClient = new QwenTtsRealtimeClient();
   const recentVoiceRequestIds = new Map();
   const VOICE_REQUEST_DEDUP_TTL_MS = 120000;
 
@@ -1922,6 +2095,8 @@ async function startDesktopSuite({
           void processVoiceRequestedOnDesktop({
             eventPayload: voicePayload,
             ttsClient: qwenTtsClient,
+            realtimeTtsClient: qwenTtsRealtimeClient,
+            voiceConfig: config.uiConfig?.voice || {},
             avatarWindow,
             rpcServerRef,
             emitDebug: emitDesktopDebug,

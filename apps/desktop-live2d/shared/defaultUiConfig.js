@@ -113,6 +113,20 @@
           index: 0
         })
       })
+    }),
+    voice: Object.freeze({
+      // Runtime voice routing mode: keep electron-native event path by default.
+      path: 'electron_native',
+      // Playback transport mode for desktop side execution.
+      transport: 'non_streaming',
+      // If realtime transport fails, fallback to non-streaming playback route.
+      fallbackOnRealtimeError: true,
+      realtime: Object.freeze({
+        // Jitter buffer before first audible chunk.
+        prebufferMs: 160,
+        // Stream idle timeout for auto-stop protection.
+        idleTimeoutMs: 8000
+      })
     })
   });
 

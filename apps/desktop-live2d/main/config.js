@@ -159,6 +159,8 @@ function stripJsonComments(input) {
 }
 
 function normalizeUiConfig(raw) {
+  const rawVoice = isPlainObject(raw?.voice) ? raw.voice : {};
+  const rawRealtimeVoice = isPlainObject(rawVoice.realtime) ? rawVoice.realtime : {};
   const merged = {
     window: {
       ...DEFAULT_UI_CONFIG.window,
@@ -196,6 +198,14 @@ function normalizeUiConfig(raw) {
           ...DEFAULT_UI_CONFIG.actionQueue.idleAction.args,
           ...(raw?.actionQueue?.idleAction?.args || {})
         }
+      }
+    },
+    voice: {
+      ...DEFAULT_UI_CONFIG.voice,
+      ...rawVoice,
+      realtime: {
+        ...DEFAULT_UI_CONFIG.voice.realtime,
+        ...rawRealtimeVoice
       }
     }
   };
@@ -266,6 +276,34 @@ function normalizeUiConfig(raw) {
   } else if (merged.actionQueue.idleAction.type === 'expression') {
     merged.actionQueue.idleAction.args = {};
   }
+
+  const voicePath = String(merged.voice.path || '').trim();
+  merged.voice.path = ['electron_native', 'runtime_legacy'].includes(voicePath)
+    ? voicePath
+    : DEFAULT_UI_CONFIG.voice.path;
+
+  const voiceTransport = String(merged.voice.transport || '').trim();
+  merged.voice.transport = ['non_streaming', 'realtime'].includes(voiceTransport)
+    ? voiceTransport
+    : DEFAULT_UI_CONFIG.voice.transport;
+
+  const fallbackOnRealtimeError = Object.prototype.hasOwnProperty.call(rawVoice, 'fallback_on_realtime_error')
+    ? rawVoice.fallback_on_realtime_error
+    : merged.voice.fallbackOnRealtimeError;
+  merged.voice.fallbackOnRealtimeError = fallbackOnRealtimeError !== false;
+
+  const prebufferMs = Object.prototype.hasOwnProperty.call(rawRealtimeVoice, 'prebuffer_ms')
+    ? rawRealtimeVoice.prebuffer_ms
+    : merged.voice.realtime.prebufferMs;
+  merged.voice.realtime.prebufferMs = toPositiveInt(prebufferMs, DEFAULT_UI_CONFIG.voice.realtime.prebufferMs);
+
+  const idleTimeoutMs = Object.prototype.hasOwnProperty.call(rawRealtimeVoice, 'idle_timeout_ms')
+    ? rawRealtimeVoice.idle_timeout_ms
+    : merged.voice.realtime.idleTimeoutMs;
+  merged.voice.realtime.idleTimeoutMs = toPositiveInt(
+    idleTimeoutMs,
+    DEFAULT_UI_CONFIG.voice.realtime.idleTimeoutMs
+  );
 
   return merged;
 }

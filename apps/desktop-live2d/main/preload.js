@@ -95,5 +95,29 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamStart(handler) {
+    const channel = 'desktop:voice:stream-start';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamChunk(handler) {
+    const channel = 'desktop:voice:stream-chunk';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamEnd(handler) {
+    const channel = 'desktop:voice:stream-end';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamError(handler) {
+    const channel = 'desktop:voice:stream-error';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
   }
 });
