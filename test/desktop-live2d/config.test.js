@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   resolveDesktopLive2dConfig,
   upsertDesktopLive2dLayoutOverrides,
+  upsertDesktopLive2dDragZoneOverrides,
   parseJsonWithComments
 } = require('../../apps/desktop-live2d/main/config');
 
@@ -39,6 +40,10 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, true);
   assert.equal(config.uiConfig.voice.realtime.prebufferMs, 160);
   assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 8000);
+  assert.equal(config.uiConfig.interaction.dragZone.centerXRatio, 0.5);
+  assert.equal(config.uiConfig.interaction.dragZone.centerYRatio, 0.5);
+  assert.equal(config.uiConfig.interaction.dragZone.widthRatio, 0.333);
+  assert.equal(config.uiConfig.interaction.dragZone.heightRatio, 0.333);
 });
 
 test('resolveDesktopLive2dConfig respects env overrides', () => {
@@ -61,6 +66,34 @@ test('resolveDesktopLive2dConfig respects env overrides', () => {
   assert.equal(config.rpcToken, 'fixed');
   assert.equal(config.gatewayExternal, true);
   assert.equal(config.modelDir, path.join('/tmp/project', 'assets', 'live2d', 'yachiyo-kaguya'));
+});
+
+test('resolveDesktopLive2dConfig clamps drag zone to stay inside window ratios', () => {
+  const yachiyoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-home-'));
+  fs.mkdirSync(path.join(yachiyoHome, 'config'), { recursive: true });
+  fs.writeFileSync(
+    path.join(yachiyoHome, 'config', 'desktop-live2d.json'),
+    JSON.stringify({
+      interaction: {
+        dragZone: {
+          centerXRatio: 0.95,
+          centerYRatio: 0.05,
+          widthRatio: 0.8,
+          heightRatio: 0.6
+        }
+      }
+    }),
+    'utf8'
+  );
+
+  const config = resolveDesktopLive2dConfig({ env: { YACHIYO_HOME: yachiyoHome } });
+
+  assert.deepEqual(config.uiConfig.interaction.dragZone, {
+    centerXRatio: 0.6,
+    centerYRatio: 0.3,
+    widthRatio: 0.8,
+    heightRatio: 0.6
+  });
 });
 
 test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/desktop-live2d.json', () => {
@@ -215,4 +248,49 @@ test('upsertDesktopLive2dLayoutOverrides writes layout overrides as commented js
   assert.equal(saved.layout.offsetX, 12);
   assert.equal(saved.layout.offsetY, -18);
   assert.equal(saved.layout.scaleMultiplier, 1.13);
+});
+
+test('upsertDesktopLive2dDragZoneOverrides writes interaction.dragZone overrides as commented jsonc', () => {
+  const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-drag-zone-')), 'desktop-live2d.json');
+  fs.writeFileSync(configPath, '{\n  // Keep custom window size.\n  "window": {\n    "width": 380\n  }\n}\n', 'utf8');
+
+  const nextRaw = upsertDesktopLive2dDragZoneOverrides(configPath, {
+    centerXRatio: 0.46,
+    centerYRatio: 0.52,
+    widthRatio: 0.4,
+    heightRatio: 0.28
+  });
+
+  const savedText = fs.readFileSync(configPath, 'utf8');
+  const saved = parseJsonWithComments(savedText);
+
+  assert.equal(nextRaw.window.width, 380);
+  assert.equal(nextRaw.interaction.dragZone.centerXRatio, 0.46);
+  assert.equal(nextRaw.interaction.dragZone.centerYRatio, 0.52);
+  assert.equal(nextRaw.interaction.dragZone.widthRatio, 0.4);
+  assert.equal(nextRaw.interaction.dragZone.heightRatio, 0.28);
+  assert.match(savedText, /Interaction overrides/);
+  assert.equal(saved.window.width, 380);
+  assert.equal(saved.interaction.dragZone.centerXRatio, 0.46);
+  assert.equal(saved.interaction.dragZone.centerYRatio, 0.52);
+  assert.equal(saved.interaction.dragZone.widthRatio, 0.4);
+  assert.equal(saved.interaction.dragZone.heightRatio, 0.28);
+});
+
+test('upsertDesktopLive2dDragZoneOverrides clamps out-of-bounds drag zone inputs before saving', () => {
+  const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-drag-zone-clamp-')), 'desktop-live2d.json');
+
+  const nextRaw = upsertDesktopLive2dDragZoneOverrides(configPath, {
+    centerXRatio: 0.92,
+    centerYRatio: 0.08,
+    widthRatio: 0.7,
+    heightRatio: 0.5
+  });
+
+  assert.deepEqual(nextRaw.interaction.dragZone, {
+    centerXRatio: 0.65,
+    centerYRatio: 0.25,
+    widthRatio: 0.7,
+    heightRatio: 0.5
+  });
 });

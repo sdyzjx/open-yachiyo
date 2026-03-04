@@ -32,6 +32,8 @@ const {
   createChatPanelVisibilityListener,
   buildWindowStatePayload,
   createWindowResizeListener,
+  normalizeWindowInteractivityPayload,
+  createWindowInteractivityListener,
   normalizePersistedWindowState,
   loadPersistedWindowState,
   writePersistedWindowState,
@@ -389,8 +391,23 @@ test('normalizeWindowControlPayload and normalizeChatPanelVisibilityPayload vali
     action: 'save_layout_overrides',
     layout: { offsetX: 10, offsetY: -12, scaleMultiplier: 1.137 }
   });
+  assert.deepEqual(normalizeWindowControlPayload({
+    action: ' save_drag_zone_overrides ',
+    dragZone: { centerXRatio: 0.4567, centerYRatio: 0.5211, widthRatio: 0.3988, heightRatio: 0.2844 }
+  }), {
+    action: 'save_drag_zone_overrides',
+    dragZone: { centerXRatio: 0.457, centerYRatio: 0.521, widthRatio: 0.399, heightRatio: 0.284 }
+  });
+  assert.deepEqual(normalizeWindowControlPayload({
+    action: 'save_drag_zone_overrides',
+    dragZone: { centerXRatio: 0.95, centerYRatio: 0.05, widthRatio: 0.8, heightRatio: 0.6 }
+  }), {
+    action: 'save_drag_zone_overrides',
+    dragZone: { centerXRatio: 0.6, centerYRatio: 0.3, widthRatio: 0.8, heightRatio: 0.6 }
+  });
   assert.equal(normalizeWindowControlPayload({ action: 'quit' }), null);
   assert.equal(normalizeWindowControlPayload({ action: 'save_layout_overrides', layout: { offsetX: 1 } }), null);
+  assert.equal(normalizeWindowControlPayload({ action: 'save_drag_zone_overrides', dragZone: { centerXRatio: 0.5 } }), null);
 
   assert.deepEqual(normalizeChatPanelVisibilityPayload({ visible: true }), { visible: true });
   assert.equal(normalizeChatPanelVisibilityPayload({ visible: 'true' }), null);
@@ -421,6 +438,13 @@ test('normalizeWindowResizePayload validates resize actions and dimensions', () 
   });
   assert.equal(normalizeWindowResizePayload({ action: 'set', width: 0, height: 10 }), null);
   assert.equal(normalizeWindowResizePayload({ action: 'unknown' }), null);
+});
+
+test('normalizeWindowInteractivityPayload validates boolean interactive payload', () => {
+  assert.deepEqual(normalizeWindowInteractivityPayload({ interactive: true }), { interactive: true });
+  assert.deepEqual(normalizeWindowInteractivityPayload({ interactive: false }), { interactive: false });
+  assert.equal(normalizeWindowInteractivityPayload({ interactive: 'true' }), null);
+  assert.equal(normalizeWindowInteractivityPayload(null), null);
 });
 
 test('normalizeModelBoundsPayload validates numeric bounds payload', () => {
@@ -670,6 +694,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
   let openWebUiCount = 0;
   let closeResizeModeCount = 0;
   const savedLayouts = [];
+  const savedDragZones = [];
   const listener = createWindowControlListener({
     window,
     onHide: () => { hideCount += 1; },
@@ -677,7 +702,8 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
     onClosePet: () => { closeCount += 1; },
     onOpenWebUi: () => { openWebUiCount += 1; },
     onCloseResizeMode: () => { closeResizeModeCount += 1; },
-    onSaveLayoutOverrides: (payload) => { savedLayouts.push(payload); }
+    onSaveLayoutOverrides: (payload) => { savedLayouts.push(payload); },
+    onSaveDragZoneOverrides: (payload) => { savedDragZones.push(payload); }
   });
 
   listener({ sender: webContents }, { action: 'hide' });
@@ -689,6 +715,10 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
     action: 'save_layout_overrides',
     layout: { offsetX: 8, offsetY: -12, scaleMultiplier: 1.12 }
   });
+  listener({ sender: webContents }, {
+    action: 'save_drag_zone_overrides',
+    dragZone: { centerXRatio: 0.46, centerYRatio: 0.52, widthRatio: 0.4, heightRatio: 0.28 }
+  });
   listener({ sender: { id: 99 } }, { action: 'hide' });
 
   assert.equal(hideCount, 1);
@@ -697,6 +727,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
   assert.equal(openWebUiCount, 1);
   assert.equal(closeResizeModeCount, 1);
   assert.deepEqual(savedLayouts, [{ offsetX: 8, offsetY: -12, scaleMultiplier: 1.12 }]);
+  assert.deepEqual(savedDragZones, [{ centerXRatio: 0.46, centerYRatio: 0.52, widthRatio: 0.4, heightRatio: 0.28 }]);
 });
 
 test('createChatPanelVisibilityListener resizes when visibility changes', () => {
@@ -868,6 +899,36 @@ test('createWindowResizeListener resizes avatar window and publishes updated sta
   assert.equal(emittedStates.length, 4);
   assert.equal(emittedStates[3].width, 460);
   assert.equal(emittedStates[3].height, 620);
+});
+
+test('createWindowInteractivityListener toggles ignore mouse events and keeps resize mode interactive', () => {
+  const webContents = { id: 23 };
+  const calls = [];
+  let resizeModeEnabled = false;
+  const window = {
+    webContents,
+    isDestroyed() {
+      return false;
+    },
+    setIgnoreMouseEvents(ignore, options) {
+      calls.push({ ignore, options });
+    }
+  };
+
+  const listener = createWindowInteractivityListener({
+    window,
+    isResizeModeEnabled: () => resizeModeEnabled
+  });
+
+  listener({ sender: webContents }, { interactive: false });
+  listener({ sender: webContents }, { interactive: true });
+  resizeModeEnabled = true;
+  listener({ sender: webContents }, { interactive: false });
+
+  assert.deepEqual(calls, [
+    { ignore: true, options: { forward: true } },
+    { ignore: false, options: undefined }
+  ]);
 });
 
 

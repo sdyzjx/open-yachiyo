@@ -1,71 +1,18 @@
 {
+  // Window overrides. Delete any field here to fall back to shared defaults.
   "window": {
     "width": 380,
     "height": 600,
     "minWidth": 240,
     "minHeight": 360,
-    "compactWhenChatHidden": false,
     "compactWidth": 320,
-    "compactHeight": 600,
-    "placement": {
-      "anchor": "bottom-right",
-      "marginRight": 18,
-      "marginBottom": 18,
-      "marginLeft": 18,
-      "marginTop": 18
-    }
+    "compactHeight": 600
   },
-  "render": {
-    "resolutionScale": 1,
-    "maxDevicePixelRatio": 2,
-    "antialias": false
-  },
-  "layout": {
-    "targetWidthRatio": 0.68,
-    "targetHeightRatio": 0.8,
-    "horizontalAlign": "right",
-    "rightOffsetRatio": 0.97,
-    "bottomOffsetRatio": 0.97,
-    "marginX": 22,
-    "marginY": 12,
-    "pivotXRatio": 0.72,
-    "pivotYRatio": 0.97,
-    "scaleMultiplier": 0.9,
-    "minScale": 0.04,
-    "maxScale": 2,
-    "lockScaleOnResize": true,
-    "lockPositionOnResize": true
-  },
-  "chat": {
-    "panel": {
-      "enabled": true,
-      "defaultVisible": false,
-      "width": 320,
-      "height": 220,
-      "maxMessages": 200,
-      "inputEnabled": true
-    },
-    "bubble": {
-      "mirrorToPanel": false,
-      "width": 560,
-      "height": 236,
-      "stream": {
-        "lineDurationMs": 2000,
-        "launchIntervalMs": 300
-      }
-    }
-  },
-  "actionQueue": {
-    "maxQueueSize": 120,
-    "overflowPolicy": "drop_oldest",
-    "idleFallbackEnabled": true,
-    "idleAction": {
-      "type": "motion",
-      "name": "Idle",
-      "args": {
-        "group": "Idle",
-        "index": 0
-      }
+  // Interaction overrides. dragZone defines the draggable hotspot as ratios of the avatar window.
+  "interaction": {
+    "dragZone": {
+      "widthRatio": 0.333,
+      "heightRatio": 0.333
     }
   },
   "voice": {

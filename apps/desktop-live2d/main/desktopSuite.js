@@ -3,7 +3,12 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const YAML = require('yaml');
 
-const { resolveDesktopLive2dConfig, upsertDesktopLive2dLayoutOverrides, DEFAULT_UI_CONFIG } = require('./config');
+const {
+  resolveDesktopLive2dConfig,
+  upsertDesktopLive2dLayoutOverrides,
+  upsertDesktopLive2dDragZoneOverrides,
+  DEFAULT_UI_CONFIG
+} = require('./config');
 const { validateModelAssetDirectory } = require('./modelAssets');
 const { GatewaySupervisor } = require('./gatewaySupervisor');
 const { Live2dRpcServer } = require('./rpcServer');
@@ -38,7 +43,8 @@ const CHANNELS = Object.freeze({
   windowControl: 'live2d:window:control',
   chatPanelVisibility: 'live2d:chat:panel-visibility',
   windowResizeRequest: 'live2d:window:resize-request',
-  windowStateSync: 'live2d:window:state-sync'
+  windowStateSync: 'live2d:window:state-sync',
+  windowInteractivity: 'live2d:window:interactivity'
 });
 
 const AVATAR_WINDOW_MAX_OFFSCREEN_RATIO = 0.8;
@@ -439,7 +445,7 @@ function resizeWindowKeepingBottomRight({
 
 function normalizeWindowControlPayload(payload) {
   const action = String(payload?.action || '').trim().toLowerCase();
-  if (!['hide', 'hide_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides'].includes(action)) {
+  if (!['hide', 'hide_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides', 'save_drag_zone_overrides'].includes(action)) {
     return null;
   }
   const normalized = { action };
@@ -460,7 +466,36 @@ function normalizeWindowControlPayload(payload) {
       scaleMultiplier: Math.round(scaleMultiplier * 1000) / 1000
     };
   }
+  if (action === 'save_drag_zone_overrides') {
+    const dragZone = payload?.dragZone;
+    if (!dragZone || typeof dragZone !== 'object') {
+      return null;
+    }
+    const normalizedDragZone = normalizeDragZonePayload(dragZone);
+    if (!normalizedDragZone) {
+      return null;
+    }
+    normalized.dragZone = normalizedDragZone;
+  }
   return normalized;
+}
+
+function normalizeDragZonePayload(dragZone) {
+  const centerXRatio = Number(dragZone.centerXRatio);
+  const centerYRatio = Number(dragZone.centerYRatio);
+  const widthRatio = Number(dragZone.widthRatio);
+  const heightRatio = Number(dragZone.heightRatio);
+  if (!Number.isFinite(centerXRatio) || !Number.isFinite(centerYRatio) || !Number.isFinite(widthRatio) || !Number.isFinite(heightRatio)) {
+    return null;
+  }
+  const normalizedWidthRatio = Math.round(clamp(widthRatio, 0.1, 0.9) * 1000) / 1000;
+  const normalizedHeightRatio = Math.round(clamp(heightRatio, 0.1, 0.9) * 1000) / 1000;
+  return {
+    centerXRatio: Math.round(clamp(centerXRatio, normalizedWidthRatio / 2, 1 - normalizedWidthRatio / 2) * 1000) / 1000,
+    centerYRatio: Math.round(clamp(centerYRatio, normalizedHeightRatio / 2, 1 - normalizedHeightRatio / 2) * 1000) / 1000,
+    widthRatio: normalizedWidthRatio,
+    heightRatio: normalizedHeightRatio
+  };
 }
 
 function createWindowControlListener({
@@ -471,7 +506,8 @@ function createWindowControlListener({
   onClosePet = null,
   onOpenWebUi = null,
   onCloseResizeMode = null,
-  onSaveLayoutOverrides = null
+  onSaveLayoutOverrides = null,
+  onSaveDragZoneOverrides = null
 } = {}) {
   const allowedWindows = Array.isArray(windows) && windows.length > 0
     ? windows
@@ -529,6 +565,9 @@ function createWindowControlListener({
     if (normalized.action === 'save_layout_overrides' && typeof onSaveLayoutOverrides === 'function') {
       onSaveLayoutOverrides(normalized.layout);
     }
+    if (normalized.action === 'save_drag_zone_overrides' && typeof onSaveDragZoneOverrides === 'function') {
+      onSaveDragZoneOverrides(normalized.dragZone);
+    }
   };
 }
 
@@ -577,6 +616,18 @@ function normalizeWindowResizePayload(payload) {
     normalized.step = Math.round(step);
   }
   return normalized;
+}
+
+function normalizeWindowInteractivityPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+  if (typeof payload.interactive !== 'boolean') {
+    return null;
+  }
+  return {
+    interactive: payload.interactive
+  };
 }
 
 function createChatPanelToggleListener({ window, onToggle = null } = {}) {
@@ -966,6 +1017,32 @@ function createWindowResizeListener({
     if (normalized.persist !== false) {
       onResizeCommitted?.(nextState);
     }
+  };
+}
+
+function createWindowInteractivityListener({
+  window,
+  isResizeModeEnabled = null
+} = {}) {
+  let lastInteractive = null;
+  return (event, payload) => {
+    if (!window || window.isDestroyed?.() || event?.sender !== window.webContents) {
+      return;
+    }
+
+    const normalized = normalizeWindowInteractivityPayload(payload);
+    if (!normalized || typeof window.setIgnoreMouseEvents !== 'function') {
+      return;
+    }
+
+    const interactive = typeof isResizeModeEnabled === 'function' && isResizeModeEnabled()
+      ? true
+      : normalized.interactive;
+    if (interactive === lastInteractive) {
+      return;
+    }
+    lastInteractive = interactive;
+    window.setIgnoreMouseEvents(!interactive, interactive ? undefined : { forward: true });
   };
 }
 
@@ -1475,6 +1552,7 @@ async function startDesktopSuite({
   let manualWindowSizeActive = Boolean(persistedWindowState);
   let initialManualFitPending = Boolean(persistedWindowState);
   let resizeModeEnabled = false;
+  let avatarWindowInteractive = false;
   const avatarWindow = createMainWindow({
     BrowserWindow,
     preloadPath: path.join(__dirname, 'preload.js'),
@@ -1720,8 +1798,17 @@ async function startDesktopSuite({
     writePersistedWindowState(config.windowStatePath, payload, { logger });
   }
 
+  function syncAvatarWindowMousePassthrough() {
+    if (avatarWindow.isDestroyed() || typeof avatarWindow.setIgnoreMouseEvents !== 'function') {
+      return;
+    }
+    const interactive = resizeModeEnabled || avatarWindowInteractive;
+    avatarWindow.setIgnoreMouseEvents(!interactive, interactive ? undefined : { forward: true });
+  }
+
   function setResizeModeEnabled(enabled) {
     resizeModeEnabled = Boolean(enabled);
+    syncAvatarWindowMousePassthrough();
     onResizeModeChange?.(resizeModeEnabled);
     syncWindowStateToRenderer();
     return resizeModeEnabled;
@@ -2549,6 +2636,21 @@ async function startDesktopSuite({
     avatarUiConfig.layout = config.uiConfig.layout;
   }
 
+  function persistDragZoneOverrides(dragZoneOverrides) {
+    const nextRaw = upsertDesktopLive2dDragZoneOverrides(config.uiConfigPath, dragZoneOverrides, {
+      defaults: DEFAULT_UI_CONFIG.interaction.dragZone
+    });
+    config.uiConfig.interaction = {
+      ...(config.uiConfig.interaction || {}),
+      ...(nextRaw.interaction || {})
+    };
+    config.uiConfig.interaction.dragZone = {
+      ...DEFAULT_UI_CONFIG.interaction.dragZone,
+      ...(config.uiConfig.interaction?.dragZone || {})
+    };
+    avatarUiConfig.interaction = config.uiConfig.interaction;
+  }
+
   ipcMain.handle(CHANNELS.getRuntimeConfig, (event) => ({
     modelRelativePath: config.modelRelativePath,
     modelName: modelValidation.modelName,
@@ -2627,6 +2729,9 @@ async function startDesktopSuite({
     },
     onSaveLayoutOverrides: (layoutOverrides) => {
       persistLayoutOverrides(layoutOverrides);
+    },
+    onSaveDragZoneOverrides: (dragZoneOverrides) => {
+      persistDragZoneOverrides(dragZoneOverrides);
     }
   });
   ipcMain.on(CHANNELS.windowControl, windowControlListener);
@@ -2640,6 +2745,19 @@ async function startDesktopSuite({
     onResizeCommitted: persistAvatarWindowState
   });
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
+  const windowInteractivityListener = createWindowInteractivityListener({
+    window: avatarWindow,
+    isResizeModeEnabled: () => resizeModeEnabled
+  });
+  const avatarWindowInteractivityListener = (event, payload) => {
+    const normalized = normalizeWindowInteractivityPayload(payload);
+    if (!normalized || event?.sender !== avatarWindow.webContents) {
+      return;
+    }
+    avatarWindowInteractive = normalized.interactive;
+    windowInteractivityListener(event, normalized);
+  };
+  ipcMain.on(CHANNELS.windowInteractivity, avatarWindowInteractivityListener);
 
   const qwenTtsClient = new QwenTtsClient();
   const qwenTtsRealtimeClient = new QwenTtsRealtimeClient();
@@ -2974,6 +3092,7 @@ async function startDesktopSuite({
 
   await avatarWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
   await rendererReadyPromise;
+  syncAvatarWindowMousePassthrough();
   syncChatStateToRenderer();
   syncBubbleStateToRenderer();
   syncWindowStateToRenderer();
@@ -3051,6 +3170,7 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.lipsyncTelemetry, lipsyncTelemetryListener);
     ipcMain.off(CHANNELS.windowControl, windowControlListener);
     ipcMain.off(CHANNELS.windowResizeRequest, windowResizeListener);
+    ipcMain.off(CHANNELS.windowInteractivity, avatarWindowInteractivityListener);
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
 
@@ -3378,6 +3498,9 @@ function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windo
   if (typeof win.setAspectRatio === 'function' && Number.isFinite(aspectRatio) && aspectRatio > 0) {
     win.setAspectRatio(aspectRatio);
   }
+  if (typeof win.setIgnoreMouseEvents === 'function') {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
 
   return win;
 }
@@ -3702,11 +3825,13 @@ module.exports = {
   normalizeBubbleMetricsPayload,
   normalizeActionTelemetryPayload,
   normalizeWindowResizePayload,
+  normalizeWindowInteractivityPayload,
   createWindowDragListener,
   createWindowControlListener,
   createChatPanelVisibilityListener,
   buildWindowStatePayload,
   createWindowResizeListener,
+  createWindowInteractivityListener,
   normalizePersistedWindowState,
   loadPersistedWindowState,
   writePersistedWindowState,

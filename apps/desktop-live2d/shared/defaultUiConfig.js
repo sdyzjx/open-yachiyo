@@ -46,6 +46,13 @@
     lockPositionOnResize: true
   });
 
+  const DEFAULT_DRAG_ZONE_CONFIG = Object.freeze({
+    centerXRatio: 0.5,
+    centerYRatio: 0.5,
+    widthRatio: 1 / 3,
+    heightRatio: 1 / 3
+  });
+
   const DEFAULT_UI_CONFIG = Object.freeze({
     window: Object.freeze({
       // Default avatar window size before user overrides and persisted state.
@@ -75,6 +82,9 @@
       resolutionScale: 1,
       maxDevicePixelRatio: 2,
       antialias: false
+    }),
+    interaction: Object.freeze({
+      dragZone: DEFAULT_DRAG_ZONE_CONFIG
     }),
     layout: DEFAULT_LAYOUT_CONFIG,
     chat: Object.freeze({
@@ -140,7 +150,7 @@
     })
   });
 
-  const api = { DEFAULT_LAYOUT_CONFIG, DEFAULT_UI_CONFIG };
+  const api = { DEFAULT_LAYOUT_CONFIG, DEFAULT_DRAG_ZONE_CONFIG, DEFAULT_UI_CONFIG };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   }

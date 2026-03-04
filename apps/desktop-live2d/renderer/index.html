@@ -96,6 +96,26 @@
         display: block;
       }
 
+      #drag-zone-toggle {
+        display: none;
+        position: fixed;
+        top: 92px;
+        right: 12px;
+        z-index: 30;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(10, 14, 24, 0.66);
+        color: #dfe8ff;
+        font-size: 11px;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+      }
+
+      body.resize-mode-active #drag-zone-toggle {
+        display: block;
+      }
+
       #layout-tuner-panel {
         display: none;
         position: fixed;
@@ -114,6 +134,27 @@
       }
 
       body.resize-mode-active.layout-tuner-open #layout-tuner-panel {
+        display: block;
+      }
+
+      #drag-zone-panel {
+        display: none;
+        position: fixed;
+        top: 132px;
+        right: 12px;
+        z-index: 31;
+        width: 220px;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(10, 14, 24, 0.9);
+        color: #eff5ff;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        -webkit-app-region: no-drag;
+      }
+
+      body.resize-mode-active.drag-zone-panel-open #drag-zone-panel {
         display: block;
       }
 
@@ -193,6 +234,58 @@
         font-size: 10px;
         color: #8fd0ff;
         letter-spacing: 0.03em;
+      }
+
+      #drag-zone-status {
+        min-height: 14px;
+        margin-top: 10px;
+        font-size: 10px;
+        color: #8fd0ff;
+        letter-spacing: 0.03em;
+      }
+
+      #drag-zone-visual {
+        display: none;
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 33.333%;
+        height: 33.333%;
+        transform: translate(-50%, -50%);
+        z-index: 28;
+        border: 2px dashed rgba(255, 209, 102, 0.95);
+        border-radius: 16px;
+        background: rgba(255, 209, 102, 0.1);
+        box-shadow: inset 0 0 0 1px rgba(14, 18, 28, 0.68);
+        pointer-events: none;
+      }
+
+      #drag-zone-visual::before,
+      #drag-zone-visual::after {
+        content: "";
+        position: absolute;
+        pointer-events: none;
+        background: rgba(255, 209, 102, 0.9);
+      }
+
+      #drag-zone-visual::before {
+        left: 50%;
+        top: 8px;
+        bottom: 8px;
+        width: 1px;
+        transform: translateX(-50%);
+      }
+
+      #drag-zone-visual::after {
+        top: 50%;
+        left: 8px;
+        right: 8px;
+        height: 1px;
+        transform: translateY(-50%);
+      }
+
+      body.resize-mode-active #drag-zone-visual {
+        display: block;
       }
 
       #bubble-layer {
@@ -375,6 +468,8 @@
     <div id="stage"></div>
     <button id="resize-mode-close" type="button">Close Resize Mode</button>
     <button id="layout-tuner-toggle" type="button">Adjust Layout</button>
+    <button id="drag-zone-toggle" type="button">Adjust Drag Zone</button>
+    <div id="drag-zone-visual"></div>
     <div id="layout-tuner-panel">
       <div class="layout-tuner-header">
         <span class="layout-tuner-title">Layout Tuner</span>
@@ -400,6 +495,37 @@
         <button class="layout-tuner-action" id="layout-save" type="button">Save</button>
       </div>
       <div id="layout-tuner-status" aria-live="polite"></div>
+    </div>
+    <div id="drag-zone-panel">
+      <div class="layout-tuner-header">
+        <span class="layout-tuner-title">Drag Zone</span>
+        <button id="drag-zone-close" type="button" aria-label="Close drag zone panel">×</button>
+      </div>
+      <div class="layout-tuner-row">
+        <label for="drag-zone-center-x">Center X</label>
+        <span class="layout-tuner-value" id="drag-zone-center-x-value">50%</span>
+        <input class="layout-tuner-slider" id="drag-zone-center-x" type="range" min="10" max="90" step="1" value="50" />
+      </div>
+      <div class="layout-tuner-row">
+        <label for="drag-zone-center-y">Center Y</label>
+        <span class="layout-tuner-value" id="drag-zone-center-y-value">50%</span>
+        <input class="layout-tuner-slider" id="drag-zone-center-y" type="range" min="10" max="90" step="1" value="50" />
+      </div>
+      <div class="layout-tuner-row">
+        <label for="drag-zone-width">Width</label>
+        <span class="layout-tuner-value" id="drag-zone-width-value">33%</span>
+        <input class="layout-tuner-slider" id="drag-zone-width" type="range" min="10" max="90" step="1" value="33" />
+      </div>
+      <div class="layout-tuner-row">
+        <label for="drag-zone-height">Height</label>
+        <span class="layout-tuner-value" id="drag-zone-height-value">33%</span>
+        <input class="layout-tuner-slider" id="drag-zone-height" type="range" min="10" max="90" step="1" value="33" />
+      </div>
+      <div class="layout-tuner-actions">
+        <button class="layout-tuner-action" id="drag-zone-reset" type="button">Reset</button>
+        <button class="layout-tuner-action" id="drag-zone-save" type="button">Save</button>
+      </div>
+      <div id="drag-zone-status" aria-live="polite"></div>
     </div>
     <div id="chat-panel">
       <div id="chat-panel-header">

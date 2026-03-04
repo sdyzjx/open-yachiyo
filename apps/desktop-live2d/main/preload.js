@@ -20,7 +20,8 @@ const CHANNELS = {
   windowControl: 'live2d:window:control',
   chatPanelVisibility: 'live2d:chat:panel-visibility',
   windowResizeRequest: 'live2d:window:resize-request',
-  windowStateSync: 'live2d:window:state-sync'
+  windowStateSync: 'live2d:window:state-sync',
+  windowInteractivity: 'live2d:window:interactivity'
 };
 
 contextBridge.exposeInMainWorld('desktopLive2dBridge', {
@@ -82,6 +83,9 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   sendWindowResize(payload = {}) {
     ipcRenderer.send(CHANNELS.windowResizeRequest, payload);
+  },
+  sendWindowInteractivity(payload = {}) {
+    ipcRenderer.send(CHANNELS.windowInteractivity, payload);
   },
   sendChatPanelVisibility(payload = {}) {
     ipcRenderer.send(CHANNELS.chatPanelVisibility, payload);

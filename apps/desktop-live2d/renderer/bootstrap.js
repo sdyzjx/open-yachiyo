@@ -29,6 +29,7 @@
   let stableModelScale = null;
   let stableModelPose = null;
   let resizeModeScaleFactor = 1;
+  let resizeModeBaseWindowSize = null;
   let lastResizeModeRequest = null;
   let modelBaseBounds = null;
   let actionQueuePlayer = null;
@@ -48,6 +49,8 @@
   let systemAudioDebugBound = false;
   let realtimeVoicePlayer = null;
   let layoutTunerState = null;
+  let lastWindowInteractivity = null;
+  let lastPointerPosition = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -61,6 +64,7 @@
   const petCloseElement = document.getElementById('pet-close');
   const resizeModeCloseElement = document.getElementById('resize-mode-close');
   const layoutTunerToggleElement = document.getElementById('layout-tuner-toggle');
+  const dragZoneToggleElement = document.getElementById('drag-zone-toggle');
   const layoutTunerCloseElement = document.getElementById('layout-tuner-close');
   const layoutOffsetXElement = document.getElementById('layout-offset-x');
   const layoutOffsetYElement = document.getElementById('layout-offset-y');
@@ -71,6 +75,19 @@
   const layoutResetElement = document.getElementById('layout-reset');
   const layoutSaveElement = document.getElementById('layout-save');
   const layoutTunerStatusElement = document.getElementById('layout-tuner-status');
+  const dragZoneVisualElement = document.getElementById('drag-zone-visual');
+  const dragZoneCloseElement = document.getElementById('drag-zone-close');
+  const dragZoneCenterXElement = document.getElementById('drag-zone-center-x');
+  const dragZoneCenterYElement = document.getElementById('drag-zone-center-y');
+  const dragZoneWidthElement = document.getElementById('drag-zone-width');
+  const dragZoneHeightElement = document.getElementById('drag-zone-height');
+  const dragZoneCenterXValueElement = document.getElementById('drag-zone-center-x-value');
+  const dragZoneCenterYValueElement = document.getElementById('drag-zone-center-y-value');
+  const dragZoneWidthValueElement = document.getElementById('drag-zone-width-value');
+  const dragZoneHeightValueElement = document.getElementById('drag-zone-height-value');
+  const dragZoneResetElement = document.getElementById('drag-zone-reset');
+  const dragZoneSaveElement = document.getElementById('drag-zone-save');
+  const dragZoneStatusElement = document.getElementById('drag-zone-status');
 
   const chatStateApi = window.ChatPanelState;
   let runtimeUiConfig = null;
@@ -90,6 +107,13 @@
     offsetY: 0,
     scaleMultiplier: 1
   };
+  const dragZoneDefaults = window.DesktopLive2dDefaults?.DEFAULT_DRAG_ZONE_CONFIG || {
+    centerXRatio: 0.5,
+    centerYRatio: 0.5,
+    widthRatio: 1 / 3,
+    heightRatio: 1 / 3
+  };
+  let dragZoneTunerState = null;
   const modelTapToggleGate = typeof interactionApi?.createCooldownGate === 'function'
     ? interactionApi.createCooldownGate({ cooldownMs: 220 })
     : {
@@ -313,6 +337,8 @@
     if (!payload || typeof payload !== 'object') {
       return;
     }
+    const previousResizeModeEnabled = state.resizeModeEnabled;
+    const previousWindowState = state.windowState;
 
     state.windowState = {
       width: Number(payload.width) || null,
@@ -329,6 +355,13 @@
     };
     state.resizeModeEnabled = payload?.resizeModeEnabled === true;
     document.body.classList.toggle('resize-mode-active', state.resizeModeEnabled);
+    if (state.resizeModeEnabled && (!previousResizeModeEnabled || !resizeModeBaseWindowSize)) {
+      resizeModeBaseWindowSize = {
+        width: Number(state.windowState.width) || Number(previousWindowState?.width) || window.innerWidth || null,
+        height: Number(state.windowState.height) || Number(previousWindowState?.height) || window.innerHeight || null,
+        aspectRatio: Number(state.windowState.aspectRatio) || null
+      };
+    }
 
     const baseWidth = Number(state.windowState.defaultWidth) || Number(state.windowState.width) || null;
     const baseHeight = Number(state.windowState.defaultHeight) || Number(state.windowState.height) || null;
@@ -343,8 +376,19 @@
 
     if (!state.resizeModeEnabled) {
       resizeModeScaleFactor = 1;
+      resizeModeBaseWindowSize = null;
       lastResizeModeRequest = null;
       setLayoutTunerOpen(false);
+      setDragZonePanelOpen(false);
+    }
+    syncDragZoneVisual(dragZoneTunerState?.values || getCurrentDragZoneValues());
+    syncWindowInteractivityFromPointer();
+    if (
+      previousResizeModeEnabled !== state.resizeModeEnabled
+      || Number(previousWindowState?.width) !== Number(state.windowState?.width)
+      || Number(previousWindowState?.height) !== Number(state.windowState?.height)
+    ) {
+      scheduleAdaptiveLayout();
     }
   }
 
@@ -361,6 +405,9 @@
     setLayoutTunerOpen(false);
 
     layoutTunerToggleElement?.addEventListener('click', () => {
+      if (!layoutTunerState?.open) {
+        setDragZonePanelOpen(false);
+      }
       setLayoutTunerOpen(!layoutTunerState?.open);
     });
     layoutTunerCloseElement?.addEventListener('click', () => {
@@ -395,9 +442,230 @@
     });
   }
 
+  function normalizeDragZoneValues(input = {}) {
+    const widthRatio = Math.round(clamp(Number(input.widthRatio) || 0, 0.1, 0.9) * 1000) / 1000;
+    const heightRatio = Math.round(clamp(Number(input.heightRatio) || 0, 0.1, 0.9) * 1000) / 1000;
+    return {
+      centerXRatio: Math.round(clamp(Number(input.centerXRatio) || 0, widthRatio / 2, 1 - widthRatio / 2) * 1000) / 1000,
+      centerYRatio: Math.round(clamp(Number(input.centerYRatio) || 0, heightRatio / 2, 1 - heightRatio / 2) * 1000) / 1000,
+      widthRatio,
+      heightRatio
+    };
+  }
+
+  function toDragZoneDisplayValues(values = {}) {
+    return {
+      centerXPercent: Math.round((Number(values.centerXRatio) || 0) * 100),
+      centerYPercent: Math.round((Number(values.centerYRatio) || 0) * 100),
+      widthPercent: Math.round((Number(values.widthRatio) || 0) * 100),
+      heightPercent: Math.round((Number(values.heightRatio) || 0) * 100)
+    };
+  }
+
+  function ensureRuntimeDragZoneConfig() {
+    runtimeUiConfig = runtimeUiConfig && typeof runtimeUiConfig === 'object' ? runtimeUiConfig : {};
+    runtimeUiConfig.interaction = {
+      ...(runtimeUiConfig.interaction || {}),
+      dragZone: {
+        ...(dragZoneDefaults || {}),
+        ...(runtimeUiConfig?.interaction?.dragZone || {})
+      }
+    };
+    return runtimeUiConfig.interaction.dragZone;
+  }
+
+  function getCurrentDragZoneValues() {
+    const dragZoneConfig = ensureRuntimeDragZoneConfig();
+    return normalizeDragZoneValues({
+      centerXRatio: dragZoneConfig.centerXRatio ?? dragZoneDefaults.centerXRatio,
+      centerYRatio: dragZoneConfig.centerYRatio ?? dragZoneDefaults.centerYRatio,
+      widthRatio: dragZoneConfig.widthRatio ?? dragZoneDefaults.widthRatio,
+      heightRatio: dragZoneConfig.heightRatio ?? dragZoneDefaults.heightRatio
+    });
+  }
+
+  function setDragZoneStatus(message = '') {
+    if (dragZoneStatusElement) {
+      dragZoneStatusElement.textContent = String(message || '');
+    }
+  }
+
+  function syncDragZoneVisual(values) {
+    if (!dragZoneVisualElement) {
+      return;
+    }
+    const normalized = normalizeDragZoneValues(values || getCurrentDragZoneValues());
+    const leftPercent = (normalized.centerXRatio - normalized.widthRatio / 2) * 100;
+    const topPercent = (normalized.centerYRatio - normalized.heightRatio / 2) * 100;
+    dragZoneVisualElement.style.left = `${leftPercent}%`;
+    dragZoneVisualElement.style.top = `${topPercent}%`;
+    dragZoneVisualElement.style.width = `${normalized.widthRatio * 100}%`;
+    dragZoneVisualElement.style.height = `${normalized.heightRatio * 100}%`;
+    dragZoneVisualElement.style.transform = 'none';
+  }
+
+  function syncDragZoneControls() {
+    if (!dragZoneTunerState?.values) {
+      return;
+    }
+    const { centerXPercent, centerYPercent, widthPercent, heightPercent } = toDragZoneDisplayValues(dragZoneTunerState.values);
+    if (dragZoneCenterXElement) dragZoneCenterXElement.value = String(centerXPercent);
+    if (dragZoneCenterYElement) dragZoneCenterYElement.value = String(centerYPercent);
+    if (dragZoneWidthElement) dragZoneWidthElement.value = String(widthPercent);
+    if (dragZoneHeightElement) dragZoneHeightElement.value = String(heightPercent);
+    if (dragZoneCenterXValueElement) dragZoneCenterXValueElement.textContent = `${centerXPercent}%`;
+    if (dragZoneCenterYValueElement) dragZoneCenterYValueElement.textContent = `${centerYPercent}%`;
+    if (dragZoneWidthValueElement) dragZoneWidthValueElement.textContent = `${widthPercent}%`;
+    if (dragZoneHeightValueElement) dragZoneHeightValueElement.textContent = `${heightPercent}%`;
+    syncDragZoneVisual(dragZoneTunerState.values);
+  }
+
+  function setDragZonePanelOpen(open) {
+    const nextOpen = Boolean(open) && state.resizeModeEnabled;
+    if (!dragZoneTunerState) {
+      dragZoneTunerState = {
+        open: nextOpen,
+        values: getCurrentDragZoneValues()
+      };
+    } else {
+      dragZoneTunerState.open = nextOpen;
+    }
+    document.body.classList.toggle('drag-zone-panel-open', nextOpen);
+    if (dragZoneToggleElement) {
+      dragZoneToggleElement.textContent = nextOpen ? 'Close Drag Zone' : 'Adjust Drag Zone';
+    }
+    if (!nextOpen) {
+      setDragZoneStatus('');
+    }
+  }
+
+  function applyDragZoneValues(nextValues, { showStatus = false, statusMessage = '' } = {}) {
+    const normalized = normalizeDragZoneValues(nextValues);
+    const dragZoneConfig = ensureRuntimeDragZoneConfig();
+    dragZoneConfig.centerXRatio = normalized.centerXRatio;
+    dragZoneConfig.centerYRatio = normalized.centerYRatio;
+    dragZoneConfig.widthRatio = normalized.widthRatio;
+    dragZoneConfig.heightRatio = normalized.heightRatio;
+    if (!dragZoneTunerState) {
+      dragZoneTunerState = { open: false, values: normalized };
+    } else {
+      dragZoneTunerState.values = normalized;
+    }
+    syncDragZoneControls();
+    syncWindowInteractivityFromPointer();
+    if (showStatus) {
+      setDragZoneStatus(statusMessage);
+    }
+  }
+
+  function resetDragZoneValues() {
+    applyDragZoneValues({
+      centerXRatio: dragZoneDefaults.centerXRatio,
+      centerYRatio: dragZoneDefaults.centerYRatio,
+      widthRatio: dragZoneDefaults.widthRatio,
+      heightRatio: dragZoneDefaults.heightRatio
+    }, {
+      showStatus: true,
+      statusMessage: 'Preview reset to defaults'
+    });
+  }
+
+  function saveDragZoneValues() {
+    const values = dragZoneTunerState?.values || getCurrentDragZoneValues();
+    bridge?.sendWindowControl?.({
+      action: 'save_drag_zone_overrides',
+      dragZone: values
+    });
+    setDragZoneStatus('Saved to desktop-live2d.json');
+  }
+
+  function initDragZoneTuner() {
+    dragZoneTunerState = {
+      open: false,
+      values: getCurrentDragZoneValues()
+    };
+    syncDragZoneControls();
+    setDragZonePanelOpen(false);
+
+    dragZoneToggleElement?.addEventListener('click', () => {
+      if (!dragZoneTunerState?.open) {
+        setLayoutTunerOpen(false);
+      }
+      setDragZonePanelOpen(!dragZoneTunerState?.open);
+    });
+    dragZoneCloseElement?.addEventListener('click', () => {
+      setDragZonePanelOpen(false);
+    });
+    dragZoneResetElement?.addEventListener('click', () => {
+      resetDragZoneValues();
+    });
+    dragZoneSaveElement?.addEventListener('click', () => {
+      saveDragZoneValues();
+    });
+    dragZoneCenterXElement?.addEventListener('input', () => {
+      applyDragZoneValues({
+        ...(dragZoneTunerState?.values || getCurrentDragZoneValues()),
+        centerXRatio: roundToStep(dragZoneCenterXElement.value, 1) / 100
+      });
+    });
+    dragZoneCenterYElement?.addEventListener('input', () => {
+      applyDragZoneValues({
+        ...(dragZoneTunerState?.values || getCurrentDragZoneValues()),
+        centerYRatio: roundToStep(dragZoneCenterYElement.value, 1) / 100
+      });
+    });
+    dragZoneWidthElement?.addEventListener('input', () => {
+      applyDragZoneValues({
+        ...(dragZoneTunerState?.values || getCurrentDragZoneValues()),
+        widthRatio: roundToStep(dragZoneWidthElement.value, 1) / 100
+      });
+    });
+    dragZoneHeightElement?.addEventListener('input', () => {
+      applyDragZoneValues({
+        ...(dragZoneTunerState?.values || getCurrentDragZoneValues()),
+        heightRatio: roundToStep(dragZoneHeightElement.value, 1) / 100
+      });
+    });
+  }
+
   function setBubbleVisible(visible) {
     state.bubbleVisible = visible;
     bubbleElement.classList.toggle('visible', visible);
+  }
+
+  function isPointInCenterDragZone(clientX, clientY) {
+    const dragZone = dragZoneTunerState?.values || getCurrentDragZoneValues();
+    const width = Math.max(1, window.innerWidth || 1);
+    const height = Math.max(1, window.innerHeight || 1);
+    const left = (dragZone.centerXRatio - dragZone.widthRatio / 2) * width;
+    const right = (dragZone.centerXRatio + dragZone.widthRatio / 2) * width;
+    const top = (dragZone.centerYRatio - dragZone.heightRatio / 2) * height;
+    const bottom = (dragZone.centerYRatio + dragZone.heightRatio / 2) * height;
+    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom;
+  }
+
+  function setWindowInteractivity(interactive) {
+    if (typeof bridge?.sendWindowInteractivity !== 'function') {
+      return;
+    }
+    const nextInteractive = Boolean(interactive);
+    if (lastWindowInteractivity === nextInteractive) {
+      return;
+    }
+    lastWindowInteractivity = nextInteractive;
+    bridge.sendWindowInteractivity({ interactive: nextInteractive });
+  }
+
+  function syncWindowInteractivityFromPointer(position = lastPointerPosition) {
+    if (state.resizeModeEnabled || dragPointerState) {
+      setWindowInteractivity(true);
+      return;
+    }
+    if (!position) {
+      setWindowInteractivity(false);
+      return;
+    }
+    setWindowInteractivity(isPointInCenterDragZone(position.clientX, position.clientY));
   }
 
   function clamp(value, min, max) {
@@ -2362,6 +2630,7 @@
     const moveThresholdPx = 6;
     const resetDragState = () => {
       dragPointerState = null;
+      syncWindowInteractivityFromPointer();
     };
 
     targetElement.addEventListener('pointerdown', (event) => {
@@ -2380,6 +2649,7 @@
       if (typeof targetElement.setPointerCapture === 'function') {
         targetElement.setPointerCapture(event.pointerId);
       }
+      setWindowInteractivity(true);
       if (state.resizeModeEnabled) {
         event.preventDefault();
         return;
@@ -2463,12 +2733,26 @@
   }
 
   function getResizeModeBaseWindowSize() {
-    const baseWidth = Math.max(1, Number(state.windowState?.defaultWidth) || Number(state.windowState?.width) || window.innerWidth || 460);
-    const baseHeight = Math.max(1, Number(state.windowState?.defaultHeight) || Number(state.windowState?.height) || window.innerHeight || 620);
+    const baseWidth = Math.max(
+      1,
+      Number(resizeModeBaseWindowSize?.width)
+        || Number(state.windowState?.defaultWidth)
+        || Number(state.windowState?.width)
+        || window.innerWidth
+        || 460
+    );
+    const baseHeight = Math.max(
+      1,
+      Number(resizeModeBaseWindowSize?.height)
+        || Number(state.windowState?.defaultHeight)
+        || Number(state.windowState?.height)
+        || window.innerHeight
+        || 620
+    );
     return {
       baseWidth,
       baseHeight,
-      aspectRatio: Number(state.windowState?.aspectRatio) || (baseWidth / baseHeight)
+      aspectRatio: Number(resizeModeBaseWindowSize?.aspectRatio) || Number(state.windowState?.aspectRatio) || (baseWidth / baseHeight)
     };
   }
 
@@ -2807,6 +3091,20 @@
       window.addEventListener('focus', () => {
         suppressModelTap(MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS);
       }, { passive: true });
+      window.addEventListener('mousemove', (event) => {
+        lastPointerPosition = {
+          clientX: Number(event.clientX) || 0,
+          clientY: Number(event.clientY) || 0
+        };
+        syncWindowInteractivityFromPointer(lastPointerPosition);
+      }, { passive: true });
+      window.addEventListener('mouseleave', () => {
+        lastPointerPosition = null;
+        syncWindowInteractivityFromPointer(null);
+      }, { passive: true });
+      window.addEventListener('resize', () => {
+        syncWindowInteractivityFromPointer();
+      }, { passive: true });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           suppressModelTap(MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS);
@@ -2817,6 +3115,7 @@
       runtimeUiConfig = runtimeConfig.uiConfig || null;
       runtimeLive2dPresets = runtimeConfig.live2dPresets || null;
       initLayoutTuner();
+      initDragZoneTuner();
       initChatPanel(runtimeUiConfig?.chat || {});
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);

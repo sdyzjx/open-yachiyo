@@ -18,6 +18,38 @@ function toPositiveInt(value, fallback) {
   return Math.floor(parsed);
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeDragZoneConfig(input = {}, defaults = DEFAULT_UI_CONFIG.interaction.dragZone) {
+  const widthRatio = Math.round(clamp(
+    toFiniteNumber(input.widthRatio, defaults.widthRatio),
+    0.1,
+    0.9
+  ) * 1000) / 1000;
+  const heightRatio = Math.round(clamp(
+    toFiniteNumber(input.heightRatio, defaults.heightRatio),
+    0.1,
+    0.9
+  ) * 1000) / 1000;
+
+  return {
+    widthRatio,
+    heightRatio,
+    centerXRatio: Math.round(clamp(
+      toFiniteNumber(input.centerXRatio, defaults.centerXRatio),
+      widthRatio / 2,
+      1 - widthRatio / 2
+    ) * 1000) / 1000,
+    centerYRatio: Math.round(clamp(
+      toFiniteNumber(input.centerYRatio, defaults.centerYRatio),
+      heightRatio / 2,
+      1 - heightRatio / 2
+    ) * 1000) / 1000
+  };
+}
+
 function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_ROOT } = {}) {
   const runtimePaths = getRuntimePaths({ env });
   const gatewayPort = toPositiveInt(env.PORT, 3000);
@@ -174,6 +206,14 @@ function normalizeUiConfig(raw) {
       ...DEFAULT_UI_CONFIG.render,
       ...(raw?.render || {})
     },
+    interaction: {
+      ...DEFAULT_UI_CONFIG.interaction,
+      ...(raw?.interaction || {}),
+      dragZone: {
+        ...DEFAULT_UI_CONFIG.interaction.dragZone,
+        ...(raw?.interaction?.dragZone || {})
+      }
+    },
     layout: {
       ...DEFAULT_UI_CONFIG.layout,
       ...(raw?.layout || {})
@@ -236,6 +276,11 @@ function normalizeUiConfig(raw) {
   merged.render.resolutionScale = toFiniteNumber(merged.render.resolutionScale, DEFAULT_UI_CONFIG.render.resolutionScale);
   merged.render.maxDevicePixelRatio = toFiniteNumber(merged.render.maxDevicePixelRatio, DEFAULT_UI_CONFIG.render.maxDevicePixelRatio);
   merged.render.antialias = Boolean(merged.render.antialias);
+
+  merged.interaction.dragZone = normalizeDragZoneConfig(
+    merged.interaction.dragZone,
+    DEFAULT_UI_CONFIG.interaction.dragZone
+  );
 
   const layoutDefaults = DEFAULT_UI_CONFIG.layout;
   for (const key of Object.keys(layoutDefaults)) {
@@ -376,10 +421,64 @@ function upsertDesktopLive2dLayoutOverrides(configPath, overrides = {}, { defaul
   return nextRaw;
 }
 
+function roundDragZoneOverrideValue(key, value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  if (key === 'centerXRatio' || key === 'centerYRatio' || key === 'widthRatio' || key === 'heightRatio') {
+    return Math.round(parsed * 1000) / 1000;
+  }
+  return parsed;
+}
+
+function upsertDesktopLive2dDragZoneOverrides(configPath, overrides = {}, { defaults = DEFAULT_UI_CONFIG.interaction.dragZone } = {}) {
+  const currentRaw = fs.existsSync(configPath)
+    ? parseJsonWithComments(fs.readFileSync(configPath, 'utf8'))
+    : {};
+  const nextRaw = isPlainObject(currentRaw) ? { ...currentRaw } : {};
+  const nextInteraction = isPlainObject(nextRaw.interaction) ? { ...nextRaw.interaction } : {};
+  const nextDragZone = isPlainObject(nextInteraction.dragZone) ? { ...nextInteraction.dragZone } : {};
+  const normalizedOverrides = normalizeDragZoneConfig(overrides, defaults);
+  const normalizedDefaults = normalizeDragZoneConfig(defaults, defaults);
+
+  for (const key of ['centerXRatio', 'centerYRatio', 'widthRatio', 'heightRatio']) {
+    if (!Object.prototype.hasOwnProperty.call(overrides, key)) {
+      continue;
+    }
+    const rounded = roundDragZoneOverrideValue(key, normalizedOverrides[key]);
+    if (rounded === null) {
+      continue;
+    }
+    const defaultValue = roundDragZoneOverrideValue(key, normalizedDefaults[key]);
+    if (rounded === defaultValue) {
+      delete nextDragZone[key];
+    } else {
+      nextDragZone[key] = rounded;
+    }
+  }
+
+  if (Object.keys(nextDragZone).length === 0) {
+    delete nextInteraction.dragZone;
+  } else {
+    nextInteraction.dragZone = nextDragZone;
+  }
+
+  if (Object.keys(nextInteraction).length === 0) {
+    delete nextRaw.interaction;
+  } else {
+    nextRaw.interaction = nextInteraction;
+  }
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, serializeDesktopLive2dUiConfig(nextRaw), 'utf8');
+  return nextRaw;
+}
+
 function serializeDesktopLive2dUiConfig(raw = {}) {
   const safe = isPlainObject(raw) ? raw : {};
   const orderedKeys = [];
-  const preferredOrder = ['window', 'layout', 'render', 'chat', 'actionQueue'];
+  const preferredOrder = ['window', 'interaction', 'layout', 'render', 'chat', 'actionQueue'];
 
   for (const key of preferredOrder) {
     if (isPlainObject(safe[key])) {
@@ -398,6 +497,7 @@ function serializeDesktopLive2dUiConfig(raw = {}) {
 
   const comments = {
     window: 'Window overrides. Delete any field here to fall back to shared defaults.',
+    interaction: 'Interaction overrides. dragZone defines the draggable hotspot as ratios of the avatar window.',
     layout: 'Layout tuner overrides. These are the direct controls for avatar placement.'
   };
 
@@ -433,6 +533,7 @@ module.exports = {
   normalizeUiConfig,
   parseJsonWithComments,
   upsertDesktopLive2dLayoutOverrides,
+  upsertDesktopLive2dDragZoneOverrides,
   serializeDesktopLive2dUiConfig,
   stripJsonComments,
   toPositiveInt,
