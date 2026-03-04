@@ -157,6 +157,10 @@ test('RuntimeRpcWorker does not emit message.delta for non-final llm decisions',
 test('RuntimeRpcWorker forwards llm.stream.delta and skips duplicated streamed llm.final delta', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();
+  const debugRuntimeEvents = [];
+  const unsubscribeRuntimeEvent = bus.subscribe('runtime.event', (event) => {
+    debugRuntimeEvents.push(String(event?.event || ''));
+  });
 
   const runner = {
     async run({ onEvent }) {
@@ -190,13 +194,20 @@ test('RuntimeRpcWorker forwards llm.stream.delta and skips duplicated streamed l
   const deltaEvents = sendEvents.filter((evt) => evt.method === 'message.delta');
   assert.equal(deltaEvents.length, 2);
   assert.deepEqual(deltaEvents.map((evt) => evt.params.delta), ['你', '好']);
+  assert.equal(debugRuntimeEvents.includes('llm.stream.delta'), false);
+  assert.equal(debugRuntimeEvents.includes('llm.final'), true);
 
+  unsubscribeRuntimeEvent();
   worker.stop();
 });
 
 test('RuntimeRpcWorker forwards tool_call runtime events as tool_call.event', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();
+  const debugRuntimeEvents = [];
+  const unsubscribeRuntimeEvent = bus.subscribe('runtime.event', (event) => {
+    debugRuntimeEvents.push(String(event?.event || ''));
+  });
 
   const runner = {
     async run({ onEvent }) {
@@ -247,7 +258,9 @@ test('RuntimeRpcWorker forwards tool_call runtime events as tool_call.event', as
     'tool_call.stable',
     'tool_call.parse_error'
   ]);
+  assert.equal(debugRuntimeEvents.some((eventName) => eventName.startsWith('tool_call.')), false);
 
+  unsubscribeRuntimeEvent();
   worker.stop();
 });
 

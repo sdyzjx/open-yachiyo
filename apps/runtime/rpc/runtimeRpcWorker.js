@@ -74,6 +74,14 @@ function extractToolCallEventFromRuntimeEvent(event) {
   };
 }
 
+function shouldPublishRuntimeEventToDebugBus(event) {
+  const eventType = String(event?.event || '');
+  if (!eventType) return true;
+  if (eventType.startsWith('llm.stream.')) return false;
+  if (eventType.startsWith('tool_call.')) return false;
+  return true;
+}
+
 class RuntimeRpcWorker {
   constructor({ queue, runner, bus }) {
     this.queue = queue;
@@ -278,7 +286,9 @@ class RuntimeRpcWorker {
       seedMessages,
       runtimeContext,
       onEvent: (event) => {
-        this.bus.publish('runtime.event', event);
+        if (shouldPublishRuntimeEventToDebugBus(event)) {
+          this.bus.publish('runtime.event', event);
+        }
         Promise.resolve(context.onRuntimeEvent?.(event)).catch(() => {});
         context.sendEvent?.(toRpcEvent('runtime.event', event));
 

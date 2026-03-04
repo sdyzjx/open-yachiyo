@@ -57,6 +57,42 @@ function buildCurrentUserMessage(input, inputImages = []) {
   return { role: 'user', content };
 }
 
+function serializePromptContentForLog(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return content == null ? '' : String(content);
+  }
+  return content.map((part) => {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) {
+      return { type: 'unknown', value: String(part || '') };
+    }
+    if (part.type === 'text') {
+      return {
+        type: 'text',
+        text: typeof part.text === 'string' ? part.text : String(part.text || '')
+      };
+    }
+    if (part.type === 'image_url') {
+      return {
+        type: 'image_url',
+        image_url: '[omitted]'
+      };
+    }
+    return part;
+  });
+}
+
+function serializePromptMessagesForLog(messages = []) {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((message, index) => ({
+    index,
+    role: String(message?.role || ''),
+    content: serializePromptContentForLog(message?.content)
+  }));
+}
+
 function formatDecisionEvent(decision) {
   if (decision.type === 'final') {
     return { type: 'final', preview: String(decision.output || '').slice(0, 160) };
@@ -89,6 +125,16 @@ function shouldHintPersonaTool(input) {
   if (!text.trim()) return false;
   const keywords = ['修改人格', '人格', '称呼', '叫我', 'persona', 'nickname', 'custom name'];
   return keywords.some((kw) => text.includes(kw));
+}
+
+function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
+  if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
+  return [
+    'Voice auto-reply mode is enabled for this turn.',
+    'Before long text response, first call voice.tts_aliyun_vc to produce a short spoken message.',
+    'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
+    'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
+  ].join(' ');
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -224,6 +270,7 @@ class ToolLoopRunner {
     const personaToolHint = shouldHintPersonaTool(input)
       ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.'
       : null;
+    const voiceAutoReplyPrompt = buildVoiceAutoReplyPrompt(runtimeContext);
 
     const ctx = {
       sessionId,
@@ -248,6 +295,7 @@ class ToolLoopRunner {
         ...(personaPrompt ? [{ role: 'system', content: personaPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
+        ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...priorMessages,
         currentUserMessage
       ]
@@ -305,6 +353,10 @@ class ToolLoopRunner {
       skills_selected: skillsContext?.selected?.length || 0,
       skills_clipped_by: skillsContext?.clippedBy || null,
       runtime_flags: runtimeFlags
+    });
+    emit('llm.prompt.assembled', {
+      message_count: ctx.messages.length,
+      messages: serializePromptMessagesForLog(ctx.messages)
     });
 
     try {
