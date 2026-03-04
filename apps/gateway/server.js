@@ -200,7 +200,7 @@ const runner = new ToolLoopRunner({
   listTools: () => executor.listTools(),
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
-  maxStep: 8,
+  maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
   toolResultTimeoutMs: 10000,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),

@@ -11,6 +11,16 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+test('ToolLoopRunner default maxStep is 128', () => {
+  const bus = new RuntimeEventBus();
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({ async decide() { return { type: 'final', output: 'ok' }; } }),
+    listTools: () => []
+  });
+  assert.equal(runner.maxStep, 128);
+});
+
 test('ToolLoopRunner performs tool call through event bus and completes', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

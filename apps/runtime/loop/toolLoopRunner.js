@@ -171,7 +171,7 @@ class ToolLoopRunner {
     listTools,
     resolvePersonaContext,
     resolveSkillsContext,
-    maxStep = 8,
+    maxStep = 128,
     toolResultTimeoutMs = 10000,
     runtimeStreamingEnabled = false,
     toolAsyncMode = 'serial',
