@@ -1,17 +1,25 @@
 const { spawn } = require('child_process');
+const os = require('os');
 const path = require('path');
 const { ToolingError, ErrorCode } = require('../errors');
 const { getShellPermissionProfile } = require('../../security/sessionPermissionPolicy');
+const {
+  createShellApprovalRequest,
+  grantShellApproval,
+  consumeShellApproval
+} = require('../shellApprovalStore');
 
 function splitCommand(command) {
-  // Minimal parser: supports quotes, no shell operators.
-  const forbidden = /[;&|><`$()]/;
-  if (forbidden.test(command)) {
-    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'shell operators are not allowed');
-  }
-
   const parts = command.match(/(?:"[^"]*"|'[^']*'|\S)+/g) || [];
   return parts.map((p) => p.replace(/^['"]|['"]$/g, ''));
+}
+
+function hasShellOperators(command) {
+  return /(?:\|\||&&|[;&|><`$()])/.test(String(command || ''));
+}
+
+function getSessionIdFromContext(context = {}) {
+  return String(context.session_id || context.sessionId || '').trim() || '__global__';
 }
 
 function isInsideWorkspace(workspaceRoot, absolutePath) {
@@ -23,7 +31,11 @@ function isInsideWorkspace(workspaceRoot, absolutePath) {
 function resolvePathToken(cwd, token) {
   if (!token || token === '-') return null;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(token)) return null;
-  return path.resolve(cwd, token);
+  const raw = String(token);
+  const homeDir = os.homedir();
+  if (raw === '~') return homeDir;
+  if (raw.startsWith('~/')) return path.join(homeDir, raw.slice(2));
+  return path.resolve(cwd, raw);
 }
 
 function nonOptionArgs(argv) {
@@ -142,44 +154,16 @@ function enforcePermissionPathPolicy({ level, workspaceRoot, bin, readPaths, wri
   );
 }
 
-function runExec(args, context = {}) {
-  const command = String(args.command || '').trim();
-  if (!command) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command is empty');
+function containsKnownDangerousPattern(command) {
+  const text = String(command || '');
+  if (/\bsudo\b/i.test(text)) return true;
+  if (/\brm\s+-rf\s+\/(?:\s|$)/i.test(text)) return true;
+  if (/\bshutdown\b/i.test(text) || /\breboot\b/i.test(text)) return true;
+  return false;
+}
 
-  const [bin, ...argv] = splitCommand(command);
-  if (!bin) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command parse failed');
-
-  const permissionLevel = typeof context.permission_level === 'string'
-    ? context.permission_level
-    : null;
-  const workspaceRoot = path.resolve(context.workspaceRoot || process.cwd());
-  const cwd = workspaceRoot;
-
-  if (permissionLevel) {
-    const profile = getShellPermissionProfile(permissionLevel);
-    if (profile.allowBins && !profile.allowBins.has(bin)) {
-      throw new ToolingError(
-        ErrorCode.PERMISSION_DENIED,
-        `command not allowed for permission level ${profile.level}: ${bin}`
-      );
-    }
-
-    const { readPaths, writePaths } = collectPathIntent(bin, argv, cwd);
-    enforcePermissionPathPolicy({
-      level: profile.level,
-      workspaceRoot,
-      bin,
-      readPaths,
-      writePaths
-    });
-  } else {
-    const safeBins = context.safeBins || [];
-    if (context.security === 'allowlist' && !safeBins.includes(bin)) {
-      throw new ToolingError(ErrorCode.PERMISSION_DENIED, `command not allowed: ${bin}`);
-    }
-  }
-
-  const timeoutMs = Math.max(1000, Number(args.timeoutSec || context.timeoutSec || 20) * 1000);
+function runProcess({ command, bin, argv, cwd, timeoutMs, context }) {
+  const resolvedTimeoutMs = Math.max(1000, Number(timeoutMs || context.timeoutSec || 20) * 1000);
   const debugEnabled = Boolean(context.bus && typeof context.bus.isDebugMode === 'function' && context.bus.isDebugMode());
 
   function publishDebug(topic, payload) {
@@ -196,7 +180,7 @@ function runExec(args, context = {}) {
     const timeout = setTimeout(() => {
       timedOut = true;
       proc.kill('SIGTERM');
-    }, timeoutMs);
+    }, resolvedTimeoutMs);
 
     proc.stdout.on('data', (chunk) => {
       const text = String(chunk || '');
@@ -237,7 +221,7 @@ function runExec(args, context = {}) {
       });
 
       if (timedOut) {
-        reject(new ToolingError(ErrorCode.TIMEOUT, `command timeout after ${timeoutMs}ms`));
+        reject(new ToolingError(ErrorCode.TIMEOUT, `command timeout after ${resolvedTimeoutMs}ms`));
         return;
       }
 
@@ -252,6 +236,141 @@ function runExec(args, context = {}) {
   });
 }
 
+function runShellWithApproval(command, context = {}) {
+  const permissionLevel = typeof context.permission_level === 'string'
+    ? context.permission_level
+    : null;
+  const workspaceRoot = path.resolve(context.workspaceRoot || process.cwd());
+  const cwd = workspaceRoot;
+  const timeoutMs = Math.max(1000, Number(context.timeoutSec || 20) * 1000);
+
+  if (!permissionLevel) {
+    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'shell operators require explicit session permission level');
+  }
+
+  const profile = getShellPermissionProfile(permissionLevel);
+  if (profile.level !== 'high') {
+    throw new ToolingError(
+      ErrorCode.PERMISSION_DENIED,
+      `shell operators require high permission level (current: ${profile.level})`
+    );
+  }
+
+  if (containsKnownDangerousPattern(command)) {
+    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'command blocked by shell safety policy');
+  }
+
+  const sessionId = getSessionIdFromContext(context);
+  const approval = consumeShellApproval({ sessionId, command });
+  if (!approval.approved) {
+    const pending = createShellApprovalRequest({
+      sessionId,
+      command,
+      reason: 'shell_operators'
+    });
+    throw new ToolingError(
+      ErrorCode.APPROVAL_REQUIRED,
+      'shell command requires approval before execution',
+      {
+        approval_id: pending.approval_id,
+        command: pending.command,
+        reason: pending.reason,
+        scope_options: ['once', 'always']
+      }
+    );
+  }
+
+  return runProcess({
+    command,
+    bin: '/bin/bash',
+    argv: ['-lc', command],
+    cwd,
+    timeoutMs,
+    context
+  });
+}
+
+function runExec(args, context = {}) {
+  const command = String(args.command || '').trim();
+  if (!command) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command is empty');
+
+  if (hasShellOperators(command)) {
+    return runShellWithApproval(command, {
+      ...context,
+      timeoutSec: Number(args.timeoutSec || context.timeoutSec || 20)
+    });
+  }
+
+  const [bin, ...argv] = splitCommand(command);
+  if (!bin) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command parse failed');
+
+  const permissionLevel = typeof context.permission_level === 'string'
+    ? context.permission_level
+    : null;
+  const workspaceRoot = path.resolve(context.workspaceRoot || process.cwd());
+  const cwd = workspaceRoot;
+
+  if (permissionLevel) {
+    const profile = getShellPermissionProfile(permissionLevel);
+    if (profile.allowBins && !profile.allowBins.has(bin)) {
+      throw new ToolingError(
+        ErrorCode.PERMISSION_DENIED,
+        `command not allowed for permission level ${profile.level}: ${bin}`
+      );
+    }
+
+    const { readPaths, writePaths } = collectPathIntent(bin, argv, cwd);
+    enforcePermissionPathPolicy({
+      level: profile.level,
+      workspaceRoot,
+      bin,
+      readPaths,
+      writePaths
+    });
+  } else {
+    const safeBins = context.safeBins || [];
+    if (context.security === 'allowlist' && !safeBins.includes(bin)) {
+      throw new ToolingError(ErrorCode.PERMISSION_DENIED, `command not allowed: ${bin}`);
+    }
+  }
+
+  return runProcess({
+    command,
+    bin,
+    argv,
+    cwd,
+    timeoutMs: Math.max(1000, Number(args.timeoutSec || context.timeoutSec || 20) * 1000),
+    context
+  });
+}
+
+function runApprove(args, context = {}) {
+  const approvalId = String(args.approval_id || '').trim();
+  if (!approvalId) {
+    throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'approval_id is required');
+  }
+
+  const scope = String(args.scope || 'once').toLowerCase() === 'always' ? 'always' : 'once';
+  const sessionId = getSessionIdFromContext(context);
+  const granted = grantShellApproval({
+    sessionId,
+    approvalId,
+    scope
+  });
+
+  if (!granted) {
+    throw new ToolingError(ErrorCode.VALIDATION_ERROR, `approval id not found or expired: ${approvalId}`);
+  }
+
+  return JSON.stringify({
+    status: 'approved',
+    approval_id: granted.approval_id,
+    command: granted.command,
+    scope: granted.scope
+  });
+}
+
 module.exports = {
-  'shell.exec': runExec
+  'shell.exec': runExec,
+  'shell.approve': runApprove
 };

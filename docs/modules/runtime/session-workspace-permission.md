@@ -29,11 +29,13 @@ Related implementation files:
 | memory read (`memory_search`) | deny | allow | allow |
 | memory write (`memory_write`) | deny | deny | allow |
 | shell command set | workspace file ops | low + info commands | unrestricted bins (with guarded workspace write boundary) |
+| shell operators (`&&`, `||`, `|`, `>`, `<`) | deny | deny | require approval (`APPROVAL_REQUIRED`) |
+| shell approval tool (`shell.approve`) | allow | allow | allow |
 | read outside workspace | deny | deny | allow |
 | copy external file into workspace | deny | deny | allow (`cp src_external dst_in_workspace`) |
 | write outside workspace | deny | deny | deny (guarded mutating commands) |
 
-Default permission: `medium`.
+Default permission: `high`.
 
 ## 3. Module Contracts
 
@@ -75,6 +77,7 @@ Default permission: `medium`.
   - checks permission before calling memory store.
 - `shell.js`:
   - parses command
+  - operator commands enter approval flow (`APPROVAL_REQUIRED` -> `shell.approve`)
   - resolves read/write path intent for known commands
   - enforces workspace boundary by permission level
   - executes with `cwd=workspaceRoot`.

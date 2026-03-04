@@ -37,6 +37,11 @@
   - `description`
   - `input_schema`
 
+### Shell 审批相关工具（示例）
+
+- `shell.exec`: 执行命令；含 shell 操作符时可返回 `APPROVAL_REQUIRED`
+- `shell.approve`: 通过 `approval_id` 批准一次或持续放行（`scope=once|always`）
+
 ## 4. Store 校验规则（`toolConfigStore.validateToolsConfig`）
 
 ### 必填规则

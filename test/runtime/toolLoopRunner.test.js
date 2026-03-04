@@ -1161,3 +1161,125 @@ test('ToolLoopRunner injects live2d action planning guidance into system prompt'
 
   dispatcher.stop();
 });
+
+test('ToolLoopRunner continues when shell.exec returns APPROVAL_REQUIRED', async () => {
+  const bus = new RuntimeEventBus();
+  let shellExecAttempts = 0;
+  let seenApprovalId = '';
+
+  const executor = {
+    listTools() {
+      return [
+        {
+          name: 'shell.exec',
+          input_schema: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+            additionalProperties: false
+          },
+          side_effect_level: 'write',
+          requires_lock: true
+        },
+        {
+          name: 'shell.approve',
+          input_schema: {
+            type: 'object',
+            properties: {
+              approval_id: { type: 'string' },
+              scope: { type: 'string', enum: ['once', 'always'] }
+            },
+            required: ['approval_id'],
+            additionalProperties: false
+          },
+          side_effect_level: 'write',
+          requires_lock: true
+        }
+      ];
+    },
+    async execute(toolCall) {
+      if (toolCall.name === 'shell.exec') {
+        shellExecAttempts += 1;
+        if (shellExecAttempts === 1) {
+          seenApprovalId = 'apr-loop-1';
+          return {
+            ok: false,
+            code: 'APPROVAL_REQUIRED',
+            error: 'shell command requires approval before execution',
+            details: { approval_id: seenApprovalId }
+          };
+        }
+        return { ok: true, result: 'retry-success' };
+      }
+      if (toolCall.name === 'shell.approve') {
+        assert.equal(toolCall.args.approval_id, seenApprovalId);
+        return { ok: true, result: '{"status":"approved"}' };
+      }
+      return { ok: false, code: 'TOOL_NOT_FOUND', error: 'unexpected tool' };
+    }
+  };
+
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let step = 0;
+  const reasoner = {
+    async decide({ messages }) {
+      step += 1;
+      if (step === 1) {
+        return {
+          type: 'tool',
+          tool: { call_id: 'shell-call-1', name: 'shell.exec', args: { command: 'echo hi || true' } }
+        };
+      }
+      if (step === 2) {
+        const approvalToolMessage = messages.find(
+          (msg) => msg.role === 'tool' && msg.tool_call_id === 'shell-call-1'
+        );
+        assert.ok(approvalToolMessage);
+        assert.match(String(approvalToolMessage.content || ''), /APPROVAL_REQUIRED/);
+        return {
+          type: 'tool',
+          tool: { call_id: 'shell-approve-1', name: 'shell.approve', args: { approval_id: seenApprovalId, scope: 'once' } }
+        };
+      }
+      if (step === 3) {
+        return {
+          type: 'tool',
+          tool: { call_id: 'shell-call-2', name: 'shell.exec', args: { command: 'echo hi || true' } }
+        };
+      }
+      return { type: 'final', output: 'approval-flow-done' };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 6,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-shell-approval-loop',
+    input: 'run shell command',
+    onEvent: (evt) => events.push(evt)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'approval-flow-done');
+  assert.equal(shellExecAttempts, 2);
+  assert.equal(events.some((evt) => evt.event === 'tool.error'), false);
+  assert.equal(
+    events.some(
+      (evt) => evt.event === 'tool.result'
+        && evt.payload.code === 'APPROVAL_REQUIRED'
+        && evt.payload.approval_required === true
+    ),
+    true
+  );
+
+  dispatcher.stop();
+});

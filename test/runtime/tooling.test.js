@@ -9,6 +9,7 @@ const Ajv = require('ajv');
 const { ToolConfigStore } = require('../../apps/runtime/tooling/toolConfigStore');
 const { ToolRegistry } = require('../../apps/runtime/tooling/toolRegistry');
 const { ToolExecutor } = require('../../apps/runtime/executor/toolExecutor');
+const { __resetShellApprovalStoreForTests } = require('../../apps/runtime/tooling/shellApprovalStore');
 
 function buildExecutor() {
   const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
@@ -22,6 +23,7 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   const cfg = store.load();
   assert.equal(Array.isArray(cfg.tools), true);
   assert.ok(cfg.tools.some((t) => t.name === 'workspace.write_file'));
+  assert.ok(cfg.tools.some((t) => t.name === 'shell.approve'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.motion.play'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
 });
@@ -281,6 +283,75 @@ test('shell.exec applies low/medium/high permission profiles', async () => {
   );
   assert.equal(mediumReadOutsideWorkspaceDenied.ok, false);
   assert.equal(mediumReadOutsideWorkspaceDenied.code, 'PERMISSION_DENIED');
+});
+
+test('shell.exec supports approval flow for operator commands', async () => {
+  __resetShellApprovalStoreForTests();
+  const executor = buildExecutor();
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tooling-shell-approval-'));
+  const context = {
+    permission_level: 'high',
+    session_id: 'session-shell-approval',
+    workspaceRoot: tmp
+  };
+  const command = 'echo approved || true';
+
+  const firstAttempt = await executor.execute(
+    { name: 'shell.exec', args: { command } },
+    context
+  );
+  assert.equal(firstAttempt.ok, false);
+  assert.equal(firstAttempt.code, 'APPROVAL_REQUIRED');
+  assert.equal(typeof firstAttempt.details?.approval_id, 'string');
+
+  const onceApproval = await executor.execute(
+    {
+      name: 'shell.approve',
+      args: {
+        approval_id: firstAttempt.details.approval_id,
+        scope: 'once'
+      }
+    },
+    context
+  );
+  assert.equal(onceApproval.ok, true);
+
+  const onceRun = await executor.execute(
+    { name: 'shell.exec', args: { command } },
+    context
+  );
+  assert.equal(onceRun.ok, true);
+  assert.match(onceRun.result, /approved/);
+
+  const needsApprovalAgain = await executor.execute(
+    { name: 'shell.exec', args: { command } },
+    context
+  );
+  assert.equal(needsApprovalAgain.ok, false);
+  assert.equal(needsApprovalAgain.code, 'APPROVAL_REQUIRED');
+
+  const alwaysApproval = await executor.execute(
+    {
+      name: 'shell.approve',
+      args: {
+        approval_id: needsApprovalAgain.details.approval_id,
+        scope: 'always'
+      }
+    },
+    context
+  );
+  assert.equal(alwaysApproval.ok, true);
+
+  const alwaysRun1 = await executor.execute(
+    { name: 'shell.exec', args: { command } },
+    context
+  );
+  const alwaysRun2 = await executor.execute(
+    { name: 'shell.exec', args: { command } },
+    context
+  );
+  assert.equal(alwaysRun1.ok, true);
+  assert.equal(alwaysRun2.ok, true);
 });
 
 test('persona.update_profile is callable at low permission and updates via curl', async () => {

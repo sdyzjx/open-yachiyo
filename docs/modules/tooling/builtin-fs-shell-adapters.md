@@ -42,24 +42,41 @@
 {"path":"/abs/path","mode":"overwrite","bytes":123}
 ```
 
-## 4. Shell Adapter（`shell.exec`）
+## 4. Shell Adapter（`shell.exec` / `shell.approve`）
 
 ### 参数
 
-- `command`
-- `timeoutSec`（可覆盖默认）
+- `shell.exec`
+  - `command`
+  - `timeoutSec`（可覆盖默认）
+- `shell.approve`
+  - `approval_id`
+  - `scope`（`once|always`，默认 `once`）
+
+### 执行模式
+
+- 无 shell 操作符（`&&`, `||`, `|`, `>`, `<`, `;` 等）：
+  - 走 argv 安全解析 + 权限/路径策略校验。
+- 含 shell 操作符：
+  - 仅 `high` 权限可进入审批流程。
+  - 首次执行返回 `APPROVAL_REQUIRED`（包含 `approval_id`）。
+  - 调用 `shell.approve` 后重试 `shell.exec`：
+    - `once`: 仅放行下一次相同命令
+    - `always`: 会话内持续放行相同命令
 
 ### 限制策略
 
-1. 禁止危险 shell 运算符：`; & | > < \` $ ( )`
-2. 命令先 split，提取主命令 `bin`
-3. `security=allowlist` 时必须命中 `safeBins`
-4. 默认 timeout + maxBuffer
-5. 输出按 `maxOutputChars` 截断
+1. 无操作符命令先 split，提取主命令 `bin`
+2. `security=allowlist` 时必须命中 `safeBins`
+3. 会话权限下执行 bin allowlist 与路径边界校验
+4. 含操作符命令需审批，且仅 high 权限允许
+5. 高风险命令模式拦截（如 `sudo`、`rm -rf /`、`shutdown/reboot`）
+6. 默认 timeout + 输出按 `maxOutputChars` 截断
 
 ### 错误映射
 
 - 命令被拒绝：`PERMISSION_DENIED`
+- 命令需审批：`APPROVAL_REQUIRED`
 - 命令为空/解析失败：`VALIDATION_ERROR`
 - 超时：`TIMEOUT`
 - 其他执行异常：`RUNTIME_ERROR`
@@ -70,6 +87,7 @@
 
 - split parser 是简化实现，不支持复杂 shell 语法
 - stderr 合并到输出字符串，尚无结构化分离字段
+- 操作符命令在审批后通过 `bash -lc` 执行，路径级静态分析能力弱于无操作符模式
 
 ### 后续建议
 

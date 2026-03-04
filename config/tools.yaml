@@ -9,6 +9,7 @@ policy:
     - memory_search
     - workspace.write_file
     - shell.exec
+    - shell.approve
     - persona.update_profile
     - voice.tts_aliyun_vc
     - voice.asr_aliyun
@@ -127,6 +128,20 @@ tools:
         command: { type: string }
         timeoutSec: { type: integer, minimum: 1, maximum: 120 }
       required: [command]
+      additionalProperties: false
+
+  - name: shell.approve
+    type: local
+    adapter: shell.approve
+    description: Approve pending shell.exec request in current session.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        approval_id: { type: string }
+        scope: { type: string, enum: [once, always] }
+      required: [approval_id]
       additionalProperties: false
 
   - name: persona.update_profile

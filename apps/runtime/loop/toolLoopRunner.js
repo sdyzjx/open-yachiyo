@@ -289,6 +289,7 @@ class ToolLoopRunner {
             'For every reply turn, decide one Live2D action and a duration_sec based on the chat context.',
             'When live2d tools are available, call exactly one live2d.* tool with valid preset/action names and explicit duration_sec before final text response.',
             'When user asks to modify persona/addressing/custom title (e.g. 修改人格/修改称呼/叫我xxx), call persona.update_profile with {custom_name}.',
+            'If shell.exec returns APPROVAL_REQUIRED, call shell.approve with approval_id, then retry shell.exec.',
             'Use persona.update_profile even in low permission sessions; this is globally allowed.',
             'Keep answers concise.'
           ].join(' ')
@@ -695,6 +696,40 @@ class ToolLoopRunner {
             });
 
             if (!toolResult.ok) {
+              if (toolResult.code === 'APPROVAL_REQUIRED') {
+                const approvalPayload = {
+                  ok: false,
+                  code: toolResult.code,
+                  error: toolResult.error,
+                  details: toolResult.details || null
+                };
+                const approvalContent = JSON.stringify(approvalPayload);
+
+                ctx.messages.push({
+                  role: 'tool',
+                  tool_call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  content: approvalContent
+                });
+
+                ctx.observations.push({
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  error: toolResult.error,
+                  code: toolResult.code,
+                  details: toolResult.details || null
+                });
+
+                emit('tool.result', {
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  result: approvalContent,
+                  approval_required: true,
+                  code: toolResult.code
+                });
+                continue;
+              }
+
               sm.transition(RuntimeState.ERROR);
               emit('tool.error', {
                 call_id: effectiveCall.call_id,
