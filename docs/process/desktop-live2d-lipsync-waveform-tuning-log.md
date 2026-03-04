@@ -181,3 +181,50 @@ main 进程在 `apps/desktop-live2d/main/desktopSuite.js`
 - 没有覆盖当前 face mixer
 - 没有覆盖 waveform recorder
 - 部分描述以旧实现细节为中心，不适合继续当现状文档
+
+## 7. 2026-03-05：本地音频复现链路补齐与 `start_failed` 修复
+
+### 7.1 背景
+
+在“本地 OGG 直接喂 Live2D”调试中，出现：
+- 音频能播
+- 嘴形不动
+- telemetry 出现 `chain.lipsync.sync.stop`，`reason = start_failed`
+
+### 7.2 直接根因
+
+`renderer/bootstrap.js` 在某些重入路径里会对同一个 `<audio>` 重复创建 `createMediaElementSource(audioElement)`。  
+Web Audio 限制同一 media element 只能绑定一次 `MediaElementSourceNode`，因此启动 lipsync 失败。
+
+典型错误特征：
+- `createMediaElementSource ... already connected previously to a different MediaElementSourceNode`
+
+### 7.3 代码修复
+
+1. 新增开发态本地播放 RPC：
+   - `debug.voice.playLocalFile`
+   - 位置：
+     - `apps/desktop-live2d/main/constants.js`
+     - `apps/desktop-live2d/main/rpcValidator.js`
+     - `apps/desktop-live2d/main/desktopSuite.js`
+   - 行为：
+     - 校验本地文件路径
+     - 转换为 `file://` URL
+     - 复用现有 `desktop:voice:play-remote` 链路，不新开 lipsync 分支
+
+2. 修复 media source 重复创建：
+   - 文件：`apps/desktop-live2d/renderer/bootstrap.js`
+   - 核心：
+     - 复用 `lipsyncMediaElementSource`
+     - 复用 `lipsyncMediaElementAnalyser`
+     - 仅在 `audioElement` 变化时重建 source
+
+### 7.4 验证结论
+
+修复后同一测试音频回放可稳定观察到：
+- `chain.lipsync.sync.start`
+- `chain.renderer.voice_remote.playback_started`
+- 连续 `chain.renderer.mouth.frame_sample`
+- 连续 `chain.renderer.lipsync.frame_applied`
+
+说明本地文件回放与主链 lipsync 已统一，可用于后续嘴形调参与波形采样。

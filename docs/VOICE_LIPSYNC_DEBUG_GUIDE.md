@@ -93,6 +93,51 @@ curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.renderer.voice_memo
 4. 如果两者一致但视觉仍不明显
    - 问题更偏模型资源、参数映射或 motion 干扰
 
+### 2.4 用本地音频文件复现（开发向）
+
+当你要排查“同一段音频在当前主线到底怎么驱动嘴形”时，建议直接走开发 RPC：
+- `debug.voice.playLocalFile`
+- 它会复用现有 renderer 入口：`desktop:voice:play-remote -> playVoiceFromRemote() -> startLipsync()`
+
+在仓库根目录执行最小调用示例：
+
+```bash
+node - <<'NODE'
+const { loadRuntimeSummary, buildRpcUrlWithToken } = require('./scripts/desktop-live2d-smoke');
+const WebSocket = require('ws');
+
+const summary = loadRuntimeSummary();
+const wsUrl = buildRpcUrlWithToken(summary.rpcUrl, summary.rpcToken);
+const ws = new WebSocket(wsUrl);
+
+ws.on('open', () => {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'debug-local-ogg',
+    method: 'debug.voice.playLocalFile',
+    params: {
+      path: '/Users/okonfu/tmp/jp-longform-test/jp-longform-test.ogg',
+      outputDelayMs: 80
+    }
+  }));
+});
+
+ws.on('message', (raw) => {
+  const msg = JSON.parse(String(raw));
+  if (msg.id === 'debug-local-ogg') {
+    console.log(JSON.stringify(msg, null, 2));
+    ws.close();
+  }
+});
+NODE
+```
+
+建议同时订阅：
+
+```bash
+curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.renderer.voice_remote.playback_started,chain.lipsync.sync.start,chain.lipsync.sync.stop,chain.renderer.mouth.frame_sample,chain.renderer.lipsync.frame_applied"
+```
+
 ## 3. 逐帧 waveform 记录
 
 ### 3.1 配置
@@ -725,6 +770,20 @@ realtime 额外要看：
 - idle timeout
 - speaking 判定是否过早掉线
 
+### 4.5 本地文件有声音但嘴不动（`start_failed`）
+
+如果本地文件能播放，但嘴形没有更新，优先看：
+- `chain.lipsync.sync.stop`
+  - `reason = start_failed`
+- `error` 中是否出现：
+  - `createMediaElementSource ... already connected previously`
+
+这是典型的 `MediaElementSourceNode` 重复创建问题。  
+当前主线修复后应表现为：
+- `chain.lipsync.sync.start` 正常出现
+- 持续出现 `chain.renderer.mouth.frame_sample`
+- 持续出现 `chain.renderer.lipsync.frame_applied`
+
 ## 5. 手工检查建议
 
 ### 5.1 先跑一轮语音
@@ -750,6 +809,8 @@ ls -lt ~/yachiyo/data/desktop-live2d/mouth-waveforms | head
 - `apps/runtime/tooling/adapters/voice.js`
 - `apps/desktop-live2d/main/desktopSuite.js`
 - `apps/desktop-live2d/main/config.js`
+- `apps/desktop-live2d/main/constants.js`
+- `apps/desktop-live2d/main/rpcValidator.js`
 - `apps/desktop-live2d/renderer/bootstrap.js`
 - `apps/desktop-live2d/renderer/lipsyncViseme.js`
 - `apps/desktop-live2d/renderer/lipsyncMouthTransition.js`

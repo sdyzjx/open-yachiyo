@@ -123,6 +123,7 @@ DOM 更新
 
 - `state.get`
 - `debug.mouthOverride.set`
+- `debug.voice.playLocalFile`
 - `param.set` / `model.param.set`
 - `model.param.batchSet`
 - `model.motion.play`
@@ -186,6 +187,8 @@ DOM 更新
   - `params: {}`
 - `debug.mouthOverride.set`
   - `params: { "enabled": boolean, "mouthOpen"?: number, "mouthForm"?: number }`
+- `debug.voice.playLocalFile`
+  - `params: { "path": string, "mimeType"?: string, "requestId"?: string, "outputDelayMs"?: integer(0..500) }`
 - `param.set` / `model.param.set`
   - `params: { "name": string, "value": number }`
 - `model.param.batchSet`
@@ -278,6 +281,12 @@ Renderer 回包：
 `runtime voice.requested -> desktopSuite processVoiceRequestedOnDesktop() -> desktop:voice:play-memory / desktop:voice:play-remote / desktop:voice:stream-* -> renderer playback entry`
 
 兼容链仍存在 `runtime_legacy` / `voice.playback.electron` 路由，但当前主线语音路径应优先视为 `voice.requested` 事件链。
+
+`debug.voice.playLocalFile` 是开发调试例外：
+- 入口仍是 JSON-RPC `invoke`
+- 但实现位于 main：`desktopSuite.handleDesktopRpcRequest()`
+- 其内部不会走 renderer `handleInvoke`，而是直接下发 `desktop:voice:play-remote`
+- 目的是让本地文件复用主链 lipsync 路径做复现和调参
 
 ### 3.3 JSON-RPC 错误码
 
@@ -694,6 +703,10 @@ RPC method -> 实现方法映射：
 - `chat.panel.append` -> `appendChatMessage()`
 - `chat.panel.clear` -> `clearChatMessages()`
 
+注意：
+- `debug.voice.playLocalFile` 不在 renderer 分发表中
+- 它在 main 进程执行本地文件校验并转成 `file://` URL 后，发送 `desktop:voice:play-remote`
+
 实现方法要点（关键机制）：
 - Pixi 初始化：`initPixi()`，按配置计算 DPR/resolution
 - 模型加载：`loadModel(modelRelativePath, modelName)`
@@ -813,6 +826,18 @@ RPC method -> 实现方法映射：
 }
 ```
 
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "2b",
+  "method": "debug.voice.playLocalFile",
+  "params": {
+    "path": "/Users/okonfu/tmp/jp-longform-test/jp-longform-test.ogg",
+    "outputDelayMs": 80
+  }
+}
+```
+
 ### 7.3 Tool Calling 示例
 
 ```json
@@ -850,7 +875,8 @@ RPC method -> 实现方法映射：
 1. 新增/变更 RPC 方法时，必须同时更新：
 - `constants.js` `RPC_METHODS_V1`
 - `rpcValidator.js` schema
-- `renderer/bootstrap.js` 分发映射
+- `desktopSuite.handleDesktopRpcRequest`（main 层路由）
+- 若该方法需要下沉到 renderer，再更新 `renderer/bootstrap.js` 分发映射
 - 本文档（方法总览 + 模块章节）
 
 2. 新增 Tool Calling 能力时，必须同时更新：
