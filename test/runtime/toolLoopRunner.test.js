@@ -1213,6 +1213,45 @@ test('ToolLoopRunner injects voice auto-reply system prompt when runtimeContext 
   dispatcher.stop();
 });
 
+test('ToolLoopRunner injects forced voice auto-reply prompt when session override is on', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-voice-force-on' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-voice-force-on',
+    input: 'hello',
+    runtimeContext: { voice_auto_reply_enabled: true, voice_auto_reply_mode: 'force_on' }
+  });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-voice-force-on');
+  assert.equal(
+    seenMessages.some(
+      (m) => m.role === 'system'
+        && /MUST call voice\.tts_aliyun_vc/.test(String(m.content || ''))
+        && /Do not skip the TTS call/.test(String(m.content || ''))
+    ),
+    true
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner emits llm.prompt.assembled with fully assembled messages', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

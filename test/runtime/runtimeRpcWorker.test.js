@@ -122,6 +122,66 @@ test('RuntimeRpcWorker returns method_not_found on unsupported method', async ()
   worker.stop();
 });
 
+test('RuntimeRpcWorker handles /voice on slash command without invoking runner', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  let runnerCalled = false;
+  const worker = new RuntimeRpcWorker({
+    queue,
+    runner: {
+      async run() {
+        runnerCalled = true;
+        return { output: 'should-not-run', traceId: 't-should-not-run', state: 'DONE' };
+      }
+    },
+    bus
+  });
+  worker.start();
+
+  const sends = [];
+  const sendEvents = [];
+  let startHookCalled = false;
+  let finalHookCalled = false;
+  let slashCalled = false;
+
+  await queue.submit({
+    jsonrpc: '2.0',
+    id: 'voice-cmd-1',
+    method: 'runtime.run',
+    params: { input: '/voice on', session_id: 'voice-cmd-s1' }
+  }, {
+    send: (payload) => sends.push(payload),
+    sendEvent: (payload) => sendEvents.push(payload),
+    handleSlashCommand: async ({ session_id: sessionId, input }) => {
+      slashCalled = sessionId === 'voice-cmd-s1' && input === '/voice on';
+      return {
+        handled: true,
+        output: 'Voice auto reply enabled. TTS will be required for this session.',
+        state: 'DONE'
+      };
+    },
+    buildRunContext: async () => ({ voice_auto_reply_enabled: true, voice_auto_reply_mode: 'force_on' }),
+    onRunStart: async () => {
+      startHookCalled = true;
+    },
+    onRunFinal: async ({ output }) => {
+      finalHookCalled = output === 'Voice auto reply enabled. TTS will be required for this session.';
+    }
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.equal(slashCalled, true);
+  assert.equal(runnerCalled, false);
+  assert.equal(startHookCalled, true);
+  assert.equal(finalHookCalled, true);
+  assert.equal(sendEvents.some((evt) => evt.method === 'runtime.start'), true);
+  assert.equal(sendEvents.some((evt) => evt.method === 'runtime.final'), true);
+  assert.equal(sends[0].result.output, 'Voice auto reply enabled. TTS will be required for this session.');
+
+  worker.stop();
+});
+
 test('RuntimeRpcWorker does not emit message.delta for non-final llm decisions', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();

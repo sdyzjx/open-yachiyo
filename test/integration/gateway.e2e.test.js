@@ -486,10 +486,12 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     }).then((r) => r.json());
     assert.equal(patchedVoiceAutoReplySettings.ok, true);
     assert.equal(patchedVoiceAutoReplySettings.data.voice_auto_reply_enabled, true);
+    assert.equal(patchedVoiceAutoReplySettings.data.voice_auto_reply_mode, 'force_on');
 
     const reloadedSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`).then((r) => r.json());
     assert.equal(reloadedSettings.ok, true);
     assert.equal(reloadedSettings.data.voice_auto_reply_enabled, true);
+    assert.equal(reloadedSettings.data.voice_auto_reply_mode, 'force_on');
 
     const invalidPermissionSettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',
@@ -796,7 +798,7 @@ test('gateway serves legacy session image when workspace path misses file', asyn
   }
 });
 
-test('gateway runtime voice auto reply switch is controlled by voice-policy yaml', async () => {
+test('gateway runtime voice auto reply slash/API override has higher priority than voice-policy yaml', async () => {
   async function runCase({ yamlEnabled, patchedSessionValue, expectedRuntimeValue }) {
     const llmPort = await getFreePort();
     const gatewayPort = await getFreePort();
@@ -851,6 +853,7 @@ test('gateway runtime voice auto reply switch is controlled by voice-policy yaml
       }).then((r) => r.json());
       assert.equal(patchedSettings.ok, true);
       assert.equal(patchedSettings.data.voice_auto_reply_enabled, patchedSessionValue);
+      assert.equal(patchedSettings.data.voice_auto_reply_mode, patchedSessionValue ? 'force_on' : 'force_off');
 
       const run = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
         jsonrpc: '2.0',
@@ -867,6 +870,7 @@ test('gateway runtime voice auto reply switch is controlled by voice-policy yaml
       const settingsAfterRun = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/${sessionId}/settings`).then((r) => r.json());
       assert.equal(settingsAfterRun.ok, true);
       assert.equal(settingsAfterRun.data.voice_auto_reply_enabled, expectedRuntimeValue);
+      assert.equal(settingsAfterRun.data.voice_auto_reply_mode, patchedSessionValue ? 'force_on' : 'force_off');
     } catch (err) {
       const logs = gateway?.getLogs?.() || '';
       err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
@@ -880,11 +884,71 @@ test('gateway runtime voice auto reply switch is controlled by voice-policy yaml
   await runCase({
     yamlEnabled: false,
     patchedSessionValue: true,
-    expectedRuntimeValue: false
+    expectedRuntimeValue: true
   });
   await runCase({
     yamlEnabled: true,
     patchedSessionValue: false,
-    expectedRuntimeValue: true
+    expectedRuntimeValue: false
   });
+});
+
+test('gateway slash command /voice on updates session override and short-circuits runtime.run', async () => {
+  const llmPort = await getFreePort();
+  const gatewayPort = await getFreePort();
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-voice-slash-'));
+  const providerConfigPath = path.join(tmpDir, 'providers.yaml');
+  const sessionStoreDir = path.join(tmpDir, 'session-store');
+  const longTermMemoryDir = path.join(tmpDir, 'long-term-memory');
+  fs.writeFileSync(providerConfigPath, [
+    'active_provider: mock',
+    'providers:',
+    '  mock:',
+    '    type: openai_compatible',
+    '    display_name: Mock',
+    `    base_url: http://127.0.0.1:${llmPort}`,
+    '    model: mock-model',
+    '    api_key: mock-key',
+    '    timeout_ms: 2000'
+  ].join('\n'));
+
+  const llm = await startMockLlmServer(llmPort);
+  let gateway;
+
+  try {
+    gateway = await startGateway({
+      port: gatewayPort,
+      providerConfigPath,
+      sessionStoreDir,
+      longTermMemoryDir
+    });
+
+    const sessionId = 'voice-slash-s1';
+    const run = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
+      jsonrpc: '2.0',
+      id: 'rpc-voice-slash-on',
+      method: 'runtime.run',
+      params: {
+        session_id: sessionId,
+        input: '/voice on'
+      }
+    }, { expectRpcId: 'rpc-voice-slash-on' });
+
+    assert.ok(run.result);
+    assert.equal(run.result.result.output, 'Voice auto reply enabled. TTS will be required for this session.');
+    assert.equal(llm.state.requestCount, 0);
+
+    const settingsAfterRun = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/${sessionId}/settings`).then((r) => r.json());
+    assert.equal(settingsAfterRun.ok, true);
+    assert.equal(settingsAfterRun.data.voice_auto_reply_enabled, true);
+    assert.equal(settingsAfterRun.data.voice_auto_reply_mode, 'force_on');
+  } catch (err) {
+    const logs = gateway?.getLogs?.() || '';
+    err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
+    throw err;
+  } finally {
+    await stopProcess(gateway?.child);
+    llm.server.close();
+  }
 });

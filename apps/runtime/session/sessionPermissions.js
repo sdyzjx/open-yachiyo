@@ -2,6 +2,8 @@ const SESSION_PERMISSION_LEVELS = Object.freeze(['low', 'medium', 'high']);
 const DEFAULT_SESSION_PERMISSION_LEVEL = 'high';
 const DEFAULT_SESSION_WORKSPACE_MODE = 'session';
 const DEFAULT_VOICE_AUTO_REPLY_ENABLED = false;
+const SESSION_VOICE_AUTO_REPLY_MODES = Object.freeze(['policy', 'force_on', 'force_off']);
+const DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE = 'policy';
 
 function normalizeWorkspaceSettings(workspace = {}) {
   const rootDir = typeof workspace.root_dir === 'string' && workspace.root_dir.trim()
@@ -27,11 +29,20 @@ function normalizeVoiceAutoReplyEnabled(value, { fallback = DEFAULT_VOICE_AUTO_R
   return Boolean(fallback);
 }
 
+function normalizeVoiceAutoReplyMode(value, { fallback = DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE } = {}) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (SESSION_VOICE_AUTO_REPLY_MODES.includes(normalized)) {
+    return normalized;
+  }
+  return fallback;
+}
+
 function buildDefaultSessionSettings() {
   return {
     permission_level: DEFAULT_SESSION_PERMISSION_LEVEL,
     workspace: normalizeWorkspaceSettings(),
-    voice_auto_reply_enabled: DEFAULT_VOICE_AUTO_REPLY_ENABLED
+    voice_auto_reply_enabled: DEFAULT_VOICE_AUTO_REPLY_ENABLED,
+    voice_auto_reply_mode: DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE
   };
 }
 
@@ -39,7 +50,8 @@ function normalizeSessionSettings(settings = {}) {
   return {
     permission_level: normalizeSessionPermissionLevel(settings.permission_level),
     workspace: normalizeWorkspaceSettings(settings.workspace),
-    voice_auto_reply_enabled: normalizeVoiceAutoReplyEnabled(settings.voice_auto_reply_enabled)
+    voice_auto_reply_enabled: normalizeVoiceAutoReplyEnabled(settings.voice_auto_reply_enabled),
+    voice_auto_reply_mode: normalizeVoiceAutoReplyMode(settings.voice_auto_reply_mode)
   };
 }
 
@@ -67,6 +79,13 @@ function mergeSessionSettings(currentSettings = {}, patch = {}) {
     );
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'voice_auto_reply_mode')) {
+    next.voice_auto_reply_mode = normalizeVoiceAutoReplyMode(
+      patch.voice_auto_reply_mode,
+      { fallback: current.voice_auto_reply_mode }
+    );
+  }
+
   return next;
 }
 
@@ -75,9 +94,12 @@ module.exports = {
   DEFAULT_SESSION_PERMISSION_LEVEL,
   DEFAULT_SESSION_WORKSPACE_MODE,
   DEFAULT_VOICE_AUTO_REPLY_ENABLED,
+  SESSION_VOICE_AUTO_REPLY_MODES,
+  DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE,
   isSessionPermissionLevel,
   normalizeSessionPermissionLevel,
   normalizeVoiceAutoReplyEnabled,
+  normalizeVoiceAutoReplyMode,
   normalizeWorkspaceSettings,
   buildDefaultSessionSettings,
   normalizeSessionSettings,

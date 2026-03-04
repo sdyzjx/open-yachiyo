@@ -159,6 +159,22 @@ class RuntimeRpcWorker {
       ? params.session_id
       : `rpc-${uuidv4()}`;
 
+    let slashCommandResult = null;
+    try {
+      slashCommandResult = await context.handleSlashCommand?.({
+        request,
+        session_id: sessionId,
+        input,
+        input_images: inputImages,
+        input_audio: inputAudio
+      }) || null;
+    } catch {
+      publishChainEvent(this.bus, 'worker.slash_command.error', {
+        request_id: request?.id ?? null,
+        session_id: sessionId
+      });
+    }
+
     let runtimeContext = {};
     let seedMessages = [];
     try {
@@ -184,6 +200,67 @@ class RuntimeRpcWorker {
         request_id: request?.id ?? null,
         session_id: sessionId
       });
+    }
+
+    if (slashCommandResult?.handled === true) {
+      try {
+        await context.onRunStart?.({
+          request,
+          session_id: sessionId,
+          input,
+          input_images: inputImages,
+          input_audio: inputAudio,
+          runtime_context: runtimeContext
+        });
+      } catch {
+        // Persistence hooks should not break runtime execution.
+      }
+
+      context.sendEvent?.(toRpcEvent('runtime.start', { session_id: sessionId, request_id: request.id ?? null }));
+      publishChainEvent(this.bus, 'worker.runtime.start_sent', {
+        request_id: request?.id ?? null,
+        session_id: sessionId
+      });
+
+      const payload = {
+        session_id: sessionId,
+        output: String(slashCommandResult.output || ''),
+        trace_id: slashCommandResult.trace_id || `slash-${uuidv4()}`,
+        state: slashCommandResult.state || 'DONE',
+        metrics: slashCommandResult.metrics || null
+      };
+
+      context.sendEvent?.(toRpcEvent('runtime.final', payload));
+      publishChainEvent(this.bus, 'worker.runtime.final_sent', {
+        request_id: request?.id ?? null,
+        session_id: sessionId,
+        trace_id: payload.trace_id,
+        slash_command: true
+      });
+
+      try {
+        await context.onRunFinal?.({
+          request,
+          session_id: sessionId,
+          input,
+          input_images: inputImages,
+          input_audio: inputAudio,
+          runtime_context: runtimeContext,
+          ...payload
+        });
+      } catch {
+        // Persistence hooks should not break runtime execution.
+      }
+
+      if (request.id !== undefined) {
+        context.send?.(createRpcResult(request.id, payload));
+        publishChainEvent(this.bus, 'worker.rpc.result_sent', {
+          request_id: request?.id ?? null,
+          session_id: sessionId,
+          trace_id: payload.trace_id
+        });
+      }
+      return;
     }
 
     if (!input.trim() && inputAudio && typeof context.transcribeAudio === 'function') {

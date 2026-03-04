@@ -25,7 +25,8 @@ const { getDefaultSessionWorkspaceManager } = require('../runtime/session/worksp
 const {
   isSessionPermissionLevel,
   normalizeSessionPermissionLevel,
-  normalizeWorkspaceSettings
+  normalizeWorkspaceSettings,
+  normalizeVoiceAutoReplyMode
 } = require('../runtime/session/sessionPermissions');
 const { canReadLongTermMemory } = require('../runtime/security/sessionPermissionPolicy');
 const { SkillRuntimeManager } = require('../runtime/skills/skillRuntimeManager');
@@ -414,6 +415,21 @@ app.put('/api/sessions/:sessionId/settings', async (req, res) => {
     return;
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'voice_auto_reply_mode')
+    && !['policy', 'force_on', 'force_off'].includes(String(settings.voice_auto_reply_mode || '').trim().toLowerCase())
+  ) {
+    res.status(400).json({ ok: false, error: 'settings.voice_auto_reply_mode must be policy|force_on|force_off' });
+    return;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'voice_auto_reply_enabled')
+    && !Object.prototype.hasOwnProperty.call(settings, 'voice_auto_reply_mode')
+  ) {
+    settings.voice_auto_reply_mode = settings.voice_auto_reply_enabled ? 'force_on' : 'force_off';
+  }
+
   const updated = await sessionStore.updateSessionSettings(req.params.sessionId, settings);
   res.json({ ok: true, data: updated });
 });
@@ -770,6 +786,14 @@ function sendSafe(ws, payload) {
   ws.send(JSON.stringify(payload));
 }
 
+function parseVoiceAutoReplySlashCommand(input = '') {
+  const match = String(input || '').trim().match(/^\/voice\s+(on|off)\s*$/i);
+  if (!match) return null;
+  return {
+    enabled: String(match[1]).toLowerCase() === 'on'
+  };
+}
+
 function normalizeInputImages(rawInputImages) {
   if (rawInputImages === undefined || rawInputImages === null) {
     return { ok: true, images: [] };
@@ -940,6 +964,30 @@ async function enqueueRpc(ws, rpcPayload, mode) {
   }
 
   const context = {
+    handleSlashCommand: async ({ session_id: sessionId, input }) => {
+      const command = parseVoiceAutoReplySlashCommand(input);
+      if (!command) {
+        return null;
+      }
+
+      const updated = await sessionStore.updateSessionSettings(sessionId, {
+        voice_auto_reply_enabled: command.enabled,
+        voice_auto_reply_mode: command.enabled ? 'force_on' : 'force_off'
+      });
+
+      return {
+        handled: true,
+        state: 'DONE',
+        output: command.enabled
+          ? 'Voice auto reply enabled. TTS will be required for this session.'
+          : 'Voice auto reply disabled for this session.',
+        metrics: {
+          slash_command: 'voice',
+          voice_auto_reply_enabled: updated.voice_auto_reply_enabled,
+          voice_auto_reply_mode: updated.voice_auto_reply_mode
+        }
+      };
+    },
     buildRunContext: async ({ session_id: sessionId }) => {
       const existingSettings = await sessionStore.getSessionSettings(sessionId);
       const permissionLevel = normalizeSessionPermissionLevel(
@@ -948,20 +996,27 @@ async function enqueueRpc(ws, rpcPayload, mode) {
           : existingSettings?.permission_level
       );
       const voicePolicy = loadVoicePolicy({ policyPath: voicePolicyPath });
-      const voiceAutoReplyEnabled = voicePolicy?.auto_reply?.enabled === true;
+      const voiceAutoReplyMode = normalizeVoiceAutoReplyMode(existingSettings?.voice_auto_reply_mode);
+      const voiceAutoReplyEnabled = voiceAutoReplyMode === 'force_on'
+        ? true
+        : voiceAutoReplyMode === 'force_off'
+          ? false
+          : (voicePolicy?.auto_reply?.enabled === true);
       const workspace = await workspaceManager.getWorkspaceInfo(sessionId);
       const normalizedWorkspace = normalizeWorkspaceSettings(workspace);
 
       await sessionStore.updateSessionSettings(sessionId, {
         permission_level: permissionLevel,
         workspace: normalizedWorkspace,
-        voice_auto_reply_enabled: voiceAutoReplyEnabled
+        voice_auto_reply_enabled: voiceAutoReplyEnabled,
+        voice_auto_reply_mode: voiceAutoReplyMode
       });
 
       return {
         permission_level: permissionLevel,
         workspace_root: normalizedWorkspace.root_dir,
-        voice_auto_reply_enabled: voiceAutoReplyEnabled
+        voice_auto_reply_enabled: voiceAutoReplyEnabled,
+        voice_auto_reply_mode: voiceAutoReplyMode
       };
     },
     transcribeAudio: async ({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext }) => {

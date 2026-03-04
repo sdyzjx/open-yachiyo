@@ -129,6 +129,15 @@ function shouldHintPersonaTool(input) {
 
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
+  if (runtimeContext?.voice_auto_reply_mode === 'force_on') {
+    return [
+      'Voice auto-reply force mode is enabled for this session.',
+      'For every user-facing assistant reply with non-empty text, you MUST call voice.tts_aliyun_vc in the same turn before returning the final answer.',
+      'Do not skip the TTS call even for short replies.',
+      'For voice.tts_aliyun_vc args, use text/voiceTag only; do not use durationSec or duration_sec.',
+      'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
+    ].join(' ');
+  }
   return [
     'Voice auto-reply mode is enabled for this turn.',
     'Before long text response, first call voice.tts_aliyun_vc to produce a short spoken message.',
