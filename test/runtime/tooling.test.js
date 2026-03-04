@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const Ajv = require('ajv');
 
 const { ToolConfigStore } = require('../../apps/runtime/tooling/toolConfigStore');
 const { ToolRegistry } = require('../../apps/runtime/tooling/toolRegistry');
@@ -36,6 +37,19 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
+});
+
+test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
+  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
+  const config = store.load();
+  const voiceTool = config.tools.find((tool) => tool.name === 'voice.tts_aliyun_vc');
+  assert.ok(voiceTool?.input_schema);
+
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  const validate = ajv.compile(voiceTool.input_schema);
+
+  assert.equal(validate({ text: 'hello', voiceTag: 'zh', durationSec: '8' }), true, JSON.stringify(validate.errors || []));
+  assert.equal(validate({ text: 'hello', voiceTag: 'zh', duration_sec: 8 }), true, JSON.stringify(validate.errors || []));
 });
 
 test('ToolExecutor rejects invalid args by schema', async () => {

@@ -155,6 +155,8 @@ tools:
       properties:
         text: { type: string }
         voiceTag: { type: string, enum: [zh, jp, en] }
+        durationSec: { type: [number, string] }
+        duration_sec: { type: [number, string] }
         timeoutSec: { type: integer, minimum: 1, maximum: 120 }
         turnId: { type: string }
         idempotencyKey: { type: string }

@@ -132,6 +132,7 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   return [
     'Voice auto-reply mode is enabled for this turn.',
     'Before long text response, first call voice.tts_aliyun_vc to produce a short spoken message.',
+    'For voice.tts_aliyun_vc args, use text/voiceTag only; do not use durationSec or duration_sec.',
     'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
     'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
   ].join(' ');
