@@ -2,114 +2,164 @@
 
 ![open-yachiyo cover](assets/readme-cover.jpg)
 
-原生优先的桌面 AI 助手运行时 — 从零基于 [ReAct 循环](https://arxiv.org/abs/2210.03629) 构建，实现可预测、有界、可审计的 Agent 执行。不是 OpenClaw 或任何编排框架的封装：没有无上限的工具调用链，没有跨会话上下文污染，没有工作流不稳定问题。
+原生优先的桌面 AI 助手运行时，核心是**可控 ReAct 循环**。
+项目聚焦两个故事：
+
+1. **Story A：多 Agent 并行软件交付**（并行、可审计、评审门禁）
+2. **Story B：可控 Runtime 内核**（有界、可调试、可预测）
 
 🇺🇸 [English](./README.md)
 
 ---
 
-## 项目简介
+## 项目本身是什么
 
-**open-yachiyo** 是一个原生优先的桌面 AI 助手运行时，支持 Live2D 桌面宠物、多模态输入、长期记忆和技能扩展。
+`open-yachiyo` 是面向生产级 Agent 执行的运行时 + 桌面壳：
+
+- 有界轮次循环（ReAct：Reason -> Act -> Observe）
+- 显式工具调用与记忆操作
+- 会话隔离与文件持久化
+- 桌面优先交互（Live2D + 流式气泡）
+
+它**不是** OpenClaw 或通用编排框架的二次封装。
+
+---
 
 ## 快速开始
 
-1. 安装依赖：
-
 ```bash
 npm install
-```
-
-2. 配置模型提供商（`config/providers.yaml`）：
-
-```bash
-# 编辑 config/providers.yaml：
-# - active_provider（当前使用的提供商）
-# - providers.<name>.base_url
-# - providers.<name>.model
-# - providers.<name>.api_key 或 api_key_env
-```
-
-如使用 `api_key_env`，请先导出环境变量：
-
-```bash
-export OPENAI_API_KEY="<your_api_key>"
-```
-
-3. 启动服务：
-
-```bash
 npm run dev
 ```
 
-4. 健康检查：
+配置模型提供商：`~/yachiyo/config/providers.yaml`
+
+- `active_provider`
+- `providers.<name>.base_url`
+- `providers.<name>.model`
+- `providers.<name>.api_key` 或 `api_key_env`
+
+健康检查：
 
 ```bash
 curl http://localhost:3000/health
 ```
 
-5. Web 界面：
-- 对话界面：`http://localhost:3000/`
-- 提供商配置界面：`http://localhost:3000/config.html`
+Web 界面：
 
-## 桌面 Live2D
+- 聊天：`http://localhost:3000/`
+- 提供商配置：`http://localhost:3000/config.html`
+
+桌面（Live2D）：
 
 ```bash
-# 导入模型资源
 npm run live2d:import
-
-# 启动桌面套件（网关 + Live2D 窗口 + RPC）
 npm run desktop:up
-
-# 启动后运行快速冒烟测试
 npm run desktop:smoke
 ```
 
-Live2D 语义动作工具面：
-- 工具名：`live2d.motion.play`、`live2d.expression.set`、`live2d.param.set`、`live2d.param.batch_set`、`live2d.emote`、`live2d.gesture`、`live2d.react`
-- 语义预设文件：`config/live2d-presets.yaml`
-- 工具参数约束：`config/tools.yaml`（不存在的 preset 会在 schema 校验阶段被拒绝）
-- 渲染端动作播放器：按队列消费动作消息，队列清空后自动回退到 `Idle`
+---
 
-动作消息结构：
+## 核心功能
 
-```json
-{
-  "action_id": "optional-id",
-  "action": { "type": "emote", "args": { "emotion": "happy", "intensity": "high" } },
-  "duration_sec": 2.5,
-  "queue_policy": "append"
-}
-```
+- **可控运行时循环**（硬步数边界）
+- **JSON-RPC + 队列入口**（`runtime.run` 与执行解耦）
+- **EventBus 工具分发**（`tool.call.requested` -> `tool.call.result`）
+- **会话持久化**（消息/事件/运行记录）
+- **长期记忆工具化**（`memory_write`、`memory_search`）
+- **桌面富文本渲染**（Markdown/LaTeX/Mermaid + 流式气泡）
+- **多模态图片输入**（图片预览持久化）
+- **Provider 热更新配置**（YAML + Web UI）
+
+文档入口：
+
+- 架构：`docs/ARCHITECTURE.md`
+- 测试：`docs/TESTING.md`
+- 使用案例：`docs/RUNTIME_FEATURE_USAGE_CASES.md`
+
+---
+
+## 与 OpenClaw 的区别
+
+OpenClaw 强在多渠道网关与编排能力。
+`open-yachiyo` 重点是：**Runtime 可控性**。
+
+| 维度 | OpenClaw（常见优势） | open-yachiyo 重点 |
+|---|---|---|
+| 主要目标 | 多渠道网关 + 编排 | 确定性运行时内核 + 桌面 Agent |
+| 执行模型 | 灵活编排 | 有界 ReAct 循环 + 显式步进控制 |
+| 工具链路 | 扩展性强 | EventBus 解耦 + 可审计 |
+| 会话行为 | 通用能力 | 强会话隔离 + 显式记忆工具 |
+| 产品形态 | Gateway 平台 | Native Runtime 引擎 |
+
+如果你需要“一个网关接多个消息平台”，OpenClaw 很合适。
+如果你需要“严格可控的 Agent Runtime”，这个项目更直接。
+
+---
+
+## 可调试性（第一优先级）
+
+运行时提供 **SSE 全链路调试通道**：
+
+- 订阅：`GET /api/debug/events`（或 `/debug/stream`）
+- 注入调试事件：`POST /api/debug/emit`
+- 开关 debug 模式：`PUT /api/debug/mode`
+
+通过 topic 过滤，可以串起单次请求全链路：
+
+`web/electron -> gateway ws -> queue -> worker -> loop -> dispatch -> executor -> ws outbound`
+
+参考：
+
+- `docs/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
+- `docs/DEBUG_CHAIN_FLOW_GUIDE.md`
+
+---
+
+## Story A：多 Agent 并行开发（含高吞吐实践）
+
+本项目的开发流程就是为并行交付设计的（冲刺阶段可达到 **连续 5 天日均约 1.5w 新增行** 的量级）：
+
+1. **分支 + worktree 并行开发**
+2. **SSE 暴露 RPC/工具链路**，让调试 Agent 可见可追
+3. **评审门禁后集成**，再合并 `main`
+4. **主线稳定优先**，小步快跑合并
+
+### 落地机制
+
+- 分支协作与 worktree 规范：
+  - `docs/BRANCH_COLLABORATION_SPEC.md`
+  - `docs/MERGE_STRATEGY.md`
+- 面向 Agent 的 SSE 调试链路：
+  - `docs/SSE_EXPRESS_LOGGER_MVP_PLAN.md`
+  - `docs/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
+
+这套机制让多 Agent 开发从“黑盒自动化”变成“可观测软件流水线”。
+
+---
 
 ## 测试
 
 ```bash
-npm test        # 完整测试套件
-npm run test:ci # CI 等效命令
+npm test
+npm run test:ci
 ```
 
-CI 说明：
-- `npm run test:ci` 当前会排除 `test/runtime/voiceAdapter.test.js`，避免托管 CI 环境缺少 `ffmpeg` 导致失败。
+CI 配置在 GitHub Actions：`.github/workflows/ci.yml`。
 
-语音适配器测试（本地）：
-- 先安装 `ffmpeg`，再执行：
+---
 
-```bash
-node --test test/runtime/voiceAdapter.test.js
-```
+## 仓库结构
 
-## 项目结构
+- `apps/gateway`：HTTP/WebSocket 入口 + Debug 端点
+- `apps/runtime`：队列 worker、循环、分发、工具、记忆/会话
+- `apps/desktop`：桌面壳（Electron + Live2D）
+- `docs/`：架构/计划/调试/测试文档
+- `config/`：providers/tools/skills/live2d 预设
 
-- `apps/gateway`：WebSocket 网关 + RPC 队列入口
-- `apps/runtime`：事件总线、RPC Worker、LLM 推理、工具循环
-- `apps/desktop-live2d`：Electron + Live2D 桌面壳
-- `docs/`：架构文档、模块参考、实现记录
+---
 
-## 为什么不用 OpenClaw？
+## 贡献者
 
-OpenClaw 是一个功能完整的 Agent 编排层，但它的设计目标和本项目的需求存在根本性的错位。在实际使用中，基于 OpenClaw 运行 Agent 意味着接受以下代价：工具调用链条没有硬性上限、长会话下上下文窗口污染、以及一个为灵活性而非确定性优化的工作流模型。对于一个需要常驻桌面、响应迅速、行为可预期的 AI 助手来说，这是错误的取舍。
-
-**open-yachiyo 的运行时从零基于 ReAct 循环构建**（Reason → Act → Observe，循环执行）。每一轮都是一个独立、可审计的周期：模型对当前状态进行推理，输出且仅输出一个动作（工具调用或最终响应），运行时执行该动作，结果作为观察值反馈回模型。循环有硬性步数上限。会话之间完全隔离。不存在跨会话泄漏的"环境记忆"——记忆是显式的、工具驱动的、可查询的。
-
-最终得到的是一个真正可推理的运行时：可预测的轮次结构、有界的执行过程、从输入到输出清晰可查的执行链路。
+- [sdyzjx](https://github.com/sdyzjx) — Creator & Maintainer
+- [wkf16](https://github.com/wkf16) — Contributor
