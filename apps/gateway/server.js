@@ -121,6 +121,27 @@ function decodeImageDataUrl(dataUrl) {
   return Buffer.from(base64Payload, 'base64');
 }
 
+function parseBooleanEnv(name, fallback = false) {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return Boolean(fallback);
+}
+
+function parseToolAsyncMode(rawValue, fallback = 'serial') {
+  const raw = String(rawValue || fallback).trim().toLowerCase();
+  if (raw === 'serial' || raw === 'parallel') return raw;
+  return String(fallback);
+}
+
+function parsePositiveIntEnv(name, fallback = 1) {
+  const value = Number.parseInt(process.env[name], 10);
+  if (!Number.isFinite(value) || value < 1) {
+    return Math.max(1, Number.parseInt(fallback, 10) || 1);
+  }
+  return value;
+}
+
 async function persistSessionInputImages(sessionId, inputImages = []) {
   if (!Array.isArray(inputImages) || inputImages.length === 0) return [];
 
@@ -157,10 +178,18 @@ const runner = new ToolLoopRunner({
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
   maxStep: 8,
-  toolResultTimeoutMs: 10000
+  toolResultTimeoutMs: 10000,
+  runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
+  toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
+  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', true),
+  maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
 });
 
-const dispatcher = new ToolCallDispatcher({ bus, executor });
+const dispatcher = new ToolCallDispatcher({
+  bus,
+  executor,
+  dedupTtlMs: Math.max(1000, Number(process.env.RUNTIME_TOOL_CALL_DEDUP_TTL_MS) || 5 * 60 * 1000)
+});
 dispatcher.start();
 
 const worker = new RuntimeRpcWorker({ queue, runner, bus });
@@ -210,6 +239,13 @@ app.get('/health', async (_, res) => {
     ok: true,
     uptime_seconds: Math.floor(process.uptime()),
     queue_size: queue.size(),
+    runtime: {
+      streaming_enabled: runner.runtimeStreamingEnabled,
+      tool_async_mode: runner.toolAsyncMode,
+      tool_early_dispatch: runner.toolEarlyDispatch,
+      max_parallel_tools: runner.maxParallelTools,
+      tool_call_dedup_ttl_ms: dispatcher.dedupTtlMs
+    },
     llm: llmManager.getConfigSummary(),
     tools: toolConfigManager.getSummary(),
     session_store: sessionStats,

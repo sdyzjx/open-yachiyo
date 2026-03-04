@@ -9,16 +9,17 @@ const CHANNELS = {
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
+  chatStreamSync: 'live2d:chat:stream-sync',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
   modelBoundsUpdate: 'live2d:model:bounds-update',
   actionTelemetry: 'live2d:action:telemetry',
+  lipsyncTelemetry: 'live2d:lipsync:telemetry',
   windowDrag: 'live2d:window:drag',
   windowControl: 'live2d:window:control',
   chatPanelVisibility: 'live2d:chat:panel-visibility',
   windowResizeRequest: 'live2d:window:resize-request',
-  windowStateSync: 'live2d:window:state-sync',
-  voicePlay: 'desktop:voice:play'
+  windowStateSync: 'live2d:window:state-sync'
 };
 
 contextBridge.exposeInMainWorld('desktopLive2dBridge', {
@@ -51,20 +52,23 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   sendActionTelemetry(payload = {}) {
     ipcRenderer.send(CHANNELS.actionTelemetry, payload);
   },
+  sendLipsyncTelemetry(payload = {}) {
+    ipcRenderer.send(CHANNELS.lipsyncTelemetry, payload);
+  },
   onChatStateSync(handler) {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(CHANNELS.chatStateSync, listener);
     return () => ipcRenderer.off(CHANNELS.chatStateSync, listener);
   },
+  onChatStreamSync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.chatStreamSync, listener);
+    return () => ipcRenderer.off(CHANNELS.chatStreamSync, listener);
+  },
   onBubbleStateSync(handler) {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(CHANNELS.bubbleStateSync, listener);
     return () => ipcRenderer.off(CHANNELS.bubbleStateSync, listener);
-  },
-  onVoicePlay(handler) {
-    const listener = (_event, payload) => handler(payload);
-    ipcRenderer.on(CHANNELS.voicePlay, listener);
-    return () => ipcRenderer.off(CHANNELS.voicePlay, listener);
   },
   sendWindowDrag(payload = {}) {
     ipcRenderer.send(CHANNELS.windowDrag, payload);
@@ -88,6 +92,36 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   onVoicePlayMemory(handler) {
     const channel = 'desktop:voice:play-memory';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoicePlayRemote(handler) {
+    const channel = 'desktop:voice:play-remote';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamStart(handler) {
+    const channel = 'desktop:voice:stream-start';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamChunk(handler) {
+    const channel = 'desktop:voice:stream-chunk';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamEnd(handler) {
+    const channel = 'desktop:voice:stream-end';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  },
+  onVoiceStreamError(handler) {
+    const channel = 'desktop:voice:stream-error';
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.off(channel, listener);

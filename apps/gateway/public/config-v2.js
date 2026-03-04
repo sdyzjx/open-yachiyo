@@ -416,4 +416,66 @@ function init() {
   initWs();
 }
 
+// ── Desktop Bubble Config ──────────────────────────────────────────────────
+function loadBubbleConfig() {
+  fetch('/api/config/desktop-live2d/raw')
+    .then(res => res.json())
+    .then(data => {
+      const config = data.json ? JSON.parse(data.json) : {};
+      const truncate = config.chat?.bubble?.truncate || {};
+
+      document.getElementById('bubbleTruncateEnabled').checked = truncate.enabled !== false;
+      document.getElementById('bubbleMaxLength').value = truncate.maxLength || 120;
+      document.getElementById('bubbleTruncateMode').value = truncate.mode || 'smart';
+      document.getElementById('bubbleShowHintForComplex').checked = truncate.showHintForComplex !== false;
+    })
+    .catch(err => {
+      console.error('Failed to load bubble config:', err);
+      document.getElementById('bubbleConfigHint').textContent = '加载配置失败';
+    });
+}
+
+function saveBubbleConfig() {
+  const enabled = document.getElementById('bubbleTruncateEnabled').checked;
+  const maxLength = parseInt(document.getElementById('bubbleMaxLength').value, 10);
+  const mode = document.getElementById('bubbleTruncateMode').value;
+  const showHintForComplex = document.getElementById('bubbleShowHintForComplex').checked;
+
+  // Load current config first
+  fetch('/api/config/desktop-live2d/raw')
+    .then(res => res.json())
+    .then(data => {
+      const config = data.json ? JSON.parse(data.json) : {};
+
+      // Merge bubble truncate config
+      if (!config.chat) config.chat = {};
+      if (!config.chat.bubble) config.chat.bubble = {};
+      config.chat.bubble.truncate = {
+        enabled,
+        maxLength,
+        mode,
+        suffix: '...',
+        showHintForComplex
+      };
+
+      // Note: desktop-live2d config is readonly via API, show instruction
+      document.getElementById('bubbleConfigHint').textContent =
+        '⚠️ 桌面配置需要手动编辑 ~/yachiyo/config/desktop-live2d.json 文件';
+      document.getElementById('bubbleConfigHint').style.color = 'var(--warning)';
+
+      // Show the config that should be added
+      console.log('Add this to ~/yachiyo/config/desktop-live2d.json:');
+      console.log(JSON.stringify({ chat: config.chat }, null, 2));
+    })
+    .catch(err => {
+      console.error('Failed to save bubble config:', err);
+      document.getElementById('bubbleConfigHint').textContent = '保存失败';
+      document.getElementById('bubbleConfigHint').style.color = 'var(--error)';
+    });
+}
+
 init();
+
+// Initialize bubble config
+document.getElementById('saveBubbleConfig')?.addEventListener('click', saveBubbleConfig);
+loadBubbleConfig();

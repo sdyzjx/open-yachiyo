@@ -27,32 +27,6 @@ const METHOD_SCHEMAS = Object.freeze({
       mouthForm: { type: 'number' }
     }
   },
-  'debug.lipsyncTuning.set': {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      reset: { type: 'boolean' },
-      threshold: { type: 'number' },
-      openScale: { type: 'number' },
-      openModHz: { type: 'number' },
-      openModDepth: { type: 'number' },
-      openKnee: { type: 'number' },
-      openHighCurve: { type: 'number' },
-      openFloor: { type: 'number' },
-      longPauseMs: { type: 'number' },
-      openAttack: { type: 'number' },
-      openRelease: { type: 'number' },
-      formHz: { type: 'number' },
-      formScale: { type: 'number' },
-      formAttack: { type: 'number' },
-      formRelease: { type: 'number' },
-      formOpenCoupling: { type: 'number' },
-      formExemptOpen: { type: 'number' },
-      formCouplingFullOpen: { type: 'number' },
-      formMinScale: { type: 'number' },
-      holdFormScale: { type: 'number' }
-    }
-  },
   'param.set': PARAM_SET_SCHEMA,
   'model.param.set': PARAM_SET_SCHEMA,
   'model.param.batchSet': {
@@ -144,22 +118,6 @@ const METHOD_SCHEMAS = Object.freeze({
       arguments: { type: 'object', additionalProperties: true },
       traceId: { type: 'string', minLength: 1, maxLength: 128 }
     }
-  },
-  'voice.play': {
-    type: 'object',
-    required: ['audioPath'],
-    additionalProperties: false,
-    properties: {
-      audioPath: { type: 'string', minLength: 1 }
-    }
-  },
-  'voice.play.test': {
-    type: 'object',
-    properties: {
-      audioRef: { type: 'string', minLength: 1 },
-      gatewayUrl: { type: 'string' }
-    },
-    required: ['audioRef']
   }
 });
 

@@ -82,22 +82,13 @@ async function runTest() {
     console.log('   ⚠️  获取状态失败:', err.message);
   }
 
-  // 步骤 1：播放语音（触发嘴形同步）
-  console.log('\n📢 步骤 1：播放测试语音');
-  console.log('   提示：如果没有测试音频，这一步会失败，但不影响后续测试');
-  try {
-    const result = await sendRpc('voice.play.test', {
-      audioRef: 'test-audio.wav',
-      gatewayUrl: 'http://127.0.0.1:3000'
-    });
-    console.log('   ✅ 语音播放结果:', result);
-  } catch (err) {
-    console.log('   ⚠️  语音播放失败:', err.message);
-    console.log('   继续测试...');
-  }
+  // 步骤 1：语音入口说明
+  console.log('\n📢 步骤 1：语音链路说明');
+  console.log('   voice.play.test 已废弃（文件播放已移除）');
+  console.log('   请在桌宠窗口中触发正常对话，走 voice.requested -> play-memory 链路');
 
-  // 等待语音播放（假设3秒）
-  console.log('\n⏳ 等待 3 秒（模拟语音播放）...');
+  // 等待语音播放（保留节奏）
+  console.log('\n⏳ 等待 3 秒（保留测试节奏）...');
   await sleep(3000);
 
   // 步骤 2：语音播放结束后，立即尝试设置表情

@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const Ajv = require('ajv');
 const { RuntimeState, RuntimeStateMachine } = require('./stateMachine');
 const { publishChainEvent } = require('../bus/chainDebug');
 
@@ -90,8 +91,46 @@ function shouldHintPersonaTool(input) {
   return keywords.some((kw) => text.includes(kw));
 }
 
+function normalizeBoolean(value, fallback = false) {
+  if (value === true || value === false) return value;
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return Boolean(fallback);
+}
+
+function normalizeAsyncMode(value, fallback = 'serial') {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === 'parallel' || raw === 'serial') return raw;
+  return String(fallback || 'serial');
+}
+
+function normalizePositiveInt(value, fallback = 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return Math.max(1, Number.parseInt(fallback, 10) || 1);
+  return parsed;
+}
+
+function normalizeSideEffectLevel(value, fallback = 'write') {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === 'none' || raw === 'read' || raw === 'write') return raw;
+  return String(fallback || 'write');
+}
+
 class ToolLoopRunner {
-  constructor({ bus, getReasoner, listTools, resolvePersonaContext, resolveSkillsContext, maxStep = 8, toolResultTimeoutMs = 10000 }) {
+  constructor({
+    bus,
+    getReasoner,
+    listTools,
+    resolvePersonaContext,
+    resolveSkillsContext,
+    maxStep = 8,
+    toolResultTimeoutMs = 10000,
+    runtimeStreamingEnabled = false,
+    toolAsyncMode = 'serial',
+    toolEarlyDispatch = false,
+    maxParallelTools = 3
+  }) {
     this.bus = bus;
     this.getReasoner = getReasoner;
     this.listTools = listTools;
@@ -99,11 +138,53 @@ class ToolLoopRunner {
     this.resolveSkillsContext = resolveSkillsContext;
     this.maxStep = maxStep;
     this.toolResultTimeoutMs = toolResultTimeoutMs;
+    this.runtimeStreamingEnabled = normalizeBoolean(runtimeStreamingEnabled, false);
+    this.toolAsyncMode = normalizeAsyncMode(toolAsyncMode, 'serial');
+    this.toolEarlyDispatch = normalizeBoolean(toolEarlyDispatch, false);
+    this.maxParallelTools = normalizePositiveInt(maxParallelTools, 3);
   }
 
   async run({ sessionId, input, inputImages = [], seedMessages = [], runtimeContext = {}, onEvent }) {
     const sm = new RuntimeStateMachine();
     const traceId = uuidv4();
+    const runStartedAtMs = Date.now();
+    let eventSeq = 0;
+    const runMetrics = {
+      run_started_ms: runStartedAtMs,
+      first_token_ms: null,
+      first_tool_stable_ms: null,
+      first_tool_result_ms: null,
+      final_ms: null,
+      out_of_order_events: 0,
+      tool_dedup_hit: 0,
+      tool_parse_error: 0
+    };
+    const runtimeFlags = {
+      streaming_enabled: this.runtimeStreamingEnabled,
+      tool_async_mode: this.toolAsyncMode,
+      tool_early_dispatch: this.toolEarlyDispatch,
+      max_parallel_tools: this.maxParallelTools
+    };
+
+    const markMetricIfUnset = (key) => {
+      if (runMetrics[key] !== null && runMetrics[key] !== undefined) return;
+      runMetrics[key] = Math.max(0, Date.now() - runStartedAtMs);
+    };
+
+    const markMetricAtTimeIfUnset = (key, timestampMs) => {
+      if (runMetrics[key] !== null && runMetrics[key] !== undefined) return;
+      const ts = Number(timestampMs);
+      if (!Number.isFinite(ts)) return;
+      runMetrics[key] = Math.max(0, ts - runStartedAtMs);
+    };
+
+    const finalizeMetrics = () => {
+      if (runMetrics.final_ms === null || runMetrics.final_ms === undefined) {
+        runMetrics.final_ms = Math.max(0, Date.now() - runStartedAtMs);
+      }
+      return { ...runMetrics };
+    };
+
     const priorMessages = Array.isArray(seedMessages)
       ? seedMessages.filter((msg) => (
         msg
@@ -173,11 +254,22 @@ class ToolLoopRunner {
     };
 
     const emit = (event, payload = {}) => {
+      if (event === 'llm.final' && payload?.decision?.type === 'final') {
+        markMetricIfUnset('first_token_ms');
+      }
+      if (event === 'llm.stream.delta') {
+        markMetricIfUnset('first_token_ms');
+      }
+      if (event === 'tool.result') {
+        markMetricIfUnset('first_tool_result_ms');
+      }
+
       const envelope = {
         trace_id: traceId,
         session_id: sessionId,
         task_id: null,
         step_index: ctx.stepIndex,
+        seq: ++eventSeq,
         event,
         source: 'runtime',
         latency_budget_ms: 1200,
@@ -211,14 +303,38 @@ class ToolLoopRunner {
       context_messages: priorMessages.length,
       persona_mode: personaContext?.mode || null,
       skills_selected: skillsContext?.selected?.length || 0,
-      skills_clipped_by: skillsContext?.clippedBy || null
+      skills_clipped_by: skillsContext?.clippedBy || null,
+      runtime_flags: runtimeFlags
     });
 
     try {
       const reasoner = this.getReasoner();
+      const schemaAjv = new Ajv({ allErrors: true, strict: false });
+      const schemaValidatorCache = new Map();
+      const getSchemaValidator = (toolDef) => {
+        const toolName = String(toolDef?.name || '').trim();
+        if (!toolName) return null;
+        if (schemaValidatorCache.has(toolName)) {
+          return schemaValidatorCache.get(toolName);
+        }
+        const schema = toolDef?.input_schema || {
+          type: 'object',
+          properties: {},
+          additionalProperties: true
+        };
+        const validate = schemaAjv.compile(schema);
+        schemaValidatorCache.set(toolName, validate);
+        return validate;
+      };
 
       while (ctx.stepIndex < this.maxStep) {
         ctx.stepIndex += 1;
+        const availableTools = this.listTools();
+        const toolDefByName = new Map(
+          (Array.isArray(availableTools) ? availableTools : [])
+            .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
+            .map((tool) => [tool.name, tool])
+        );
         publishChainEvent(this.bus, 'loop.decide.start', {
           session_id: sessionId,
           trace_id: traceId,
@@ -226,10 +342,195 @@ class ToolLoopRunner {
           messages: ctx.messages.length
         });
 
-        const decision = await reasoner.decide({
-          messages: ctx.messages,
-          tools: this.listTools()
-        });
+        const pendingToolCallPromises = new Map();
+        const pendingToolCallDefs = new Map();
+        const dispatchToolCall = (rawCall, dispatchMode = 'normal') => {
+          const callId = String(rawCall?.call_id || '').trim();
+          const name = String(rawCall?.name || '').trim();
+          if (!callId || !name) {
+            return null;
+          }
+          const normalizedCall = {
+            call_id: callId,
+            name,
+            args: rawCall?.args || {}
+          };
+
+          const existingPromise = pendingToolCallPromises.get(callId);
+          if (existingPromise) {
+            const existingCall = pendingToolCallDefs.get(callId) || {};
+            const argsChanged = JSON.stringify(existingCall.args || {}) !== JSON.stringify(normalizedCall.args || {});
+            const nameChanged = String(existingCall.name || '') !== normalizedCall.name;
+            if (argsChanged || nameChanged) {
+              emit('tool.call.stable_mismatch', {
+                call_id: callId,
+                previous_name: existingCall.name || null,
+                next_name: normalizedCall.name,
+                previous_args: existingCall.args || {},
+                next_args: normalizedCall.args || {},
+                dispatch_mode: dispatchMode
+              });
+            }
+            return existingPromise;
+          }
+
+          const toolCallPayload = {
+            trace_id: traceId,
+            session_id: sessionId,
+            step_index: ctx.stepIndex,
+            call_id: normalizedCall.call_id,
+            workspace_root: runtimeContext.workspace_root || null,
+            permission_level: runtimeContext.permission_level || null,
+            tool: {
+              name: normalizedCall.name,
+              args: normalizedCall.args || {}
+            }
+          };
+
+          emit('tool.call', {
+            call_id: normalizedCall.call_id,
+            name: normalizedCall.name,
+            args: normalizedCall.args || {},
+            dispatch_mode: dispatchMode
+          });
+          if (dispatchMode === 'early') {
+            emit('tool.call.early_dispatched', {
+              call_id: normalizedCall.call_id,
+              name: normalizedCall.name
+            });
+          }
+          publishChainEvent(this.bus, 'loop.tool.requested', {
+            session_id: sessionId,
+            trace_id: traceId,
+            step_index: ctx.stepIndex,
+            call_id: normalizedCall.call_id,
+            tool_name: normalizedCall.name
+          });
+
+          const waitPromise = this.bus.waitFor(
+            'tool.call.result',
+            (payload) => payload.trace_id === traceId && payload.call_id === normalizedCall.call_id,
+            this.toolResultTimeoutMs
+          ).then((toolResult) => ({
+            call: normalizedCall,
+            toolResult,
+            resolved_at_ms: Date.now()
+          }));
+
+          this.bus.publish('tool.call.requested', toolCallPayload);
+          publishChainEvent(this.bus, 'loop.tool.waiting_result', {
+            session_id: sessionId,
+            trace_id: traceId,
+            step_index: ctx.stepIndex,
+            call_id: normalizedCall.call_id,
+            tool_name: normalizedCall.name
+          });
+
+          pendingToolCallDefs.set(callId, normalizedCall);
+          pendingToolCallPromises.set(callId, waitPromise);
+          return waitPromise;
+        };
+
+        let decision = null;
+        const useStreamingDecision = this.runtimeStreamingEnabled && typeof reasoner.decideStream === 'function';
+        if (useStreamingDecision) {
+          const emittedParseErrorKeys = new Set();
+          const emitParseError = (parseError) => {
+            const payload = parseError && typeof parseError === 'object' ? parseError : {};
+            const key = [
+              payload.index ?? '',
+              payload.call_id ?? '',
+              payload.name ?? '',
+              payload.parse_reason ?? '',
+              payload.args_raw ?? ''
+            ].join('|');
+            if (emittedParseErrorKeys.has(key)) return;
+            emittedParseErrorKeys.add(key);
+            runMetrics.tool_parse_error += 1;
+            emit('tool_call.parse_error', payload);
+          };
+
+          emit('llm.stream.start', {
+            mode: 'decision_stream'
+          });
+          decision = await reasoner.decideStream({
+            messages: ctx.messages,
+            tools: availableTools,
+            onDelta: (delta) => {
+              emit('llm.stream.delta', {
+                delta: String(delta || '')
+              });
+            },
+            onToolCallDelta: (delta) => {
+              emit('tool_call.delta', delta || {});
+            },
+            onToolCallStable: (stableCall) => {
+              markMetricIfUnset('first_tool_stable_ms');
+              emit('tool_call.stable', stableCall || {});
+              if (this.toolEarlyDispatch) {
+                const stableToolName = String(stableCall?.name || '').trim();
+                if (!stableToolName) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'missing_call_id_or_name',
+                    call_id: stableCall?.call_id || null,
+                    name: stableCall?.name || null
+                  });
+                  return;
+                }
+                const stableToolDef = toolDefByName.get(stableToolName) || null;
+                if (!stableToolDef) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'tool_not_found',
+                    call_id: stableCall?.call_id || null,
+                    name: stableToolName
+                  });
+                  return;
+                }
+                const validate = getSchemaValidator(stableToolDef);
+                const stableArgs = stableCall?.args && typeof stableCall.args === 'object' && !Array.isArray(stableCall.args)
+                  ? stableCall.args
+                  : {};
+                const argsReady = validate ? validate(stableArgs) : true;
+                if (!argsReady) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'args_not_ready',
+                    call_id: stableCall?.call_id || null,
+                    name: stableToolName,
+                    validation_errors: validate?.errors || []
+                  });
+                  return;
+                }
+                const earlyPromise = dispatchToolCall({
+                  call_id: stableCall?.call_id || '',
+                  name: stableCall?.name || '',
+                  args: stableCall?.args || {}
+                }, 'early');
+                if (!earlyPromise) {
+                  emit('tool.call.early_skipped', {
+                    reason: 'missing_call_id_or_name',
+                    call_id: stableCall?.call_id || null,
+                    name: stableCall?.name || null
+                  });
+                }
+              }
+            },
+            onToolCallParseError: (parseError) => {
+              emitParseError(parseError);
+            }
+          });
+          const parseErrors = Array.isArray(decision?.stream_meta?.parse_errors)
+            ? decision.stream_meta.parse_errors
+            : [];
+          parseErrors.forEach((item) => emitParseError(item));
+          emit('llm.stream.end', {
+            mode: 'decision_stream'
+          });
+        } else {
+          decision = await reasoner.decide({
+            messages: ctx.messages,
+            tools: availableTools
+          });
+        }
         publishChainEvent(this.bus, 'loop.decide.completed', {
           session_id: sessionId,
           trace_id: traceId,
@@ -238,7 +539,11 @@ class ToolLoopRunner {
           tool_calls: Array.isArray(decision?.tools) ? decision.tools.length : (decision?.tool ? 1 : 0)
         });
 
-        emit('llm.final', { decision: formatDecisionEvent(decision) });
+        emit('llm.final', {
+          decision: formatDecisionEvent(decision),
+          streamed: useStreamingDecision,
+          stream_meta: decision?.stream_meta || null
+        });
 
         if (decision.type === 'final') {
           if (decision.assistantMessage) {
@@ -252,8 +557,9 @@ class ToolLoopRunner {
             step_index: ctx.stepIndex,
             state: sm.state
           });
-          emit('done', { output: decision.output, state: sm.state });
-          return { output: decision.output, traceId, state: sm.state };
+          const metrics = finalizeMetrics();
+          emit('done', { output: decision.output, state: sm.state, metrics });
+          return { output: decision.output, traceId, state: sm.state, metrics };
         }
 
         const toolCalls = normalizeToolCalls(decision);
@@ -283,81 +589,92 @@ class ToolLoopRunner {
           ctx.messages.push(decision.assistantMessage);
         }
 
-        for (const call of toolCalls) {
-          const toolCallPayload = {
-            trace_id: traceId,
-            session_id: sessionId,
-            step_index: ctx.stepIndex,
-            call_id: call.call_id,
-            workspace_root: runtimeContext.workspace_root || null,
-            permission_level: runtimeContext.permission_level || null,
-            tool: {
-              name: call.name,
-              args: call.args || {}
+        const toolMetaByName = new Map(
+          (Array.isArray(availableTools) ? availableTools : [])
+            .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
+            .map((tool) => [tool.name, tool])
+        );
+        const canRunParallel = this.toolAsyncMode === 'parallel'
+          && toolCalls.length > 1
+          && toolCalls.every((call) => {
+            const meta = toolMetaByName.get(call.name) || {};
+            const sideEffectLevel = normalizeSideEffectLevel(meta.side_effect_level, 'write');
+            const requiresLock = normalizeBoolean(meta.requires_lock, false);
+            return sideEffectLevel === 'none' && !requiresLock;
+          });
+        const chunkWidth = canRunParallel ? Math.min(this.maxParallelTools, toolCalls.length) : 1;
+        emit('tool.dispatch.mode', {
+          mode: canRunParallel ? 'parallel' : 'serial',
+          total_calls: toolCalls.length,
+          chunk_width: chunkWidth
+        });
+
+        for (let start = 0; start < toolCalls.length; start += chunkWidth) {
+          const chunk = toolCalls.slice(start, start + chunkWidth);
+          const chunkResults = await Promise.all(chunk.map((call) => {
+            const waitPromise = dispatchToolCall(call, 'normal');
+            if (!waitPromise) {
+              throw new Error(`invalid tool call payload: ${call?.call_id || 'unknown'}`);
             }
-          };
+            return waitPromise.then((payload) => ({
+              requestedCall: call,
+              ...payload
+            }));
+          }));
+          const earliestResolvedAtMs = chunkResults.reduce((acc, current) => {
+            const ts = Number(current?.resolved_at_ms);
+            if (!Number.isFinite(ts)) return acc;
+            if (!Number.isFinite(acc)) return ts;
+            return Math.min(acc, ts);
+          }, Number.NaN);
+          markMetricAtTimeIfUnset('first_tool_result_ms', earliestResolvedAtMs);
 
-          emit('tool.call', {
-            call_id: call.call_id,
-            name: call.name,
-            args: call.args || {}
-          });
-          publishChainEvent(this.bus, 'loop.tool.requested', {
-            session_id: sessionId,
-            trace_id: traceId,
-            step_index: ctx.stepIndex,
-            call_id: call.call_id,
-            tool_name: call.name
-          });
+          for (const { requestedCall, toolResult } of chunkResults) {
+            const effectiveCall = requestedCall || {};
+            publishChainEvent(this.bus, 'loop.tool.result_received', {
+              session_id: sessionId,
+              trace_id: traceId,
+              step_index: ctx.stepIndex,
+              call_id: effectiveCall.call_id,
+              tool_name: effectiveCall.name,
+              ok: Boolean(toolResult?.ok),
+              code: toolResult?.code || null
+            });
 
-          this.bus.publish('tool.call.requested', toolCallPayload);
+            if (!toolResult.ok) {
+              sm.transition(RuntimeState.ERROR);
+              emit('tool.error', {
+                call_id: effectiveCall.call_id,
+                error: toolResult.error,
+                name: effectiveCall.name,
+                code: toolResult.code
+              });
+              return { output: `工具执行失败：${toolResult.error}`, traceId, state: sm.state };
+            }
 
-          publishChainEvent(this.bus, 'loop.tool.waiting_result', {
-            session_id: sessionId,
-            trace_id: traceId,
-            step_index: ctx.stepIndex,
-            call_id: call.call_id,
-            tool_name: call.name
-          });
-          const toolResult = await this.bus.waitFor(
-            'tool.call.result',
-            (payload) => payload.trace_id === traceId && payload.call_id === call.call_id,
-            this.toolResultTimeoutMs
-          );
-          publishChainEvent(this.bus, 'loop.tool.result_received', {
-            session_id: sessionId,
-            trace_id: traceId,
-            step_index: ctx.stepIndex,
-            call_id: call.call_id,
-            tool_name: call.name,
-            ok: Boolean(toolResult?.ok),
-            code: toolResult?.code || null
-          });
+            if (toolResult?.dedup_hit) {
+              runMetrics.tool_dedup_hit += 1;
+            }
 
-          if (!toolResult.ok) {
-            sm.transition(RuntimeState.ERROR);
-            emit('tool.error', { call_id: call.call_id, error: toolResult.error, name: call.name, code: toolResult.code });
-            return { output: `工具执行失败：${toolResult.error}`, traceId, state: sm.state };
+            ctx.messages.push({
+              role: 'tool',
+              tool_call_id: effectiveCall.call_id,
+              name: effectiveCall.name,
+              content: String(toolResult.result)
+            });
+
+            ctx.observations.push({
+              call_id: effectiveCall.call_id,
+              name: effectiveCall.name,
+              result: toolResult.result
+            });
+
+            emit('tool.result', {
+              call_id: effectiveCall.call_id,
+              name: effectiveCall.name,
+              result: toolResult.result
+            });
           }
-
-          ctx.messages.push({
-            role: 'tool',
-            tool_call_id: call.call_id,
-            name: call.name,
-            content: String(toolResult.result)
-          });
-
-          ctx.observations.push({
-            call_id: call.call_id,
-            name: call.name,
-            result: toolResult.result
-          });
-
-          emit('tool.result', {
-            call_id: call.call_id,
-            name: call.name,
-            result: toolResult.result
-          });
         }
       }
 
@@ -368,8 +685,9 @@ class ToolLoopRunner {
         trace_id: traceId,
         max_step: this.maxStep
       });
-      emit('done', { output: fallback, state: sm.state });
-      return { output: fallback, traceId, state: sm.state };
+      const metrics = finalizeMetrics();
+      emit('done', { output: fallback, state: sm.state, metrics });
+      return { output: fallback, traceId, state: sm.state, metrics };
     } catch (err) {
       sm.transition(RuntimeState.ERROR);
       publishChainEvent(this.bus, 'loop.error', {
@@ -378,7 +696,8 @@ class ToolLoopRunner {
         error: err?.message || String(err)
       });
       emit('tool.error', { error: err.message || String(err) });
-      return { output: `运行错误：${err.message || String(err)}`, traceId, state: sm.state };
+      const metrics = finalizeMetrics();
+      return { output: `运行错误：${err.message || String(err)}`, traceId, state: sm.state, metrics };
     } finally {
       passthroughUnsubs.forEach((unsub) => unsub());
     }

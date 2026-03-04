@@ -8,6 +8,7 @@ const SERVER_SYNC_INTERVAL_MS = 2000;
 const MAX_UPLOAD_IMAGES = 4;
 const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
 const LIGHTBOX_ANIMATION_MS = 220;
+const STREAM_CHUNK_FLUSH_MS = 120;
 const DEBUG_PREFS_KEY = 'yachiyo_debug_panel_v1';
 const DEBUG_MAX_LINES = 500;
 
@@ -328,12 +329,18 @@ function addMessage(session, role, content, options = {}) {
   return message;
 }
 
-function updateMessage(session, messageId, patch) {
+function updateMessage(session, messageId, patch, options = {}) {
   const msg = session.messages.find((m) => m.id === messageId);
   if (!msg) return;
   Object.assign(msg, patch);
-  session.updatedAt = nowIso();
-  persist();
+  const shouldBumpUpdatedAt = options.bumpUpdatedAt !== false;
+  const shouldPersist = options.persist !== false;
+  if (shouldBumpUpdatedAt) {
+    session.updatedAt = nowIso();
+  }
+  if (shouldPersist) {
+    persist();
+  }
 }
 
 function escapeHtml(text) {
@@ -343,6 +350,165 @@ function escapeHtml(text) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+async function renderMarkdownWithMermaid(text) {
+  if (typeof marked === 'undefined') {
+    return escapeHtml(text);
+  }
+
+  try {
+    // First render LaTeX formulas before markdown
+    let processedText = text;
+    if (typeof katex !== 'undefined') {
+      // Replace display math: $$...$$
+      processedText = processedText.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
+        try {
+          const rendered = katex.renderToString(formula.trim(), {
+            displayMode: true,
+            throwOnError: false
+          });
+          // Wrap in a special marker to prevent markdown processing
+          return `<div class="katex-display-wrapper">${rendered}</div>`;
+        } catch (err) {
+          console.error('KaTeX display math error:', err);
+          return match;
+        }
+      });
+
+      // Replace inline math: $...$
+      processedText = processedText.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+        try {
+          const rendered = katex.renderToString(formula.trim(), {
+            displayMode: false,
+            throwOnError: false
+          });
+          return `<span class="katex-inline-wrapper">${rendered}</span>`;
+        } catch (err) {
+          console.error('KaTeX inline math error:', err);
+          return match;
+        }
+      });
+    }
+
+    // Configure marked renderer to handle mermaid code blocks
+    const renderer = new marked.Renderer();
+    const originalCodeRenderer = renderer.code.bind(renderer);
+
+    renderer.code = function(code, language) {
+      if (language === 'mermaid') {
+        console.log('Detected mermaid code block, language:', language);
+        // Return mermaid diagram placeholder without pre/code wrapper
+        return `<div class="mermaid-diagram" data-mermaid="${escapeHtml(code)}">${escapeHtml(code)}</div>`;
+      }
+      // Use default renderer for other code blocks
+      return originalCodeRenderer(code, language);
+    };
+
+    const html = marked.parse(processedText, {
+      breaks: true,
+      gfm: true,
+      renderer: renderer
+    });
+
+    return html;
+  } catch (err) {
+    console.error('Markdown parse error:', err);
+    return escapeHtml(text);
+  }
+}
+
+function fixMermaidSyntax(code) {
+  // Fix nested brackets in node labels by wrapping them in quotes
+  // This handles cases like: A[text with [nested] brackets] --> B{text}
+
+  const lines = code.split('\n');
+  const fixedLines = lines.map(line => {
+    let result = '';
+    let i = 0;
+
+    while (i < line.length) {
+      // Look for node ID followed by [ or {
+      const match = line.substring(i).match(/^(\w+)([\[\{])/);
+      if (!match) {
+        result += line[i];
+        i++;
+        continue;
+      }
+
+      const nodeId = match[1];
+      const openBracket = match[2];
+      const closeBracket = openBracket === '[' ? ']' : '}';
+
+      // Find the matching closing bracket
+      let depth = 1;
+      let j = i + match[0].length;
+      let text = '';
+      let hasNestedBrackets = false;
+
+      while (j < line.length && depth > 0) {
+        const char = line[j];
+        if (char === openBracket) {
+          depth++;
+          hasNestedBrackets = true;
+        } else if (char === closeBracket) {
+          depth--;
+          if (depth === 0) break;
+        }
+        text += char;
+        j++;
+      }
+
+      // Check if text is already quoted
+      const isQuoted = (text.startsWith('"') && text.endsWith('"')) ||
+                       (text.startsWith("'") && text.endsWith("'"));
+
+      // Add quotes if there are nested brackets and not already quoted
+      if (hasNestedBrackets && !isQuoted) {
+        const escapedText = text.replace(/"/g, '&quot;');
+        result += nodeId + openBracket + '"' + escapedText + '"' + closeBracket;
+      } else {
+        result += nodeId + openBracket + text + closeBracket;
+      }
+
+      i = j + 1;
+    }
+
+    return result;
+  });
+
+  return fixedLines.join('\n');
+}
+
+async function renderMermaidDiagrams(container) {
+  if (typeof window.mermaid === 'undefined') {
+    console.warn('Mermaid library not loaded');
+    return;
+  }
+
+  const diagrams = container.querySelectorAll('.mermaid-diagram');
+  console.log(`Found ${diagrams.length} mermaid diagrams to render`);
+
+  for (const diagram of diagrams) {
+    let code = diagram.getAttribute('data-mermaid');
+    if (!code) continue;
+
+    try {
+      // Fix common mermaid syntax issues with nested brackets
+      code = fixMermaidSyntax(code);
+      console.log('Rendering mermaid diagram:', code.substring(0, 50) + '...');
+      // Generate a valid CSS ID (no dots, starts with letter)
+      const uniqueId = `mermaid-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const { svg } = await window.mermaid.render(uniqueId, code);
+      diagram.innerHTML = svg;
+      diagram.classList.add('mermaid-rendered');
+      console.log('Mermaid diagram rendered successfully');
+    } catch (err) {
+      console.error('Mermaid render error:', err);
+      diagram.innerHTML = `<pre><code>${escapeHtml(code)}</code></pre>`;
+      diagram.classList.add('mermaid-error');
+    }
+  }
 }
 
 function formatBytes(size) {
@@ -666,7 +832,7 @@ async function onImageFilesSelected(fileList) {
   updateComposerState();
 }
 
-function renderMessages() {
+async function renderMessages() {
   const session = getActiveSession();
 
   if (!session || session.messages.length === 0) {
@@ -687,15 +853,18 @@ function renderMessages() {
 
   elements.messageList.innerHTML = '';
 
-  session.messages.forEach((msg) => {
+  for (const msg of session.messages) {
     const wrap = document.createElement('div');
     wrap.className = `message-wrap ${msg.role}`;
+    wrap.dataset.messageId = msg.id;
 
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
     const body = document.createElement('div');
     body.className = 'message-body';
-    body.innerHTML = escapeHtml(msg.content);
+
+    // Render markdown with mermaid support
+    body.innerHTML = await renderMarkdownWithMermaid(msg.content);
     bubble.appendChild(body);
 
     if (Array.isArray(msg.images) && msg.images.length > 0) {
@@ -746,12 +915,228 @@ function renderMessages() {
     wrap.appendChild(bubble);
     wrap.appendChild(meta);
     elements.messageList.appendChild(wrap);
-  });
+  }
+
+  // Render mermaid diagrams after all messages are added
+  await renderMermaidDiagrams(elements.messageList);
 
   // 只在用户本来就在底部时才自动滚底，不强制打断用户滚动
   if (atBottom) {
     elements.messageList.scrollTop = elements.messageList.scrollHeight;
   }
+}
+
+function findRenderedMessageBody(messageId) {
+  if (!messageId) return null;
+  const wrap = elements.messageList.querySelector(`.message-wrap[data-message-id="${messageId}"]`);
+  if (!(wrap instanceof HTMLElement)) return null;
+  const body = wrap.querySelector('.message-body');
+  return body instanceof HTMLElement ? body : null;
+}
+
+function patchRenderedMessageText(messageId, text) {
+  const body = findRenderedMessageBody(messageId);
+  if (!body) return false;
+  body.textContent = String(text || '');
+  elements.messageList.scrollTop = elements.messageList.scrollHeight;
+  return true;
+}
+
+async function patchRenderedMessageMarkdown(messageId, text) {
+  const body = findRenderedMessageBody(messageId);
+  if (!body) return false;
+  body.classList.remove('stream-reveal');
+  delete body.dataset.streamReveal;
+  body.innerHTML = await renderMarkdownWithMermaid(String(text || ''));
+  await renderMermaidDiagrams(body);
+  elements.messageList.scrollTop = elements.messageList.scrollHeight;
+  return true;
+}
+
+function ensureStreamingBody(messageId) {
+  const body = findRenderedMessageBody(messageId);
+  if (!body) return null;
+  if (body.dataset.streamReveal !== '1') {
+    body.textContent = '';
+    body.dataset.streamReveal = '1';
+    body.classList.add('stream-reveal');
+  }
+  return body;
+}
+
+function appendRenderedStreamingChunk(messageId, chunkText) {
+  const body = ensureStreamingBody(messageId);
+  if (!body) return false;
+  const span = document.createElement('span');
+  span.className = 'stream-reveal-chunk';
+  span.textContent = String(chunkText || '');
+  body.appendChild(span);
+  elements.messageList.scrollTop = elements.messageList.scrollHeight;
+  return true;
+}
+
+function flushPendingStreamChunk(pendingRef = state.pending) {
+  if (!pendingRef) return;
+  if (pendingRef.flushTimer) {
+    clearTimeout(pendingRef.flushTimer);
+    pendingRef.flushTimer = null;
+  }
+
+  const chunk = String(pendingRef.stagedDelta || '');
+  if (!chunk) return;
+  pendingRef.stagedDelta = '';
+
+  const ok = appendRenderedStreamingChunk(pendingRef.assistantMsgId, chunk);
+  if (!ok) {
+    const patched = patchRenderedMessageText(pendingRef.assistantMsgId, pendingRef.streamOutput || '');
+    if (!patched) {
+      render();
+      setTimeout(() => {
+        patchRenderedMessageText(pendingRef.assistantMsgId, pendingRef.streamOutput || '');
+      }, 0);
+    }
+  }
+
+  const c = Number(pendingRef.deltaCount || 0);
+  if (c === 1 || c % 20 === 0) {
+    emitClientDebug('chain.webui.stream.patched', 'webui applied stream patch', {
+      session_id: pendingRef.sessionId || null,
+      delta_count: c,
+      output_chars: String(pendingRef.streamOutput || '').length,
+      stream_source: pendingRef.streamSource || null
+    });
+  }
+}
+
+function appendStreamingDelta({ sessionId, delta, source = 'delta', seq = null }) {
+  if (!state.pending) return;
+  if (sessionId && sessionId !== state.pending.sessionId) return;
+
+  const textDelta = String(delta || '');
+  if (!textDelta) return;
+
+  const selectedSource = state.pending.streamSource || null;
+  if (selectedSource && selectedSource !== source) return;
+  if (!selectedSource) {
+    state.pending.streamSource = source;
+  }
+
+  if (source === 'runtime.event') {
+    const numericSeq = Number(seq);
+    if (Number.isFinite(numericSeq)) {
+      const lastSeq = Number(state.pending.lastRuntimeDeltaSeq || 0);
+      if (numericSeq <= lastSeq) return;
+      state.pending.lastRuntimeDeltaSeq = numericSeq;
+    }
+  }
+
+  const pendingSession = resolvePendingSession();
+  if (!pendingSession) return;
+
+  state.pending.streamOutput = `${state.pending.streamOutput || ''}${textDelta}`;
+  state.pending.deltaCount = Number(state.pending.deltaCount || 0) + 1;
+  state.pending.stagedDelta = `${state.pending.stagedDelta || ''}${textDelta}`;
+  updateMessage(
+    pendingSession,
+    state.pending.assistantMsgId,
+    { content: state.pending.streamOutput },
+    { persist: false, bumpUpdatedAt: false }
+  );
+
+  if (!state.pending.flushTimer) {
+    const flushDelay = state.pending.deltaCount === 1 ? 20 : STREAM_CHUNK_FLUSH_MS;
+    state.pending.flushTimer = setTimeout(() => {
+      if (!state.pending) return;
+      state.pending.flushTimer = null;
+      flushPendingStreamChunk(state.pending);
+    }, flushDelay);
+  }
+
+  const count = Number(state.pending.deltaCount || 0);
+  if (count === 1 || count % 20 === 0) {
+    emitClientDebug('chain.webui.stream.appended', 'webui appended streaming delta', {
+      session_id: state.pending.sessionId,
+      delta_count: count,
+      delta_chars: textDelta.length,
+      output_chars: String(state.pending.streamOutput || '').length,
+      stream_source: state.pending.streamSource
+    });
+  }
+}
+
+function maybeHandleStreamEventPayload(data) {
+  const eventName = data?.event || data?.name || null;
+  const payload = data?.payload || data?.data || {};
+  const sessionId = data?.session_id || payload?.session_id || null;
+  if (eventName !== 'llm.stream.delta') return false;
+  appendStreamingDelta({
+    sessionId: sessionId || state.pending?.sessionId || null,
+    delta: payload?.delta || '',
+    source: 'runtime.event',
+    seq: data?.seq
+  });
+  setStatus('Streaming...');
+  return true;
+}
+
+function maybeHandleWsStreamFrame(msg) {
+  if (!state.pending) return false;
+
+  if (msg.type === 'delta') {
+    appendStreamingDelta({
+      sessionId: msg.session_id || state.pending.sessionId,
+      delta: msg.delta || '',
+      source: 'delta'
+    });
+    setStatus('Streaming...');
+    emitClientDebug('chain.webui.ws.delta_received', 'webui received message.delta frame', {
+      session_id: msg.session_id || state.pending.sessionId,
+      delta_chars: String(msg.delta || '').length
+    });
+    return true;
+  }
+
+  if (msg.type === 'event') {
+    if (msg.data?.session_id && msg.data.session_id !== state.pending.sessionId) return false;
+    const handled = maybeHandleStreamEventPayload(msg.data || {});
+    if (handled) {
+      emitClientDebug('chain.webui.ws.stream_event_received', 'webui received runtime stream event', {
+        session_id: msg.data?.session_id || state.pending.sessionId,
+        seq: msg.data?.seq ?? null
+      });
+      return true;
+    }
+  }
+
+  if (msg?.method === 'runtime.event' && msg?.params) {
+    const paramsSessionId = msg.params?.session_id || null;
+    if (paramsSessionId && paramsSessionId !== state.pending.sessionId) return false;
+    const handled = maybeHandleStreamEventPayload(msg.params);
+    if (handled) {
+      emitClientDebug('chain.webui.ws.stream_event_received', 'webui received rpc runtime stream event', {
+        session_id: paramsSessionId || state.pending.sessionId,
+        seq: msg.params?.seq ?? null
+      });
+      return true;
+    }
+  }
+
+  if (msg?.method === 'message.delta' && msg?.params) {
+    const params = msg.params || {};
+    appendStreamingDelta({
+      sessionId: params.session_id || state.pending.sessionId,
+      delta: params.delta || '',
+      source: 'delta'
+    });
+    setStatus('Streaming...');
+    emitClientDebug('chain.webui.ws.delta_received', 'webui received rpc message.delta frame', {
+      session_id: params.session_id || state.pending.sessionId,
+      delta_chars: String(params.delta || '').length
+    });
+    return true;
+  }
+
+  return false;
 }
 
 function renderHeader() {
@@ -763,7 +1148,10 @@ function renderHeader() {
 function render() {
   renderSessions();
   renderHeader();
-  renderMessages();
+  // Call async renderMessages without blocking
+  renderMessages().catch(err => {
+    console.error('Error rendering messages:', err);
+  });
 }
 
 function resolvePendingSession() {
@@ -772,15 +1160,33 @@ function resolvePendingSession() {
 }
 
 function finishPendingResponse({ content, statusText }) {
+  const pendingRef = state.pending;
+  if (!pendingRef) return;
+
   const pendingSession = resolvePendingSession();
+  const assistantMsgId = pendingRef.assistantMsgId || null;
+  const deltaCount = Number(pendingRef.deltaCount || 0);
+  const streamSource = pendingRef.streamSource || null;
+  flushPendingStreamChunk(pendingRef);
   if (pendingSession) {
-    updateMessage(pendingSession, state.pending.assistantMsgId, { content: String(content || '') });
+    updateMessage(pendingSession, pendingRef.assistantMsgId, { content: String(content || '') });
   }
 
   state.pending = null;
   setStatus(statusText);
   updateComposerState();
-  render();
+  renderSessions();
+  renderHeader();
+  if (!patchRenderedMessageText(assistantMsgId, String(content || ''))) {
+    render();
+    return;
+  }
+  void patchRenderedMessageMarkdown(assistantMsgId, String(content || ''));
+  emitClientDebug('chain.webui.stream.finalized', 'webui finalized stream output', {
+    delta_count: deltaCount,
+    stream_source: streamSource,
+    output_chars: String(content || '').length
+  });
 }
 
 function connectWs() {
@@ -830,6 +1236,10 @@ function connectWs() {
     }
 
     if (!state.pending) return;
+
+    if (maybeHandleWsStreamFrame(msg)) {
+      return;
+    }
 
     if (msg.type === 'event') {
       emitClientDebug('chain.webui.ws.event', 'webui received runtime event', {
@@ -907,7 +1317,13 @@ function sendMessage() {
   state.pending = {
     sessionId: session.id,
     userMsgId: userMsg.id,
-    assistantMsgId: assistantMsg.id
+    assistantMsgId: assistantMsg.id,
+    streamOutput: '',
+    stagedDelta: '',
+    flushTimer: null,
+    streamSource: null,
+    lastRuntimeDeltaSeq: 0,
+    deltaCount: 0
   };
 
   elements.chatInput.value = '';
@@ -983,6 +1399,9 @@ async function syncSessionDetailFromServer(sessionId) {
 }
 
 async function syncSessionsFromServer() {
+  if (state.pending) {
+    return;
+  }
   const payload = await fetchJson('/api/sessions?limit=80');
   if (!payload?.ok || !payload?.data || !Array.isArray(payload.data.items)) {
     return;

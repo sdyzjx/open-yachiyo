@@ -12,7 +12,6 @@ const DEFAULT_RENDERER_TIMEOUT_MS = 3000;
 const RPC_METHODS_V1 = Object.freeze([
   'state.get',
   'debug.mouthOverride.set',
-  'debug.lipsyncTuning.set',
   'param.set',
   'model.param.set',
   'model.param.batchSet',
@@ -24,10 +23,8 @@ const RPC_METHODS_V1 = Object.freeze([
   'chat.panel.hide',
   'chat.panel.append',
   'chat.panel.clear',
-  'voice.play',
   'tool.list',
-  'tool.invoke',
-  'voice.play.test'
+  'tool.invoke'
 ]);
 
 module.exports = {

@@ -1,21 +1,81 @@
 {
-  // desktop-live2d config layers:
-  // 1. Code defaults live in apps/desktop-live2d/shared/defaultUiConfig.js
-  // 2. User overrides live in $YACHIYO_HOME/config/desktop-live2d.json
-  // 3. Runtime window memory lives in $YACHIYO_HOME/data/desktop-live2d/window-state.json
-  // This template is only used to create the user override file on first run.
-  // Override only values that should differ from code defaults.
   "window": {
-    // Slightly larger default desktop avatar window.
     "width": 380,
     "height": 600,
     "minWidth": 240,
     "minHeight": 360,
+    "compactWhenChatHidden": false,
     "compactWidth": 320,
-    "compactHeight": 600
+    "compactHeight": 600,
+    "placement": {
+      "anchor": "bottom-right",
+      "marginRight": 18,
+      "marginBottom": 18,
+      "marginLeft": 18,
+      "marginTop": 18
+    }
+  },
+  "render": {
+    "resolutionScale": 1,
+    "maxDevicePixelRatio": 2,
+    "antialias": false
+  },
+  "layout": {
+    "targetWidthRatio": 0.68,
+    "targetHeightRatio": 0.8,
+    "horizontalAlign": "right",
+    "rightOffsetRatio": 0.97,
+    "bottomOffsetRatio": 0.97,
+    "marginX": 22,
+    "marginY": 12,
+    "pivotXRatio": 0.72,
+    "pivotYRatio": 0.97,
+    "scaleMultiplier": 0.9,
+    "minScale": 0.04,
+    "maxScale": 2,
+    "lockScaleOnResize": true,
+    "lockPositionOnResize": true
+  },
+  "chat": {
+    "panel": {
+      "enabled": true,
+      "defaultVisible": false,
+      "width": 320,
+      "height": 220,
+      "maxMessages": 200,
+      "inputEnabled": true
+    },
+    "bubble": {
+      "mirrorToPanel": false,
+      "width": 560,
+      "height": 236,
+      "stream": {
+        "lineDurationMs": 2000,
+        "launchIntervalMs": 300
+      }
+    }
+  },
+  "actionQueue": {
+    "maxQueueSize": 120,
+    "overflowPolicy": "drop_oldest",
+    "idleFallbackEnabled": true,
+    "idleAction": {
+      "type": "motion",
+      "name": "Idle",
+      "args": {
+        "group": "Idle",
+        "index": 0
+      }
+    }
   },
   "voice": {
-    "path": "electron_native"
+    "path": "electron_native",
+    "transport": "non_streaming",
+    "fallbackOnRealtimeError": true,
+    "realtime": {
+      "prebufferMs": 160,
+      "idleTimeoutMs": 8000
+    }
   },
   "debug": {
     // Mouth Tuner 调试面板。visible 控制是否显示按钮/面板，

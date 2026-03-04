@@ -36,6 +36,11 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.actionQueue.idleAction.args.group, 'Idle');
   assert.equal(config.uiConfig.debug.mouthTuner.visible, false);
   assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
+  assert.equal(config.uiConfig.voice.path, 'electron_native');
+  assert.equal(config.uiConfig.voice.transport, 'non_streaming');
+  assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, true);
+  assert.equal(config.uiConfig.voice.realtime.prebufferMs, 160);
+  assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 8000);
 });
 
 test('resolveDesktopLive2dConfig respects env overrides', () => {
@@ -104,6 +109,15 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
           type: 'expression',
           name: 'smile'
         }
+      },
+      voice: {
+        path: 'runtime_legacy',
+        transport: 'realtime',
+        fallback_on_realtime_error: false,
+        realtime: {
+          prebuffer_ms: 240,
+          idle_timeout_ms: 12000
+        }
       }
     }),
     'utf8'
@@ -131,6 +145,11 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
   assert.equal(config.uiConfig.actionQueue.idleFallbackEnabled, false);
   assert.equal(config.uiConfig.actionQueue.idleAction.type, 'expression');
   assert.equal(config.uiConfig.actionQueue.idleAction.name, 'smile');
+  assert.equal(config.uiConfig.voice.path, 'runtime_legacy');
+  assert.equal(config.uiConfig.voice.transport, 'realtime');
+  assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, false);
+  assert.equal(config.uiConfig.voice.realtime.prebufferMs, 240);
+  assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 12000);
 });
 
 test('resolveDesktopLive2dConfig accepts comments in desktop-live2d.json', () => {

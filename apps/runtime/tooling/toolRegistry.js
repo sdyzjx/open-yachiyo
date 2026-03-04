@@ -33,6 +33,8 @@ class ToolRegistry {
         type: def.type || 'local',
         description: def.description || '',
         input_schema: def.input_schema,
+        side_effect_level: def.side_effect_level || null,
+        requires_lock: Boolean(def.requires_lock),
         run,
         adapter: def.adapter
       });
@@ -48,7 +50,9 @@ class ToolRegistry {
       name: tool.name,
       type: tool.type,
       description: tool.description,
-      input_schema: tool.input_schema
+      input_schema: tool.input_schema,
+      side_effect_level: tool.side_effect_level || null,
+      requires_lock: Boolean(tool.requires_lock)
     }));
   }
 }
