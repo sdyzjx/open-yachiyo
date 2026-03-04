@@ -115,6 +115,28 @@ function buildSessionImagePublicUrl(sessionId, fileName) {
   return `/api/session-images/${encodeURIComponent(sessionId)}/${encodeURIComponent(fileName)}`;
 }
 
+function resolveLegacySessionImageDir(sessionId) {
+  const encodedSessionId = encodeURIComponent(String(sessionId || ''));
+  return path.resolve(path.join(sessionImageStoreDir, encodedSessionId));
+}
+
+function resolveWorkspaceSessionImageDir(workspaceRoot) {
+  const normalizedRoot = String(workspaceRoot || '').trim();
+  if (!normalizedRoot) {
+    return '';
+  }
+  return path.resolve(path.join(path.resolve(normalizedRoot), '.yachiyo', 'session-images'));
+}
+
+function resolveSessionImagePath(baseDir, fileName) {
+  const absoluteBaseDir = path.resolve(String(baseDir || ''));
+  const absolutePath = path.resolve(path.join(absoluteBaseDir, String(fileName || '')));
+  if (absolutePath !== absoluteBaseDir && !absolutePath.startsWith(`${absoluteBaseDir}${path.sep}`)) {
+    return null;
+  }
+  return absolutePath;
+}
+
 function decodeImageDataUrl(dataUrl) {
   const commaIndex = dataUrl.indexOf(',');
   const base64Payload = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1).replace(/\s+/g, '') : '';
@@ -142,11 +164,12 @@ function parsePositiveIntEnv(name, fallback = 1) {
   return value;
 }
 
-async function persistSessionInputImages(sessionId, inputImages = []) {
+async function persistSessionInputImages(sessionId, inputImages = [], workspaceRoot = '') {
   if (!Array.isArray(inputImages) || inputImages.length === 0) return [];
 
-  const encodedSessionId = encodeURIComponent(String(sessionId));
-  const sessionDir = path.join(sessionImageStoreDir, encodedSessionId);
+  const workspaceImageDir = resolveWorkspaceSessionImageDir(workspaceRoot);
+  const legacySessionDir = resolveLegacySessionImageDir(sessionId);
+  const sessionDir = workspaceImageDir || legacySessionDir;
   await fs.mkdir(sessionDir, { recursive: true });
 
   const persisted = [];
@@ -196,26 +219,42 @@ const worker = new RuntimeRpcWorker({ queue, runner, bus });
 worker.start();
 
 app.get('/api/session-images/:sessionId/:fileName', async (req, res) => {
-  const safeSessionId = encodeURIComponent(String(req.params.sessionId || ''));
+  const rawSessionId = String(req.params.sessionId || '');
   const safeFileName = String(req.params.fileName || '');
   if (!safeFileName || safeFileName.includes('/') || safeFileName.includes('\\')) {
     res.status(400).json({ ok: false, error: 'invalid file name' });
     return;
   }
 
-  const sessionDir = path.resolve(path.join(sessionImageStoreDir, safeSessionId));
-  const absolutePath = path.resolve(path.join(sessionDir, safeFileName));
-  if (!absolutePath.startsWith(`${sessionDir}${path.sep}`)) {
+  const sessionSettings = await sessionStore.getSessionSettings(rawSessionId);
+  const workspaceRoot = normalizeWorkspaceSettings(sessionSettings?.workspace).root_dir;
+  const workspaceImageDir = resolveWorkspaceSessionImageDir(workspaceRoot);
+  const legacySessionDir = resolveLegacySessionImageDir(rawSessionId);
+  const workspaceImagePath = workspaceImageDir ? resolveSessionImagePath(workspaceImageDir, safeFileName) : null;
+  const legacyImagePath = resolveSessionImagePath(legacySessionDir, safeFileName);
+
+  if ((workspaceImageDir && !workspaceImagePath) || !legacyImagePath) {
     res.status(400).json({ ok: false, error: 'invalid image path' });
     return;
   }
 
-  try {
-    await fs.access(absolutePath);
-    res.sendFile(absolutePath);
-  } catch {
-    res.status(404).json({ ok: false, error: 'image not found' });
+  const candidates = [];
+  if (workspaceImagePath) {
+    candidates.push(workspaceImagePath);
   }
+  candidates.push(legacyImagePath);
+
+  for (const candidatePath of candidates) {
+    try {
+      await fs.access(candidatePath);
+      res.sendFile(candidatePath);
+      return;
+    } catch {
+      // check next candidate path
+    }
+  }
+
+  res.status(404).json({ ok: false, error: 'image not found' });
 });
 
 app.get('/api/git/branch', (_, res) => {
@@ -1027,7 +1066,11 @@ async function enqueueRpc(ws, rpcPayload, mode) {
       await sessionStore.createSessionIfNotExists({ sessionId, title: 'New chat' });
       let persistedInputImages = [];
       try {
-        persistedInputImages = await persistSessionInputImages(sessionId, inputImages);
+        persistedInputImages = await persistSessionInputImages(
+          sessionId,
+          inputImages,
+          runtimeContext?.workspace_root || ''
+        );
       } catch {
         persistedInputImages = inputImages.map((image) => ({
           client_id: image.client_id || '',

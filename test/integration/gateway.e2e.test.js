@@ -328,6 +328,8 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
   const sessionStoreDir = path.join(tmpDir, 'session-store');
   const longTermMemoryDir = path.join(tmpDir, 'long-term-memory');
   const personaProfilePath = path.join(tmpDir, 'persona', 'profile.yaml');
+  const sessionWorkspacesDir = path.join(tmpDir, 'session-workspaces');
+  const legacySessionImageStoreDir = path.join(tmpDir, 'legacy-session-images');
   fs.writeFileSync(providerConfigPath, [
     'active_provider: mock',
     'providers:',
@@ -349,7 +351,11 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
       providerConfigPath,
       sessionStoreDir,
       longTermMemoryDir,
-      personaProfilePath
+      personaProfilePath,
+      extraEnv: {
+        SESSION_WORKSPACES_DIR: sessionWorkspacesDir,
+        SESSION_IMAGE_STORE_DIR: legacySessionImageStoreDir
+      }
     });
 
     const health = await fetch(`http://127.0.0.1:${gatewayPort}/health`).then((r) => r.json());
@@ -595,6 +601,14 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     const mmImageResp = await fetch(`http://127.0.0.1:${gatewayPort}${mmInputImages[0].url}`);
     assert.equal(mmImageResp.status, 200);
     assert.match(mmImageResp.headers.get('content-type') || '', /^image\/png/);
+    const workspaceImagePath = path.join(
+      sessionWorkspacesDir,
+      encodeURIComponent('mm-s1'),
+      '.yachiyo',
+      'session-images',
+      'tiny-image-1.png'
+    );
+    assert.equal(fs.existsSync(workspaceImagePath), true);
 
     const saveMemory = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
       type: 'run',
@@ -695,6 +709,83 @@ test('gateway rejects oversized input_images by configured MAX_INPUT_IMAGE_BYTES
     assert.ok(rpc.result.error, JSON.stringify(rpc.result));
     assert.equal(rpc.result.error.code, -32602);
     assert.match(rpc.result.error.message, /max bytes/i);
+  } catch (err) {
+    const logs = gateway?.getLogs?.() || '';
+    err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
+    throw err;
+  } finally {
+    await stopProcess(gateway?.child);
+    llm.server.close();
+  }
+});
+
+test('gateway serves legacy session image when workspace path misses file', async () => {
+  const llmPort = await getFreePort();
+  const gatewayPort = await getFreePort();
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-e2e-legacy-image-'));
+  const providerConfigPath = path.join(tmpDir, 'providers.yaml');
+  const sessionStoreDir = path.join(tmpDir, 'session-store');
+  const longTermMemoryDir = path.join(tmpDir, 'long-term-memory');
+  const sessionWorkspacesDir = path.join(tmpDir, 'session-workspaces');
+  const sessionImageStoreDir = path.join(tmpDir, 'legacy-session-images');
+  fs.writeFileSync(providerConfigPath, [
+    'active_provider: mock',
+    'providers:',
+    '  mock:',
+    '    type: openai_compatible',
+    '    display_name: Mock',
+    `    base_url: http://127.0.0.1:${llmPort}`,
+    '    model: mock-model',
+    '    api_key: mock-key',
+    '    timeout_ms: 2000'
+  ].join('\n'));
+
+  const llm = await startMockLlmServer(llmPort);
+  let gateway;
+
+  try {
+    gateway = await startGateway({
+      port: gatewayPort,
+      providerConfigPath,
+      sessionStoreDir,
+      longTermMemoryDir,
+      extraEnv: {
+        SESSION_WORKSPACES_DIR: sessionWorkspacesDir,
+        SESSION_IMAGE_STORE_DIR: sessionImageStoreDir
+      }
+    });
+
+    const sessionId = 'legacy-fallback-s1';
+    const firstRun = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
+      type: 'run',
+      session_id: sessionId,
+      input: 'bootstrap legacy fallback session'
+    });
+    assert.match(firstRun.final.output, /final:/i);
+
+    const legacyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAoMBgU8Vf4QAAAAASUVORK5CYII=',
+      'base64'
+    );
+    const legacySessionDir = path.join(sessionImageStoreDir, encodeURIComponent(sessionId));
+    fs.mkdirSync(legacySessionDir, { recursive: true });
+    fs.writeFileSync(path.join(legacySessionDir, 'legacy-only.png'), legacyPng);
+
+    const workspaceImagePath = path.join(
+      sessionWorkspacesDir,
+      encodeURIComponent(sessionId),
+      '.yachiyo',
+      'session-images',
+      'legacy-only.png'
+    );
+    assert.equal(fs.existsSync(workspaceImagePath), false);
+
+    const imageResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/session-images/${encodeURIComponent(sessionId)}/legacy-only.png`);
+    assert.equal(imageResp.status, 200);
+    assert.match(imageResp.headers.get('content-type') || '', /^image\/png/);
+    const content = Buffer.from(await imageResp.arrayBuffer());
+    assert.equal(content.equals(legacyPng), true);
   } catch (err) {
     const logs = gateway?.getLogs?.() || '';
     err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
