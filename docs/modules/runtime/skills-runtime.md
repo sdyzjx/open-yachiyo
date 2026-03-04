@@ -89,6 +89,7 @@ Explicit hint sources:
 Notes:
 - explicit skills bypass cooldown gating for this turn
 - danger-risk skills are still blocked by policy
+- when user asks for available skills (e.g. `你有什么skills` / `what skills`), runtime enters discovery mode and injects loaded skills directly (bypassing score threshold)
 
 ## 3.5 `skillPromptBudgeter.js`
 

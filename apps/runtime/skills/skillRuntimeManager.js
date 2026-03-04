@@ -43,6 +43,12 @@ function extractExplicitSkillsFromInput(input, skills) {
   return Array.from(explicit);
 }
 
+function isSkillDiscoveryQuery(input) {
+  const text = String(input || '').trim().toLowerCase();
+  if (!text) return false;
+  return /(?:\bskills?\b|available\s+skills?|你有什么技能|有哪些技能|有什么技能|你会什么|能力列表|可用技能)/i.test(text);
+}
+
 class SkillRuntimeManager {
   constructor({ workspaceDir, configStore, selector, snapshotStore, telemetry } = {}) {
     this.workspaceDir = workspaceDir || process.cwd();
@@ -87,6 +93,7 @@ class SkillRuntimeManager {
     const loaded = loadSkills({ workspaceDir: this.workspaceDir, config });
     const { accepted, dropped } = filterEligibleSkills({ skills: loaded, config });
     const explicitSkills = extractExplicitSkillsFromInput(input, accepted);
+    const discoveryMode = isSkillDiscoveryQuery(input);
     const selectedResult = this.selector.select({
       skills: accepted,
       input,
@@ -98,12 +105,15 @@ class SkillRuntimeManager {
       }
     });
 
-    const promptResult = clipSkillsForPrompt(selectedResult.selected, config.limits || {});
+    const promptResult = clipSkillsForPrompt(
+      discoveryMode ? accepted : selectedResult.selected,
+      config.limits || {}
+    );
 
     const context = {
       prompt: promptResult.prompt,
-      selected: selectedResult.selected.map((s) => s.name),
-      dropped: [...dropped, ...selectedResult.dropped],
+      selected: promptResult.selected.map((s) => s.name),
+      dropped: discoveryMode ? dropped : [...dropped, ...selectedResult.dropped],
       clippedBy: promptResult.clippedBy,
       input
     };
