@@ -91,6 +91,16 @@ function shouldHintPersonaTool(input) {
   return keywords.some((kw) => text.includes(kw));
 }
 
+function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
+  if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
+  return [
+    'Voice auto-reply mode is enabled for this turn.',
+    'Before long text response, first call voice.tts_aliyun_vc to produce a short spoken message.',
+    'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
+    'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
+  ].join(' ');
+}
+
 function normalizeBoolean(value, fallback = false) {
   if (value === true || value === false) return value;
   const raw = String(value || '').trim().toLowerCase();
@@ -224,6 +234,7 @@ class ToolLoopRunner {
     const personaToolHint = shouldHintPersonaTool(input)
       ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.'
       : null;
+    const voiceAutoReplyPrompt = buildVoiceAutoReplyPrompt(runtimeContext);
 
     const ctx = {
       sessionId,
@@ -248,6 +259,7 @@ class ToolLoopRunner {
         ...(personaPrompt ? [{ role: 'system', content: personaPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
+        ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...priorMessages,
         currentUserMessage
       ]

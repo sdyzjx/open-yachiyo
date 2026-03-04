@@ -1,6 +1,7 @@
 const SESSION_PERMISSION_LEVELS = Object.freeze(['low', 'medium', 'high']);
 const DEFAULT_SESSION_PERMISSION_LEVEL = 'medium';
 const DEFAULT_SESSION_WORKSPACE_MODE = 'session';
+const DEFAULT_VOICE_AUTO_REPLY_ENABLED = false;
 
 function normalizeWorkspaceSettings(workspace = {}) {
   const rootDir = typeof workspace.root_dir === 'string' && workspace.root_dir.trim()
@@ -21,17 +22,24 @@ function normalizeSessionPermissionLevel(value, { fallback = DEFAULT_SESSION_PER
   return fallback;
 }
 
+function normalizeVoiceAutoReplyEnabled(value, { fallback = DEFAULT_VOICE_AUTO_REPLY_ENABLED } = {}) {
+  if (value === true || value === false) return value;
+  return Boolean(fallback);
+}
+
 function buildDefaultSessionSettings() {
   return {
     permission_level: DEFAULT_SESSION_PERMISSION_LEVEL,
-    workspace: normalizeWorkspaceSettings()
+    workspace: normalizeWorkspaceSettings(),
+    voice_auto_reply_enabled: DEFAULT_VOICE_AUTO_REPLY_ENABLED
   };
 }
 
 function normalizeSessionSettings(settings = {}) {
   return {
     permission_level: normalizeSessionPermissionLevel(settings.permission_level),
-    workspace: normalizeWorkspaceSettings(settings.workspace)
+    workspace: normalizeWorkspaceSettings(settings.workspace),
+    voice_auto_reply_enabled: normalizeVoiceAutoReplyEnabled(settings.voice_auto_reply_enabled)
   };
 }
 
@@ -52,6 +60,13 @@ function mergeSessionSettings(currentSettings = {}, patch = {}) {
     });
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'voice_auto_reply_enabled')) {
+    next.voice_auto_reply_enabled = normalizeVoiceAutoReplyEnabled(
+      patch.voice_auto_reply_enabled,
+      { fallback: current.voice_auto_reply_enabled }
+    );
+  }
+
   return next;
 }
 
@@ -59,8 +74,10 @@ module.exports = {
   SESSION_PERMISSION_LEVELS,
   DEFAULT_SESSION_PERMISSION_LEVEL,
   DEFAULT_SESSION_WORKSPACE_MODE,
+  DEFAULT_VOICE_AUTO_REPLY_ENABLED,
   isSessionPermissionLevel,
   normalizeSessionPermissionLevel,
+  normalizeVoiceAutoReplyEnabled,
   normalizeWorkspaceSettings,
   buildDefaultSessionSettings,
   normalizeSessionSettings,

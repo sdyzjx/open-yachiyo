@@ -45,7 +45,8 @@ test('workspace and session settings normalization keeps stable shape', () => {
     workspace: {
       mode: 'session',
       root_dir: null
-    }
+    },
+    voice_auto_reply_enabled: false
   });
 
   assert.deepEqual(normalizeSessionSettings({ permission_level: 'high' }), {
@@ -53,7 +54,8 @@ test('workspace and session settings normalization keeps stable shape', () => {
     workspace: {
       mode: 'session',
       root_dir: null
-    }
+    },
+    voice_auto_reply_enabled: false
   });
 });
 
@@ -64,13 +66,15 @@ test('mergeSessionSettings patches only supported keys and preserves normalized 
       workspace: {
         mode: 'session',
         root_dir: '/tmp/workspace-a'
-      }
+      },
+      voice_auto_reply_enabled: false
     },
     {
       permission_level: 'high',
       workspace: {
         root_dir: ' /tmp/workspace-b '
       },
+      voice_auto_reply_enabled: true,
       ignored_key: 'ignored'
     }
   );
@@ -80,9 +84,11 @@ test('mergeSessionSettings patches only supported keys and preserves normalized 
     workspace: {
       mode: 'session',
       root_dir: '/tmp/workspace-b'
-    }
+    },
+    voice_auto_reply_enabled: true
   });
 
   const invalidPatch = mergeSessionSettings(merged, { permission_level: 'invalid' });
   assert.equal(invalidPatch.permission_level, 'high');
+  assert.equal(invalidPatch.voice_auto_reply_enabled, true);
 });

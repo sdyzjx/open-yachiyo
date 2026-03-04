@@ -469,6 +469,22 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     assert.equal(patchedSettings.ok, true);
     assert.equal(patchedSettings.data.permission_level, 'low');
 
+    const patchedVoiceAutoReplySettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          voice_auto_reply_enabled: true
+        }
+      })
+    }).then((r) => r.json());
+    assert.equal(patchedVoiceAutoReplySettings.ok, true);
+    assert.equal(patchedVoiceAutoReplySettings.data.voice_auto_reply_enabled, true);
+
+    const reloadedSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`).then((r) => r.json());
+    assert.equal(reloadedSettings.ok, true);
+    assert.equal(reloadedSettings.data.voice_auto_reply_enabled, true);
+
     const invalidPermissionSettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -494,6 +510,19 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     assert.equal(invalidWorkspaceSettingsResp.status, 400);
     const invalidWorkspaceSettings = await invalidWorkspaceSettingsResp.json();
     assert.equal(invalidWorkspaceSettings.ok, false);
+
+    const invalidVoiceAutoReplySettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          voice_auto_reply_enabled: 'true'
+        }
+      })
+    });
+    assert.equal(invalidVoiceAutoReplySettingsResp.status, 400);
+    const invalidVoiceAutoReplySettings = await invalidVoiceAutoReplySettingsResp.json();
+    assert.equal(invalidVoiceAutoReplySettings.ok, false);
 
     const legacyEventsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/events`).then((r) => r.json());
     assert.equal(legacyEventsResp.ok, true);

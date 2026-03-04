@@ -1012,6 +1012,80 @@ test('ToolLoopRunner injects persona tool hint on persona-modification keywords'
   dispatcher.stop();
 });
 
+test('ToolLoopRunner injects voice auto-reply system prompt when runtimeContext flag is enabled', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-voice-auto-reply' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-voice-auto-reply-on',
+    input: 'hello',
+    runtimeContext: { voice_auto_reply_enabled: true }
+  });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-voice-auto-reply');
+  assert.equal(
+    seenMessages.some(
+      (m) => m.role === 'system'
+        && /voice\.tts_aliyun_vc/.test(String(m.content || ''))
+        && /no more than 5 sentences/.test(String(m.content || ''))
+    ),
+    true
+  );
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner does not inject voice auto-reply system prompt when runtimeContext flag is disabled', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-voice-auto-reply-off' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-voice-auto-reply-off',
+    input: 'hello',
+    runtimeContext: { voice_auto_reply_enabled: false }
+  });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-voice-auto-reply-off');
+  assert.equal(
+    seenMessages.some((m) => /voice\.tts_aliyun_vc/.test(String(m.content || ''))),
+    false
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects live2d action planning guidance into system prompt', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
