@@ -18,6 +18,7 @@
   "voice": {
     "path": "electron_native",
     "transport": "non_streaming",
+    "outputDelayMs": 9,
     "fallbackOnRealtimeError": true,
     "realtime": {
       "prebufferMs": 160,

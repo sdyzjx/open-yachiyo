@@ -57,6 +57,8 @@
   let activeVoiceRequestId = null;
   let systemAudioDebugBound = false;
   let realtimeVoicePlayer = null;
+  let lipsyncWarmupEmaMs = null;
+  let lipsyncLastWarmupMs = null;
   let faceBlendState = {
     current: {
       mouthForm: 0,
@@ -1004,6 +1006,83 @@
     if (dragZoneStatusElement) {
       dragZoneStatusElement.textContent = String(message || '');
     }
+  }
+
+  function ensureRuntimeVoiceConfig() {
+    runtimeUiConfig = runtimeUiConfig && typeof runtimeUiConfig === 'object' ? runtimeUiConfig : {};
+    runtimeUiConfig.voice = {
+      ...(window.DesktopLive2dDefaults?.DEFAULT_UI_CONFIG?.voice || {}),
+      ...(runtimeUiConfig.voice || {}),
+      realtime: {
+        ...((window.DesktopLive2dDefaults?.DEFAULT_UI_CONFIG?.voice || {}).realtime || {}),
+        ...(runtimeUiConfig?.voice?.realtime || {})
+      }
+    };
+    return runtimeUiConfig.voice;
+  }
+
+  function nowMs() {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  function getAdaptiveVoiceOutputDelayMs() {
+    if (!Number.isFinite(lipsyncWarmupEmaMs)) {
+      return null;
+    }
+    return Math.max(0, Math.min(120, Math.round(lipsyncWarmupEmaMs + 8)));
+  }
+
+  function noteLipsyncWarmupDuration(durationMs, meta = {}) {
+    const normalizedDurationMs = Number(durationMs);
+    if (!Number.isFinite(normalizedDurationMs) || normalizedDurationMs < 0) {
+      return;
+    }
+    lipsyncLastWarmupMs = normalizedDurationMs;
+    lipsyncWarmupEmaMs = Number.isFinite(lipsyncWarmupEmaMs)
+      ? (lipsyncWarmupEmaMs * 0.65) + (normalizedDurationMs * 0.35)
+      : normalizedDurationMs;
+    emitRendererDebug('voice_output_delay.calibrated', {
+      request_id: activeVoiceRequestId,
+      warmup_ms: Math.round(normalizedDurationMs),
+      warmup_ema_ms: Math.round(lipsyncWarmupEmaMs),
+      adaptive_output_delay_ms: getAdaptiveVoiceOutputDelayMs(),
+      ...meta
+    });
+  }
+
+  function resolveVoiceOutputDelayMs(overrideValue = null) {
+    const runtimeVoice = ensureRuntimeVoiceConfig();
+    const candidate = overrideValue ?? runtimeVoice.outputDelayMs;
+    const parsed = Number(candidate);
+    const configuredDelayMs = Number.isFinite(parsed)
+      ? Math.max(0, Math.min(500, Math.round(parsed)))
+      : 0;
+    const adaptiveDelayMs = getAdaptiveVoiceOutputDelayMs();
+    if (adaptiveDelayMs === null) {
+      return configuredDelayMs;
+    }
+    return adaptiveDelayMs;
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    });
+  }
+
+  async function primeLipsync(audioElement, options = {}) {
+    const sourceLabel = String(options?.sourceLabel || (audioElement ? 'media_element' : 'external_analyser'));
+    const startedAt = nowMs();
+    const started = await startLipsync(audioElement, options);
+    if (started) {
+      noteLipsyncWarmupDuration(nowMs() - startedAt, {
+        source_label: sourceLabel
+      });
+    }
+    return started;
   }
 
   function syncDragZoneVisual(values) {
@@ -2048,8 +2127,15 @@
     };
   }
 
-  async function playVoiceFromRemote({ audioUrl = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+  async function playVoiceFromRemote({
+    audioUrl = null,
+    mimeType = 'audio/ogg',
+    requestId = null,
+    request_id = null,
+    outputDelayMs = null
+  } = {}) {
     const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    const playbackDelayMs = resolveVoiceOutputDelayMs(outputDelayMs);
     const normalizedAudioUrl = String(audioUrl || '').trim();
     let playbackErrorReported = false;
     let audioUrlHost = null;
@@ -2061,6 +2147,7 @@
     emitRendererDebug('voice_remote.playback_enter', {
       request_id: nextRequestId,
       mime_type: String(mimeType || 'audio/ogg'),
+      output_delay_ms: playbackDelayMs,
       audio_url_host: audioUrlHost
     });
     emitLipsyncTelemetry('playback.requested', {
@@ -2122,7 +2209,7 @@
       });
 
       // Start lipsync asynchronously so remote playback is never blocked by lipsync init.
-      void startLipsync(systemAudio).then((lipsyncStarted) => {
+      void primeLipsync(systemAudio).then((lipsyncStarted) => {
         if (!lipsyncStarted) {
           emitLipsyncTelemetry('playback.lipsync_inactive', {
             request_id: nextRequestId,
@@ -2153,8 +2240,19 @@
       });
 
       try {
+        if (playbackDelayMs > 0) {
+          emitRendererDebug('voice_remote.play_delay_wait', {
+            request_id: nextRequestId,
+            output_delay_ms: playbackDelayMs
+          });
+          await wait(playbackDelayMs);
+          if (activeVoiceRequestId !== nextRequestId) {
+            throw new Error('voice playback superseded during output delay');
+          }
+        }
         emitRendererDebug('voice_remote.play_attempt', {
           request_id: nextRequestId,
+          output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
         await systemAudio.play();
@@ -2238,14 +2336,23 @@
     }
   }
 
-  async function playVoiceFromMemory({ audioBytes = null, audioBase64 = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
+  async function playVoiceFromMemory({
+    audioBytes = null,
+    audioBase64 = null,
+    mimeType = 'audio/ogg',
+    requestId = null,
+    request_id = null,
+    outputDelayMs = null
+  } = {}) {
     const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
+    const playbackDelayMs = resolveVoiceOutputDelayMs(outputDelayMs);
     let objectUrl = null;
     let playbackErrorReported = false;
     const coarseBytes = coerceAudioBytes(audioBytes);
     emitRendererDebug('voice_memory.playback_enter', {
       request_id: nextRequestId,
       mime_type: String(mimeType || 'audio/ogg'),
+      output_delay_ms: playbackDelayMs,
       bytes: Number(coarseBytes?.byteLength) || 0,
       base64_chars: Number(audioBase64?.length) || 0
     });
@@ -2342,7 +2449,7 @@
       });
 
       // Start lipsync asynchronously so audio playback is never blocked by lipsync init.
-      void startLipsync(systemAudio).then((lipsyncStarted) => {
+      void primeLipsync(systemAudio).then((lipsyncStarted) => {
         if (!lipsyncStarted) {
           emitLipsyncTelemetry('playback.lipsync_inactive', {
             request_id: nextRequestId,
@@ -2373,8 +2480,19 @@
       });
 
       try {
+        if (playbackDelayMs > 0) {
+          emitRendererDebug('voice_memory.play_delay_wait', {
+            request_id: nextRequestId,
+            output_delay_ms: playbackDelayMs
+          });
+          await wait(playbackDelayMs);
+          if (activeVoiceRequestId !== nextRequestId) {
+            throw new Error('voice playback superseded during output delay');
+          }
+        }
         emitRendererDebug('voice_memory.play_attempt', {
           request_id: nextRequestId,
+          output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
         await systemAudio.play();
@@ -2476,17 +2594,20 @@
     request_id = null,
     sampleRate = 24000,
     prebufferMs = 160,
-    idleTimeoutMs = 8000
+    idleTimeoutMs = 8000,
+    outputDelayMs = null
   } = {}) {
     const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
     if (!nextRequestId) {
       return;
     }
+    const playbackDelayMs = resolveVoiceOutputDelayMs(outputDelayMs);
 
     emitRendererDebug('voice_stream.playback_enter', {
       request_id: nextRequestId,
       sample_rate: Number(sampleRate) || 24000,
       prebuffer_ms: Number(prebufferMs) || 160,
+      output_delay_ms: playbackDelayMs,
       idle_timeout_ms: Number(idleTimeoutMs) || 8000
     });
     emitLipsyncTelemetry('playback.requested', {
@@ -2523,54 +2644,68 @@
         throw new Error('RealtimeVoicePlayer is unavailable');
       }
 
+      let realtimeLipsyncPrimePromise = null;
+      const primeRealtimeLipsync = () => {
+        if (realtimeLipsyncPrimePromise) {
+          return realtimeLipsyncPrimePromise;
+        }
+        realtimeLipsyncPrimePromise = primeLipsync(null, {
+          analyserNode: player.getAnalyserNode(),
+          audioContextInstance: player.getAudioContext(),
+          isSpeaking: () => player.isSpeaking(nextRequestId),
+          sourceLabel: 'realtime_stream'
+        }).then((lipsyncStarted) => {
+          if (!lipsyncStarted) {
+            emitLipsyncTelemetry('playback.lipsync_inactive', {
+              request_id: nextRequestId,
+              reason: 'start_lipsync_returned_false',
+              has_lipsync_api: !!lipsyncApi,
+              has_model: !!live2dModel
+            });
+            emitRendererDebug('voice_stream.lipsync_inactive', {
+              request_id: nextRequestId,
+              reason: 'start_lipsync_returned_false'
+            });
+          } else {
+            emitRendererDebug('voice_stream.lipsync_started', {
+              request_id: nextRequestId
+            });
+          }
+          return lipsyncStarted;
+        }).catch((err) => {
+          emitLipsyncTelemetry('playback.lipsync_inactive', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_rejected',
+            error: err?.message || String(err || 'unknown error')
+          });
+          emitRendererDebug('voice_stream.lipsync_failed', {
+            request_id: nextRequestId,
+            reason: 'start_lipsync_rejected',
+            error: err?.message || String(err || 'unknown error')
+          });
+          throw err;
+        });
+        return realtimeLipsyncPrimePromise;
+      };
+
       await player.startSession({
         requestId: nextRequestId,
         sampleRate,
         prebufferMs,
+        outputDelayMs: playbackDelayMs,
         idleTimeoutMs,
         onFirstAudio: () => {
+          void primeRealtimeLipsync().catch(() => {
+            // Errors are already reported in primeRealtimeLipsync.
+          });
           emitLipsyncTelemetry('playback.started', {
             request_id: nextRequestId,
             has_audio_element: false,
             source: 'realtime_stream'
           });
           emitRendererDebug('voice_stream.playback_started', {
-            request_id: nextRequestId
-          });
-
-          void startLipsync(null, {
-            analyserNode: player.getAnalyserNode(),
-            audioContextInstance: player.getAudioContext(),
-            isSpeaking: () => player.isSpeaking(nextRequestId),
-            sourceLabel: 'realtime_stream'
-          }).then((lipsyncStarted) => {
-            if (!lipsyncStarted) {
-              emitLipsyncTelemetry('playback.lipsync_inactive', {
-                request_id: nextRequestId,
-                reason: 'start_lipsync_returned_false',
-                has_lipsync_api: !!lipsyncApi,
-                has_model: !!live2dModel
-              });
-              emitRendererDebug('voice_stream.lipsync_inactive', {
-                request_id: nextRequestId,
-                reason: 'start_lipsync_returned_false'
-              });
-            } else {
-              emitRendererDebug('voice_stream.lipsync_started', {
-                request_id: nextRequestId
-              });
-            }
-          }).catch((err) => {
-            emitLipsyncTelemetry('playback.lipsync_inactive', {
-              request_id: nextRequestId,
-              reason: 'start_lipsync_rejected',
-              error: err?.message || String(err || 'unknown error')
-            });
-            emitRendererDebug('voice_stream.lipsync_failed', {
-              request_id: nextRequestId,
-              reason: 'start_lipsync_rejected',
-              error: err?.message || String(err || 'unknown error')
-            });
+            request_id: nextRequestId,
+            output_delay_ms: playbackDelayMs
           });
         },
         onEnded: ({ reason }) => {
@@ -2615,6 +2750,10 @@
             activeVoiceRequestId = null;
           }
         }
+      });
+
+      void primeRealtimeLipsync().catch(() => {
+        // Errors are already reported in primeRealtimeLipsync.
       });
 
       emitLipsyncTelemetry('playback.source_ready', {

@@ -1304,6 +1304,7 @@ async function processVoiceRequestedOnDesktop({
   const sessionId = String(eventPayload?.session_id || '').trim() || null;
   const traceId = String(eventPayload?.trace_id || '').trim() || null;
   const voiceTransport = String(voiceConfig?.transport || 'non_streaming').trim().toLowerCase();
+  const voiceOutputDelayMs = Math.max(0, Math.min(500, Math.round(Number(voiceConfig?.outputDelayMs) || 0)));
   const fallbackOnRealtimeError = voiceConfig?.fallbackOnRealtimeError !== false;
   const realtimePrebufferMs = Math.max(40, Number(voiceConfig?.realtime?.prebufferMs) || 160);
   const realtimeIdleTimeoutMs = Math.max(1000, Number(voiceConfig?.realtime?.idleTimeoutMs) || 8000);
@@ -1317,6 +1318,7 @@ async function processVoiceRequestedOnDesktop({
     model: model || null,
     voice_id: voice || null,
     transport: voiceTransport,
+    output_delay_ms: voiceOutputDelayMs,
     fallback_on_realtime_error: fallbackOnRealtimeError
   });
 
@@ -1363,6 +1365,7 @@ async function processVoiceRequestedOnDesktop({
               requestId,
               sampleRate: 24000,
               mimeType: 'audio/pcm',
+              outputDelayMs: voiceOutputDelayMs,
               prebufferMs: realtimePrebufferMs,
               idleTimeoutMs: realtimeIdleTimeoutMs
             });
@@ -1540,7 +1543,8 @@ async function processVoiceRequestedOnDesktop({
         avatarWindow.webContents.send('desktop:voice:play-remote', {
           requestId,
           audioUrl: synthesis.audioUrl,
-          mimeType: synthesis.mimeType || 'audio/ogg'
+          mimeType: synthesis.mimeType || 'audio/ogg',
+          outputDelayMs: voiceOutputDelayMs
         });
         emitDebug?.('chain.electron.voice.ipc.dispatched_remote', 'electron main dispatched remote voice playback to renderer', {
           request_id: requestId,
@@ -1558,7 +1562,8 @@ async function processVoiceRequestedOnDesktop({
         avatarWindow.webContents.send('desktop:voice:play-memory', {
           requestId,
           audioBytes,
-          mimeType: synthesis.mimeType || 'audio/ogg'
+          mimeType: synthesis.mimeType || 'audio/ogg',
+          outputDelayMs: voiceOutputDelayMs
         });
         emitDebug?.('chain.electron.voice.ipc.dispatched', 'electron main dispatched memory voice playback to renderer', {
           request_id: requestId,

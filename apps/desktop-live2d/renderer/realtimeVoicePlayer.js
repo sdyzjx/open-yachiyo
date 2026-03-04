@@ -79,6 +79,7 @@
       requestId,
       sampleRate,
       prebufferMs,
+      outputDelayMs,
       idleTimeoutMs,
       onFirstAudio = null,
       onEnded = null,
@@ -99,6 +100,7 @@
         requestId: nextRequestId,
         sampleRate: clampNumber(sampleRate, this.defaultSampleRate, 8000, 96000),
         prebufferMs: clampNumber(prebufferMs, this.defaultPrebufferMs, 20, 4000),
+        outputDelayMs: clampNumber(outputDelayMs, 0, 0, 500),
         idleTimeoutMs: clampNumber(idleTimeoutMs, this.defaultIdleTimeoutMs, 500, 60000),
         onFirstAudio: typeof onFirstAudio === 'function' ? onFirstAudio : null,
         onEnded: typeof onEnded === 'function' ? onEnded : null,
@@ -215,7 +217,11 @@
           return;
         }
         session.started = true;
-        session.nextStartTime = Math.max(this.audioContext.currentTime + 0.025, this.audioContext.currentTime);
+        const outputDelaySec = session.outputDelayMs / 1000;
+        session.nextStartTime = Math.max(
+          this.audioContext.currentTime + 0.025 + outputDelaySec,
+          this.audioContext.currentTime
+        );
       }
       this.schedulePendingChunks(session);
     }

@@ -377,6 +377,15 @@ function normalizeUiConfig(raw) {
     : merged.voice.fallbackOnRealtimeError;
   merged.voice.fallbackOnRealtimeError = fallbackOnRealtimeError !== false;
 
+  const outputDelayMs = Object.prototype.hasOwnProperty.call(rawVoice, 'output_delay_ms')
+    ? rawVoice.output_delay_ms
+    : merged.voice.outputDelayMs;
+  merged.voice.outputDelayMs = Math.round(clamp(
+    toFiniteNumber(outputDelayMs, DEFAULT_UI_CONFIG.voice.outputDelayMs),
+    0,
+    500
+  ));
+
   const prebufferMs = Object.prototype.hasOwnProperty.call(rawRealtimeVoice, 'prebuffer_ms')
     ? rawRealtimeVoice.prebuffer_ms
     : merged.voice.realtime.prebufferMs;

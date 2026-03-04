@@ -43,6 +43,7 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.debug.waveformCapture.includeApplied, true);
   assert.equal(config.uiConfig.voice.path, 'electron_native');
   assert.equal(config.uiConfig.voice.transport, 'non_streaming');
+  assert.equal(config.uiConfig.voice.outputDelayMs, 50);
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, true);
   assert.equal(config.uiConfig.voice.realtime.prebufferMs, 160);
   assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 8000);
@@ -155,6 +156,7 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
       voice: {
         path: 'runtime_legacy',
         transport: 'realtime',
+        output_delay_ms: 80,
         fallback_on_realtime_error: false,
         realtime: {
           prebuffer_ms: 240,
@@ -192,6 +194,7 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
   assert.equal(config.uiConfig.actionQueue.idleAction.name, 'smile');
   assert.equal(config.uiConfig.voice.path, 'runtime_legacy');
   assert.equal(config.uiConfig.voice.transport, 'realtime');
+  assert.equal(config.uiConfig.voice.outputDelayMs, 80);
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, false);
   assert.equal(config.uiConfig.voice.realtime.prebufferMs, 240);
   assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 12000);
