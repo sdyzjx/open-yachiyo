@@ -1,6 +1,6 @@
 # open-yachiyo
 
-![open-yachiyo cover](assets/readme-cover.jpg)
+![open-yachiyo cover](assets/readme-cover.png)
 
 AI Native runtime for an **Agentic desktop pet**, with a **controllable ReAct loop**.
 

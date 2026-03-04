@@ -1,6 +1,6 @@
 # open-yachiyo
 
-![open-yachiyo cover](assets/readme-cover.jpg)
+![open-yachiyo cover](assets/readme-cover.png)
 
 AI Native 的 **Agentic 桌面宠物** 运行时，核心是**可控 ReAct 循环**。
 
