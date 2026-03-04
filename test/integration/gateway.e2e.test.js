@@ -171,6 +171,60 @@ async function startMockLlmServer(port) {
         };
       }
 
+      if (body?.stream) {
+        res.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive'
+        });
+
+        const writeEvent = (payload) => {
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        };
+
+        if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
+          for (let i = 0; i < message.tool_calls.length; i += 1) {
+            const tc = message.tool_calls[i];
+            writeEvent({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: i,
+                        id: tc.id,
+                        type: tc.type || 'function',
+                        function: {
+                          name: tc.function?.name,
+                          arguments: tc.function?.arguments || '{}'
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            });
+          }
+        }
+
+        const content = typeof message?.content === 'string' ? message.content : '';
+        if (content) {
+          writeEvent({
+            choices: [
+              {
+                delta: {
+                  content
+                }
+              }
+            ]
+          });
+        }
+
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ choices: [{ message }] }));
     });

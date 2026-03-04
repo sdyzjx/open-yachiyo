@@ -6,11 +6,11 @@ test('bubble truncate config has correct defaults', () => {
 
   const truncateConfig = DEFAULT_UI_CONFIG.chat.bubble.truncate;
 
-  assert.equal(truncateConfig.enabled, true, 'Truncate should be enabled by default');
-  assert.equal(truncateConfig.maxLength, 120, 'Default max length should be 120');
-  assert.equal(truncateConfig.mode, 'smart', 'Default mode should be smart');
+  assert.equal(truncateConfig.enabled, false, 'Truncate should be disabled by default');
+  assert.equal(truncateConfig.maxLength, 100000, 'Default max length should be 100000');
+  assert.equal(truncateConfig.mode, 'disabled', 'Default mode should be disabled');
   assert.equal(truncateConfig.suffix, '...', 'Default suffix should be ...');
-  assert.equal(truncateConfig.showHintForComplex, true, 'Should show hint for complex content');
+  assert.equal(truncateConfig.showHintForComplex, false, 'Should not show hint for complex content by default');
 });
 
 test('detect complex content - mermaid', () => {
@@ -159,4 +159,3 @@ test('truncate integration - complex content without hint', () => {
   assert.ok(result.includes('```'), 'Should truncate complex content when hint is disabled');
   assert.ok(result.length <= config.maxLength + config.suffix.length, 'Should respect maxLength');
 });
-
