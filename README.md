@@ -2,7 +2,7 @@
 
 ![open-yachiyo cover](assets/readme-cover.jpg)
 
-Native-first desktop AI assistant runtime with a **controllable ReAct loop**.
+AI Native desktop AI assistant runtime with a **controllable ReAct loop**.
 
 🇨🇳 [中文说明](./README.zh.md)
 

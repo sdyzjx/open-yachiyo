@@ -2,7 +2,7 @@
 
 ![open-yachiyo cover](assets/readme-cover.jpg)
 
-原生优先的桌面 AI 助手运行时，核心是**可控 ReAct 循环**。
+AI Native 的桌面 AI 助手运行时，核心是**可控 ReAct 循环**。
 
 🇺🇸 [English](./README.md)
 
