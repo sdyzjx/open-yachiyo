@@ -250,10 +250,7 @@ test('shell.exec applies low/medium/high permission profiles', async () => {
     { permission_level: 'high', workspaceRoot: tmp }
   );
   assert.equal(highWriteOutsideDenied.ok, false);
-  assert.equal(
-    ['PERMISSION_DENIED', 'RUNTIME_ERROR'].includes(String(highWriteOutsideDenied.code || '')),
-    true
-  );
+  assert.equal(highWriteOutsideDenied.code, 'PERMISSION_DENIED');
 
   const externalDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tooling-shell-ext-'));
   const externalSrc = path.join(externalDir, 'external.txt');
@@ -264,10 +261,7 @@ test('shell.exec applies low/medium/high permission profiles', async () => {
     { permission_level: 'medium', workspaceRoot: tmp }
   );
   assert.equal(mediumReadOutsideWorkspaceDenied.ok, false);
-  assert.equal(
-    ['PERMISSION_DENIED', 'RUNTIME_ERROR'].includes(String(mediumReadOutsideWorkspaceDenied.code || '')),
-    true
-  );
+  assert.equal(mediumReadOutsideWorkspaceDenied.code, 'PERMISSION_DENIED');
 });
 
 test('shell.exec supports approval flow for operator commands', async () => {

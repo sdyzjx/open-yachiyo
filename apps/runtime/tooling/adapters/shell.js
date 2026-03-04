@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const os = require('os');
 const path = require('path');
 const { ToolingError, ErrorCode } = require('../errors');
 const { getShellPermissionProfile } = require('../../security/sessionPermissionPolicy');
