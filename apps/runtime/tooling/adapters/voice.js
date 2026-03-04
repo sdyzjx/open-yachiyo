@@ -4,11 +4,92 @@ const { execFile } = require('node:child_process');
 const { loadVoicePolicy, evaluateVoicePolicy } = require('../voice/policy');
 const { InMemoryVoiceCooldownStore, InMemoryVoiceIdempotencyStore, InMemoryVoiceActiveJobStore } = require('../voice/cooldownStore');
 const { ProviderConfigStore } = require('../../config/providerConfigStore');
+const { getRuntimePaths } = require('../../skills/runtimePaths');
 
 // TTS provider name in providers.yaml
 const TTS_PROVIDER_KEY = process.env.TTS_PROVIDER_KEY || 'qwen3_tts';
-const DESKTOP_LIVE2D_CONFIG_PATH = process.env.DESKTOP_LIVE2D_CONFIG_PATH
-  || path.resolve(process.cwd(), 'config/desktop-live2d.json');
+
+function stripJsonComments(input) {
+  let output = '';
+  let inString = false;
+  let stringQuote = '';
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const current = input[index];
+    const next = input[index + 1];
+
+    if (inLineComment) {
+      if (current === '\n') {
+        inLineComment = false;
+        output += current;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (current === '*' && next === '/') {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      output += current;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (current === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (current === stringQuote) {
+        inString = false;
+        stringQuote = '';
+      }
+      continue;
+    }
+
+    if ((current === '"' || current === '\'' || current === '`')) {
+      inString = true;
+      stringQuote = current;
+      output += current;
+      continue;
+    }
+
+    if (current === '/' && next === '/') {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (current === '/' && next === '*') {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    output += current;
+  }
+
+  return output;
+}
+
+function parseJsonWithComments(input) {
+  return JSON.parse(stripJsonComments(String(input || '')));
+}
+
+function resolveDesktopLive2dConfigPath(env = process.env) {
+  if (typeof env.DESKTOP_LIVE2D_CONFIG_PATH === 'string' && env.DESKTOP_LIVE2D_CONFIG_PATH.trim()) {
+    return path.resolve(env.DESKTOP_LIVE2D_CONFIG_PATH.trim());
+  }
+  const runtimePaths = getRuntimePaths({ env });
+  return path.resolve(path.join(runtimePaths.configDir, 'desktop-live2d.json'));
+}
 
 function loadTtsProviderConfig() {
   try {
@@ -200,17 +281,18 @@ function incMetric(key) {
 }
 
 function loadVoicePathMode() {
+  const configPath = resolveDesktopLive2dConfigPath(process.env);
   const envMode = String(process.env.VOICE_PATH_MODE || '').trim();
   if (envMode === 'electron_native' || envMode === 'runtime_legacy') {
     return envMode;
   }
 
   try {
-    if (!fsSync.existsSync(DESKTOP_LIVE2D_CONFIG_PATH)) {
+    if (!fsSync.existsSync(configPath)) {
       return 'runtime_legacy';
     }
-    const raw = fsSync.readFileSync(DESKTOP_LIVE2D_CONFIG_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
+    const raw = fsSync.readFileSync(configPath, 'utf8');
+    const parsed = parseJsonWithComments(raw);
     const mode = String(parsed?.voice?.path || '').trim();
     if (mode === 'electron_native' || mode === 'runtime_legacy') {
       return mode;
