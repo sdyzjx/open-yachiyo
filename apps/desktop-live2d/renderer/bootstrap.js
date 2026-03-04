@@ -13,7 +13,9 @@
     chatPanelVisible: false,
     chatHistorySize: 0,
     lastError: null,
-    layout: null
+    layout: null,
+    windowState: null,
+    resizeModeEnabled: false
   };
 
   let pixiApp = null;
@@ -26,6 +28,8 @@
   let suppressModelTapUntil = 0;
   let stableModelScale = null;
   let stableModelPose = null;
+  let resizeModeScaleFactor = 1;
+  let lastResizeModeRequest = null;
   let modelBaseBounds = null;
   let actionQueuePlayer = null;
   let actionExecutionMutex = null;
@@ -43,6 +47,7 @@
   let activeVoiceRequestId = null;
   let systemAudioDebugBound = false;
   let realtimeVoicePlayer = null;
+  let layoutTunerState = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -54,6 +59,18 @@
   const chatComposerElement = document.getElementById('chat-panel-composer');
   const petHideElement = document.getElementById('pet-hide');
   const petCloseElement = document.getElementById('pet-close');
+  const resizeModeCloseElement = document.getElementById('resize-mode-close');
+  const layoutTunerToggleElement = document.getElementById('layout-tuner-toggle');
+  const layoutTunerCloseElement = document.getElementById('layout-tuner-close');
+  const layoutOffsetXElement = document.getElementById('layout-offset-x');
+  const layoutOffsetYElement = document.getElementById('layout-offset-y');
+  const layoutScaleElement = document.getElementById('layout-scale');
+  const layoutOffsetXValueElement = document.getElementById('layout-offset-x-value');
+  const layoutOffsetYValueElement = document.getElementById('layout-offset-y-value');
+  const layoutScaleValueElement = document.getElementById('layout-scale-value');
+  const layoutResetElement = document.getElementById('layout-reset');
+  const layoutSaveElement = document.getElementById('layout-save');
+  const layoutTunerStatusElement = document.getElementById('layout-tuner-status');
 
   const chatStateApi = window.ChatPanelState;
   let runtimeUiConfig = null;
@@ -68,6 +85,11 @@
   let chatPanelShowResizeListener = null;
   let layoutRafToken = 0;
   let lastReportedModelBounds = null;
+  const layoutTunerDefaults = window.DesktopLive2dDefaults?.DEFAULT_LAYOUT_CONFIG || {
+    offsetX: 0,
+    offsetY: 0,
+    scaleMultiplier: 1
+  };
   const modelTapToggleGate = typeof interactionApi?.createCooldownGate === 'function'
     ? interactionApi.createCooldownGate({ cooldownMs: 220 })
     : {
@@ -156,6 +178,221 @@
     const duration = Number(durationMs);
     const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : MODEL_TAP_SUPPRESS_AFTER_DRAG_MS;
     suppressModelTapUntil = Math.max(suppressModelTapUntil, Date.now() + safeDuration);
+  }
+
+  function resetAdaptiveLayoutState() {
+    stableModelScale = null;
+    stableModelPose = null;
+  }
+
+  function roundToStep(value, step = 1) {
+    const safeStep = Number(step) || 1;
+    return Math.round((Number(value) || 0) / safeStep) * safeStep;
+  }
+
+  function normalizeLayoutTunerValues(input = {}) {
+    return {
+      offsetX: Math.round(clamp(Number(input.offsetX) || 0, -120, 120)),
+      offsetY: Math.round(clamp(Number(input.offsetY) || 0, -120, 120)),
+      scaleMultiplier: Math.round(clamp(Number(input.scaleMultiplier) || 1, 0.7, 1.5) * 100) / 100
+    };
+  }
+
+  function toLayoutDisplayValues(values = {}) {
+    return {
+      offsetX: Math.round((Number(values.offsetX) || 0) - (Number(layoutTunerDefaults.offsetX) || 0)),
+      offsetY: Math.round((Number(values.offsetY) || 0) - (Number(layoutTunerDefaults.offsetY) || 0)),
+      scaleMultiplier: Math.round((Number(values.scaleMultiplier) || 1) * 100) / 100
+    };
+  }
+
+  function fromLayoutDisplayValues(values = {}) {
+    return normalizeLayoutTunerValues({
+      offsetX: (Number(layoutTunerDefaults.offsetX) || 0) + (Number(values.offsetX) || 0),
+      offsetY: (Number(layoutTunerDefaults.offsetY) || 0) + (Number(values.offsetY) || 0),
+      scaleMultiplier: Number(values.scaleMultiplier) || Number(layoutTunerDefaults.scaleMultiplier) || 1
+    });
+  }
+
+  function ensureRuntimeLayoutConfig() {
+    runtimeUiConfig = runtimeUiConfig && typeof runtimeUiConfig === 'object' ? runtimeUiConfig : {};
+    runtimeUiConfig.layout = {
+      ...(layoutTunerDefaults || {}),
+      ...(runtimeUiConfig.layout || {})
+    };
+    return runtimeUiConfig.layout;
+  }
+
+  function getCurrentLayoutTunerValues() {
+    const layoutConfig = ensureRuntimeLayoutConfig();
+    return normalizeLayoutTunerValues({
+      offsetX: layoutConfig.offsetX ?? layoutTunerDefaults.offsetX,
+      offsetY: layoutConfig.offsetY ?? layoutTunerDefaults.offsetY,
+      scaleMultiplier: layoutConfig.scaleMultiplier ?? layoutTunerDefaults.scaleMultiplier
+    });
+  }
+
+  function setLayoutTunerStatus(message = '') {
+    if (layoutTunerStatusElement) {
+      layoutTunerStatusElement.textContent = String(message || '');
+    }
+  }
+
+  function syncLayoutTunerControls() {
+    if (!layoutTunerState?.values) {
+      return;
+    }
+    const { offsetX, offsetY, scaleMultiplier } = toLayoutDisplayValues(layoutTunerState.values);
+    if (layoutOffsetXElement) layoutOffsetXElement.value = String(offsetX);
+    if (layoutOffsetYElement) layoutOffsetYElement.value = String(offsetY);
+    if (layoutScaleElement) layoutScaleElement.value = String(scaleMultiplier);
+    if (layoutOffsetXValueElement) layoutOffsetXValueElement.textContent = String(offsetX);
+    if (layoutOffsetYValueElement) layoutOffsetYValueElement.textContent = String(offsetY);
+    if (layoutScaleValueElement) layoutScaleValueElement.textContent = scaleMultiplier.toFixed(2);
+  }
+
+  function setLayoutTunerOpen(open) {
+    const nextOpen = Boolean(open) && state.resizeModeEnabled;
+    if (!layoutTunerState) {
+      layoutTunerState = {
+        open: nextOpen,
+        values: getCurrentLayoutTunerValues()
+      };
+    } else {
+      layoutTunerState.open = nextOpen;
+    }
+    document.body.classList.toggle('layout-tuner-open', nextOpen);
+    if (layoutTunerToggleElement) {
+      layoutTunerToggleElement.textContent = nextOpen ? 'Close Layout' : 'Adjust Layout';
+    }
+    if (!nextOpen) {
+      setLayoutTunerStatus('');
+    }
+  }
+
+  function applyLayoutTunerValues(nextValues, { showStatus = false, statusMessage = '' } = {}) {
+    const normalized = normalizeLayoutTunerValues(nextValues);
+    const layoutConfig = ensureRuntimeLayoutConfig();
+    layoutConfig.offsetX = normalized.offsetX;
+    layoutConfig.offsetY = normalized.offsetY;
+    layoutConfig.scaleMultiplier = normalized.scaleMultiplier;
+    if (!layoutTunerState) {
+      layoutTunerState = { open: false, values: normalized };
+    } else {
+      layoutTunerState.values = normalized;
+    }
+    syncLayoutTunerControls();
+    resetAdaptiveLayoutState();
+    scheduleAdaptiveLayout();
+    if (showStatus) {
+      setLayoutTunerStatus(statusMessage);
+    }
+  }
+
+  function resetLayoutTunerValues() {
+    applyLayoutTunerValues({
+      offsetX: layoutTunerDefaults.offsetX,
+      offsetY: layoutTunerDefaults.offsetY,
+      scaleMultiplier: layoutTunerDefaults.scaleMultiplier
+    }, {
+      showStatus: true,
+      statusMessage: 'Preview reset to defaults'
+    });
+  }
+
+  function saveLayoutTunerValues() {
+    const values = layoutTunerState?.values || getCurrentLayoutTunerValues();
+    bridge?.sendWindowControl?.({
+      action: 'save_layout_overrides',
+      layout: values
+    });
+    setLayoutTunerStatus('Saved to desktop-live2d.json');
+  }
+
+  function applyWindowState(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    state.windowState = {
+      width: Number(payload.width) || null,
+      height: Number(payload.height) || null,
+      x: Number(payload.x) || null,
+      y: Number(payload.y) || null,
+      minWidth: Number(payload.minWidth) || null,
+      minHeight: Number(payload.minHeight) || null,
+      maxWidth: Number(payload.maxWidth) || null,
+      maxHeight: Number(payload.maxHeight) || null,
+      defaultWidth: Number(payload.defaultWidth) || null,
+      defaultHeight: Number(payload.defaultHeight) || null,
+      aspectRatio: Number(payload.aspectRatio) || null
+    };
+    state.resizeModeEnabled = payload?.resizeModeEnabled === true;
+    document.body.classList.toggle('resize-mode-active', state.resizeModeEnabled);
+
+    const baseWidth = Number(state.windowState.defaultWidth) || Number(state.windowState.width) || null;
+    const baseHeight = Number(state.windowState.defaultHeight) || Number(state.windowState.height) || null;
+    const currentWidth = Number(state.windowState.width) || baseWidth;
+    const currentHeight = Number(state.windowState.height) || baseHeight;
+    if (Number.isFinite(baseWidth) && baseWidth > 0 && Number.isFinite(baseHeight) && baseHeight > 0) {
+      const nextScaleFactor = Math.max(currentWidth / baseWidth, currentHeight / baseHeight);
+      if (Number.isFinite(nextScaleFactor) && nextScaleFactor > 0) {
+        resizeModeScaleFactor = nextScaleFactor;
+      }
+    }
+
+    if (!state.resizeModeEnabled) {
+      resizeModeScaleFactor = 1;
+      lastResizeModeRequest = null;
+      setLayoutTunerOpen(false);
+    }
+  }
+
+  function requestWindowResize(payload = {}) {
+    bridge?.sendWindowResize?.(payload);
+  }
+
+  function initLayoutTuner() {
+    layoutTunerState = {
+      open: false,
+      values: getCurrentLayoutTunerValues()
+    };
+    syncLayoutTunerControls();
+    setLayoutTunerOpen(false);
+
+    layoutTunerToggleElement?.addEventListener('click', () => {
+      setLayoutTunerOpen(!layoutTunerState?.open);
+    });
+    layoutTunerCloseElement?.addEventListener('click', () => {
+      setLayoutTunerOpen(false);
+    });
+    layoutResetElement?.addEventListener('click', () => {
+      resetLayoutTunerValues();
+    });
+    layoutSaveElement?.addEventListener('click', () => {
+      saveLayoutTunerValues();
+    });
+
+    layoutOffsetXElement?.addEventListener('input', () => {
+      const displayValues = toLayoutDisplayValues(layoutTunerState?.values || getCurrentLayoutTunerValues());
+      applyLayoutTunerValues(fromLayoutDisplayValues({
+        ...displayValues,
+        offsetX: roundToStep(layoutOffsetXElement.value, 1)
+      }));
+    });
+    layoutOffsetYElement?.addEventListener('input', () => {
+      const displayValues = toLayoutDisplayValues(layoutTunerState?.values || getCurrentLayoutTunerValues());
+      applyLayoutTunerValues(fromLayoutDisplayValues({
+        ...displayValues,
+        offsetY: roundToStep(layoutOffsetYElement.value, 1)
+      }));
+    });
+    layoutScaleElement?.addEventListener('input', () => {
+      applyLayoutTunerValues({
+        ...(layoutTunerState?.values || getCurrentLayoutTunerValues()),
+        scaleMultiplier: roundToStep(layoutScaleElement.value, 0.01)
+      });
+    });
   }
 
   function setBubbleVisible(visible) {
@@ -1891,7 +2128,9 @@
       chatPanelVisible: state.chatPanelVisible,
       chatHistorySize: state.chatHistorySize,
       lastError: state.lastError,
-      layout: state.layout
+      layout: state.layout,
+      windowState: state.windowState,
+      resizeModeEnabled: state.resizeModeEnabled
     };
   }
 
@@ -1919,6 +2158,10 @@
         chatPanelElement.style.height = `${height}px`;
       }
     }
+
+    resizeModeCloseElement?.addEventListener('click', () => {
+      bridge?.sendWindowControl?.({ action: 'close_resize_mode' });
+    });
 
     if (!chatPanelEnabled) {
       chatPanelElement?.remove();
@@ -2093,6 +2336,9 @@
       live2dModel.interactive = true;
     }
     live2dModel.on('pointertap', () => {
+      if (state.resizeModeEnabled) {
+        return;
+      }
       const now = Date.now();
       if (now < suppressModelTapUntil) {
         return;
@@ -2126,10 +2372,17 @@
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        startScreenX: event.screenX,
+        startScreenY: event.screenY,
+        startWindowWidth: Number(state.windowState?.width) || window.innerWidth || 460,
         dragging: false
       };
       if (typeof targetElement.setPointerCapture === 'function') {
         targetElement.setPointerCapture(event.pointerId);
+      }
+      if (state.resizeModeEnabled) {
+        event.preventDefault();
+        return;
       }
       bridge.sendWindowDrag({
         action: 'start',
@@ -2151,11 +2404,19 @@
       if (!dragPointerState.dragging) {
         return;
       }
-      bridge.sendWindowDrag({
-        action: 'move',
-        screenX: event.screenX,
-        screenY: event.screenY
-      });
+      if (state.resizeModeEnabled) {
+        const deltaWidth = dragPointerState.startScreenX - event.screenX;
+        requestResizeModeWindowFit({
+          requestedWidth: dragPointerState.startWindowWidth + deltaWidth,
+          persist: false
+        });
+      } else {
+        bridge.sendWindowDrag({
+          action: 'move',
+          screenX: event.screenX,
+          screenY: event.screenY
+        });
+      }
       event.preventDefault();
     });
 
@@ -2163,11 +2424,18 @@
       if (!dragPointerState || event.pointerId !== dragPointerState.pointerId) {
         return;
       }
-      bridge.sendWindowDrag({
-        action: 'end',
-        screenX: event.screenX,
-        screenY: event.screenY
-      });
+      if (!state.resizeModeEnabled) {
+        bridge.sendWindowDrag({
+          action: 'end',
+          screenX: event.screenX,
+          screenY: event.screenY
+        });
+      } else if (dragPointerState.dragging) {
+        requestResizeModeWindowFit({
+          requestedWidth: lastResizeModeRequest?.width || Number(state.windowState?.width) || dragPointerState.startWindowWidth,
+          persist: true
+        });
+      }
       if (dragPointerState.dragging) {
         suppressModelTap(MODEL_TAP_SUPPRESS_AFTER_DRAG_MS);
       }
@@ -2194,6 +2462,81 @@
     };
   }
 
+  function getResizeModeBaseWindowSize() {
+    const baseWidth = Math.max(1, Number(state.windowState?.defaultWidth) || Number(state.windowState?.width) || window.innerWidth || 460);
+    const baseHeight = Math.max(1, Number(state.windowState?.defaultHeight) || Number(state.windowState?.height) || window.innerHeight || 620);
+    return {
+      baseWidth,
+      baseHeight,
+      aspectRatio: Number(state.windowState?.aspectRatio) || (baseWidth / baseHeight)
+    };
+  }
+
+  function getResizeModeWindowScaleFactor() {
+    const { baseWidth, baseHeight } = getResizeModeBaseWindowSize();
+    const currentWidth = Math.max(1, Number(state.windowState?.width) || window.innerWidth || baseWidth);
+    const currentHeight = Math.max(1, Number(state.windowState?.height) || window.innerHeight || baseHeight);
+    return Math.max(currentWidth / baseWidth, currentHeight / baseHeight);
+  }
+
+  function computeResizeModeReferenceLayout(bounds, layoutConfig) {
+    if (!window.Live2DLayout?.computeModelLayout) {
+      return null;
+    }
+    const { baseWidth, baseHeight } = getResizeModeBaseWindowSize();
+    return window.Live2DLayout.computeModelLayout({
+      stageWidth: baseWidth,
+      stageHeight: baseHeight,
+      boundsX: bounds.x,
+      boundsY: bounds.y,
+      boundsWidth: bounds.width,
+      boundsHeight: bounds.height,
+      ...layoutConfig
+    });
+  }
+
+  function clampResizeModeWindowWidth(requestedWidth) {
+    const { baseWidth, baseHeight, aspectRatio } = getResizeModeBaseWindowSize();
+    const minWidth = Number(state.windowState?.minWidth) || 180;
+    const minHeight = Number(state.windowState?.minHeight) || 260;
+    const maxWidth = Number(state.windowState?.maxWidth) || 900;
+    const maxHeight = Number(state.windowState?.maxHeight) || 1400;
+    const safeAspectRatio = Number(aspectRatio) || (baseWidth / baseHeight);
+    const minAllowedWidth = Math.max(minWidth, Math.ceil(minHeight * safeAspectRatio));
+    const maxAllowedWidth = Math.min(maxWidth, Math.floor(maxHeight * safeAspectRatio));
+    return clamp(Number(requestedWidth) || baseWidth, minAllowedWidth, maxAllowedWidth);
+  }
+
+  function computeResizeModeWindowSize({ requestedWidth }) {
+    const { baseWidth, baseHeight, aspectRatio } = getResizeModeBaseWindowSize();
+    const safeAspectRatio = Number(aspectRatio) || (baseWidth / baseHeight);
+    const safeWidth = clampResizeModeWindowWidth(requestedWidth);
+    return {
+      width: Math.max(1, Math.round(safeWidth)),
+      height: Math.max(1, Math.round(safeWidth / safeAspectRatio))
+    };
+  }
+
+  function requestResizeModeWindowFit({ requestedWidth, persist = false }) {
+    const nextSize = computeResizeModeWindowSize({ requestedWidth });
+    const last = lastResizeModeRequest;
+    const changed = !last
+      || Math.abs(last.width - nextSize.width) >= 2
+      || Math.abs(last.height - nextSize.height) >= 2
+      || persist;
+    if (!changed) {
+      return;
+    }
+    lastResizeModeRequest = nextSize;
+    requestWindowResize({
+      action: 'set',
+      source: 'resize-drag',
+      width: nextSize.width,
+      height: nextSize.height,
+      persist
+    });
+  }
+
   function applyAdaptiveLayout() {
     if (!live2dModel || !window.Live2DLayout?.computeModelLayout) return;
     const bounds = modelBaseBounds || live2dModel.getLocalBounds?.();
@@ -2214,12 +2557,24 @@
       boundsHeight: bounds.height,
       ...layoutConfig
     });
+    const resizeModeReferenceLayout = state.resizeModeEnabled
+      ? (computeResizeModeReferenceLayout(bounds, layoutConfig) || layout)
+      : null;
 
     if (stableModelScale === null || !Number.isFinite(stableModelScale)) {
       stableModelScale = layout.scale;
     }
-    const nextScale = lockScaleOnResize ? stableModelScale : layout.scale;
-    if (!lockScaleOnResize) {
+    if (!state.resizeModeEnabled) {
+      resizeModeScaleFactor = 1;
+      lastResizeModeRequest = null;
+      stableModelScale = layout.scale;
+    }
+
+    const shouldFollowWindowScale = !lockScaleOnResize;
+    const nextScale = state.resizeModeEnabled
+      ? resizeModeReferenceLayout.scale * getResizeModeWindowScaleFactor()
+      : (shouldFollowWindowScale ? layout.scale : Math.min(stableModelScale, layout.scale));
+    if (!state.resizeModeEnabled && shouldFollowWindowScale) {
       stableModelScale = layout.scale;
     }
 
@@ -2238,9 +2593,13 @@
       };
     }
 
-    let nextPositionX = layout.positionX;
-    let nextPositionY = layout.positionY;
-    if (lockPositionOnResize) {
+    let nextPositionX = state.resizeModeEnabled
+      ? resizeModeReferenceLayout.positionX * getResizeModeWindowScaleFactor()
+      : layout.positionX;
+    let nextPositionY = state.resizeModeEnabled
+      ? resizeModeReferenceLayout.positionY * getResizeModeWindowScaleFactor()
+      : layout.positionY;
+    if (!state.resizeModeEnabled && lockPositionOnResize) {
       const deltaWidth = stageSize.width - stableModelPose.stageWidth;
       const deltaHeight = stageSize.height - stableModelPose.stageHeight;
       nextPositionX = stableModelPose.positionX + deltaWidth;
@@ -2260,6 +2619,36 @@
       };
     }
 
+    const clampedPose = typeof window.Live2DLayout?.clampModelPositionToViewport === 'function'
+      ? window.Live2DLayout.clampModelPositionToViewport({
+        stageWidth: stageSize.width,
+        stageHeight: stageSize.height,
+        positionX: nextPositionX,
+        positionY: nextPositionY,
+        scale: nextScale,
+        boundsX: bounds.x,
+        boundsY: bounds.y,
+        boundsWidth: bounds.width,
+        boundsHeight: bounds.height,
+        pivotX: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
+        pivotY: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
+        visibleMarginLeft: Number(layoutConfig.visibleMarginLeft),
+        visibleMarginRight: Number(layoutConfig.visibleMarginRight),
+        visibleMarginTop: Number(layoutConfig.visibleMarginTop),
+        visibleMarginBottom: Number(layoutConfig.visibleMarginBottom)
+      })
+      : null;
+    if (clampedPose) {
+      nextPositionX = clampedPose.positionX;
+      nextPositionY = clampedPose.positionY;
+      stableModelPose = {
+        positionX: nextPositionX,
+        positionY: nextPositionY,
+        stageWidth: stageSize.width,
+        stageHeight: stageSize.height
+      };
+    }
+
     if (
       typeof live2dModel.scale?.set === 'function'
       && shouldUpdate2DTransform(live2dModel.scale?.x, live2dModel.scale?.y, nextScale, nextScale, 1e-5)
@@ -2268,9 +2657,18 @@
     }
     if (
       typeof live2dModel.pivot?.set === 'function'
-      && shouldUpdate2DTransform(live2dModel.pivot?.x, live2dModel.pivot?.y, layout.pivotX, layout.pivotY, 1e-5)
+      && shouldUpdate2DTransform(
+        live2dModel.pivot?.x,
+        live2dModel.pivot?.y,
+        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
+        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
+        1e-5
+      )
     ) {
-      live2dModel.pivot.set(layout.pivotX, layout.pivotY);
+      live2dModel.pivot.set(
+        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
+        state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY
+      );
     }
     if (
       typeof live2dModel.position?.set === 'function'
@@ -2283,8 +2681,8 @@
       scale: nextScale,
       positionX: nextPositionX,
       positionY: nextPositionY,
-      pivotX: layout.pivotX,
-      pivotY: layout.pivotY,
+      pivotX: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotX : layout.pivotX,
+      pivotY: state.resizeModeEnabled ? resizeModeReferenceLayout.pivotY : layout.pivotY,
       ...layout.debug
     };
 
@@ -2301,6 +2699,7 @@
       && Number.isFinite(worldBounds.height)
       && worldBounds.width > 4
       && worldBounds.height > 4
+      && !state.resizeModeEnabled
       && typeof bridge?.sendModelBounds === 'function'
     ) {
       const payload = {
@@ -2417,6 +2816,7 @@
       const runtimeConfig = await bridge.getRuntimeConfig();
       runtimeUiConfig = runtimeConfig.uiConfig || null;
       runtimeLive2dPresets = runtimeConfig.live2dPresets || null;
+      initLayoutTuner();
       initChatPanel(runtimeUiConfig?.chat || {});
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);
@@ -2424,6 +2824,10 @@
 
       bridge.onInvoke((payload) => {
         void handleInvoke(payload);
+      });
+
+      bridge.onWindowStateSync?.((payload) => {
+        applyWindowState(payload);
       });
 
       bridge.onVoicePlayMemory?.((payload) => {
