@@ -348,6 +348,326 @@ open /tmp/mouth_waveform_full.svg
 - `target_form` 和 `applied_form` 反向
   - 优先怀疑最后一层 param 写入覆盖
 
+## 4. 调参指南
+
+当前 lipsync 不应该只改一层。  
+更稳的方式是按下面 3 层来调：
+
+1. 上游嘴形目标
+2. speaking 增益层
+3. 最终平滑 / 回落层
+
+### 4.1 第 1 层：上游嘴形目标
+
+文件：
+- `apps/desktop-live2d/renderer/lipsyncViseme.js`
+
+这一层决定：
+- 原始元音形状
+- speaking 时 `raw_mouth_open / raw_mouth_form` 的基础分布
+
+#### 最关键的参数
+
+##### 元音目标嘴形
+
+位置：
+- `DEFAULT_CONFIG.visemeShape.targets`
+
+当前大致是：
+
+```js
+a: { open: 1.0, form: 0.38 }
+i: { open: 0.24, form: 0.94 }
+u: { open: 0.36, form: -0.8 }
+e: { open: 0.52, form: 0.72 }
+o: { open: 0.8, form: -0.92 }
+```
+
+怎么调：
+
+- 想让嘴整体更张：
+  - 提高 `a.open`
+  - 提高 `o.open`
+  - 轻微提高 `e.open`
+- 想让横向拉伸更明显：
+  - 提高 `i.form`
+  - 提高 `e.form`
+- 想让圆嘴更明显：
+  - 把 `u.form` / `o.form` 再往负向拉
+
+适用场景：
+- `raw_open` 本身就偏低
+- `a/o`、`e/i` 区分度不够
+
+##### articulation 缩放
+
+位置：
+- `DEFAULT_CONFIG.articulation`
+
+当前关键值：
+
+```js
+minOpenScale: 0.7
+maxOpenScale: 1.22
+minFormScale: 0.7
+maxFormScale: 1.2
+lowEnergyBias: 0.62
+```
+
+怎么调：
+
+- 想让整段 speaking 的原始嘴形更明显：
+  - 提高 `maxOpenScale`
+  - 提高 `maxFormScale`
+- 想让弱能量段也保留一点嘴型：
+  - 提高 `lowEnergyBias`
+
+##### 弱音节豁免
+
+位置：
+- `DEFAULT_CONFIG.silence`
+
+当前关键值：
+
+```js
+energyThreshold: 0.028
+confidenceThreshold: 0.08
+holdFrames: 4
+holdDecay: 0.74
+energyDrivenOpenFloor: 0.02
+energyDrivenOpenScale: 1.95
+```
+
+怎么调：
+
+- 低能量段总是闭嘴：
+  - 降低 `energyThreshold`
+  - 提高 `energyDrivenOpenFloor`
+  - 提高 `energyDrivenOpenScale`
+- 低能量段像“闭不上嘴”：
+  - 降低 `energyDrivenOpenFloor`
+  - 降低 `energyDrivenOpenScale`
+  - 缩短 `holdFrames`
+
+### 4.2 第 2 层：speaking 增益层
+
+文件：
+- `apps/desktop-live2d/renderer/bootstrap.js`
+
+这一层决定：
+- 说话时 `target_open / target_form` 实际放大多少
+- 是放大均值，还是放大围绕基线的振幅
+
+#### 当前关键常量
+
+```js
+LIPSYNC_ACTIVE_ENERGY_MIN = 0.018
+LIPSYNC_BASELINE_OPEN_ALPHA = 0.024
+LIPSYNC_BASELINE_FORM_ALPHA = 0.02
+LIPSYNC_VARIANCE_OPEN_GAIN_MIN = 3.0
+LIPSYNC_VARIANCE_OPEN_GAIN_MAX = 4.0
+LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN = 0.82
+LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO = 0.36
+LIPSYNC_VARIANCE_FORM_GAIN_MIN = 2.0
+LIPSYNC_VARIANCE_FORM_GAIN_MAX = 3.0
+```
+
+#### 怎么理解
+
+- `BASELINE_*_ALPHA`
+  - 基线跟随速度
+  - 越大，基线追得越快，波动会被吃掉
+  - 越小，越像“放大交流分量”
+
+- `VARIANCE_OPEN_GAIN_*`
+  - `mouthOpen` 的振幅放大倍数
+  - 决定“嘴巴波动大不大”
+
+- `VARIANCE_FORM_GAIN_*`
+  - `mouthForm` 的振幅放大倍数
+
+- `VARIANCE_OPEN_NEGATIVE_GAIN`
+  - 向下回落时的压缩强度
+  - 太大容易大量掉到闭嘴
+  - 太小又容易显得闭不上嘴
+
+- `SPEAKING_OPEN_FLOOR_RATIO`
+  - speaking 时的动态下限
+  - 太高会一直张嘴
+  - 太低会弱音节时频繁闭嘴
+
+#### 实际调法
+
+##### 想让“波动更大”，不是单纯更张嘴
+
+优先调：
+- `LIPSYNC_VARIANCE_OPEN_GAIN_MIN/MAX`
+- `LIPSYNC_VARIANCE_FORM_GAIN_MIN/MAX`
+
+不要先调：
+- `SPEAKING_OPEN_FLOOR_RATIO`
+
+因为：
+- `GAIN` 调的是振幅
+- `FLOOR` 调的是均值下限
+
+##### 想让平均开口更高
+
+优先调：
+- `LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO`
+
+如果还不够，再回头调：
+- `lipsyncViseme.js` 里的 `maxOpenScale`
+- 元音 `open`
+
+##### 想让嘴别老闭嘴
+
+优先调：
+- `LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN`
+- `LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO`
+- `energyDrivenOpenFloor`
+
+##### 想让嘴别像一直闭不上
+
+优先调低：
+- `LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO`
+- `energyDrivenOpenFloor`
+- `energyDrivenOpenScale`
+
+### 4.3 第 3 层：最后一步平滑系数
+
+文件：
+- `apps/desktop-live2d/renderer/lipsyncMouthTransition.js`
+
+这是最后一步输出前的平滑层。  
+如果你感觉“目标值已经很高，但肉眼看还是不够动”，很多时候问题就在这里。
+
+#### 当前关键值
+
+```js
+open: {
+  attack: 0.56,
+  release: 0.3,
+  neutral: 0.16
+},
+form: {
+  attack: 0.4,
+  release: 0.24,
+  neutral: 0.14
+},
+settle: {
+  targetEpsilon: 0.008,
+  valueEpsilon: 0.005
+}
+```
+
+#### 每个参数的意思
+
+##### `open.attack`
+
+- 目标开口变大时，当前值追目标的速度
+- 越大：
+  - 开口更快
+  - 嘴张开更明显
+- 太大：
+  - 会变得有点“抽”
+
+##### `open.release`
+
+- 目标开口变小时，当前值回落的速度
+- 越大：
+  - 收口更快
+  - 节奏更利落
+- 太大：
+  - 容易突然闭嘴
+
+##### `open.neutral`
+
+- 停止说话、回到中性嘴型时的速度
+- 越大：
+  - 更快回默认闭嘴
+- 越小：
+  - 更柔和，但可能显得拖尾
+
+##### `form.attack / form.release / form.neutral`
+
+和 `open` 同理，只是针对 `mouthForm`。
+
+#### 最常见的调法
+
+##### 目标值很高，但看起来还是不够张
+
+优先提高：
+- `open.attack`
+
+这是最直接的“最后一步输出”放大感来源。
+
+##### 开口时够明显，但回落太慢
+
+优先提高：
+- `open.release`
+- `open.neutral`
+
+##### `form` 变化太钝
+
+优先提高：
+- `form.attack`
+
+##### 说完后嘴型回中性太突兀
+
+优先降低：
+- `open.neutral`
+- `form.neutral`
+
+### 4.4 face mixer 相关参数
+
+文件：
+- `apps/desktop-live2d/renderer/bootstrap.js`
+
+当前关键值：
+
+```js
+FACE_BLEND_ATTACK = 0.2
+FACE_BLEND_RELEASE = 0.12
+FACE_BLEND_SPEECH_MOUTHFORM_WEIGHT = 0.18
+```
+
+这一层主要影响：
+- 表情和嘴形会不会互抢
+- speaking 时 smile 对 `mouthForm` 的影响有多大
+
+怎么调：
+
+- 说话时 still 太“笑”：
+  - 降低 `FACE_BLEND_SPEECH_MOUTHFORM_WEIGHT`
+- 表情切换太硬：
+  - 降低 `FACE_BLEND_ATTACK`
+  - 降低 `FACE_BLEND_RELEASE`
+
+### 4.5 一套实用调参顺序
+
+不要同时乱改所有参数。建议顺序：
+
+1. 先看 JSONL / SVG
+   - 分清是 `raw` 小，还是 `target` 小，还是 `applied` 小
+2. 如果 `raw` 小
+   - 改 `lipsyncViseme.js`
+3. 如果 `target` 小
+   - 改 `bootstrap.js` 的 speaking 增益层
+4. 如果 `target` 高但视觉还是弱
+   - 改 `lipsyncMouthTransition.js`
+5. 如果 `applied` 跑飞
+   - 改 face mixer / 最终写入链
+
+### 4.6 一个判断原则
+
+- 想调“均值”：
+  - 看 `open floor`、`energyDrivenOpenFloor`
+- 想调“振幅”：
+  - 看 `variance gain`
+- 想调“最后一步响应快慢”：
+  - 看 `attack/release/neutral`
+
 ## 4. 常见定位路径
 
 ### 4.1 有声音但嘴几乎不动
