@@ -469,6 +469,22 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     assert.equal(patchedSettings.ok, true);
     assert.equal(patchedSettings.data.permission_level, 'low');
 
+    const patchedVoiceAutoReplySettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          voice_auto_reply_enabled: true
+        }
+      })
+    }).then((r) => r.json());
+    assert.equal(patchedVoiceAutoReplySettings.ok, true);
+    assert.equal(patchedVoiceAutoReplySettings.data.voice_auto_reply_enabled, true);
+
+    const reloadedSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`).then((r) => r.json());
+    assert.equal(reloadedSettings.ok, true);
+    assert.equal(reloadedSettings.data.voice_auto_reply_enabled, true);
+
     const invalidPermissionSettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -494,6 +510,19 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     assert.equal(invalidWorkspaceSettingsResp.status, 400);
     const invalidWorkspaceSettings = await invalidWorkspaceSettingsResp.json();
     assert.equal(invalidWorkspaceSettings.ok, false);
+
+    const invalidVoiceAutoReplySettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          voice_auto_reply_enabled: 'true'
+        }
+      })
+    });
+    assert.equal(invalidVoiceAutoReplySettingsResp.status, 400);
+    const invalidVoiceAutoReplySettings = await invalidVoiceAutoReplySettingsResp.json();
+    assert.equal(invalidVoiceAutoReplySettings.ok, false);
 
     const legacyEventsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/events`).then((r) => r.json());
     assert.equal(legacyEventsResp.ok, true);
@@ -674,4 +703,97 @@ test('gateway rejects oversized input_images by configured MAX_INPUT_IMAGE_BYTES
     await stopProcess(gateway?.child);
     llm.server.close();
   }
+});
+
+test('gateway runtime voice auto reply switch is controlled by voice-policy yaml', async () => {
+  async function runCase({ yamlEnabled, patchedSessionValue, expectedRuntimeValue }) {
+    const llmPort = await getFreePort();
+    const gatewayPort = await getFreePort();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-voice-auto-reply-'));
+    const providerConfigPath = path.join(tmpDir, 'providers.yaml');
+    const sessionStoreDir = path.join(tmpDir, 'session-store');
+    const longTermMemoryDir = path.join(tmpDir, 'long-term-memory');
+    const voicePolicyPath = path.join(tmpDir, 'voice-policy.yaml');
+
+    fs.writeFileSync(providerConfigPath, [
+      'active_provider: mock',
+      'providers:',
+      '  mock:',
+      '    type: openai_compatible',
+      '    display_name: Mock',
+      `    base_url: http://127.0.0.1:${llmPort}`,
+      '    model: mock-model',
+      '    api_key: mock-key',
+      '    timeout_ms: 2000'
+    ].join('\n'));
+
+    fs.writeFileSync(voicePolicyPath, [
+      'voice_policy:',
+      '  auto_reply:',
+      `    enabled: ${yamlEnabled ? 'true' : 'false'}`
+    ].join('\n'));
+
+    const llm = await startMockLlmServer(llmPort);
+    let gateway;
+
+    try {
+      gateway = await startGateway({
+        port: gatewayPort,
+        providerConfigPath,
+        sessionStoreDir,
+        longTermMemoryDir,
+        extraEnv: {
+          VOICE_POLICY_PATH: voicePolicyPath
+        }
+      });
+
+      const sessionId = `voice-auto-reply-${yamlEnabled ? 'yaml-on' : 'yaml-off'}`;
+
+      const patchedSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/${sessionId}/settings`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            voice_auto_reply_enabled: patchedSessionValue
+          }
+        })
+      }).then((r) => r.json());
+      assert.equal(patchedSettings.ok, true);
+      assert.equal(patchedSettings.data.voice_auto_reply_enabled, patchedSessionValue);
+
+      const run = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
+        jsonrpc: '2.0',
+        id: `rpc-${sessionId}`,
+        method: 'runtime.run',
+        params: {
+          session_id: sessionId,
+          input: 'please compute'
+        }
+      }, { expectRpcId: `rpc-${sessionId}` });
+      assert.ok(run.result);
+      assert.equal(run.result.result.state, 'DONE');
+
+      const settingsAfterRun = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/${sessionId}/settings`).then((r) => r.json());
+      assert.equal(settingsAfterRun.ok, true);
+      assert.equal(settingsAfterRun.data.voice_auto_reply_enabled, expectedRuntimeValue);
+    } catch (err) {
+      const logs = gateway?.getLogs?.() || '';
+      err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
+      throw err;
+    } finally {
+      await stopProcess(gateway?.child);
+      llm.server.close();
+    }
+  }
+
+  await runCase({
+    yamlEnabled: false,
+    patchedSessionValue: true,
+    expectedRuntimeValue: false
+  });
+  await runCase({
+    yamlEnabled: true,
+    patchedSessionValue: false,
+    expectedRuntimeValue: true
+  });
 });

@@ -2507,6 +2507,27 @@ async function startDesktopSuite({
   const recentVoiceRequestIds = new Map();
   const VOICE_REQUEST_DEDUP_TTL_MS = 120000;
 
+  const shouldSuppressDesktopDebug = (topic, meta = {}) => {
+    const normalizedTopic = String(topic || '');
+    const normalizedMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
+
+    if (normalizedTopic.startsWith('chain.electron.bubble.streaming_')) return true;
+    if (normalizedTopic.startsWith('chain.lipsync.')) return true;
+    if (normalizedTopic.includes('.lipsync')) return true;
+    if (normalizedTopic === 'chain.renderer.voice_memory.audio_event') return true;
+
+    if (normalizedTopic === 'chain.electron.notification.received') {
+      const type = String(normalizedMeta.type || '');
+      const eventName = String(normalizedMeta.event_name || '');
+      if (type === 'message.delta') return true;
+      if (type === 'runtime.event' && (eventName.startsWith('llm.stream.') || eventName.startsWith('tool_call.'))) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const rendererConsoleListener = (_event, level, message, line, sourceId) => {
     const parsed = parseRendererDebugConsoleMessage(message);
     if (!parsed) {
@@ -2526,10 +2547,14 @@ async function startDesktopSuite({
     sessionId: 'desktop-live2d-chat',
     logger,
     onNotification: (desktopEvent) => {
+      const notificationEventName = desktopEvent?.type === 'runtime.event'
+        ? String(desktopEvent?.data?.name || '')
+        : null;
       emitDesktopDebug('chain.electron.notification.received', 'electron main received gateway notification', {
         type: desktopEvent?.type || null,
         session_id: desktopEvent?.data?.session_id || null,
-        trace_id: desktopEvent?.data?.trace_id || null
+        trace_id: desktopEvent?.data?.trace_id || null,
+        event_name: notificationEventName
       });
       rpcServerRef?.notify({
         method: 'desktop.event',
@@ -2678,6 +2703,9 @@ async function startDesktopSuite({
     }
   });
   function emitDesktopDebug(topic, msg, meta = {}) {
+    if (shouldSuppressDesktopDebug(topic, meta)) {
+      return;
+    }
     void gatewayRuntimeClient.emitDebug(topic, msg, {
       source_file: 'apps/desktop-live2d/main/desktopSuite.js',
       ...(meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {})

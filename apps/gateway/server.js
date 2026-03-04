@@ -365,6 +365,14 @@ app.put('/api/sessions/:sessionId/settings', async (req, res) => {
     }
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'voice_auto_reply_enabled')
+    && typeof settings.voice_auto_reply_enabled !== 'boolean'
+  ) {
+    res.status(400).json({ ok: false, error: 'settings.voice_auto_reply_enabled must be boolean' });
+    return;
+  }
+
   const updated = await sessionStore.updateSessionSettings(req.params.sessionId, settings);
   res.json({ ok: true, data: updated });
 });
@@ -898,17 +906,21 @@ async function enqueueRpc(ws, rpcPayload, mode) {
           ? requestedPermissionLevel
           : existingSettings?.permission_level
       );
+      const voicePolicy = loadVoicePolicy({ policyPath: voicePolicyPath });
+      const voiceAutoReplyEnabled = voicePolicy?.auto_reply?.enabled === true;
       const workspace = await workspaceManager.getWorkspaceInfo(sessionId);
       const normalizedWorkspace = normalizeWorkspaceSettings(workspace);
 
       await sessionStore.updateSessionSettings(sessionId, {
         permission_level: permissionLevel,
-        workspace: normalizedWorkspace
+        workspace: normalizedWorkspace,
+        voice_auto_reply_enabled: voiceAutoReplyEnabled
       });
 
       return {
         permission_level: permissionLevel,
-        workspace_root: normalizedWorkspace.root_dir
+        workspace_root: normalizedWorkspace.root_dir,
+        voice_auto_reply_enabled: voiceAutoReplyEnabled
       };
     },
     transcribeAudio: async ({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext }) => {

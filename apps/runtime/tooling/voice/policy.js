@@ -19,6 +19,9 @@ function parseNum(v, fallback) {
 
 function defaultPolicy() {
   return {
+    auto_reply: {
+      enabled: false
+    },
     limits: {
       max_chars: 220,
       max_duration_sec: 45,
@@ -35,9 +38,13 @@ function loadVoicePolicy({ policyPath } = {}) {
   const raw = fs.readFileSync(resolved, 'utf8');
   const parsed = YAML.parse(raw) || {};
   const vp = parsed.voice_policy || {};
+  const autoReply = vp.auto_reply || {};
   const limits = vp.limits || {};
 
   return {
+    auto_reply: {
+      enabled: parseBool(autoReply.enabled, false)
+    },
     limits: {
       max_chars: parseNum(limits.max_chars, 220),
       max_duration_sec: parseNum(limits.max_duration_sec, 45),

@@ -1,7 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-const { evaluateVoicePolicy, defaultPolicy } = require('../../apps/runtime/tooling/voice/policy');
+const { loadVoicePolicy, evaluateVoicePolicy, defaultPolicy } = require('../../apps/runtime/tooling/voice/policy');
+
+test('loadVoicePolicy parses auto_reply.enabled from yaml', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-policy-test-'));
+  const policyPath = path.join(tmpDir, 'voice-policy.yaml');
+  fs.writeFileSync(policyPath, [
+    'voice_policy:',
+    '  auto_reply:',
+    '    enabled: true',
+    '  limits:',
+    '    max_chars: 180'
+  ].join('\n'));
+
+  const policy = loadVoicePolicy({ policyPath });
+  assert.equal(policy.auto_reply.enabled, true);
+  assert.equal(policy.limits.max_chars, 180);
+});
 
 test('voice policy allows short conversational content', () => {
   const policy = defaultPolicy();

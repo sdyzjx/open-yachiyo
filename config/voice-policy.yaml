@@ -1,4 +1,7 @@
 voice_policy:
+  auto_reply:
+    enabled: true
+
   must_speak_if:
     - input_type == audio && reply_complexity == low
 
