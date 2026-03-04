@@ -387,6 +387,87 @@ test('voice adapter chooses electron_native mode and returns accepted payload', 
   }
 });
 
+test('voice adapter normalizes jp tts text before dispatching electron_native request', async () => {
+  const {
+    ttsAliyunVc,
+    cooldownStore,
+    idempotencyStore,
+    loadVoicePathMode,
+    normalizeTtsInputText
+  } = voiceAdapters.__internal;
+  cooldownStore.calls.clear();
+  idempotencyStore.clear();
+
+  assert.equal(normalizeTtsInputText('八千代、おはよう', 'jp'), 'やちよ、おはよう');
+  assert.equal(normalizeTtsInputText('八千代，早上好', 'zh'), '八千代，早上好');
+
+  const prevMode = process.env.VOICE_PATH_MODE;
+  process.env.VOICE_PATH_MODE = 'electron_native';
+  assert.equal(loadVoicePathMode(), 'electron_native');
+
+  const events = [];
+  try {
+    await ttsAliyunVc(
+      {
+        text: '八千代、おはよう',
+        voiceId: 'voice-A',
+        model: 'qwen3-tts-vc-2026-01-22',
+        voiceTag: 'jp',
+        replyMeta: { inputType: 'audio', sentenceCount: 1 }
+      },
+      {
+        session_id: 'session-electron-jp-normalize',
+        voiceRegistry: { 'voice-A': { targetModel: 'qwen3-tts-vc-2026-01-22' } },
+        publishEvent: (topic, payload) => events.push({ topic, payload })
+      }
+    );
+
+    const voiceRequested = events.find((item) => item.topic === 'voice.requested');
+    assert.ok(voiceRequested);
+    assert.equal(voiceRequested.payload.text, 'やちよ、おはよう');
+  } finally {
+    if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
+    else delete process.env.VOICE_PATH_MODE;
+  }
+});
+
+test('voice adapter reads runtime desktop config with comments for electron_native mode', async () => {
+  const { loadVoicePathMode, resolveDesktopLive2dConfigPath } = voiceAdapters.__internal;
+  const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-home-'));
+  const configDir = path.join(tmpHome, 'config');
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(
+    path.join(configDir, 'desktop-live2d.json'),
+    `{
+  // runtime desktop config
+  "voice": {
+    "path": "electron_native"
+  }
+}
+`,
+    'utf8'
+  );
+
+  const prevMode = process.env.VOICE_PATH_MODE;
+  const prevHome = process.env.YACHIYO_HOME;
+  const prevConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+  delete process.env.VOICE_PATH_MODE;
+  process.env.YACHIYO_HOME = tmpHome;
+  delete process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+
+  try {
+    assert.equal(resolveDesktopLive2dConfigPath(), path.join(configDir, 'desktop-live2d.json'));
+    assert.equal(loadVoicePathMode(), 'electron_native');
+  } finally {
+    if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
+    else delete process.env.VOICE_PATH_MODE;
+    if (prevHome !== undefined) process.env.YACHIYO_HOME = prevHome;
+    else delete process.env.YACHIYO_HOME;
+    if (prevConfigPath !== undefined) process.env.DESKTOP_LIVE2D_CONFIG_PATH = prevConfigPath;
+    else delete process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+  }
+});
+
 test.after(() => {
   if (previousVoicePathMode !== undefined) process.env.VOICE_PATH_MODE = previousVoicePathMode;
   else delete process.env.VOICE_PATH_MODE;

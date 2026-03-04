@@ -4,11 +4,13 @@ const { execFile } = require('node:child_process');
 const { loadVoicePolicy, evaluateVoicePolicy } = require('../voice/policy');
 const { InMemoryVoiceCooldownStore, InMemoryVoiceIdempotencyStore, InMemoryVoiceActiveJobStore } = require('../voice/cooldownStore');
 const { ProviderConfigStore } = require('../../config/providerConfigStore');
+const { getRuntimePaths } = require('../../skills/runtimePaths');
 
 // TTS provider name in providers.yaml
 const TTS_PROVIDER_KEY = process.env.TTS_PROVIDER_KEY || 'qwen3_tts';
-const DESKTOP_LIVE2D_CONFIG_PATH = process.env.DESKTOP_LIVE2D_CONFIG_PATH
-  || path.resolve(process.cwd(), 'config/desktop-live2d.json');
+const JP_TTS_HARD_REPLACEMENTS = Object.freeze({
+  '八千代': 'やちよ'
+});
 
 function loadTtsProviderConfig() {
   try {
@@ -149,6 +151,17 @@ function resolveVoiceTag(args) {
   return 'zh';
 }
 
+function normalizeTtsInputText(text, voiceTag) {
+  let normalized = String(text || '');
+  if (voiceTag !== 'jp') {
+    return normalized;
+  }
+  for (const [source, target] of Object.entries(JP_TTS_HARD_REPLACEMENTS)) {
+    normalized = normalized.replaceAll(source, target);
+  }
+  return normalized;
+}
+
 function makeToolError(code, message, details = {}) {
   const err = new Error(message);
   err.code = code;
@@ -199,6 +212,82 @@ function incMetric(key) {
   voiceMetrics[key] = Number(voiceMetrics[key] || 0) + 1;
 }
 
+function resolveDesktopLive2dConfigPath() {
+  const configuredPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH
+    || path.join(getRuntimePaths().configDir, 'desktop-live2d.json');
+  return path.resolve(configuredPath);
+}
+
+function stripJsonComments(input) {
+  let output = '';
+  let inString = false;
+  let stringQuote = '';
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const current = input[index];
+    const next = input[index + 1];
+
+    if (inLineComment) {
+      if (current === '\n') {
+        inLineComment = false;
+        output += current;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (current === '*' && next === '/') {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      output += current;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (current === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (current === stringQuote) {
+        inString = false;
+        stringQuote = '';
+      }
+      continue;
+    }
+
+    if ((current === '"' || current === '\'' || current === '`')) {
+      inString = true;
+      stringQuote = current;
+      output += current;
+      continue;
+    }
+
+    if (current === '/' && next === '/') {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (current === '/' && next === '*') {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    output += current;
+  }
+
+  return output;
+}
+
 function loadVoicePathMode() {
   const envMode = String(process.env.VOICE_PATH_MODE || '').trim();
   if (envMode === 'electron_native' || envMode === 'runtime_legacy') {
@@ -206,11 +295,12 @@ function loadVoicePathMode() {
   }
 
   try {
-    if (!fsSync.existsSync(DESKTOP_LIVE2D_CONFIG_PATH)) {
+    const configPath = resolveDesktopLive2dConfigPath();
+    if (!fsSync.existsSync(configPath)) {
       return 'runtime_legacy';
     }
-    const raw = fsSync.readFileSync(DESKTOP_LIVE2D_CONFIG_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
+    const raw = fsSync.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(stripJsonComments(raw));
     const mode = String(parsed?.voice?.path || '').trim();
     if (mode === 'electron_native' || mode === 'runtime_legacy') {
       return mode;
@@ -241,13 +331,14 @@ async function ttsAliyunVc(args = {}, context = {}) {
   const nowMs = Date.now();
   const voiceTag = resolveVoiceTag(args);
   const text = String(args.text || '').trim();
+  const normalizedText = normalizeTtsInputText(text, voiceTag);
 
-  const policyResult = evaluateVoicePolicy(args, context, policy);
+  const policyResult = evaluateVoicePolicy({ ...args, text: normalizedText }, context, policy);
   publishVoiceEvent(context, 'voice.policy.checked', {
     allow: policyResult.allow,
     code: policyResult.code,
     reason: policyResult.reason,
-    text_length: text.length,
+    text_length: normalizedText.length,
     voice_tag: voiceTag
   });
 
@@ -296,7 +387,7 @@ async function ttsAliyunVc(args = {}, context = {}) {
       const payload = {
         request_id: jobId,
         session_id: sessionId,
-        text,
+        text: normalizedText,
         voiceTag,
         model: String(args.model || 'qwen3-tts-vc-2026-01-22'),
         voiceId: String(args.voiceId || ''),
@@ -335,7 +426,7 @@ async function ttsAliyunVc(args = {}, context = {}) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         audioPath = await callDashscopeTts({
-          text,
+          text: normalizedText,
           model: args.model,   // undefined 时 callDashscopeTts 内部会用 providerCfg.tts_model
           voiceId: args.voiceId, // 同上，undefined 时用 providerCfg.tts_voice
           voiceTag,
@@ -440,6 +531,7 @@ module.exports = {
   __internal: {
     ttsAliyunVc,
     voiceStats,
+    normalizeTtsInputText,
     resolveVoiceTag,
     checkModelVoiceCompatibility,
     enforceRateLimit,
@@ -449,6 +541,7 @@ module.exports = {
     snapshotMetrics,
     resetMetrics,
     callDashscopeTts,
-    loadVoicePathMode
+    loadVoicePathMode,
+    resolveDesktopLive2dConfigPath
   }
 };
