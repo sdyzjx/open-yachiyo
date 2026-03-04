@@ -172,6 +172,7 @@ class ToolLoopRunner {
     resolvePersonaContext,
     resolveSkillsContext,
     maxStep = 128,
+    toolErrorMaxRetries = 5,
     toolResultTimeoutMs = 10000,
     runtimeStreamingEnabled = false,
     toolAsyncMode = 'serial',
@@ -184,6 +185,7 @@ class ToolLoopRunner {
     this.resolvePersonaContext = resolvePersonaContext;
     this.resolveSkillsContext = resolveSkillsContext;
     this.maxStep = maxStep;
+    this.toolErrorMaxRetries = normalizePositiveInt(toolErrorMaxRetries, 5);
     this.toolResultTimeoutMs = toolResultTimeoutMs;
     this.runtimeStreamingEnabled = normalizeBoolean(runtimeStreamingEnabled, false);
     this.toolAsyncMode = normalizeAsyncMode(toolAsyncMode, 'serial');
@@ -210,7 +212,8 @@ class ToolLoopRunner {
       streaming_enabled: this.runtimeStreamingEnabled,
       tool_async_mode: this.toolAsyncMode,
       tool_early_dispatch: this.toolEarlyDispatch,
-      max_parallel_tools: this.maxParallelTools
+      max_parallel_tools: this.maxParallelTools,
+      tool_error_max_retries: this.toolErrorMaxRetries
     };
 
     const markMetricIfUnset = (key) => {
@@ -289,7 +292,9 @@ class ToolLoopRunner {
             'For every reply turn, decide one Live2D action and a duration_sec based on the chat context.',
             'When live2d tools are available, call exactly one live2d.* tool with valid preset/action names and explicit duration_sec before final text response.',
             'When user asks to modify persona/addressing/custom title (e.g. 修改人格/修改称呼/叫我xxx), call persona.update_profile with {custom_name}.',
+            'For requests that mention named targets (e.g. playlist/file/tab), avoid assuming exact names: first list/search candidates via tools, then choose the best semantic match before action.',
             'If shell.exec returns APPROVAL_REQUIRED, call shell.approve with approval_id, then retry shell.exec.',
+            `If a tool returns an error, use the error details to re-plan and retry with an alternative approach. Maximum tool-error retries per run: ${this.toolErrorMaxRetries}.`,
             'Use persona.update_profile even in low permission sessions; this is globally allowed.',
             'Keep answers concise.'
           ].join(' ')
@@ -365,6 +370,8 @@ class ToolLoopRunner {
       const reasoner = this.getReasoner();
       const schemaAjv = new Ajv({ allErrors: true, strict: false });
       const schemaValidatorCache = new Map();
+      let toolErrorRetryCount = 0;
+      let lastRetryableToolError = null;
       const getSchemaValidator = (toolDef) => {
         const toolName = String(toolDef?.name || '').trim();
         if (!toolName) return null;
@@ -663,6 +670,7 @@ class ToolLoopRunner {
           chunk_width: chunkWidth
         });
 
+        let stepHasRetryableToolError = false;
         for (let start = 0; start < toolCalls.length; start += chunkWidth) {
           const chunk = toolCalls.slice(start, start + chunkWidth);
           const chunkResults = await Promise.all(chunk.map((call) => {
@@ -730,14 +738,81 @@ class ToolLoopRunner {
                 continue;
               }
 
-              sm.transition(RuntimeState.ERROR);
+              const nextRetryCount = toolErrorRetryCount + 1;
+              const retryLimitReached = nextRetryCount > this.toolErrorMaxRetries;
+              const retryPayload = {
+                ok: false,
+                code: toolResult.code || 'RUNTIME_ERROR',
+                error: toolResult.error,
+                details: toolResult.details || null,
+                retryable: !retryLimitReached,
+                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retry_limit: this.toolErrorMaxRetries
+              };
+              const retryContent = JSON.stringify(retryPayload);
+
+              ctx.messages.push({
+                role: 'tool',
+                tool_call_id: effectiveCall.call_id,
+                name: effectiveCall.name,
+                content: retryContent
+              });
+              ctx.observations.push({
+                call_id: effectiveCall.call_id,
+                name: effectiveCall.name,
+                error: toolResult.error,
+                code: toolResult.code,
+                details: toolResult.details || null,
+                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retry_limit: this.toolErrorMaxRetries
+              });
+              emit('tool.result', {
+                call_id: effectiveCall.call_id,
+                name: effectiveCall.name,
+                result: retryContent,
+                code: toolResult.code || 'RUNTIME_ERROR',
+                error: true,
+                retryable: !retryLimitReached,
+                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retry_limit: this.toolErrorMaxRetries
+              });
+
+              if (retryLimitReached) {
+                sm.transition(RuntimeState.ERROR);
+                emit('tool.error', {
+                  call_id: effectiveCall.call_id,
+                  error: toolResult.error,
+                  name: effectiveCall.name,
+                  code: toolResult.code,
+                  retry_exhausted: true,
+                  retry_count: this.toolErrorMaxRetries,
+                  retry_limit: this.toolErrorMaxRetries
+                });
+                return {
+                  output: `工具执行失败：${toolResult.error}（已达到最大重试次数 ${this.toolErrorMaxRetries}）`,
+                  traceId,
+                  state: sm.state
+                };
+              }
+
+              toolErrorRetryCount = nextRetryCount;
+              lastRetryableToolError = {
+                call_id: effectiveCall.call_id,
+                name: effectiveCall.name,
+                error: toolResult.error,
+                code: toolResult.code
+              };
+              stepHasRetryableToolError = true;
               emit('tool.error', {
                 call_id: effectiveCall.call_id,
                 error: toolResult.error,
                 name: effectiveCall.name,
-                code: toolResult.code
+                code: toolResult.code,
+                will_retry: true,
+                retry_count: toolErrorRetryCount,
+                retry_limit: this.toolErrorMaxRetries
               });
-              return { output: `工具执行失败：${toolResult.error}`, traceId, state: sm.state };
+              continue;
             }
 
             if (toolResult?.dedup_hit) {
@@ -764,6 +839,36 @@ class ToolLoopRunner {
             });
           }
         }
+
+        if (stepHasRetryableToolError) {
+          emit('tool.retry.scheduled', {
+            retry_count: toolErrorRetryCount,
+            retry_limit: this.toolErrorMaxRetries,
+            last_error: lastRetryableToolError?.error || null,
+            last_code: lastRetryableToolError?.code || null
+          });
+        }
+      }
+
+      if (lastRetryableToolError) {
+        sm.transition(RuntimeState.ERROR);
+        emit('tool.error', {
+          call_id: lastRetryableToolError.call_id,
+          error: lastRetryableToolError.error,
+          name: lastRetryableToolError.name,
+          code: lastRetryableToolError.code,
+          retry_exhausted: false,
+          retry_count: toolErrorRetryCount,
+          retry_limit: this.toolErrorMaxRetries,
+          reason: 'max_step_reached_with_pending_tool_errors'
+        });
+        const metrics = finalizeMetrics();
+        return {
+          output: `工具执行失败：${lastRetryableToolError.error}（已达到 max_step，重试 ${toolErrorRetryCount}/${this.toolErrorMaxRetries}）`,
+          traceId,
+          state: sm.state,
+          metrics
+        };
       }
 
       sm.transition(RuntimeState.DONE);

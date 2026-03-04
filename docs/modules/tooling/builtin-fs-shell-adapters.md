@@ -55,17 +55,6 @@
 
 ### 执行模式
 
-- Apple Music 兼容重写（新增）：
-  - 当检测到 `osascript -e 'tell application "Music" ...'` 这类命令时，先重写为
-    `~/yachiyo/skills/apple-events-music/scripts/music_control.sh` 的等价子命令。
-  - 典型映射：
-    - `play playlist "<name>"` -> `music_control.sh play "<name>" --shuffle`
-    - `next track` -> `music_control.sh next`
-    - `previous track` -> `music_control.sh prev`
-    - `playpause` -> `music_control.sh playpause`
-    - `get name of playlists` -> `music_control.sh playlists`
-    - `set sound volume to <n>` -> `music_control.sh volume <n>`
-  - 目的：避免模型直接拼装脆弱 AppleScript 导致 `-1700` 类型转换错误，并统一到技能脚本的稳态逻辑。
 - 无 shell 操作符（`&&`, `||`, `|`, `>`, `<`, `;` 等）：
   - 走 argv 安全解析 + 权限/路径策略校验。
 - 含 shell 操作符：

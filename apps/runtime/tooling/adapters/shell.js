@@ -1,5 +1,4 @@
 const { spawn } = require('child_process');
-const os = require('os');
 const path = require('path');
 const { ToolingError, ErrorCode } = require('../errors');
 const { getShellPermissionProfile } = require('../../security/sessionPermissionPolicy');
@@ -8,65 +7,6 @@ const {
   grantShellApproval,
   consumeShellApproval
 } = require('../shellApprovalStore');
-
-function resolveYachiyoHome() {
-  const fromEnv = String(process.env.YACHIYO_HOME || '').trim();
-  if (fromEnv) {
-    if (fromEnv === '~') return os.homedir();
-    if (fromEnv.startsWith('~/')) return path.join(os.homedir(), fromEnv.slice(2));
-    return path.resolve(fromEnv);
-  }
-  return path.join(os.homedir(), 'yachiyo');
-}
-
-function resolveAppleMusicControlScriptPath() {
-  return path.join(resolveYachiyoHome(), 'skills', 'apple-events-music', 'scripts', 'music_control.sh');
-}
-
-function shellQuote(value) {
-  return `"${String(value || '').replace(/(["\\$`])/g, '\\$1')}"`;
-}
-
-function mapPlaylistKeyword(keyword) {
-  const raw = String(keyword || '').trim();
-  if (!raw) return raw;
-  if (/jazz/i.test(raw)) return '爵士';
-  return raw;
-}
-
-function rewriteAppleMusicOsaCommand(command) {
-  const raw = String(command || '').trim();
-  if (!raw) return raw;
-  if (!/\bosascript\b/i.test(raw)) return raw;
-  if (!/tell application "Music"/i.test(raw)) return raw;
-
-  const scriptPath = resolveAppleMusicControlScriptPath();
-
-  const playlistMatch = raw.match(/osascript\s+-e\s+['"]tell application "Music" to play playlist "([^"]+)"['"]/i);
-  if (playlistMatch) {
-    const keyword = mapPlaylistKeyword(playlistMatch[1]);
-    return `bash ${shellQuote(scriptPath)} play ${shellQuote(keyword)} --shuffle`;
-  }
-
-  if (/tell application "Music" to playpause/i.test(raw)) {
-    return `bash ${shellQuote(scriptPath)} playpause`;
-  }
-  if (/tell application "Music" to next track/i.test(raw)) {
-    return `bash ${shellQuote(scriptPath)} next`;
-  }
-  if (/tell application "Music" to previous track/i.test(raw)) {
-    return `bash ${shellQuote(scriptPath)} prev`;
-  }
-  if (/tell application "Music" to get name of playlists/i.test(raw)) {
-    return `bash ${shellQuote(scriptPath)} playlists`;
-  }
-  const volumeMatch = raw.match(/tell application "Music" to set sound volume to\s+([0-9]{1,3})/i);
-  if (volumeMatch) {
-    return `bash ${shellQuote(scriptPath)} volume ${volumeMatch[1]}`;
-  }
-
-  return raw;
-}
 
 function splitCommand(command) {
   const parts = command.match(/(?:"[^"]*"|'[^']*'|\S)+/g) || [];
@@ -350,7 +290,7 @@ function runShellWithApproval(command, context = {}) {
 }
 
 function runExec(args, context = {}) {
-  const command = rewriteAppleMusicOsaCommand(String(args.command || '').trim());
+  const command = String(args.command || '').trim();
   if (!command) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command is empty');
 
   if (hasShellOperators(command)) {
@@ -431,6 +371,5 @@ function runApprove(args, context = {}) {
 
 module.exports = {
   'shell.exec': runExec,
-  'shell.approve': runApprove,
-  __rewriteAppleMusicOsaCommandForTests: rewriteAppleMusicOsaCommand
+  'shell.approve': runApprove
 };

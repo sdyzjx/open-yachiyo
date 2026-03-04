@@ -201,6 +201,7 @@ const runner = new ToolLoopRunner({
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
   maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
+  toolErrorMaxRetries: parsePositiveIntEnv('RUNTIME_TOOL_ERROR_MAX_RETRIES', 5),
   toolResultTimeoutMs: 10000,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
@@ -283,6 +284,7 @@ app.get('/health', async (_, res) => {
       tool_async_mode: runner.toolAsyncMode,
       tool_early_dispatch: runner.toolEarlyDispatch,
       max_parallel_tools: runner.maxParallelTools,
+      tool_error_max_retries: runner.toolErrorMaxRetries,
       tool_call_dedup_ttl_ms: dispatcher.dedupTtlMs
     },
     llm: llmManager.getConfigSummary(),
