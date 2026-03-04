@@ -61,6 +61,7 @@ npm run desktop:smoke
 - **Controllable runtime loop** with hard step boundaries
 - **JSON-RPC + queue ingress** (`runtime.run`) decoupled from execution
 - **EventBus tool dispatch** (`tool.call.requested` -> `tool.call.result`)
+- **Streaming message pipeline** (`runtime.start/event/final` pushed to Web/Electron in real time)
 - **Session persistence** (messages/events/runs)
 - **Long-term memory tools** (`memory_write`, `memory_search`)
 - **Desktop rich rendering** (Markdown/LaTeX/Mermaid, streaming bubbles)
@@ -122,6 +123,13 @@ Parallel development and integration are handled with branch/worktree discipline
 
 ---
 
+## Development Environment
+
+- Primary development machine: **MacBook Air M4 (macOS)**
+- Current status: **Windows is not yet adapted/validated**
+
+---
+
 ## Testing
 
 ```bash
@@ -164,7 +172,7 @@ CI runs on GitHub Actions (`.github/workflows/ci.yml`).
 - [ ] #25 feat(agent): add git repository management capability
 - [ ] #23 [Bug] WebUI nickname update not reflected by LLM
 
-### Recent Progress (from TODO doc)
+### Recent Progress
 
 - [x] Desktop Live2D Phase A replan baseline
 - [x] Phase B chat panel UI

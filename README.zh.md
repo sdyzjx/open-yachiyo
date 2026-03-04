@@ -61,6 +61,7 @@ npm run desktop:smoke
 - **可控运行时循环**（硬步数边界）
 - **JSON-RPC + 队列入口**（`runtime.run` 与执行解耦）
 - **EventBus 工具分发**（`tool.call.requested` -> `tool.call.result`）
+- **流式消息链路**（`runtime.start/event/final` 实时推送到 Web/Electron）
 - **会话持久化**（消息/事件/运行记录）
 - **长期记忆工具化**（`memory_write`、`memory_search`）
 - **桌面富文本渲染**（Markdown/LaTeX/Mermaid + 流式气泡）
@@ -124,6 +125,13 @@ OpenClaw 强在多渠道网关与编排能力。
 
 ---
 
+## 开发环境说明
+
+- 主要开发环境：**MacBook Air M4（macOS）**
+- 当前状态：**暂未对 Windows 做适配与验证**
+
+---
+
 ## 测试
 
 ```bash
@@ -166,7 +174,7 @@ CI 配置在 GitHub Actions：`.github/workflows/ci.yml`。
 - [ ] #25 feat(agent): add git repository management capability
 - [ ] #23 [Bug] WebUI 修改保存称呼后 LLM 无法修正称呼
 
-### 近期进展（来自 TODO 文档）
+### 近期进展
 
 - [x] Desktop Live2D Phase A 重规划基线
 - [x] Phase B 聊天面板 UI
