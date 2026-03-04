@@ -93,7 +93,7 @@ OpenClaw 强在多渠道网关与编排能力。
 
 ---
 
-## 可调试性（第一优先级）
+## 可调试性
 
 运行时提供 **SSE 全链路调试通道**：
 
@@ -101,9 +101,11 @@ OpenClaw 强在多渠道网关与编排能力。
 - 注入调试事件：`POST /api/debug/emit`
 - 开关 debug 模式：`PUT /api/debug/mode`
 
+底层链路基于 **JSON-RPC 2.0** 请求模型实现（`runtime.run`），并通过队列与 EventBus 解耦。
+
 通过 topic 过滤，可以串起单次请求全链路：
 
-`web/electron -> gateway ws -> queue -> worker -> loop -> dispatch -> executor -> ws outbound`
+`web/electron -> gateway ws (JSON-RPC 2.0) -> queue -> worker -> loop -> dispatch -> executor -> ws outbound`
 
 参考：
 
