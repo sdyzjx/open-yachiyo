@@ -1051,6 +1051,53 @@ test('ToolLoopRunner injects voice auto-reply system prompt when runtimeContext 
   dispatcher.stop();
 });
 
+test('ToolLoopRunner emits llm.prompt.assembled with fully assembled messages', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const seenEvents = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide() {
+        return { type: 'final', output: 'ok-prompt-log' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-prompt-log',
+    input: 'hello',
+    inputImages: [{ data_url: 'data:image/png;base64,AAAA' }],
+    seedMessages: [{ role: 'assistant', content: 'prior assistant' }],
+    onEvent: (evt) => seenEvents.push(evt)
+  });
+
+  assert.equal(result.state, 'DONE');
+  const promptEvent = seenEvents.find((evt) => evt.event === 'llm.prompt.assembled');
+  assert.ok(promptEvent);
+  assert.equal(promptEvent.payload.message_count > 0, true);
+  assert.equal(Array.isArray(promptEvent.payload.messages), true);
+  assert.equal(
+    promptEvent.payload.messages.some((msg) => String(msg.role) === 'assistant' && String(msg.content) === 'prior assistant'),
+    true
+  );
+  const userMsg = promptEvent.payload.messages.find((msg) => msg.role === 'user');
+  assert.ok(userMsg);
+  assert.equal(Array.isArray(userMsg.content), true);
+  assert.equal(
+    userMsg.content.some((part) => part && part.type === 'image_url' && part.image_url === '[omitted]'),
+    true
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner does not inject voice auto-reply system prompt when runtimeContext flag is disabled', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

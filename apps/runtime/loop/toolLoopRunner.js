@@ -57,6 +57,42 @@ function buildCurrentUserMessage(input, inputImages = []) {
   return { role: 'user', content };
 }
 
+function serializePromptContentForLog(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return content == null ? '' : String(content);
+  }
+  return content.map((part) => {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) {
+      return { type: 'unknown', value: String(part || '') };
+    }
+    if (part.type === 'text') {
+      return {
+        type: 'text',
+        text: typeof part.text === 'string' ? part.text : String(part.text || '')
+      };
+    }
+    if (part.type === 'image_url') {
+      return {
+        type: 'image_url',
+        image_url: '[omitted]'
+      };
+    }
+    return part;
+  });
+}
+
+function serializePromptMessagesForLog(messages = []) {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((message, index) => ({
+    index,
+    role: String(message?.role || ''),
+    content: serializePromptContentForLog(message?.content)
+  }));
+}
+
 function formatDecisionEvent(decision) {
   if (decision.type === 'final') {
     return { type: 'final', preview: String(decision.output || '').slice(0, 160) };
@@ -317,6 +353,10 @@ class ToolLoopRunner {
       skills_selected: skillsContext?.selected?.length || 0,
       skills_clipped_by: skillsContext?.clippedBy || null,
       runtime_flags: runtimeFlags
+    });
+    emit('llm.prompt.assembled', {
+      message_count: ctx.messages.length,
+      messages: serializePromptMessagesForLog(ctx.messages)
     });
 
     try {
