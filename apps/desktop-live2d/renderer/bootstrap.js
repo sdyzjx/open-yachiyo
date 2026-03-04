@@ -1134,6 +1134,59 @@
     };
   }
 
+  function inferVoiceMimeType(format, fallback = 'audio/ogg') {
+    const normalized = String(format || '').trim().toLowerCase();
+    if (!normalized) {
+      return fallback;
+    }
+    if (normalized === 'mp3') {
+      return 'audio/mpeg';
+    }
+    if (normalized === 'wav') {
+      return 'audio/wav';
+    }
+    return `audio/${normalized}`;
+  }
+
+  function normalizeElectronPlaybackAudioUrl(audioRef) {
+    const rawAudioRef = String(audioRef || '').trim();
+    if (!rawAudioRef) {
+      return '';
+    }
+    if (/^(https?:|blob:|data:|file:)/i.test(rawAudioRef)) {
+      return rawAudioRef;
+    }
+    if (rawAudioRef.startsWith('/')) {
+      return `file://${encodeURI(rawAudioRef)}`;
+    }
+    return rawAudioRef;
+  }
+
+  function normalizeElectronPlaybackPayload(data = {}) {
+    const rawAudioRef = String(data?.audio_ref || data?.audioRef || '').trim();
+    const requestId = normalizeVoiceRequestId(
+      data?.request_id
+        || data?.requestId
+        || data?.job_id
+        || data?.jobId
+        || data?.call_id
+        || data?.callId
+        || data?.trace_id
+        || data?.traceId
+        || rawAudioRef
+        || `${Date.now()}-voice-playback-electron`
+    );
+    return {
+      requestId,
+      request_id: requestId,
+      audioUrl: normalizeElectronPlaybackAudioUrl(rawAudioRef),
+      audio_url: normalizeElectronPlaybackAudioUrl(rawAudioRef),
+      mimeType: String(data?.mime_type || data?.mimeType || inferVoiceMimeType(data?.format, 'audio/ogg')),
+      mime_type: String(data?.mime_type || data?.mimeType || inferVoiceMimeType(data?.format, 'audio/ogg')),
+      rawAudioRef
+    };
+  }
+
   async function playVoiceFromRemote({ audioUrl = null, mimeType = 'audio/ogg', requestId = null, request_id = null } = {}) {
     const nextRequestId = normalizeVoiceRequestId(requestId || request_id || `${Date.now()}-voice`);
     const normalizedAudioUrl = String(audioUrl || '').trim();
@@ -2646,7 +2699,27 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        result = { ok: true, ignored: true, name, data };
+        if (name === 'voice.playback.electron') {
+          const playbackPayload = normalizeElectronPlaybackPayload(data);
+          if (!playbackPayload.audioUrl) {
+            throw createRpcError(-32602, 'voice.playback.electron missing audio_ref');
+          }
+          emitRendererDebug('voice_electron.forwarded', {
+            request_id: playbackPayload.requestId,
+            audio_ref: playbackPayload.rawAudioRef,
+            mime_type: playbackPayload.mimeType
+          });
+          await playVoiceFromRemote(playbackPayload);
+          result = {
+            ok: true,
+            forwarded: true,
+            name,
+            request_id: playbackPayload.requestId,
+            audio_ref: playbackPayload.rawAudioRef
+          };
+        } else {
+          result = { ok: true, ignored: true, name, data };
+        }
       } else {
         throw createRpcError(-32601, `method not found: ${method}`);
       }
