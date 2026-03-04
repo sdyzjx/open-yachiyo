@@ -36,10 +36,10 @@
     silence: {
       energyThreshold: 0.028,
       confidenceThreshold: 0.08,
-      holdFrames: 4,
-      holdDecay: 0.74,
-      energyDrivenOpenFloor: 0.02,
-      energyDrivenOpenScale: 1.95
+      holdFrames: 3,
+      holdDecay: 0.66,
+      energyDrivenOpenFloor: 0.012,
+      energyDrivenOpenScale: 1.7
     },
     transients: {
       confirmFrames: 2,
@@ -52,9 +52,9 @@
       envelopes: {
         stopLike: {
           durationFrames: 7,
-          openCloseAmount: 0.08,
-          openReleaseAmount: 0.05,
-          formAmount: 0.24
+          openCloseAmount: 0.15,
+          openReleaseAmount: 0.02,
+          formAmount: 0.46
         },
         fricativeLike: {
           durationFrames: 8,
@@ -565,7 +565,7 @@
         const drivenOpen = clamp(
           energyDrivenOpenFloor + rawVoiceEnergy * energyDrivenOpenScale,
           0,
-          0.12
+          0.11
         );
         const drivenForm = clamp(previousForm * 0.45, -1, 1);
         return {

@@ -48,6 +48,7 @@
   let lipsyncCurrentMouthForm = 0;
   let lipsyncBaselineMouthOpen = 0;
   let lipsyncBaselineMouthForm = 0;
+  let lipsyncOpenDeadzoneActive = false;
   let lipsyncSpeakingActive = false;
   let lipsyncDetachModelHook = null;
   let lipsyncDetachTickerHook = null;
@@ -57,8 +58,9 @@
   let activeVoiceRequestId = null;
   let systemAudioDebugBound = false;
   let realtimeVoicePlayer = null;
-  let lipsyncWarmupEmaMs = null;
-  let lipsyncLastWarmupMs = null;
+  let lipsyncMediaElementSource = null;
+  let lipsyncMediaElement = null;
+  let lipsyncMediaElementAnalyser = null;
   let faceBlendState = {
     current: {
       mouthForm: 0,
@@ -182,12 +184,14 @@
   const MODEL_TAP_SUPPRESS_AFTER_DRAG_MS = 220;
   const MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS = 240;
   const LIPSYNC_ACTIVE_ENERGY_MIN = 0.018;
-  const LIPSYNC_BASELINE_OPEN_ALPHA = 0.024;
+  const LIPSYNC_BASELINE_OPEN_ALPHA = 0.032;
   const LIPSYNC_BASELINE_FORM_ALPHA = 0.02;
   const LIPSYNC_VARIANCE_OPEN_GAIN_MIN = 3.0;
   const LIPSYNC_VARIANCE_OPEN_GAIN_MAX = 4.0;
-  const LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN = 0.82;
-  const LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO = 0.36;
+  const LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN = 0.9;
+  const LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO = 0.22;
+  const LIPSYNC_OPEN_DEADZONE_ENTER = 0.09;
+  const LIPSYNC_OPEN_DEADZONE_EXIT = 0.11;
   const LIPSYNC_VARIANCE_FORM_GAIN_MIN = 2.0;
   const LIPSYNC_VARIANCE_FORM_GAIN_MAX = 3.0;
   const FACE_BLEND_ATTACK = 0.2;
@@ -299,6 +303,7 @@
     lipsyncCurrentMouthForm = basePose.mouthForm;
     lipsyncBaselineMouthOpen = basePose.mouthOpen;
     lipsyncBaselineMouthForm = basePose.mouthForm;
+    lipsyncOpenDeadzoneActive = false;
     return basePose;
   }
 
@@ -1021,50 +1026,13 @@
     return runtimeUiConfig.voice;
   }
 
-  function nowMs() {
-    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-      return performance.now();
-    }
-    return Date.now();
-  }
-
-  function getAdaptiveVoiceOutputDelayMs() {
-    if (!Number.isFinite(lipsyncWarmupEmaMs)) {
-      return null;
-    }
-    return Math.max(0, Math.min(120, Math.round(lipsyncWarmupEmaMs + 8)));
-  }
-
-  function noteLipsyncWarmupDuration(durationMs, meta = {}) {
-    const normalizedDurationMs = Number(durationMs);
-    if (!Number.isFinite(normalizedDurationMs) || normalizedDurationMs < 0) {
-      return;
-    }
-    lipsyncLastWarmupMs = normalizedDurationMs;
-    lipsyncWarmupEmaMs = Number.isFinite(lipsyncWarmupEmaMs)
-      ? (lipsyncWarmupEmaMs * 0.65) + (normalizedDurationMs * 0.35)
-      : normalizedDurationMs;
-    emitRendererDebug('voice_output_delay.calibrated', {
-      request_id: activeVoiceRequestId,
-      warmup_ms: Math.round(normalizedDurationMs),
-      warmup_ema_ms: Math.round(lipsyncWarmupEmaMs),
-      adaptive_output_delay_ms: getAdaptiveVoiceOutputDelayMs(),
-      ...meta
-    });
-  }
-
   function resolveVoiceOutputDelayMs(overrideValue = null) {
     const runtimeVoice = ensureRuntimeVoiceConfig();
     const candidate = overrideValue ?? runtimeVoice.outputDelayMs;
     const parsed = Number(candidate);
-    const configuredDelayMs = Number.isFinite(parsed)
+    return Number.isFinite(parsed)
       ? Math.max(0, Math.min(500, Math.round(parsed)))
       : 0;
-    const adaptiveDelayMs = getAdaptiveVoiceOutputDelayMs();
-    if (adaptiveDelayMs === null) {
-      return configuredDelayMs;
-    }
-    return adaptiveDelayMs;
   }
 
   function wait(ms) {
@@ -1073,15 +1041,20 @@
     });
   }
 
-  async function primeLipsync(audioElement, options = {}) {
-    const sourceLabel = String(options?.sourceLabel || (audioElement ? 'media_element' : 'external_analyser'));
-    const startedAt = nowMs();
-    const started = await startLipsync(audioElement, options);
-    if (started) {
-      noteLipsyncWarmupDuration(nowMs() - startedAt, {
-        source_label: sourceLabel
-      });
+  function normalizeLegacyVoiceAudioUrl(audioRef = '') {
+    const raw = String(audioRef || '').trim();
+    if (!raw) return '';
+    if (/^[a-z]+:\/\//i.test(raw)) {
+      return raw;
     }
+    if (raw.startsWith('/')) {
+      return `file://${encodeURI(raw)}`;
+    }
+    return raw;
+  }
+
+  async function primeLipsync(audioElement, options = {}) {
+    const started = await startLipsync(audioElement, options);
     return started;
   }
 
@@ -1359,6 +1332,26 @@
       mouthOpen: boostedOpen,
       mouthForm: boostedForm
     };
+  }
+
+  function applyMouthOpenDeadzone({ mouthOpen = 0, speaking = false } = {}) {
+    const open = clamp(Number(mouthOpen) || 0, 0, 1);
+    const active = Boolean(speaking);
+
+    if (lipsyncOpenDeadzoneActive) {
+      if (open >= LIPSYNC_OPEN_DEADZONE_EXIT) {
+        lipsyncOpenDeadzoneActive = false;
+        return open;
+      }
+      return 0;
+    }
+
+    if (open <= LIPSYNC_OPEN_DEADZONE_ENTER && (!active || open <= LIPSYNC_OPEN_DEADZONE_EXIT)) {
+      lipsyncOpenDeadzoneActive = true;
+      return 0;
+    }
+
+    return open;
   }
 
   function releaseCurrentVoiceObjectUrl() {
@@ -1838,22 +1831,39 @@
       }
 
       if (externalAnalyser) {
-        lipsyncAudioSource = null;
+        lipsyncAudioSource = lipsyncMediaElementSource;
         lipsyncAnalyser = externalAnalyser;
         emitLipsyncTelemetry('sync.graph_ready', {
           has_audio_context: true,
-          has_audio_source: false,
+          has_audio_source: !!lipsyncAudioSource,
           has_analyser: !!lipsyncAnalyser,
           source_label: sourceLabel
         });
-      } else if (!lipsyncAudioSource || !lipsyncAnalyser) {
-        // MediaElementSource can only be created once for the same audio element.
-        lipsyncAudioSource = audioContext.createMediaElementSource(audioElement);
-        lipsyncAnalyser = audioContext.createAnalyser();
-        lipsyncAnalyser.fftSize = 2048;
-        lipsyncAnalyser.smoothingTimeConstant = 0.8;
-        lipsyncAudioSource.connect(lipsyncAnalyser);
-        lipsyncAnalyser.connect(audioContext.destination);
+      } else {
+        if (!audioElement) {
+          emitLipsyncTelemetry('sync.unavailable', {
+            reason: 'missing_audio_element',
+            source_label: sourceLabel
+          });
+          return false;
+        }
+
+        if (!lipsyncMediaElementSource || lipsyncMediaElement !== audioElement) {
+          // One MediaElementSourceNode can only be bound once per media element.
+          lipsyncMediaElementSource = audioContext.createMediaElementSource(audioElement);
+          lipsyncMediaElement = audioElement;
+        }
+
+        if (!lipsyncMediaElementAnalyser) {
+          lipsyncMediaElementAnalyser = audioContext.createAnalyser();
+          lipsyncMediaElementAnalyser.fftSize = 2048;
+          lipsyncMediaElementAnalyser.smoothingTimeConstant = 0.8;
+          lipsyncMediaElementSource.connect(lipsyncMediaElementAnalyser);
+          lipsyncMediaElementAnalyser.connect(audioContext.destination);
+        }
+
+        lipsyncAudioSource = lipsyncMediaElementSource;
+        lipsyncAnalyser = lipsyncMediaElementAnalyser;
         console.log('[lipsync] Audio nodes connected', {
           fftSize: lipsyncAnalyser.fftSize,
           frequencyBinCount: lipsyncAnalyser.frequencyBinCount,
@@ -1946,12 +1956,16 @@
           0,
           1
         );
+        const stabilizedMouthOpen = applyMouthOpenDeadzone({
+          mouthOpen,
+          speaking
+        });
         const mouthForm = clamp(
           enhanced.mouthForm + (Number(consonantOverlay?.mouthFormDelta) || 0),
           -1,
           1
         );
-        lipsyncTargetMouthOpen = mouthOpen;
+        lipsyncTargetMouthOpen = stabilizedMouthOpen;
         lipsyncTargetMouthForm = mouthForm;
         lipsyncSpeakingActive = speaking;
 
@@ -1971,7 +1985,7 @@
             frame: {
               rawOpenY: rawMouthOpen.toFixed(3),
               rawForm: rawMouthForm.toFixed(3),
-              openY: mouthOpen.toFixed(3),
+              openY: stabilizedMouthOpen.toFixed(3),
               form: mouthForm.toFixed(3)
             },
             transient: consonantOverlay
@@ -1986,7 +2000,7 @@
           emitLipsyncTelemetry('frame.sample', {
             frame: frameCount,
             voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
-            mouth_open: mouthOpen,
+            mouth_open: stabilizedMouthOpen,
             mouth_form: mouthForm,
             confidence: Number(frame.confidence) || 0
           });
@@ -1997,7 +2011,7 @@
             voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
             raw_mouth_open: rawMouthOpen,
             raw_mouth_form: rawMouthForm,
-            mouth_open: mouthOpen,
+            mouth_open: stabilizedMouthOpen,
             mouth_form: mouthForm,
             confidence: Number(frame.confidence) || 0,
             apply_mode: lipsyncApplyMode,
@@ -2012,7 +2026,7 @@
             voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
             raw_mouth_open: rawMouthOpen,
             raw_mouth_form: rawMouthForm,
-            mouth_open: mouthOpen,
+            mouth_open: stabilizedMouthOpen,
             mouth_form: mouthForm,
             confidence: Number(frame.confidence) || 0
           });
@@ -3950,7 +3964,26 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        result = { ok: true, ignored: true, name, data };
+        if (name === 'voice.playback.electron') {
+          const audioUrl = normalizeLegacyVoiceAudioUrl(data?.audio_ref || data?.audioRef || '');
+          if (!audioUrl) {
+            throw createRpcError(-32602, 'voice.playback.electron requires audio_ref');
+          }
+          void playVoiceFromRemote({
+            requestId: `legacy-${Date.now()}`,
+            audioUrl,
+            mimeType: String(data?.format || 'audio/ogg'),
+            outputDelayMs: resolveVoiceOutputDelayMs()
+          }).catch((err) => {
+            console.error('[Renderer] legacy voice playback failed', err);
+            emitRendererDebug('voice_legacy.failed', {
+              error: err?.message || String(err || 'unknown error')
+            });
+          });
+          result = { ok: true, handled: true, name };
+        } else {
+          result = { ok: true, ignored: true, name, data };
+        }
       } else {
         throw createRpcError(-32601, `method not found: ${method}`);
       }
