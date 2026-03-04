@@ -19,6 +19,10 @@ VOICE_TAG_MAP = {
     "en": ("English", "Speak in clear and natural English."),
 }
 
+JP_TTS_HARD_REPLACEMENTS = {
+    "八千代": "やちよ",
+}
+
 
 def ensure_dashscope():
     try:
@@ -68,6 +72,15 @@ def _download_with_validation(url: str, out_file: Path, retries: int = 3) -> Non
                 time.sleep(0.8 * (i + 1))
 
     raise RuntimeError(f"音频下载失败（重试 {retries} 次后仍失败）：{last_err}")
+
+
+def normalize_tts_input_text(text: str, voice_tag: str) -> str:
+    normalized = str(text)
+    if voice_tag != "jp":
+        return normalized
+    for source, target in JP_TTS_HARD_REPLACEMENTS.items():
+        normalized = normalized.replace(source, target)
+    return normalized
 
 
 def synthesize_to_audio_file(text: str, model: str, voice: str, api_key: str, out_audio: Path, voice_tag: str) -> None:
@@ -136,6 +149,7 @@ def main() -> None:
     p.add_argument("--emit-manifest", action="store_true",
                    help="Emit JSON manifest: {audio_path, tts_input_text, voice_tag, model, voice}")
     args = p.parse_args()
+    normalized_text = normalize_tts_input_text(args.text, args.voice_tag)
 
     api_key = os.getenv("DASHSCOPE_API_KEY") or DEFAULT_API_KEY
     if not api_key:
@@ -151,13 +165,13 @@ def main() -> None:
         else:
             out_ogg = Path(tempfile.gettempdir()) / f"yachiyo-voice-{next(tempfile._get_candidate_names())}.ogg"
 
-        synthesize_to_audio_file(args.text, args.model, args.voice, api_key, tmp_audio, args.voice_tag)
+        synthesize_to_audio_file(normalized_text, args.model, args.voice, api_key, tmp_audio, args.voice_tag)
         to_telegram_voice(tmp_audio, out_ogg)
 
     if args.emit_manifest:
         manifest = {
             "audio_path": str(out_ogg),
-            "tts_input_text": args.text,
+            "tts_input_text": normalized_text,
             "voice_tag": args.voice_tag,
             "model": args.model,
             "voice": args.voice,
