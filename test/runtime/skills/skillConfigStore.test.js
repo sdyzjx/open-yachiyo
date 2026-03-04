@@ -20,6 +20,8 @@ test('SkillConfigStore loads and normalizes config/skills.yaml', () => {
   assert.equal(cfg.load.workspace, true);
   assert.equal(cfg.load.global, true);
   assert.ok(cfg.limits.maxSkillsPromptChars > 0);
+  assert.ok(cfg.trigger && typeof cfg.trigger === 'object');
+  assert.ok(cfg.trigger.rules && typeof cfg.trigger.rules === 'object');
 });
 
 test('normalizeSkillsConfig throws on invalid root', () => {
@@ -51,6 +53,9 @@ test('SkillConfigStore supports custom file path', () => {
       '  maxSelectedPerTurn: 1',
       '  scoreThreshold: 40',
       '  cooldownMs: 1000',
+      '  rules:',
+      '    apple-events-music:',
+      '      keywords: [music, playlist, 播放]',
       'entries: {}'
     ].join('\n'),
     'utf8'
@@ -61,4 +66,5 @@ test('SkillConfigStore supports custom file path', () => {
 
   assert.equal(cfg.limits.maxSkillsInPrompt, 2);
   assert.equal(cfg.trigger.maxSelectedPerTurn, 1);
+  assert.deepEqual(cfg.trigger.rules['apple-events-music'].keywords, ['music', 'playlist', '播放']);
 });

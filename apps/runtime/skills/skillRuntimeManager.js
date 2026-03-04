@@ -8,6 +8,41 @@ const { SkillWatcher } = require('./skillWatcher');
 const { SkillSnapshotStore } = require('./skillSnapshotStore');
 const { SkillTelemetry } = require('./skillTelemetry');
 
+function extractExplicitSkillsFromInput(input, skills) {
+  const raw = String(input || '');
+  if (!raw.trim()) return [];
+
+  const lower = raw.toLowerCase();
+  const byName = new Map((skills || []).map((s) => [String(s.name || '').toLowerCase(), s.name]));
+  const explicit = new Set();
+
+  const markerRegex = /\$([a-zA-Z0-9._-]+)/g;
+  let match = markerRegex.exec(raw);
+  while (match) {
+    const token = String(match[1] || '').toLowerCase();
+    const skillName = byName.get(token);
+    if (skillName) explicit.add(skillName);
+    match = markerRegex.exec(raw);
+  }
+
+  const mentionRegex = /(?:使用|用|invoke|use)\s+([a-zA-Z0-9._-]+)/gi;
+  match = mentionRegex.exec(raw);
+  while (match) {
+    const token = String(match[1] || '').toLowerCase();
+    const skillName = byName.get(token);
+    if (skillName) explicit.add(skillName);
+    match = mentionRegex.exec(raw);
+  }
+
+  for (const [normalizedName, originalName] of byName.entries()) {
+    if (normalizedName && lower.includes(normalizedName)) {
+      explicit.add(originalName);
+    }
+  }
+
+  return Array.from(explicit);
+}
+
 class SkillRuntimeManager {
   constructor({ workspaceDir, configStore, selector, snapshotStore, telemetry } = {}) {
     this.workspaceDir = workspaceDir || process.cwd();
@@ -51,6 +86,7 @@ class SkillRuntimeManager {
 
     const loaded = loadSkills({ workspaceDir: this.workspaceDir, config });
     const { accepted, dropped } = filterEligibleSkills({ skills: loaded, config });
+    const explicitSkills = extractExplicitSkillsFromInput(input, accepted);
     const selectedResult = this.selector.select({
       skills: accepted,
       input,
@@ -58,7 +94,7 @@ class SkillRuntimeManager {
         ...config.trigger,
         entries: config.entries,
         rules: config.trigger?.rules || {},
-        explicitSkills: []
+        explicitSkills
       }
     });
 

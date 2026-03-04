@@ -55,3 +55,41 @@ test('SkillRuntimeManager builds selected prompt context', () => {
     else process.env.YACHIYO_HOME = old;
   }
 });
+
+test('SkillRuntimeManager extracts explicit skills from $skill markers', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-rt-explicit-'));
+  const workspace = path.join(tmp, 'ws');
+  const yhome = path.join(tmp, 'yachiyo');
+  const wskills = path.join(workspace, 'skills');
+  fs.mkdirSync(wskills, { recursive: true });
+
+  writeSkill(wskills, 'weather', 'get weather report');
+
+  const old = process.env.YACHIYO_HOME;
+  process.env.YACHIYO_HOME = yhome;
+
+  try {
+    const manager = new SkillRuntimeManager({
+      workspaceDir: workspace,
+      configStore: {
+        load() {
+          return {
+            home: { envKey: 'YACHIYO_HOME', defaultPath: '~/yachiyo' },
+            load: { workspace: true, global: false, extraDirs: [] },
+            limits: { maxCandidatesPerRoot: 100, maxSkillsLoadedPerSource: 50, maxSkillsInPrompt: 2, maxSkillsPromptChars: 2000, maxSkillFileBytes: 262144 },
+            trigger: { scoreThreshold: 90, maxSelectedPerTurn: 1, cooldownMs: 0, rules: {} },
+            entries: {},
+            tools: { exec: { enabled: true } }
+          };
+        }
+      }
+    });
+
+    const ctx = manager.buildTurnContext({ input: '请使用 $weather 技能' });
+    assert.equal(ctx.selected.length, 1);
+    assert.equal(ctx.selected[0], 'weather');
+  } finally {
+    if (old === undefined) delete process.env.YACHIYO_HOME;
+    else process.env.YACHIYO_HOME = old;
+  }
+});

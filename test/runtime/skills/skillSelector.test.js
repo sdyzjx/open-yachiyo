@@ -75,3 +75,43 @@ test('SkillSelector applies cooldown and risk blocks', () => {
   assert.equal(second.selected.length, 0);
   assert.equal(second.dropped.some((d) => d.reason === 'cooldown'), true);
 });
+
+test('SkillSelector can match Chinese intent text to English skill descriptions', () => {
+  const selector = new SkillSelector({ now: () => 1000 });
+  const result = selector.select({
+    skills: [
+      mk('apple-events-music', 'Control Apple Music: play/pause, next, playlist'),
+      mk('weather', 'Get weather forecast')
+    ],
+    input: '帮我播放一首音乐',
+    triggerConfig: {
+      scoreThreshold: 20,
+      maxSelectedPerTurn: 2,
+      cooldownMs: 0,
+      entries: {}
+    }
+  });
+
+  assert.equal(result.selected.some((s) => s.name === 'apple-events-music'), true);
+});
+
+test('SkillSelector supports aliases from config entries', () => {
+  const selector = new SkillSelector({ now: () => 1000 });
+  const result = selector.select({
+    skills: [mk('apple-events-music', 'Control Apple Music')],
+    input: '请用音乐控制技能来播放歌单',
+    triggerConfig: {
+      scoreThreshold: 20,
+      maxSelectedPerTurn: 1,
+      cooldownMs: 0,
+      entries: {
+        'apple-events-music': {
+          aliases: ['音乐控制技能']
+        }
+      }
+    }
+  });
+
+  assert.equal(result.selected.length, 1);
+  assert.equal(result.selected[0].name, 'apple-events-music');
+});

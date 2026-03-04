@@ -23,10 +23,20 @@ function readSkillFromDir(dirPath, source, maxSkillFileBytes = 262144) {
   const fm = parseFrontmatter(raw);
   const name = String(fm.name || path.basename(dirPath)).trim();
   const description = String(fm.description || '').trim();
+  const keywords = String(fm.keywords || fm.trigger_keywords || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const aliases = String(fm.aliases || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
 
   return {
     name,
     description,
+    keywords,
+    aliases,
     source,
     filePath: skillPath,
     baseDir: dirPath,

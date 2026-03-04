@@ -76,8 +76,19 @@ Output:
 Hybrid score model:
 - explicit skill hint boost
 - name/keyword/description token matching
+- aliases matching (`entries.<skill>.aliases` or frontmatter `aliases`)
+- cross-locale intent tag matching (e.g. `播放音乐` -> `music`)
 - risk-based penalty
 - threshold + cooldown + max selected per turn
+
+Explicit hint sources:
+- `$skill-name` markers in user input
+- `use <skill-name>` / `使用 <skill-name>` style mentions
+- direct skill-name mention in plain text
+
+Notes:
+- explicit skills bypass cooldown gating for this turn
+- danger-risk skills are still blocked by policy
 
 ## 3.5 `skillPromptBudgeter.js`
 
@@ -112,7 +123,9 @@ Key sections:
 - `load`: workspace/global/extra dirs + watch settings
 - `limits`: candidate/loading/prompt bounds
 - `trigger`: threshold/cooldown/selection caps
+  - `trigger.rules.<skill>.keywords`: per-skill keyword boosts
 - `entries`: per-skill overrides
+  - `entries.<skill>.aliases`: per-skill alias boosts
 
 ## 5. Usage Cases
 
@@ -154,6 +167,37 @@ test_skill_smoke 请帮我做一次技能冒烟测试
 Expected:
 - skill selected and injected
 - planner can call `get_time` / `echo`
+
+## Case D: explicit marker bypasses high threshold
+
+```text
+请使用 $apple-events-music 播放歌单
+```
+
+Even with a high `scoreThreshold`, `$apple-events-music` is treated as explicit and selected.
+
+## Case E: natural-language trigger with rules/aliases
+
+Example config:
+
+```yaml
+trigger:
+  rules:
+    apple-events-music:
+      keywords: [music, playlist, 播放, 音乐]
+entries:
+  apple-events-music:
+    aliases: [音乐控制技能, 播歌技能]
+```
+
+Input:
+
+```text
+帮我播放一首音乐
+```
+
+Expected:
+- selector can match `apple-events-music` without requiring direct skill-name mention.
 
 ## 6. Observability
 

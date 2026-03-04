@@ -27,8 +27,9 @@ const DEFAULT_SKILLS_CONFIG_CONTENT = {
   trigger: {
     mode: 'hybrid',
     maxSelectedPerTurn: 2,
-    scoreThreshold: 45,
-    cooldownMs: 15000
+    scoreThreshold: 20,
+    cooldownMs: 15000,
+    rules: {}
   },
   entries: {}
 };
@@ -95,8 +96,9 @@ function normalizeSkillsConfig(config) {
     trigger: {
       mode: String(config.trigger.mode || 'hybrid'),
       maxSelectedPerTurn: Math.max(1, asNumber(config.trigger.maxSelectedPerTurn, 2)),
-      scoreThreshold: asNumber(config.trigger.scoreThreshold, 45),
-      cooldownMs: Math.max(0, asNumber(config.trigger.cooldownMs, 15000))
+      scoreThreshold: asNumber(config.trigger.scoreThreshold, 20),
+      cooldownMs: Math.max(0, asNumber(config.trigger.cooldownMs, 15000)),
+      rules: isObject(config.trigger.rules) ? config.trigger.rules : {}
     },
     entries: config.entries || {}
   };
