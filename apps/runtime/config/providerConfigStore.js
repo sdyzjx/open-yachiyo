@@ -122,4 +122,4 @@ class ProviderConfigStore {
   }
 }
 
-module.exports = { ProviderConfigStore, validateConfig };
+module.exports = { ProviderConfigStore, validateConfig, DEFAULT_CONFIG };

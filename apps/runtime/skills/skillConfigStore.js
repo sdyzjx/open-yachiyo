@@ -136,6 +136,7 @@ class SkillConfigStore {
 
 module.exports = {
   SkillConfigStore,
+  DEFAULT_SKILLS_CONFIG_CONTENT,
   normalizeSkillsConfig,
   validateSkillsConfig
 };

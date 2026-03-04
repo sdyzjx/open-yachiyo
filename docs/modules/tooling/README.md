@@ -4,6 +4,8 @@
 
 ## 模块清单
 
+- `../runtime/config-reference.md`
+  - 运行时配置总表：`providers.yaml`、`tools.yaml`、`voice-policy.yaml`、`desktop-live2d.json`
 - `tool-config-and-registry.md`
   - 配置加载、YAML 结构校验、工具注册机制
 - `tool-executor-and-middleware.md`
