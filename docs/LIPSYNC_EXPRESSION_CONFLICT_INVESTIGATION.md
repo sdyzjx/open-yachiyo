@@ -1,5 +1,7 @@
 # 嘴形同步与表情动作冲突问题调查方案
 
+> 历史文档。该方案对应旧版冲突排查阶段，未覆盖当前主线的 face mixer 与 waveform recorder。现状请看 `docs/VOICE_LIPSYNC_DEBUG_GUIDE.md` 和 `docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`。
+
 版本：v1
 日期：2026-03-01
 分支：`integration/voice-lipsync`

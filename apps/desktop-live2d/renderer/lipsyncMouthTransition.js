@@ -1,13 +1,13 @@
 (function initLive2dMouthTransition(globalScope) {
   const DEFAULT_CONFIG = Object.freeze({
     open: {
-      attack: 0.4,
-      release: 0.24,
-      neutral: 0.12
+      attack: 0.56,
+      release: 0.3,
+      neutral: 0.16
     },
     form: {
-      attack: 0.34,
-      release: 0.22,
+      attack: 0.4,
+      release: 0.24,
       neutral: 0.14
     },
     settle: {

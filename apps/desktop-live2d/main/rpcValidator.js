@@ -17,6 +17,16 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'debug.mouthOverride.set': {
+    type: 'object',
+    required: ['enabled'],
+    additionalProperties: false,
+    properties: {
+      enabled: { type: 'boolean' },
+      mouthOpen: { type: 'number' },
+      mouthForm: { type: 'number' }
+    }
+  },
   'param.set': PARAM_SET_SCHEMA,
   'model.param.set': PARAM_SET_SCHEMA,
   'model.param.batchSet': {

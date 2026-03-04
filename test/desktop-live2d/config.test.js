@@ -8,7 +8,8 @@ const {
   resolveDesktopLive2dConfig,
   upsertDesktopLive2dLayoutOverrides,
   upsertDesktopLive2dDragZoneOverrides,
-  parseJsonWithComments
+  parseJsonWithComments,
+  syncDesktopLive2dMissingDefaults
 } = require('../../apps/desktop-live2d/main/config');
 
 test('resolveDesktopLive2dConfig applies defaults and model relative path', () => {
@@ -35,6 +36,11 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.actionQueue.idleAction.type, 'motion');
   assert.equal(config.uiConfig.actionQueue.idleAction.name, 'Idle');
   assert.equal(config.uiConfig.actionQueue.idleAction.args.group, 'Idle');
+  assert.equal(config.uiConfig.debug.mouthTuner.visible, false);
+  assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
+  assert.equal(config.uiConfig.debug.waveformCapture.enabled, false);
+  assert.equal(config.uiConfig.debug.waveformCapture.captureEveryFrame, true);
+  assert.equal(config.uiConfig.debug.waveformCapture.includeApplied, true);
   assert.equal(config.uiConfig.voice.path, 'electron_native');
   assert.equal(config.uiConfig.voice.transport, 'non_streaming');
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, true);
@@ -126,6 +132,17 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
           maxMessages: 88
         }
       },
+      debug: {
+        mouthTuner: {
+          visible: true,
+          enabled: false
+        },
+        waveformCapture: {
+          enabled: true,
+          captureEveryFrame: true,
+          includeApplied: false
+        }
+      },
       actionQueue: {
         maxQueueSize: 32,
         overflowPolicy: 'drop_newest',
@@ -163,6 +180,11 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
   assert.equal(config.uiConfig.layout.lockPositionOnResize, false);
   assert.equal(config.uiConfig.chat.panel.defaultVisible, false);
   assert.equal(config.uiConfig.chat.panel.maxMessages, 88);
+  assert.equal(config.uiConfig.debug.mouthTuner.visible, true);
+  assert.equal(config.uiConfig.debug.mouthTuner.enabled, false);
+  assert.equal(config.uiConfig.debug.waveformCapture.enabled, true);
+  assert.equal(config.uiConfig.debug.waveformCapture.captureEveryFrame, true);
+  assert.equal(config.uiConfig.debug.waveformCapture.includeApplied, false);
   assert.equal(config.uiConfig.actionQueue.maxQueueSize, 32);
   assert.equal(config.uiConfig.actionQueue.overflowPolicy, 'drop_newest');
   assert.equal(config.uiConfig.actionQueue.idleFallbackEnabled, false);
@@ -293,4 +315,43 @@ test('upsertDesktopLive2dDragZoneOverrides clamps out-of-bounds drag zone inputs
     widthRatio: 0.7,
     heightRatio: 0.5
   });
+});
+
+test('syncDesktopLive2dMissingDefaults fills missing schema fields without overwriting user overrides', () => {
+  const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-sync-defaults-')), 'desktop-live2d.json');
+  fs.writeFileSync(configPath, `{
+  "window": {
+    "width": 512
+  },
+  "interaction": {
+    "dragZone": {
+      "widthRatio": 0.42
+    }
+  },
+  "voice": {
+    "transport": "realtime"
+  }
+}
+`, 'utf8');
+
+  const { nextRaw, addedPaths } = syncDesktopLive2dMissingDefaults(configPath);
+  const saved = parseJsonWithComments(fs.readFileSync(configPath, 'utf8'));
+
+  assert.equal(nextRaw.window.width, 512);
+  assert.equal(nextRaw.interaction.dragZone.widthRatio, 0.42);
+  assert.equal(nextRaw.voice.transport, 'realtime');
+  assert.equal(saved.window.width, 512);
+  assert.equal(saved.interaction.dragZone.widthRatio, 0.42);
+  assert.equal(saved.voice.transport, 'realtime');
+  assert.equal(saved.window.height, 500);
+  assert.equal(saved.interaction.dragZone.centerXRatio, 0.5);
+  assert.equal(saved.debug.mouthTuner.visible, false);
+  assert.equal(saved.debug.waveformCapture.enabled, false);
+  assert.equal(saved.debug.waveformCapture.captureEveryFrame, true);
+  assert.equal(saved.debug.waveformCapture.includeApplied, true);
+  assert.equal(saved.voice.path, 'electron_native');
+  assert.ok(addedPaths.includes('window.height'));
+  assert.ok(addedPaths.includes('debug'));
+  assert.ok(!addedPaths.includes('window.width'));
+  assert.ok(!addedPaths.includes('voice.transport'));
 });

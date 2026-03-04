@@ -1,243 +1,222 @@
 # Voice Lipsync 调试指南
 
-## 概述
+本文档只描述当前主线可执行的 lipsync 调试方式。
 
-本指南帮助调试 API 语音播放时的口型同步功能。
+如果你要看最近一轮嘴形调参与 waveform recorder 的开发经过，另见：
+- `docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`
 
-## 架构说明
+## 1. 当前链路
 
-### 数据流
+### 1.1 入口
 
-```
-Runtime (voice.requested event)
-  ↓
-Desktop Main (processVoiceRequestedOnDesktop)
-  ↓ qwenTtsClient.synthesizeNonStreaming()
-  ↓ qwenTtsClient.fetchAudioBuffer()
-  ↓ IPC: desktop:voice:play-memory
-  ↓
-Renderer (playVoiceFromBase64)
-  ↓ startLipsync(systemAudio)
-  ↓ AudioContext + AnalyserNode
-  ↓ requestAnimationFrame loop
-  ↓ Live2DVisemeLipSync API
-  ↓ Live2D Model Parameters
-```
+1. runtime
+   - `apps/runtime/tooling/adapters/voice.js`
+   - `ttsAliyunVc()`
+   - 当 `voice.path = electron_native` 时发布 `voice.requested`
+2. desktop main
+   - `apps/desktop-live2d/main/desktopSuite.js`
+   - `processVoiceRequestedOnDesktop()`
+3. renderer
+   - `apps/desktop-live2d/renderer/bootstrap.js`
+   - `playVoiceFromRemote()`
+   - `playVoiceFromBase64()`
+   - `startRealtimeVoicePlayback()`
+   - `startLipsync()`
 
-### 关键组件
+### 1.2 嘴形内部链
 
-1. **QwenTtsClient** (`apps/desktop-live2d/main/voice/qwenTtsClient.js`)
-   - 调用 DashScope API 获取语音
-   - 返回 audioUrl 和 mimeType
+1. `lipsyncViseme.js`
+   - `resolveVisemeFrame()`
+   - 生成 `raw_mouth_open` / `raw_mouth_form`
+2. `bootstrap.js`
+   - `enhanceMouthParams()`
+   - speaking 增益、低能量豁免、face mixer 输入
+3. `lipsyncMouthTransition.js`
+   - `stepMouthTransition()`
+   - attack / release / neutral 过渡
+4. `bootstrap.js`
+   - 最终写入 `ParamMouthOpenY` / `ParamMouthForm`
 
-2. **processVoiceRequestedOnDesktop** (`apps/desktop-live2d/main/desktopSuite.js`)
-   - 处理 `voice.requested` 事件
-   - 下载音频并转换为 base64
-   - 通过 IPC 发送到渲染进程
+## 2. 当前推荐的调试方式
 
-3. **playVoiceFromBase64** (`apps/desktop-live2d/renderer/bootstrap.js`)
-   - 解码 base64 音频
-   - 创建 Blob 和 ObjectURL
-   - 调用 startLipsync()
-   - 播放音频
-
-4. **startLipsync** (`apps/desktop-live2d/renderer/bootstrap.js`)
-   - 创建 AudioContext 和 AnalyserNode
-   - 连接音频节点
-   - 启动 requestAnimationFrame 循环
-   - 使用 Live2DVisemeLipSync API 分析音频
-   - 更新 Live2D 模型参数
-
-5. **Live2DVisemeLipSync** (`apps/desktop-live2d/renderer/lipsyncViseme.js`)
-   - 提取音频特征
-   - 推断口型权重
-   - 计算嘴部参数
-   - 平滑处理
-
-## 调试步骤
-
-### 1. 启动 Desktop 应用
-
-```bash
-cd /Users/doosam/.openclaw/workspace/yachiyo-desktop-dev/desktop-ai-native-runtime-issue30
-npm run desktop:up
-```
-
-### 2. 打开开发者工具
-
-在 Desktop 窗口中按 `Cmd+Option+I` (macOS) 或 `Ctrl+Shift+I` (Windows/Linux)
-
-### 3. 运行测试脚本
-
-```bash
-node scripts/test-voice-lipsync.js
-```
-
-### 4. 观察控制台日志
-
-在 DevTools 的 Console 标签中，过滤 `lipsync` 关键字。
-
-### 5. 使用 SSE 调试器追踪口型管理器调用
-
-先开启 Debug Stream：
+### 2.1 开启 Debug Stream
 
 ```bash
 curl -s -X PUT http://127.0.0.1:3000/api/debug/mode \
   -H "content-type: application/json" \
-  -d '{"debug":true}' | jq
+  -d '{"debug":true}'
 ```
 
-然后在单独终端订阅口型链路 topic（按文档规范使用精确 topic）：
+### 2.2 订阅关键 topic
+
+优先看这组：
 
 ```bash
-curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.renderer.bootstrap.start,chain.renderer.bootstrap.failed,chain.renderer.voice_memory.listener_registered,chain.renderer.voice_memory.listener_missing,chain.renderer.voice_memory.received,chain.renderer.voice_memory.playback_enter,chain.renderer.voice_memory.source_ready,chain.renderer.voice_memory.play_attempt,chain.renderer.voice_memory.playback_started,chain.renderer.voice_memory.play_rejected,chain.renderer.voice_memory.audio_event,chain.renderer.voice_memory.lipsync_started,chain.renderer.voice_memory.lipsync_inactive,chain.renderer.voice_memory.lipsync_failed,chain.renderer.voice_memory.playback_failed,chain.renderer.voice_memory.failed,chain.electron.voice.requested,chain.electron.voice.duplicate_ignored,chain.electron.voice.synthesis.completed,chain.electron.voice.ipc.dispatched,chain.electron.voice.failed,chain.lipsync.playback.requested,chain.lipsync.playback.decoded,chain.lipsync.playback.source_ready,chain.lipsync.playback.started,chain.lipsync.playback.ended,chain.lipsync.playback.error,chain.lipsync.playback.invalid_payload,chain.lipsync.playback.interrupted,chain.lipsync.playback.lipsync_inactive,chain.lipsync.sync.start,chain.lipsync.sync.unavailable,chain.lipsync.sync.audio_context_ready,chain.lipsync.sync.audio_context_resumed,chain.lipsync.sync.graph_ready,chain.lipsync.sync.runtime_ready,chain.lipsync.sync.loop_started,chain.lipsync.sync.loop_stopped,chain.lipsync.sync.loop_cancelled,chain.lipsync.sync.reset_neutral,chain.lipsync.sync.reset_failed,chain.lipsync.sync.failed,chain.lipsync.sync.stop,chain.lipsync.frame.sample,chain.lipsync.frame.apply_failed"
+curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.electron.notification.received,chain.renderer.voice_memory.received,chain.renderer.voice_remote.received,chain.renderer.voice_stream.start_received,chain.renderer.voice_stream.chunk,chain.renderer.mouth.frame_sample,chain.renderer.lipsync.frame_applied"
 ```
 
-关注字段：
+必要时再补：
 
-1. `request_id`：串联一轮 voice 播放与口型调用。
-2. `event/topic`：确认中断点发生在哪个阶段。
-3. `has_lipsync_api`、`has_model`、`has_audio_context`、`has_analyser`：快速判断依赖是否就绪。
-4. `voice_energy`、`mouth_open`、`mouth_form`：确认口型管理器是否在持续输出帧。
-
-推荐判定顺序：
-
-1. 有 `chain.electron.voice.ipc.dispatched` 但没有 `chain.renderer.voice_memory.received`：渲染层未收到 `desktop:voice:play-memory`。
-2. 有 `chain.renderer.voice_memory.received` 但没有 `chain.lipsync.playback.requested`：渲染层回调触发了，但口型链路没有进入 `playVoiceFromBase64`。
-3. 有 `chain.lipsync.sync.start` 但出现 `chain.lipsync.sync.unavailable`：API 或模型未就绪。
-4. 有 `chain.lipsync.sync.runtime_ready` 但没有 `chain.lipsync.frame.sample`：动画循环未真正运行。
-5. `chain.lipsync.frame.sample` 正常出现但视觉无口型：检查模型参数映射（`ParamMouthOpenY` / `ParamMouthForm`）或后续覆盖。
-
-## 预期日志流
-
-### 正常情况
-
-```
-[lipsync] playVoiceFromBase64 called {hasBase64: true, base64Length: 123456, mimeType: "audio/ogg", hasLipsyncApi: true, hasModel: true}
-[lipsync] Audio decoded {binaryLength: 92592, bytesLength: 92592}
-[lipsync] Audio source set, starting lipsync
-[lipsync] startLipsync called {hasLipsyncApi: true, hasModel: true, hasAudioElement: true, audioSrc: "blob:..."}
-[lipsync] AudioContext created {sampleRate: 48000, state: "running"}
-[lipsync] Audio nodes connected {fftSize: 2048, frequencyBinCount: 1024, smoothingTimeConstant: 0.8}
-[lipsync] Runtime state created {state: {...}}
-[lipsync] Animation loop started
-[lipsync] Audio playback started
-[lipsync] frame update {frameCount: 0, features: {energy: "0.234"}, weights: {a: "0.45", i: "0.12", u: "0.23"}, mouthParams: {openY: "0.456", form: "0.123"}, frame: {openY: "0.456", form: "0.123"}}
-[lipsync] frame update {frameCount: 30, ...}
-[lipsync] frame update {frameCount: 60, ...}
-...
-[lipsync] stopLipsync called {hasAnimationFrame: true, hasState: true, hasModel: true, hasAudioContext: true}
-[lipsync] animation frame cancelled
-[lipsync] mouth parameters reset to neutral
+```bash
+curl -N "http://127.0.0.1:3000/api/debug/events?topics=chain.renderer.voice_memory.playback_started,chain.renderer.voice_remote.playback_started,chain.renderer.voice_stream.playback_started,chain.renderer.voice_memory.lipsync_started,chain.renderer.voice_remote.lipsync_started,chain.renderer.voice_stream.lipsync_started"
 ```
 
-## 常见问题诊断
+### 2.3 当前最重要的两个 topic
 
-### 问题 1: 没有看到任何 [lipsync] 日志
+- `chain.renderer.mouth.frame_sample`
+  - 观察目标嘴形
+  - 字段：
+    - `raw_mouth_open`
+    - `raw_mouth_form`
+    - `mouth_open`
+    - `mouth_form`
+    - `voice_energy`
+    - `confidence`
 
-**可能原因:**
-- 语音请求没有触发
-- IPC 通信失败
-- 渲染进程没有收到 `desktop:voice:play-memory` 事件
+- `chain.renderer.lipsync.frame_applied`
+  - 观察最终回读值
+  - 字段：
+    - `target_mouth_open`
+    - `target_mouth_form`
+    - `applied_mouth_open`
+    - `applied_mouth_form`
+    - `apply_mode`
 
-**检查:**
-1. 查看主进程日志（终端输出）
-2. 检查是否有 `[desktop-live2d] voice requested process failed` 错误
-3. 检查 `DASHSCOPE_API_KEY` 是否配置
+调试顺序：
 
-### 问题 2: 看到 `hasLipsyncApi: false`
+1. 先看 `mouth.frame_sample`
+   - 确认上游有没有输出有效 `open/form`
+2. 再看 `frame_applied`
+   - 确认最终落模值是否和目标值一致
+3. 如果两者不一致
+   - 问题在 final write / mixer / 模型覆盖
+4. 如果两者一致但视觉仍不明显
+   - 问题更偏模型资源、参数映射或 motion 干扰
 
-**可能原因:**
-- `lipsyncViseme.js` 没有加载
-- `window.Live2DVisemeLipSync` 未定义
+## 3. 逐帧 waveform 记录
 
-**检查:**
-1. 确认 `apps/desktop-live2d/renderer/index.html` 中有 `<script src="./lipsyncViseme.js"></script>`
-2. 在 Console 中输入 `window.Live2DVisemeLipSync` 检查是否存在
+### 3.1 配置
 
-### 问题 3: 看到 `hasModel: false`
+`desktop-live2d.json`：
 
-**可能原因:**
-- Live2D 模型还未加载
-- 模型加载失败
-
-**检查:**
-1. 查看是否有模型加载错误
-2. 在 Console 中输入 `live2dModel` 检查模型对象
-
-### 问题 4: AudioContext 创建失败
-
-**可能原因:**
-- 浏览器安全策略限制
-- 已经创建过 MediaElementSource
-
-**检查:**
-1. 查看错误信息
-2. 可能需要在用户交互后才能创建 AudioContext
-
-### 问题 5: 看到日志但没有口型动作
-
-**可能原因:**
-- Live2D 模型参数名称不匹配
-- 参数值范围不正确
-- 模型没有嘴部参数
-
-**检查:**
-1. 查看 `frame update` 日志中的 `openY` 和 `form` 值
-2. 在 Console 中手动设置参数测试:
-   ```javascript
-   live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 1.0);
-   live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0.5);
-   ```
-3. 检查模型是否有这些参数:
-   ```javascript
-   live2dModel.internalModel.coreModel.getParameterIds();
-   ```
-
-### 问题 6: 音频播放但立即停止口型
-
-**可能原因:**
-- `stopLipsync()` 被过早调用
-- 动画循环被中断
-
-**检查:**
-1. 查看 `stopLipsync called` 日志的时间
-2. 检查是否有其他代码调用了 `stopLipsync()`
-
-## 手动测试
-
-在 DevTools Console 中执行:
-
-```javascript
-// 1. 检查 API 是否可用
-console.log('Lipsync API:', window.Live2DVisemeLipSync);
-console.log('Model:', live2dModel);
-
-// 2. 测试手动设置参数
-live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 1.0);
-live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0.5);
-
-// 3. 重置参数
-live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
-live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
-
-// 4. 查看所有参数
-live2dModel.internalModel.coreModel.getParameterIds();
+```json
+{
+  "debug": {
+    "waveformCapture": {
+      "enabled": true,
+      "captureEveryFrame": true,
+      "includeApplied": true
+    }
+  }
+}
 ```
 
-## 下一步
+### 3.2 输出目录
 
-如果以上步骤都正常但仍然没有口型，可能需要:
+- `~/yachiyo/data/desktop-live2d/mouth-waveforms`
 
-1. 检查 Live2D 模型的参数映射
-2. 调整口型参数的计算逻辑
-3. 检查是否有其他代码覆盖了嘴部参数
-4. 验证音频分析是否正确提取特征
+文件格式：
+- 每次 voice request 生成一份 `<timestamp>-<request_id>.jsonl`
 
-## 相关文件
+每行一条事件，当前主要有：
+- `chain.renderer.mouth.frame_sample`
+- `chain.renderer.lipsync.frame_applied`
 
-- `apps/desktop-live2d/main/voice/qwenTtsClient.js` - TTS 客户端
-- `apps/desktop-live2d/main/desktopSuite.js` - 主进程事件处理
-- `apps/desktop-live2d/renderer/bootstrap.js` - 渲染进程口型同步
-- `apps/desktop-live2d/renderer/lipsyncViseme.js` - 口型分析 API
-- `scripts/test-voice-lipsync.js` - 测试脚本
+### 3.3 为什么推荐用 waveform 文件
+
+SSE 更适合在线追踪。  
+如果要看完整波形、做图、比对 `target/applied`，应优先看 JSONL 文件。
+
+## 4. 常见定位路径
+
+### 4.1 有声音但嘴几乎不动
+
+优先检查：
+
+1. `chain.renderer.mouth.frame_sample`
+   - `mouth_open` 是否长期接近 `0`
+2. `voice_energy`
+   - 是否长期极低
+3. `confidence`
+   - 是否长期偏低，导致 `resolveVisemeFrame()` 太保守
+
+常见根因：
+- `resolveVisemeFrame()` 的 speaking blend 太保守
+- speaking 弱音节被过早回落
+- 最终 transition 把目标值吃掉
+
+### 4.2 目标值有变化，但最后模型还是闭嘴
+
+优先检查：
+
+1. `chain.renderer.lipsync.frame_applied`
+2. 比较：
+   - `target_mouth_open`
+   - `applied_mouth_open`
+   - `target_mouth_form`
+   - `applied_mouth_form`
+
+如果明显不一致：
+- 优先怀疑 face mixer
+- `beforeModelUpdate` 写入顺序
+- expression / motion 对同参数的覆盖
+
+### 4.3 嘴形和表情互相打架
+
+当前主线已引入最小版 face mixer。  
+如果仍出现冲突，先确认：
+
+1. speaking 时 `target_mouth_form` 正常
+2. `applied_mouth_form` 是否被顶到极值
+3. 是否正好叠了 `greet` / `smile` / `param_batch`
+
+### 4.4 realtime 和 non-streaming 表现不一样
+
+这是正常现象，先分链路看：
+
+- `desktop:voice:play-memory`
+- `desktop:voice:play-remote`
+- `desktop:voice:stream-start/chunk/end`
+
+realtime 额外要看：
+- chunk 边界
+- prebuffer
+- idle timeout
+- speaking 判定是否过早掉线
+
+## 5. 手工检查建议
+
+### 5.1 先跑一轮语音
+
+```bash
+npm run desktop:up
+```
+
+然后通过 WebUI 或 `/ws` 触发一段固定文案。
+
+### 5.2 再看最新 waveform 文件
+
+```bash
+ls -lt ~/yachiyo/data/desktop-live2d/mouth-waveforms | head
+```
+
+### 5.3 再做图
+
+如果已经有逐帧 JSONL，后续分析优先基于文件画图，而不是只看抽样日志。
+
+## 6. 相关文件
+
+- `apps/runtime/tooling/adapters/voice.js`
+- `apps/desktop-live2d/main/desktopSuite.js`
+- `apps/desktop-live2d/main/config.js`
+- `apps/desktop-live2d/renderer/bootstrap.js`
+- `apps/desktop-live2d/renderer/lipsyncViseme.js`
+- `apps/desktop-live2d/renderer/lipsyncMouthTransition.js`
+- `scripts/test-voice-lipsync.js`
+
+## 7. 历史文档说明
+
+以下文档仍可参考调查思路，但不代表当前主线实现：
+- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
+- `docs/LIPSYNC_CONFLICT_SUMMARY.md`
+- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`

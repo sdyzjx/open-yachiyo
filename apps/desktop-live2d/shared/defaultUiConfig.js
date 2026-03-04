@@ -86,6 +86,17 @@
     interaction: Object.freeze({
       dragZone: DEFAULT_DRAG_ZONE_CONFIG
     }),
+    debug: Object.freeze({
+      mouthTuner: Object.freeze({
+        visible: false,
+        enabled: false
+      }),
+      waveformCapture: Object.freeze({
+        enabled: false,
+        captureEveryFrame: true,
+        includeApplied: true
+      })
+    }),
     layout: DEFAULT_LAYOUT_CONFIG,
     chat: Object.freeze({
       panel: Object.freeze({

@@ -876,6 +876,116 @@ function parseRendererDebugConsoleMessage(message) {
   }
 }
 
+function createMouthWaveformRecorder({
+  enabled = false,
+  outputDir = null,
+  logger = console,
+  idleCloseMs = 15000
+} = {}) {
+  const activeStreams = new Map();
+  const trackedTopics = new Set([
+    'chain.renderer.mouth.frame_sample',
+    'chain.renderer.lipsync.frame_applied'
+  ]);
+  let latestFilePath = null;
+
+  function sanitizeFileSegment(value) {
+    return String(value || 'unknown')
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 120) || 'unknown';
+  }
+
+  function closeEntry(requestId) {
+    const entry = activeStreams.get(requestId);
+    if (!entry) {
+      return;
+    }
+    activeStreams.delete(requestId);
+    try {
+      entry.stream.end();
+    } catch (err) {
+      logger.warn?.('[desktop-live2d] mouth waveform close failed', {
+        requestId,
+        error: err?.message || String(err || 'unknown error')
+      });
+    }
+  }
+
+  function ensureEntry(requestId) {
+    const normalizedRequestId = sanitizeFileSegment(requestId);
+    const existing = activeStreams.get(normalizedRequestId);
+    if (existing) {
+      existing.lastWriteAt = Date.now();
+      return existing;
+    }
+    if (!outputDir) {
+      return null;
+    }
+    fs.mkdirSync(outputDir, { recursive: true });
+    const filePath = path.join(outputDir, `${Date.now()}-${normalizedRequestId}.jsonl`);
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    const entry = {
+      stream,
+      filePath,
+      lastWriteAt: Date.now()
+    };
+    activeStreams.set(normalizedRequestId, entry);
+    latestFilePath = filePath;
+    return entry;
+  }
+
+  const pruneTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [requestId, entry] of activeStreams.entries()) {
+      if (!Number.isFinite(entry.lastWriteAt) || now - entry.lastWriteAt > idleCloseMs) {
+        closeEntry(requestId);
+      }
+    }
+  }, Math.max(1000, Math.min(idleCloseMs, 5000)));
+  pruneTimer.unref?.();
+
+  return {
+    record(topic, payload = {}) {
+      if (!enabled || !trackedTopics.has(topic)) {
+        return;
+      }
+      const requestId = payload?.request_id || 'unknown';
+      const entry = ensureEntry(requestId);
+      if (!entry) {
+        return;
+      }
+      entry.lastWriteAt = Date.now();
+      try {
+        entry.stream.write(`${JSON.stringify({
+          topic,
+          recorded_at: Date.now(),
+          ...payload
+        })}\n`);
+      } catch (err) {
+        logger.warn?.('[desktop-live2d] mouth waveform write failed', {
+          requestId,
+          error: err?.message || String(err || 'unknown error')
+        });
+      }
+    },
+    getState() {
+      return {
+        enabled: Boolean(enabled),
+        outputDir,
+        latestFilePath
+      };
+    },
+    dispose() {
+      clearInterval(pruneTimer);
+      for (const requestId of Array.from(activeStreams.keys())) {
+        closeEntry(requestId);
+      }
+    }
+  };
+}
+
 function summarizeProviderErrorMeta(meta) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return {};
@@ -2790,6 +2900,7 @@ async function startDesktopSuite({
     if (!parsed) {
       return;
     }
+    mouthWaveformRecorder.record(`chain.renderer.${parsed.event}`, parsed.data || {});
     emitDesktopDebug(`chain.renderer.${parsed.event}`, 'renderer emitted debug marker', {
       level: Number.isFinite(Number(level)) ? Number(level) : null,
       source_line: Number.isFinite(Number(line)) ? Number(line) : null,
@@ -2797,6 +2908,11 @@ async function startDesktopSuite({
       ...(parsed.data || {})
     });
   };
+  const mouthWaveformRecorder = createMouthWaveformRecorder({
+    enabled: config.uiConfig?.debug?.waveformCapture?.enabled === true,
+    outputDir: config.mouthWaveformDir,
+    logger
+  });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
   const gatewayRuntimeClient = new GatewayRuntimeClient({
@@ -3173,6 +3289,7 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.windowInteractivity, avatarWindowInteractivityListener);
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
+    mouthWaveformRecorder.dispose();
 
     if (rpcServerRef) {
       await rpcServerRef.stop();

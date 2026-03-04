@@ -9,26 +9,37 @@
       high: [3200, 5200]
     },
     smoothing: {
-      attack: 0.58,
-      release: 0.34
+      attack: 0.74,
+      release: 0.22
     },
     fallbackBlend: {
       min: 0.28,
       max: 0.9
     },
     visemeShape: {
-      sharpenPower: 1.55,
+      sharpenPower: 1.94,
       targets: {
-        a: { open: 0.98, form: -0.1 },
-        i: { open: 0.24, form: 0.92 },
-        u: { open: 0.34, form: -0.96 },
-        e: { open: 0.5, form: 0.42 },
-        o: { open: 0.72, form: -1 }
+        a: { open: 1.0, form: 0.38 },
+        i: { open: 0.24, form: 0.94 },
+        u: { open: 0.36, form: -0.8 },
+        e: { open: 0.52, form: 0.72 },
+        o: { open: 0.8, form: -0.92 }
       }
     },
+    articulation: {
+      minOpenScale: 0.7,
+      maxOpenScale: 1.22,
+      minFormScale: 0.7,
+      maxFormScale: 1.2,
+      lowEnergyBias: 0.62
+    },
     silence: {
-      energyThreshold: 0.045,
-      confidenceThreshold: 0.12
+      energyThreshold: 0.028,
+      confidenceThreshold: 0.08,
+      holdFrames: 4,
+      holdDecay: 0.74,
+      energyDrivenOpenFloor: 0.02,
+      energyDrivenOpenScale: 1.95
     }
   });
 
@@ -104,7 +115,9 @@
     return {
       previousSpectrum: null,
       smoothedWeights: createNeutralWeights(),
-      lastFeatures: null
+      lastFeatures: null,
+      lowSignalFrames: 0,
+      lastResolvedFrame: null
     };
   }
 
@@ -209,13 +222,15 @@
     const highMid = Number(features.highMid) || 0;
     const high = Number(features.high) || 0;
     const low = Number(features.low) || 0;
+    const openMidBias = Math.max(0, mid - low);
+    const openHighBias = Math.max(0, mid - lowMid);
 
     const scores = {
-      a: mid * 1.15 + lowMid * 0.72 + openness * 0.42 + voiceEnergy * 0.2 + (1 - Math.abs(features.spectralBalance || 0)) * 0.08,
-      i: highMid * 1.22 + high * 0.85 + spreadness * 0.38 + centroidNorm * 0.24 + flux * 0.12,
-      u: low * 1.18 + lowMid * 0.78 + roundness * 0.34 + (1 - brightness) * 0.18 + (1 - centroidNorm) * 0.12,
-      e: mid * 0.9 + highMid * 0.96 + spreadness * 0.34 + centroidNorm * 0.16 + flux * 0.1,
-      o: low * 1.02 + mid * 0.82 + roundness * 0.46 + openness * 0.16 + (1 - centroidNorm) * 0.14
+      a: mid * 1.22 + lowMid * 0.24 + openness * 0.38 + voiceEnergy * 0.2 + (1 - brightness) * 0.08 + openMidBias * 0.26 + openHighBias * 0.1 - roundness * 0.1,
+      i: high * 1.16 + highMid * 0.76 + spreadness * 0.32 + brightness * 0.16 + centroidNorm * 0.18 + flux * 0.08 - openness * 0.04,
+      u: low * 0.56 + lowMid * 1.12 + mid * 0.48 + roundness * 0.3 + openness * 0.08 + (1 - brightness) * 0.12 + (1 - centroidNorm) * 0.06,
+      e: high * 0.56 + highMid * 1.14 + mid * 0.52 + spreadness * 0.18 + brightness * 0.04 + openness * 0.18 + flux * 0.08,
+      o: low * 0.34 + mid * 1.02 + lowMid * 0.32 + openness * 0.22 + roundness * 0.46 + (1 - brightness) * 0.16 + (1 - centroidNorm) * 0.1 - spreadness * 0.06
     };
 
     return softmaxScores(scores);
@@ -259,8 +274,12 @@
   function deriveMouthParams(weights, features = {}, config = {}) {
     const safeWeights = normalizeWeights(weights);
     const visemeShape = config.visemeShape || DEFAULT_CONFIG.visemeShape;
+    const articulationConfig = config.articulation || DEFAULT_CONFIG.articulation;
     const targets = visemeShape.targets || DEFAULT_CONFIG.visemeShape.targets;
     const shapedWeights = sharpenWeights(safeWeights, visemeShape.sharpenPower);
+    const voiceEnergy = clamp(Number(features.voiceEnergy) || 0, 0, 1);
+    const opennessHint = clamp(Number(features.opennessHint) || 0, 0, 1);
+    const spectralBalance = clamp(Number(features.spectralBalance) || 0, -1, 1);
     let mouthOpen = 0;
     let mouthForm = 0;
 
@@ -270,15 +289,24 @@
       mouthForm += shapedWeights[name] * clamp(Number(target.form) || 0, -1, 1);
     }
 
+    const articulation = clamp(
+      voiceEnergy * articulationConfig.lowEnergyBias
+      + opennessHint * 0.28
+      + Math.abs(spectralBalance) * 0.22,
+      0,
+      1
+    );
+    const openScale = lerp(articulationConfig.minOpenScale, articulationConfig.maxOpenScale, articulation);
+    const formScale = lerp(articulationConfig.minFormScale, articulationConfig.maxFormScale, articulation);
     mouthOpen = clamp(
-      mouthOpen
-      + (Number(features.voiceEnergy) || 0) * 0.08
-      + Math.max(0, (Number(features.opennessHint) || 0) - 0.45) * 0.08,
+      mouthOpen * openScale
+      + voiceEnergy * 0.12
+      + Math.max(0, opennessHint - 0.36) * 0.11,
       0,
       1
     );
     mouthForm = clamp(
-      mouthForm + (Number(features.spectralBalance) || 0) * 0.06,
+      (mouthForm + spectralBalance * 0.08) * formScale,
       -1,
       1
     );
@@ -304,7 +332,50 @@
     const smoothedWeights = smoothWeights(targetWeights, state, input.config);
     const derived = deriveMouthParams(smoothedWeights, features, input.config);
     const confidence = speaking ? computeConfidence(features) : 0;
+    const holdFrames = Math.max(0, Number(silenceConfig.holdFrames) || 0);
+    const holdDecay = clamp(Number(silenceConfig.holdDecay) || 0.82, 0, 1);
+    const energyDrivenOpenFloor = clamp(Number(silenceConfig.energyDrivenOpenFloor) || 0, 0, 1);
+    const energyDrivenOpenScale = Math.max(0, Number(silenceConfig.energyDrivenOpenScale) || 0);
     if (rawVoiceEnergy < silenceConfig.energyThreshold || confidence < silenceConfig.confidenceThreshold) {
+      const canHoldPreviousFrame = (
+        speaking
+        && holdFrames > 0
+        && state.lastResolvedFrame
+        && state.lowSignalFrames < holdFrames
+      );
+      if (canHoldPreviousFrame) {
+        state.lowSignalFrames += 1;
+        const heldFrame = state.lastResolvedFrame;
+        const decay = Math.pow(holdDecay, state.lowSignalFrames);
+        return {
+          confidence: clamp((Number(heldFrame.confidence) || 0) * decay, 0, 1),
+          features,
+          weights: normalizeWeights(heldFrame.weights || state.smoothedWeights || createNeutralWeights()),
+          dominantViseme: heldFrame.dominantViseme || 'a',
+          mouthOpen: clamp(lerp(fallbackOpen * 0.5, Number(heldFrame.mouthOpen) || 0, decay), 0, 1),
+          mouthForm: clamp(lerp(fallbackForm * 0.5, Number(heldFrame.mouthForm) || 0, decay), -1, 1)
+        };
+      }
+      const canUseEnergyDrivenFallback = speaking && rawVoiceEnergy >= Math.max(0.016, Number(silenceConfig.energyThreshold) * 0.7);
+      if (canUseEnergyDrivenFallback) {
+        const previousForm = Number(state.lastResolvedFrame?.mouthForm) || fallbackForm;
+        const drivenOpen = clamp(
+          energyDrivenOpenFloor + rawVoiceEnergy * energyDrivenOpenScale,
+          0,
+          0.12
+        );
+        const drivenForm = clamp(previousForm * 0.45, -1, 1);
+        return {
+          confidence: clamp(confidence * 0.6, 0, 1),
+          features,
+          weights: normalizeWeights(state.smoothedWeights || createNeutralWeights()),
+          dominantViseme: state.lastResolvedFrame?.dominantViseme || 'a',
+          mouthOpen: Math.max(drivenOpen, fallbackOpen * 0.18),
+          mouthForm: drivenForm
+        };
+      }
+      state.lowSignalFrames = 0;
+      state.lastResolvedFrame = null;
       state.smoothedWeights = createNeutralWeights();
       return {
         confidence: 0,
@@ -315,28 +386,37 @@
         mouthForm: 0
       };
     }
-    const fallbackBlend = lerp(
-      DEFAULT_CONFIG.fallbackBlend.min,
-      DEFAULT_CONFIG.fallbackBlend.max,
-      confidence
-    );
-
     const visemeBlend = lerp(
-      DEFAULT_CONFIG.fallbackBlend.min,
-      Math.max(DEFAULT_CONFIG.fallbackBlend.max, 0.94),
+      DEFAULT_CONFIG.fallbackBlend.min + 0.06,
+      Math.max(DEFAULT_CONFIG.fallbackBlend.max, 0.98),
       confidence
     );
+    const openVisemeBlend = speaking
+      ? clamp(Math.max(0.68, visemeBlend + 0.16), 0, 1)
+      : visemeBlend;
+    const formVisemeBlend = speaking
+      ? clamp(Math.max(0.5, visemeBlend), 0, 1)
+      : visemeBlend;
 
-    return {
+    const resolvedFrame = {
       confidence,
       features,
       weights: smoothedWeights,
       dominantViseme: VISEME_NAMES.reduce((best, name) => (
         smoothedWeights[name] > smoothedWeights[best] ? name : best
       ), 'a'),
-      mouthOpen: clamp(lerp(fallbackOpen * 0.4, derived.mouthOpen, visemeBlend), 0, 1),
-      mouthForm: clamp(lerp(fallbackForm * 0.35, derived.mouthForm, visemeBlend), -1, 1)
+      mouthOpen: clamp(lerp(fallbackOpen * 0.22, derived.mouthOpen, openVisemeBlend), 0, 1),
+      mouthForm: clamp(lerp(fallbackForm * 0.3, derived.mouthForm, formVisemeBlend), -1, 1)
     };
+    state.lowSignalFrames = 0;
+    state.lastResolvedFrame = {
+      confidence: resolvedFrame.confidence,
+      weights: cloneWeights(resolvedFrame.weights),
+      dominantViseme: resolvedFrame.dominantViseme,
+      mouthOpen: resolvedFrame.mouthOpen,
+      mouthForm: resolvedFrame.mouthForm
+    };
+    return resolvedFrame;
   }
 
   const api = {

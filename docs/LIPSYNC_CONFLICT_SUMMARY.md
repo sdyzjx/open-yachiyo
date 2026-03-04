@@ -1,5 +1,7 @@
 # 嘴形同步与表情动作冲突问题 - 调查总结
 
+> 历史文档。主要记录 2026-03-01 左右的旧冲突调查，不代表当前主线 lipsync/face mixer 实现。现状请看 `docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`。
+
 ## 问题描述
 
 当 yachiyo 说完话后，可能由于嘴形和动作的冲突，yachiyo 不会响应其他表情动作（如笑、哭）。

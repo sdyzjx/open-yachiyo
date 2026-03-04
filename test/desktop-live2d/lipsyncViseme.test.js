@@ -120,6 +120,43 @@ test('resolveVisemeFrame falls back when speech energy is absent', () => {
   assert.equal(frame.mouthForm, 0);
 });
 
+test('resolveVisemeFrame holds the previous speaking mouth shape across brief low-signal gaps', () => {
+  const bright = makeSpectrum({
+    low: 0.08,
+    lowMid: 0.12,
+    mid: 0.3,
+    highMid: 0.92,
+    high: 0.76
+  });
+  const silent = makeSpectrum();
+  const runtimeState = createRuntimeState();
+
+  const activeFrame = resolveVisemeFrame({
+    frequencyBuffer: bright.buffer,
+    sampleRate: bright.sampleRate,
+    voiceEnergy: 0.8,
+    speaking: true,
+    fallbackOpen: 0,
+    fallbackForm: 0,
+    state: runtimeState
+  });
+
+  const heldFrame = resolveVisemeFrame({
+    frequencyBuffer: silent.buffer,
+    sampleRate: silent.sampleRate,
+    voiceEnergy: 0.01,
+    speaking: true,
+    fallbackOpen: 0,
+    fallbackForm: 0,
+    state: runtimeState
+  });
+
+  assert.ok(activeFrame.mouthOpen > 0.25);
+  assert.ok(heldFrame.mouthOpen > 0.05);
+  assert.ok(Math.abs(heldFrame.mouthForm) > 0.05);
+  assert.ok(heldFrame.mouthOpen < activeFrame.mouthOpen);
+});
+
 test('deriveMouthParams gives distinct vowel mouth shapes', () => {
   const aShape = deriveMouthParams({ a: 1, i: 0, u: 0, e: 0, o: 0 }, { voiceEnergy: 0.7, opennessHint: 0.8, spectralBalance: 0 });
   const iShape = deriveMouthParams({ a: 0, i: 1, u: 0, e: 0, o: 0 }, { voiceEnergy: 0.4, opennessHint: 0.35, spectralBalance: 0.6 });

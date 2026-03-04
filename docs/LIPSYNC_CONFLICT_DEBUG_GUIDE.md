@@ -1,5 +1,7 @@
 # 嘴形同步与表情动作冲突调试指南
 
+> 历史文档。主要记录 2026-03-01 左右的旧排查过程，不代表当前主线实现。当前 lipsync 链路、face mixer、waveform recorder，请以 `docs/VOICE_LIPSYNC_DEBUG_GUIDE.md` 和 `docs/process/desktop-live2d-lipsync-waveform-tuning-log.md` 为准。
+
 ## 已添加的调试日志
 
 我已经在 `apps/desktop-live2d/renderer/bootstrap.js` 中添加了以下调试日志：

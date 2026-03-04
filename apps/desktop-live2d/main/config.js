@@ -83,6 +83,9 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
     importBackupRoot: path.resolve(
       env.DESKTOP_LIVE2D_BACKUP_ROOT || path.join(runtimePaths.dataDir, 'backups', 'live2d')
     ),
+    mouthWaveformDir: path.resolve(
+      env.DESKTOP_LIVE2D_MOUTH_WAVEFORM_DIR || path.join(runtimePaths.dataDir, 'desktop-live2d', 'mouth-waveforms')
+    ),
     rpcHost: '127.0.0.1',
     rpcPort,
     rpcToken,
@@ -214,6 +217,18 @@ function normalizeUiConfig(raw) {
         ...(raw?.interaction?.dragZone || {})
       }
     },
+    debug: {
+      ...DEFAULT_UI_CONFIG.debug,
+      ...(raw?.debug || {}),
+      mouthTuner: {
+        ...DEFAULT_UI_CONFIG.debug.mouthTuner,
+        ...(raw?.debug?.mouthTuner || {})
+      },
+      waveformCapture: {
+        ...DEFAULT_UI_CONFIG.debug.waveformCapture,
+        ...(raw?.debug?.waveformCapture || {})
+      }
+    },
     layout: {
       ...DEFAULT_UI_CONFIG.layout,
       ...(raw?.layout || {})
@@ -281,6 +296,11 @@ function normalizeUiConfig(raw) {
     merged.interaction.dragZone,
     DEFAULT_UI_CONFIG.interaction.dragZone
   );
+  merged.debug.mouthTuner.visible = Boolean(merged.debug.mouthTuner.visible);
+  merged.debug.mouthTuner.enabled = Boolean(merged.debug.mouthTuner.enabled);
+  merged.debug.waveformCapture.enabled = Boolean(merged.debug.waveformCapture.enabled);
+  merged.debug.waveformCapture.captureEveryFrame = merged.debug.waveformCapture.captureEveryFrame !== false;
+  merged.debug.waveformCapture.includeApplied = merged.debug.waveformCapture.includeApplied !== false;
 
   const layoutDefaults = DEFAULT_UI_CONFIG.layout;
   for (const key of Object.keys(layoutDefaults)) {
@@ -475,6 +495,64 @@ function upsertDesktopLive2dDragZoneOverrides(configPath, overrides = {}, { defa
   return nextRaw;
 }
 
+function cloneJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneJsonValue(item));
+  }
+  if (isPlainObject(value)) {
+    const cloned = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      cloned[key] = cloneJsonValue(nestedValue);
+    }
+    return cloned;
+  }
+  return value;
+}
+
+function fillMissingWithDefaults(target, defaults, pathPrefix = '', addedPaths = []) {
+  if (!isPlainObject(defaults)) {
+    return {
+      value: target,
+      addedPaths
+    };
+  }
+
+  const nextValue = isPlainObject(target) ? { ...target } : {};
+
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    const nextPath = pathPrefix ? `${pathPrefix}.${key}` : key;
+    if (!Object.prototype.hasOwnProperty.call(nextValue, key) || nextValue[key] === undefined) {
+      nextValue[key] = cloneJsonValue(defaultValue);
+      addedPaths.push(nextPath);
+      continue;
+    }
+    if (isPlainObject(defaultValue) && isPlainObject(nextValue[key])) {
+      nextValue[key] = fillMissingWithDefaults(nextValue[key], defaultValue, nextPath, addedPaths).value;
+    }
+  }
+
+  return {
+    value: nextValue,
+    addedPaths
+  };
+}
+
+function syncDesktopLive2dMissingDefaults(configPath, { defaults = DEFAULT_UI_CONFIG } = {}) {
+  const currentRaw = fs.existsSync(configPath)
+    ? parseJsonWithComments(fs.readFileSync(configPath, 'utf8'))
+    : {};
+  const safeCurrent = isPlainObject(currentRaw) ? currentRaw : {};
+  const { value: nextRaw, addedPaths } = fillMissingWithDefaults(safeCurrent, defaults);
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, serializeDesktopLive2dUiConfig(nextRaw), 'utf8');
+
+  return {
+    nextRaw,
+    addedPaths
+  };
+}
+
 function serializeDesktopLive2dUiConfig(raw = {}) {
   const safe = isPlainObject(raw) ? raw : {};
   const orderedKeys = [];
@@ -534,6 +612,7 @@ module.exports = {
   parseJsonWithComments,
   upsertDesktopLive2dLayoutOverrides,
   upsertDesktopLive2dDragZoneOverrides,
+  syncDesktopLive2dMissingDefaults,
   serializeDesktopLive2dUiConfig,
   stripJsonComments,
   toPositiveInt,

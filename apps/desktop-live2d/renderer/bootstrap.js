@@ -46,14 +46,47 @@
   let lipsyncTargetMouthForm = 0;
   let lipsyncCurrentMouthOpen = 0;
   let lipsyncCurrentMouthForm = 0;
+  let lipsyncBaselineMouthOpen = 0;
+  let lipsyncBaselineMouthForm = 0;
   let lipsyncSpeakingActive = false;
   let lipsyncDetachModelHook = null;
   let lipsyncDetachTickerHook = null;
+  let mouthOverrideDetachModelHook = null;
+  let mouthOverrideDetachTickerHook = null;
   let lipsyncApplyMode = 'raf_direct';
   let activeVoiceRequestId = null;
   let systemAudioDebugBound = false;
   let realtimeVoicePlayer = null;
+  let faceBlendState = {
+    current: {
+      mouthForm: 0,
+      eyeSmileL: 0,
+      eyeSmileR: 0,
+      cheek: 0
+    },
+    target: {
+      mouthForm: 0,
+      eyeSmileL: 0,
+      eyeSmileR: 0,
+      cheek: 0
+    }
+  };
   let layoutTunerState = null;
+  let mouthTunerState = {
+    open: false,
+    enabled: false,
+    values: {
+      mouthOpen: 0,
+      mouthForm: 0
+    }
+  };
+  let externalMouthOverrideState = {
+    enabled: false,
+    values: {
+      mouthOpen: 0,
+      mouthForm: 0
+    }
+  };
   let lastWindowInteractivity = null;
   let lastPointerPosition = null;
 
@@ -67,6 +100,17 @@
   const chatComposerElement = document.getElementById('chat-panel-composer');
   const petHideElement = document.getElementById('pet-hide');
   const petCloseElement = document.getElementById('pet-close');
+  const mouthTunerToggleElement = document.getElementById('mouth-tuner-toggle');
+  const mouthTunerPanelElement = document.getElementById('mouth-tuner-panel');
+  const mouthTunerCloseElement = document.getElementById('mouth-tuner-close');
+  const mouthTunerEnableElement = document.getElementById('mouth-tuner-enable');
+  const mouthOpenElement = document.getElementById('mouth-open');
+  const mouthFormElement = document.getElementById('mouth-form');
+  const mouthOpenValueElement = document.getElementById('mouth-open-value');
+  const mouthFormValueElement = document.getElementById('mouth-form-value');
+  const mouthNeutralElement = document.getElementById('mouth-neutral');
+  const mouthApplyIElement = document.getElementById('mouth-apply-i');
+  const mouthTunerStatusElement = document.getElementById('mouth-tuner-status');
   const resizeModeCloseElement = document.getElementById('resize-mode-close');
   const layoutTunerToggleElement = document.getElementById('layout-tuner-toggle');
   const dragZoneToggleElement = document.getElementById('drag-zone-toggle');
@@ -135,13 +179,28 @@
   const CHAT_PANEL_SHOW_WAIT_RESIZE_TIMEOUT_MS = 220;
   const MODEL_TAP_SUPPRESS_AFTER_DRAG_MS = 220;
   const MODEL_TAP_SUPPRESS_AFTER_FOCUS_MS = 240;
-  const LIPSYNC_OPEN_GAIN_MIN = 1.35;
-  const LIPSYNC_OPEN_GAIN_MAX = 1.95;
-  const LIPSYNC_FORM_GAIN_MIN = 1.2;
-  const LIPSYNC_FORM_GAIN_MAX = 1.7;
-  const LIPSYNC_OPEN_GAMMA = 0.78;
   const LIPSYNC_ACTIVE_ENERGY_MIN = 0.018;
-  const LIPSYNC_MIN_OPEN_WHEN_SPEAKING = 0.12;
+  const LIPSYNC_BASELINE_OPEN_ALPHA = 0.024;
+  const LIPSYNC_BASELINE_FORM_ALPHA = 0.02;
+  const LIPSYNC_VARIANCE_OPEN_GAIN_MIN = 3.0;
+  const LIPSYNC_VARIANCE_OPEN_GAIN_MAX = 4.0;
+  const LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN = 0.82;
+  const LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO = 0.36;
+  const LIPSYNC_VARIANCE_FORM_GAIN_MIN = 2.0;
+  const LIPSYNC_VARIANCE_FORM_GAIN_MAX = 3.0;
+  const FACE_BLEND_ATTACK = 0.2;
+  const FACE_BLEND_RELEASE = 0.12;
+  const FACE_BLEND_SPEECH_MOUTHFORM_WEIGHT = 0.18;
+  const DEFAULT_MOUTH_BASE_POSE = Object.freeze({
+    mouthOpen: 0,
+    mouthForm: 0
+  });
+  const FACE_BLEND_DEFAULTS = Object.freeze({
+    mouthForm: 0,
+    eyeSmileL: 0,
+    eyeSmileR: 0,
+    cheek: 0
+  });
 
   function nearlyEqual(left, right, epsilon = 1e-4) {
     if (typeof interactionApi?.nearlyEqual === 'function') {
@@ -217,6 +276,458 @@
   function roundToStep(value, step = 1) {
     const safeStep = Number(step) || 1;
     return Math.round((Number(value) || 0) / safeStep) * safeStep;
+  }
+
+  function normalizeMouthTunerValues(input = {}) {
+    return {
+      mouthOpen: Math.round(clamp(Number(input.mouthOpen) || 0, 0, 1) * 100) / 100,
+      mouthForm: Math.round(clamp(Number(input.mouthForm) || 0, -1, 1) * 100) / 100
+    };
+  }
+
+  function getDefaultMouthBasePose() {
+    return normalizeMouthTunerValues(DEFAULT_MOUTH_BASE_POSE);
+  }
+
+  function syncLipsyncStateToDefaultMouthBasePose() {
+    const basePose = getDefaultMouthBasePose();
+    lipsyncTargetMouthOpen = basePose.mouthOpen;
+    lipsyncTargetMouthForm = basePose.mouthForm;
+    lipsyncCurrentMouthOpen = basePose.mouthOpen;
+    lipsyncCurrentMouthForm = basePose.mouthForm;
+    lipsyncBaselineMouthOpen = basePose.mouthOpen;
+    lipsyncBaselineMouthForm = basePose.mouthForm;
+    return basePose;
+  }
+
+  function normalizeFaceBlendValues(input = {}) {
+    return {
+      mouthForm: Math.round(clamp(Number(input.mouthForm) || 0, -1, 1) * 100) / 100,
+      eyeSmileL: Math.round(clamp(Number(input.eyeSmileL) || 0, 0, 1) * 100) / 100,
+      eyeSmileR: Math.round(clamp(Number(input.eyeSmileR) || 0, 0, 1) * 100) / 100,
+      cheek: Math.round(clamp(Number(input.cheek) || 0, 0, 1) * 100) / 100
+    };
+  }
+
+  function createFaceBlendValues(input = {}) {
+    return normalizeFaceBlendValues({
+      ...FACE_BLEND_DEFAULTS,
+      ...(input && typeof input === 'object' ? input : {})
+    });
+  }
+
+  function isMixableFaceParam(name) {
+    return [
+      'ParamMouthForm',
+      'ParamEyeLSmile',
+      'ParamEyeRSmile',
+      'ParamCheek'
+    ].includes(String(name || ''));
+  }
+
+  function mapExpressionNameToFaceBlendTarget(name) {
+    switch (String(name || '').trim()) {
+      case 'smile':
+        return createFaceBlendValues({
+          mouthForm: 0.28,
+          eyeSmileL: 0.92,
+          eyeSmileR: 0.92,
+          cheek: 0.2
+        });
+      case 'narrow_eyes':
+        return createFaceBlendValues({
+          mouthForm: 0.04,
+          eyeSmileL: 0.12,
+          eyeSmileR: 0.12,
+          cheek: 0.08
+        });
+      case 'tear_drop':
+        return createFaceBlendValues({
+          mouthForm: -0.04,
+          eyeSmileL: 0,
+          eyeSmileR: 0,
+          cheek: 0
+        });
+      case 'tears':
+        return createFaceBlendValues({
+          mouthForm: -0.08,
+          eyeSmileL: 0,
+          eyeSmileR: 0,
+          cheek: 0
+        });
+      default:
+        return createFaceBlendValues();
+    }
+  }
+
+  function setFaceBlendTarget(nextValues = {}, { replace = false } = {}) {
+    const target = replace
+      ? { ...FACE_BLEND_DEFAULTS, ...(nextValues || {}) }
+      : { ...faceBlendState.target, ...(nextValues || {}) };
+    faceBlendState.target = createFaceBlendValues(target);
+    return faceBlendState.target;
+  }
+
+  function resetFaceBlendTarget() {
+    faceBlendState.target = createFaceBlendValues();
+    return faceBlendState.target;
+  }
+
+  function isVoiceFaceContextActive() {
+    return Boolean(activeVoiceRequestId || lipsyncAnimationFrame || lipsyncReleaseAnimationFrame || lipsyncSpeakingActive);
+  }
+
+  function stepFaceBlendState() {
+    const next = {};
+    for (const key of Object.keys(FACE_BLEND_DEFAULTS)) {
+      const current = Number(faceBlendState.current?.[key]) || 0;
+      const target = Number(faceBlendState.target?.[key]) || 0;
+      const alpha = Math.abs(target) > Math.abs(current) ? FACE_BLEND_ATTACK : FACE_BLEND_RELEASE;
+      next[key] = lerp(current, target, alpha);
+    }
+    faceBlendState.current = createFaceBlendValues(next);
+    return faceBlendState.current;
+  }
+
+  function applyCompositeFacePoseToModel({ mouthOpen = null, mouthForm = null, speaking = false } = {}) {
+    if (!live2dModel || !state.modelLoaded) {
+      return { ok: false, skipped: true, reason: 'model_not_loaded' };
+    }
+    const coreModel = live2dModel?.internalModel?.coreModel;
+    if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
+      return { ok: false, skipped: true, reason: 'core_model_unavailable' };
+    }
+    const basePose = getDefaultMouthBasePose();
+    const faceBlend = stepFaceBlendState();
+    const voiceFaceContext = isVoiceFaceContextActive() || Boolean(speaking);
+    const emotionMouthWeight = voiceFaceContext ? FACE_BLEND_SPEECH_MOUTHFORM_WEIGHT : 1;
+    const resolvedMouthOpen = clamp(Number.isFinite(Number(mouthOpen)) ? Number(mouthOpen) : basePose.mouthOpen, 0, 1);
+    const resolvedMouthForm = clamp(Number.isFinite(Number(mouthForm)) ? Number(mouthForm) : basePose.mouthForm, -1, 1);
+    const finalMouthForm = clamp(
+      resolvedMouthForm + faceBlend.mouthForm * emotionMouthWeight,
+      -1,
+      1
+    );
+
+    try {
+      coreModel.setParameterValueById('ParamMouthOpenY', resolvedMouthOpen);
+      coreModel.setParameterValueById('ParamMouthForm', finalMouthForm);
+      coreModel.setParameterValueById('ParamEyeLSmile', faceBlend.eyeSmileL);
+      coreModel.setParameterValueById('ParamEyeRSmile', faceBlend.eyeSmileR);
+      coreModel.setParameterValueById('ParamCheek', faceBlend.cheek);
+      return {
+        ok: true,
+        values: {
+          mouthOpen: resolvedMouthOpen,
+          mouthForm: finalMouthForm,
+          faceBlend
+        }
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err?.message || String(err || 'unknown error')
+      };
+    }
+  }
+
+  function setMouthTunerStatus(message = '') {
+    if (mouthTunerStatusElement) {
+      mouthTunerStatusElement.textContent = String(message || '');
+    }
+  }
+
+  function getMouthTunerRuntimeConfig() {
+    const raw = runtimeUiConfig?.debug?.mouthTuner;
+    const config = raw && typeof raw === 'object' ? raw : {};
+    return {
+      visible: config.visible === true,
+      enabled: config.enabled === true
+    };
+  }
+
+  function getWaveformCaptureRuntimeConfig() {
+    const raw = runtimeUiConfig?.debug?.waveformCapture;
+    const config = raw && typeof raw === 'object' ? raw : {};
+    return {
+      enabled: config.enabled === true,
+      captureEveryFrame: config.captureEveryFrame !== false,
+      includeApplied: config.includeApplied !== false
+    };
+  }
+
+  function setMouthTunerVisible(visible) {
+    const nextVisible = Boolean(visible);
+    document.body.classList.toggle('mouth-tuner-visible', nextVisible);
+    if (mouthTunerToggleElement) {
+      mouthTunerToggleElement.hidden = !nextVisible;
+    }
+    if (mouthTunerPanelElement) {
+      mouthTunerPanelElement.hidden = !nextVisible;
+    }
+    if (!nextVisible) {
+      mouthTunerState.open = false;
+      document.body.classList.remove('mouth-tuner-open');
+    }
+  }
+
+  function syncMouthTunerControls() {
+    const values = mouthTunerState?.values || normalizeMouthTunerValues();
+    if (mouthTunerEnableElement) {
+      mouthTunerEnableElement.checked = Boolean(mouthTunerState?.enabled);
+    }
+    if (mouthOpenElement) mouthOpenElement.value = values.mouthOpen.toFixed(2);
+    if (mouthFormElement) mouthFormElement.value = values.mouthForm.toFixed(2);
+    if (mouthOpenValueElement) mouthOpenValueElement.textContent = values.mouthOpen.toFixed(2);
+    if (mouthFormValueElement) mouthFormValueElement.textContent = values.mouthForm.toFixed(2);
+  }
+
+  function setMouthTunerOpen(open) {
+    if (!document.body.classList.contains('mouth-tuner-visible')) {
+      mouthTunerState.open = false;
+      document.body.classList.remove('mouth-tuner-open');
+      return;
+    }
+    mouthTunerState.open = Boolean(open);
+    document.body.classList.toggle('mouth-tuner-open', mouthTunerState.open);
+  }
+
+  function applyRawMouthPoseToModel(values = {}, { force = false } = {}) {
+    if (!live2dModel || !state.modelLoaded) {
+      return { ok: false, skipped: true, reason: 'model_not_loaded' };
+    }
+    const coreModel = live2dModel?.internalModel?.coreModel;
+    if (!coreModel) {
+      return { ok: false, skipped: true, reason: 'core_model_unavailable' };
+    }
+    const normalized = normalizeMouthTunerValues(values);
+    try {
+      if (force || typeof coreModel.addParameterValueById !== 'function') {
+        coreModel.setParameterValueById('ParamMouthOpenY', normalized.mouthOpen);
+        coreModel.setParameterValueById('ParamMouthForm', normalized.mouthForm);
+      } else {
+        coreModel.addParameterValueById('ParamMouthOpenY', normalized.mouthOpen, 1);
+        coreModel.addParameterValueById('ParamMouthForm', normalized.mouthForm, 1);
+      }
+      return {
+        ok: true,
+        values: normalized
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err?.message || String(err || 'unknown error'),
+        values: normalized
+      };
+    }
+  }
+
+  function getActiveMouthOverrideValues() {
+    if (externalMouthOverrideState?.enabled) {
+      return externalMouthOverrideState.values || normalizeMouthTunerValues();
+    }
+    if (mouthTunerState?.enabled) {
+      return mouthTunerState.values || normalizeMouthTunerValues();
+    }
+    return null;
+  }
+
+  function applyActiveMouthOverrideForCurrentFrame() {
+    const overrideValues = getActiveMouthOverrideValues();
+    if (!overrideValues) {
+      return false;
+    }
+    lipsyncCurrentMouthOpen = overrideValues.mouthOpen;
+    lipsyncCurrentMouthForm = overrideValues.mouthForm;
+    return applyCompositeFacePoseToModel({
+      mouthOpen: overrideValues.mouthOpen,
+      mouthForm: overrideValues.mouthForm,
+      speaking: lipsyncSpeakingActive
+    }).ok === true;
+  }
+
+  function shouldApplyDefaultMouthBasePose() {
+    if (getActiveMouthOverrideValues()) {
+      return false;
+    }
+    if (lipsyncReleaseAnimationFrame || lipsyncSpeakingActive) {
+      return false;
+    }
+    if (lipsyncAnimationFrame) {
+      return false;
+    }
+    return true;
+  }
+
+  function applyDefaultMouthBasePoseForCurrentFrame() {
+    const basePose = syncLipsyncStateToDefaultMouthBasePose();
+    return applyCompositeFacePoseToModel({
+      mouthOpen: basePose.mouthOpen,
+      mouthForm: basePose.mouthForm,
+      speaking: false
+    }).ok === true;
+  }
+
+  function bindPersistentMouthOverrideHook() {
+    if (typeof mouthOverrideDetachModelHook === 'function' || typeof mouthOverrideDetachTickerHook === 'function') {
+      return true;
+    }
+    const internalModel = live2dModel?.internalModel;
+    if (internalModel && typeof internalModel.on === 'function') {
+      const handler = () => {
+        if (applyActiveMouthOverrideForCurrentFrame()) {
+          return;
+        }
+        if (shouldApplyDefaultMouthBasePose()) {
+          applyDefaultMouthBasePoseForCurrentFrame();
+        }
+      };
+      internalModel.on('beforeModelUpdate', handler);
+      mouthOverrideDetachModelHook = () => {
+        if (typeof internalModel.off === 'function') {
+          internalModel.off('beforeModelUpdate', handler);
+        } else if (typeof internalModel.removeListener === 'function') {
+          internalModel.removeListener('beforeModelUpdate', handler);
+        }
+      };
+      return true;
+    }
+    if (pixiApp?.ticker && typeof pixiApp.ticker.add === 'function') {
+      const tick = () => {
+        if (applyActiveMouthOverrideForCurrentFrame()) {
+          return;
+        }
+        if (shouldApplyDefaultMouthBasePose()) {
+          applyDefaultMouthBasePoseForCurrentFrame();
+        }
+      };
+      pixiApp.ticker.add(tick);
+      mouthOverrideDetachTickerHook = () => {
+        if (pixiApp?.ticker && typeof pixiApp.ticker.remove === 'function') {
+          pixiApp.ticker.remove(tick);
+        }
+      };
+      return true;
+    }
+    return false;
+  }
+
+  function applyMouthTunerValues(nextValues = {}, { immediate = false, statusMessage = '' } = {}) {
+    mouthTunerState.values = normalizeMouthTunerValues({
+      ...(mouthTunerState?.values || {}),
+      ...nextValues
+    });
+    syncMouthTunerControls();
+    if (statusMessage) {
+      setMouthTunerStatus(statusMessage);
+    }
+    if (immediate && mouthTunerState.enabled) {
+      applyRawMouthPoseToModel(mouthTunerState.values, { force: true });
+    }
+  }
+
+  function setMouthTunerEnabled(enabled, { immediate = false, statusMessage = '' } = {}) {
+    mouthTunerState.enabled = Boolean(enabled);
+    syncMouthTunerControls();
+    if (mouthTunerState.enabled) {
+      setMouthTunerStatus(statusMessage || 'Override active');
+      if (immediate) {
+        applyRawMouthPoseToModel(mouthTunerState.values, { force: true });
+      }
+      return;
+    }
+    setMouthTunerStatus(statusMessage || 'Override disabled');
+  }
+
+  function setExternalMouthOverride(params = {}) {
+    const enabled = params?.enabled === true;
+    externalMouthOverrideState = {
+      enabled,
+      values: normalizeMouthTunerValues({
+        ...(externalMouthOverrideState?.values || {}),
+        ...params
+      })
+    };
+    if (enabled) {
+      applyRawMouthPoseToModel(externalMouthOverrideState.values, { force: true });
+    }
+    return {
+      ok: true,
+      enabled,
+      values: externalMouthOverrideState.values
+    };
+  }
+
+  function initMouthTuner() {
+    const mouthTunerConfig = getMouthTunerRuntimeConfig();
+    mouthTunerState = {
+      open: false,
+      enabled: mouthTunerConfig.enabled,
+      values: normalizeMouthTunerValues({
+        mouthOpen: 0,
+        mouthForm: 0
+      })
+    };
+    syncMouthTunerControls();
+    setMouthTunerOpen(false);
+    setMouthTunerVisible(mouthTunerConfig.visible);
+    setMouthTunerStatus(mouthTunerConfig.enabled ? 'Override active' : 'Override disabled');
+
+    if (!mouthTunerConfig.visible) {
+      return;
+    }
+
+    mouthTunerToggleElement?.addEventListener('click', () => {
+      setMouthTunerOpen(!mouthTunerState?.open);
+    });
+    mouthTunerCloseElement?.addEventListener('click', () => {
+      setMouthTunerOpen(false);
+    });
+    mouthTunerEnableElement?.addEventListener('change', () => {
+      setMouthTunerEnabled(mouthTunerEnableElement.checked, {
+        immediate: true
+      });
+    });
+    mouthOpenElement?.addEventListener('input', () => {
+      applyMouthTunerValues({
+        mouthOpen: roundToStep(mouthOpenElement.value, 0.01)
+      }, {
+        immediate: true
+      });
+    });
+    mouthFormElement?.addEventListener('input', () => {
+      applyMouthTunerValues({
+        mouthForm: roundToStep(mouthFormElement.value, 0.01)
+      }, {
+        immediate: true
+      });
+    });
+    mouthNeutralElement?.addEventListener('click', () => {
+      applyMouthTunerValues({
+        mouthOpen: 0,
+        mouthForm: 0
+      }, {
+        immediate: true,
+        statusMessage: 'Neutral mouth'
+      });
+      setMouthTunerEnabled(true, {
+        immediate: true,
+        statusMessage: 'Override active'
+      });
+    });
+    mouthApplyIElement?.addEventListener('click', () => {
+      applyMouthTunerValues({
+        mouthOpen: 0.25,
+        mouthForm: 1
+      }, {
+        immediate: true,
+        statusMessage: 'Applied long I debug pose'
+      });
+      setMouthTunerEnabled(true, {
+        immediate: true,
+        statusMessage: 'Override active'
+      });
+    });
   }
 
   function normalizeLayoutTunerValues(input = {}) {
@@ -649,6 +1160,35 @@
     return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom;
   }
 
+  function isPointInsideVisibleElement(element, clientX, clientY) {
+    if (!element || element.hidden) {
+      return false;
+    }
+    const style = window.getComputedStyle?.(element);
+    if (!style || style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+    const rect = element.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  }
+
+  function isPointInInteractiveUi(clientX, clientY) {
+    const interactiveElements = [
+      mouthTunerToggleElement,
+      mouthTunerPanelElement,
+      resizeModeCloseElement,
+      layoutTunerToggleElement,
+      dragZoneToggleElement,
+      document.body.classList.contains('layout-tuner-open') ? document.getElementById('layout-tuner-panel') : null,
+      document.body.classList.contains('drag-zone-panel-open') ? document.getElementById('drag-zone-panel') : null,
+      chatPanelElement?.classList.contains('visible') ? chatPanelElement : null
+    ];
+    return interactiveElements.some((element) => isPointInsideVisibleElement(element, clientX, clientY));
+  }
+
   function setWindowInteractivity(interactive) {
     if (typeof bridge?.sendWindowInteractivity !== 'function') {
       return;
@@ -670,7 +1210,10 @@
       setWindowInteractivity(false);
       return;
     }
-    setWindowInteractivity(isPointInCenterDragZone(position.clientX, position.clientY));
+    setWindowInteractivity(
+      isPointInCenterDragZone(position.clientX, position.clientY)
+      || isPointInInteractiveUi(position.clientX, position.clientY)
+    );
   }
 
   function clamp(value, min, max) {
@@ -695,7 +1238,7 @@
     const rawOpen = clamp(Number(mouthOpen) || 0, 0, 1);
     const rawForm = clamp(Number(mouthForm) || 0, -1, 1);
     const energy = clamp(Number(voiceEnergy) || 0, 0, 1);
-    const active = Boolean(speaking) && energy >= LIPSYNC_ACTIVE_ENERGY_MIN;
+    const active = Boolean(speaking);
     const intensity = clamp((energy - LIPSYNC_ACTIVE_ENERGY_MIN) / 0.08, 0, 1);
 
     if (!active) {
@@ -705,11 +1248,33 @@
       };
     }
 
-    const openGain = lerp(LIPSYNC_OPEN_GAIN_MIN, LIPSYNC_OPEN_GAIN_MAX, intensity);
-    const formGain = lerp(LIPSYNC_FORM_GAIN_MIN, LIPSYNC_FORM_GAIN_MAX, intensity);
-    const widenedOpen = Math.pow(rawOpen, LIPSYNC_OPEN_GAMMA) * openGain + Math.abs(rawForm) * 0.08 * intensity;
-    const boostedOpen = Math.max(clamp(widenedOpen, 0, 1), LIPSYNC_MIN_OPEN_WHEN_SPEAKING);
-    const boostedForm = clamp(rawForm * formGain, -1, 1);
+    lipsyncBaselineMouthOpen = clamp(
+      lipsyncBaselineMouthOpen + (rawOpen - lipsyncBaselineMouthOpen) * LIPSYNC_BASELINE_OPEN_ALPHA,
+      0,
+      1
+    );
+    lipsyncBaselineMouthForm = clamp(
+      lipsyncBaselineMouthForm + (rawForm - lipsyncBaselineMouthForm) * LIPSYNC_BASELINE_FORM_ALPHA,
+      -1,
+      1
+    );
+
+    const openGain = lerp(LIPSYNC_VARIANCE_OPEN_GAIN_MIN, LIPSYNC_VARIANCE_OPEN_GAIN_MAX, intensity);
+    const formGain = lerp(LIPSYNC_VARIANCE_FORM_GAIN_MIN, LIPSYNC_VARIANCE_FORM_GAIN_MAX, intensity);
+    const openDelta = rawOpen - lipsyncBaselineMouthOpen;
+    const formDelta = rawForm - lipsyncBaselineMouthForm;
+    const positiveOpenDelta = Math.max(0, openDelta) * openGain;
+    const negativeOpenDelta = Math.min(0, openDelta) * LIPSYNC_VARIANCE_OPEN_NEGATIVE_GAIN;
+    const speakingOpenFloor = clamp(lipsyncBaselineMouthOpen * LIPSYNC_SPEAKING_OPEN_FLOOR_RATIO, 0, 1);
+    const boostedOpen = clamp(
+      Math.max(
+        speakingOpenFloor,
+        lipsyncBaselineMouthOpen + positiveOpenDelta + negativeOpenDelta
+      ),
+      0,
+      1
+    );
+    const boostedForm = clamp(lipsyncBaselineMouthForm + formDelta * formGain, -1, 1);
 
     return {
       mouthOpen: boostedOpen,
@@ -873,17 +1438,13 @@
   }
 
   function resetLipsyncMouthState() {
-    lipsyncTargetMouthOpen = 0;
-    lipsyncTargetMouthForm = 0;
-    lipsyncCurrentMouthOpen = 0;
-    lipsyncCurrentMouthForm = 0;
+    syncLipsyncStateToDefaultMouthBasePose();
     lipsyncSpeakingActive = false;
   }
 
   function applyLipsyncValuesToModel({ source = 'unknown' } = {}) {
-    const coreModel = live2dModel?.internalModel?.coreModel;
-    if (!coreModel) {
-      return false;
+    if (getActiveMouthOverrideValues()) {
+      return applyActiveMouthOverrideForCurrentFrame();
     }
     const transitioned = typeof mouthTransitionApi?.stepMouthTransition === 'function'
       ? mouthTransitionApi.stepMouthTransition({
@@ -903,26 +1464,20 @@
       };
     lipsyncCurrentMouthOpen = clamp(Number(transitioned.mouthOpen) || 0, 0, 1);
     lipsyncCurrentMouthForm = clamp(Number(transitioned.mouthForm) || 0, -1, 1);
-    const mouthOpen = lipsyncCurrentMouthOpen;
-    const mouthForm = lipsyncCurrentMouthForm;
-    try {
-      if (typeof coreModel.addParameterValueById === 'function') {
-        coreModel.addParameterValueById('ParamMouthOpenY', mouthOpen, 1);
-        coreModel.addParameterValueById('ParamMouthForm', mouthForm, 1);
-      } else {
-        coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
-        coreModel.setParameterValueById('ParamMouthForm', mouthForm);
-      }
-      return true;
-    } catch (err) {
+    const result = applyCompositeFacePoseToModel({
+      mouthOpen: lipsyncCurrentMouthOpen,
+      mouthForm: lipsyncCurrentMouthForm,
+      speaking: lipsyncSpeakingActive
+    });
+    if (!result.ok) {
       emitLipsyncTelemetry('frame.apply_failed', {
-        error: err?.message || String(err || 'unknown error'),
-        mouth_open: mouthOpen,
-        mouth_form: mouthForm,
+        error: result.error || 'apply_failed',
+        mouth_open: lipsyncCurrentMouthOpen,
+        mouth_form: lipsyncCurrentMouthForm,
         reason: `apply_${source}_failed`
       });
-      return false;
     }
+    return result.ok === true;
   }
 
   function detachLipsyncModelHook() {
@@ -1000,17 +1555,26 @@
     lipsyncApplyMode = 'raf_direct';
 
     if (live2dModel) {
-      try {
-        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
-        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
-        console.log('[lipsync] mouth parameters reset to neutral');
-        emitLipsyncTelemetry('sync.reset_neutral', { has_model: true, mouth_open: 0, mouth_form: 0, reason });
-      } catch (err) {
-        console.warn('[lipsync] Failed to reset mouth parameters:', err);
+      const basePose = getDefaultMouthBasePose();
+      const result = applyCompositeFacePoseToModel({
+        mouthOpen: basePose.mouthOpen,
+        mouthForm: basePose.mouthForm,
+        speaking: false
+      });
+      if (result.ok) {
+        console.log('[lipsync] mouth parameters reset to base pose');
+        emitLipsyncTelemetry('sync.reset_neutral', {
+          has_model: true,
+          mouth_open: basePose.mouthOpen,
+          mouth_form: basePose.mouthForm,
+          reason
+        });
+      } else {
+        console.warn('[lipsync] Failed to reset mouth parameters:', result.error || result.reason);
         emitLipsyncTelemetry('sync.reset_failed', {
           has_model: true,
           reason,
-          error: err?.message || String(err || 'unknown error')
+          error: result.error || result.reason || 'unknown error'
         });
       }
     }
@@ -1094,8 +1658,9 @@
       });
     }
     lipsyncState = null;
-    lipsyncTargetMouthOpen = 0;
-    lipsyncTargetMouthForm = 0;
+    const basePose = getDefaultMouthBasePose();
+    lipsyncTargetMouthOpen = basePose.mouthOpen;
+    lipsyncTargetMouthForm = basePose.mouthForm;
     lipsyncSpeakingActive = false;
     scheduleLipsyncRelease(stopState.reason);
     emitRendererDebug('lipsync.sync_stopped', {
@@ -1227,6 +1792,7 @@
 
       // Initialize lipsync state
       lipsyncState = lipsyncApi.createRuntimeState();
+      syncLipsyncStateToDefaultMouthBasePose();
       console.log('[lipsync] Runtime state created', { state: lipsyncState });
       emitLipsyncTelemetry('sync.runtime_ready', { has_state: !!lipsyncState });
       if (bindLipsyncModelHook()) {
@@ -1275,13 +1841,14 @@
         const paused = audioElement ? !!audioElement.paused : !speaking;
         const ended = audioElement ? !!audioElement.ended : false;
         const readyState = audioElement ? Number(audioElement.readyState) : null;
+        const basePose = getDefaultMouthBasePose();
         const frame = lipsyncApi.resolveVisemeFrame({
           frequencyBuffer: frequencyData,
           sampleRate: audioContext.sampleRate,
           voiceEnergy,
           speaking,
-          fallbackOpen: 0,
-          fallbackForm: 0,
+          fallbackOpen: basePose.mouthOpen,
+          fallbackForm: basePose.mouthForm,
           state: lipsyncState
         }) || {};
         const rawMouthOpen = clamp(Number(frame.mouthOpen) || 0, 0, 1);
@@ -1298,8 +1865,11 @@
         lipsyncTargetMouthForm = mouthForm;
         lipsyncSpeakingActive = speaking;
 
-        // Log every 30 frames (roughly once per second at 60fps)
-        if (frameCount % 30 === 0) {
+        const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
+        const captureEveryFrame = waveformCaptureConfig.enabled && waveformCaptureConfig.captureEveryFrame;
+
+        // Log every 30 frames (roughly once per second at 60fps) unless full waveform capture is enabled.
+        if (captureEveryFrame || frameCount % 30 === 0) {
           console.log('[lipsync] frame update', {
             frameCount,
             features: { energy: (Number(frame.features?.voiceEnergy) || voiceEnergy).toFixed(3) },
@@ -1337,6 +1907,17 @@
             ended,
             ready_state: readyState
           });
+          emitRendererDebug('mouth.frame_sample', {
+            request_id: activeVoiceRequestId,
+            frame: frameCount,
+            speaking,
+            voice_energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
+            raw_mouth_open: rawMouthOpen,
+            raw_mouth_form: rawMouthForm,
+            mouth_open: mouthOpen,
+            mouth_form: mouthForm,
+            confidence: Number(frame.confidence) || 0
+          });
           if (speaking && voiceEnergy < 0.005) {
             emitRendererDebug('lipsync.frame_low_energy', {
               request_id: activeVoiceRequestId,
@@ -1355,7 +1936,7 @@
           applyLipsyncValuesToModel({ source: 'raf_direct' });
         }
         try {
-          if (frameCount % 60 === 0) {
+          if ((captureEveryFrame && waveformCaptureConfig.includeApplied) || frameCount % 60 === 0) {
             let appliedOpen = null;
             let appliedForm = null;
             try {
@@ -2301,6 +2882,16 @@
       throw createRpcError(-32602, 'param.set requires { name, value:number }');
     }
 
+    if (isMixableFaceParam(name)) {
+      const overlay = {};
+      if (name === 'ParamMouthForm') overlay.mouthForm = value;
+      if (name === 'ParamEyeLSmile') overlay.eyeSmileL = value;
+      if (name === 'ParamEyeRSmile') overlay.eyeSmileR = value;
+      if (name === 'ParamCheek') overlay.cheek = value;
+      setFaceBlendTarget(overlay);
+      return { ok: true, mixed: true };
+    }
+
     const coreModel = live2dModel.internalModel?.coreModel;
     if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
       throw createRpcError(-32005, 'setParameterValueById is unavailable on this model runtime');
@@ -2316,7 +2907,26 @@
       throw createRpcError(-32602, 'model.param.batchSet requires non-empty updates array');
     }
 
+    const mixedFaceTarget = {};
+    const directUpdates = [];
+
     for (const update of updates) {
+      const name = String(update?.name || '').trim();
+      const value = Number(update?.value);
+      if (isMixableFaceParam(name) && Number.isFinite(value)) {
+        if (name === 'ParamMouthForm') mixedFaceTarget.mouthForm = value;
+        if (name === 'ParamEyeLSmile') mixedFaceTarget.eyeSmileL = value;
+        if (name === 'ParamEyeRSmile') mixedFaceTarget.eyeSmileR = value;
+        if (name === 'ParamCheek') mixedFaceTarget.cheek = value;
+        continue;
+      }
+      directUpdates.push(update);
+    }
+
+    if (Object.keys(mixedFaceTarget).length > 0) {
+      setFaceBlendTarget(mixedFaceTarget);
+    }
+    for (const update of directUpdates) {
       setModelParam(update);
     }
     return {
@@ -2392,6 +3002,8 @@
       throw createRpcError(-32602, 'model.expression.set requires non-empty name');
     }
 
+    setFaceBlendTarget(mapExpressionNameToFaceBlendTarget(name), { replace: true });
+
     if (typeof live2dModel.expression === 'function') {
       live2dModel.expression(name);
       return { ok: true, name };
@@ -2411,6 +3023,8 @@
       return { ok: false, skipped: true, reason: 'model_not_loaded' };
     }
 
+    resetFaceBlendTarget();
+
     if (typeof live2dModel.resetExpression === 'function') {
       live2dModel.resetExpression();
       return { ok: true };
@@ -2423,6 +3037,15 @@
     }
 
     return { ok: false, skipped: true, reason: 'reset_expression_unavailable' };
+  }
+
+  function resetModelMouthPoseRaw() {
+    const basePose = getDefaultMouthBasePose();
+    return applyCompositeFacePoseToModel({
+      mouthOpen: basePose.mouthOpen,
+      mouthForm: basePose.mouthForm,
+      speaking: false
+    });
   }
 
   async function playModelMotion(params) {
@@ -2462,6 +3085,7 @@
         },
         afterIdleAction: async () => {
           resetModelExpressionRaw();
+          resetModelMouthPoseRaw();
         },
         maxQueueSize: Number(runtimeActionQueueConfig.maxQueueSize) || 120,
         overflowPolicy: runtimeActionQueueConfig.overflowPolicy || 'drop_oldest',
@@ -2488,7 +3112,24 @@
       lastError: state.lastError,
       layout: state.layout,
       windowState: state.windowState,
-      resizeModeEnabled: state.resizeModeEnabled
+      resizeModeEnabled: state.resizeModeEnabled,
+      debug: {
+        mouthOverride: {
+          enabled: externalMouthOverrideState.enabled === true,
+          values: normalizeMouthTunerValues(externalMouthOverrideState.values)
+        },
+        mouthTuner: {
+          visible: document.body.classList.contains('mouth-tuner-visible'),
+          open: mouthTunerState.open === true,
+          enabled: mouthTunerState.enabled === true,
+          values: normalizeMouthTunerValues(mouthTunerState.values)
+        },
+        waveformCapture: {
+          enabled: getWaveformCaptureRuntimeConfig().enabled,
+          captureEveryFrame: getWaveformCaptureRuntimeConfig().captureEveryFrame,
+          includeApplied: getWaveformCaptureRuntimeConfig().includeApplied
+        }
+      }
     };
   }
 
@@ -2681,6 +3322,8 @@
     state.modelLoaded = true;
     state.modelName = modelName || null;
     resetModelExpressionRaw();
+    resetModelMouthPoseRaw();
+    bindPersistentMouthOverrideHook();
   }
 
   function bindModelInteraction() {
@@ -3116,6 +3759,8 @@
       let result;
       if (method === 'state.get') {
         result = getState();
+      } else if (method === 'debug.mouthOverride.set') {
+        result = setExternalMouthOverride(params);
       } else if (method === 'param.set' || method === 'model.param.set') {
         result = setModelParam(params);
       } else if (method === 'model.param.batchSet') {
@@ -3205,6 +3850,7 @@
       const runtimeConfig = await bridge.getRuntimeConfig();
       runtimeUiConfig = runtimeConfig.uiConfig || null;
       runtimeLive2dPresets = runtimeConfig.live2dPresets || null;
+      initMouthTuner();
       initLayoutTuner();
       initDragZoneTuner();
       initChatPanel(runtimeUiConfig?.chat || {});

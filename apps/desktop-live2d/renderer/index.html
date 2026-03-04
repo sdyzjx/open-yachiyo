@@ -92,6 +92,69 @@
         -webkit-app-region: no-drag;
       }
 
+      #mouth-tuner-toggle {
+        display: none;
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 30;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(10, 14, 24, 0.66);
+        color: #dfe8ff;
+        font-size: 11px;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+      }
+
+      body.mouth-tuner-visible #mouth-tuner-toggle {
+        display: block;
+      }
+
+      #mouth-tuner-toggle:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      #mouth-tuner-panel {
+        display: none;
+        position: fixed;
+        left: 12px;
+        bottom: 52px;
+        z-index: 31;
+        width: 220px;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(10, 14, 24, 0.9);
+        color: #eff5ff;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        -webkit-app-region: no-drag;
+      }
+
+      body.mouth-tuner-visible.mouth-tuner-open #mouth-tuner-panel {
+        display: block;
+      }
+
+      .mouth-tuner-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        gap: 10px;
+      }
+
+      .mouth-tuner-toggle-row label {
+        font-size: 11px;
+        color: #b8c6e8;
+      }
+
+      .mouth-tuner-checkbox {
+        width: 16px;
+        height: 16px;
+      }
+
       body.resize-mode-active #layout-tuner-toggle {
         display: block;
       }
@@ -467,6 +530,32 @@
     <div id="drag-handle"></div>
     <div id="stage"></div>
     <button id="resize-mode-close" type="button">Close Resize Mode</button>
+    <button id="mouth-tuner-toggle" type="button">Mouth Tuner</button>
+    <div id="mouth-tuner-panel">
+      <div class="layout-tuner-header">
+        <span class="layout-tuner-title">Mouth Tuner</span>
+        <button id="mouth-tuner-close" type="button" aria-label="Close mouth tuner">×</button>
+      </div>
+      <div class="mouth-tuner-toggle-row">
+        <label for="mouth-tuner-enable">Enable override</label>
+        <input class="mouth-tuner-checkbox" id="mouth-tuner-enable" type="checkbox" />
+      </div>
+      <div class="layout-tuner-row">
+        <label for="mouth-open">Mouth Open</label>
+        <span class="layout-tuner-value" id="mouth-open-value">0.00</span>
+        <input class="layout-tuner-slider" id="mouth-open" type="range" min="0" max="1" step="0.01" value="0" />
+      </div>
+      <div class="layout-tuner-row">
+        <label for="mouth-form">Mouth Form</label>
+        <span class="layout-tuner-value" id="mouth-form-value">0.00</span>
+        <input class="layout-tuner-slider" id="mouth-form" type="range" min="-1" max="1" step="0.01" value="0" />
+      </div>
+      <div class="layout-tuner-actions">
+        <button class="layout-tuner-action" id="mouth-neutral" type="button">Neutral</button>
+        <button class="layout-tuner-action" id="mouth-apply-i" type="button">Long I</button>
+      </div>
+      <div id="mouth-tuner-status" aria-live="polite"></div>
+    </div>
     <button id="layout-tuner-toggle" type="button">Adjust Layout</button>
     <button id="drag-zone-toggle" type="button">Adjust Drag Zone</button>
     <div id="drag-zone-visual"></div>

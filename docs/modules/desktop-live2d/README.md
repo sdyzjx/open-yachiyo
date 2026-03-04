@@ -1,9 +1,22 @@
 # Desktop Live2D 模块文档索引
 
+- 全局运行时配置总表：`docs/modules/runtime/config-reference.md`
 - 模块级细粒度文档：`docs/modules/desktop-live2d/module-reference.md`
+- 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
 - Motion/Expression 资产补全文档：`docs/modules/desktop-live2d/model-motion-expression-assets.md`
+- Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`
 - 施工与阶段计划：`docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
 - 开发与排障日志：`docs/process/desktop-live2d-resize-dragzone-debug-log.md`
+- Lipsync 开发日志：`docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`
+
+历史调查文档：
+- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
+- `docs/LIPSYNC_CONFLICT_SUMMARY.md`
+- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
+
+说明：
+- 上述历史文档保留了 2026-03-01 左右的排查过程，但不再代表当前主线实现。
+- 当前嘴形链路、face mixer、逐帧 waveform 采集，以 `VOICE_LIPSYNC_DEBUG_GUIDE.md` 和 `desktop-live2d-lipsync-waveform-tuning-log.md` 为准。
 
 建议阅读顺序：
 1. `module-reference.md` 第 2 章（端到端调用链）

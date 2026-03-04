@@ -117,15 +117,18 @@ DOM 更新
 
 定义位置：`apps/desktop-live2d/main/constants.js` `RPC_METHODS_V1`
 
+注：
+- 本节只描述当前 `RPC_METHODS_V1` 中仍然存在的方法。
+- 语音主链现在不是 `voice.play` / `voice.play.test` RPC，而是 `voice.requested -> desktop main -> renderer` 事件链。
+
 - `state.get`
+- `debug.mouthOverride.set`
 - `param.set` / `model.param.set`
 - `model.param.batchSet`
 - `model.motion.play`
 - `model.expression.set`
 - `chat.show` / `chat.bubble.show`
 - `chat.panel.show` / `chat.panel.hide` / `chat.panel.append` / `chat.panel.clear`
-- `voice.play`
-- `voice.play.test`
 - `tool.list` / `tool.invoke`
 
 #### 3.2.1 对外 `invoke` 协议结构
@@ -181,6 +184,8 @@ DOM 更新
 
 - `state.get`
   - `params: {}`
+- `debug.mouthOverride.set`
+  - `params: { "enabled": boolean, "mouthOpen"?: number, "mouthForm"?: number }`
 - `param.set` / `model.param.set`
   - `params: { "name": string, "value": number }`
 - `model.param.batchSet`
@@ -199,10 +204,6 @@ DOM 更新
   - `params: { "role"?: "user" | "assistant" | "system" | "tool", "text": string, "timestamp"?: integer, "requestId"?: string }`
 - `chat.panel.clear`
   - `params: {}`
-- `voice.play`
-  - `params: { "audioPath": string }`
-- `voice.play.test`
-  - `params: { "audioRef": string, "gatewayUrl"?: string }`
 - `tool.list`
   - `params: {}`
 - `tool.invoke`
@@ -274,9 +275,9 @@ Renderer 回包：
 
 当前语音播放主链已经从 RPC `invoke` 分离：
 
-`runtime voice.playback.electron -> desktopSuite runtime.event listener -> desktop:voice:play -> preload.onVoicePlay() -> renderer handleVoicePlaybackRequest()`
+`runtime voice.requested -> desktopSuite processVoiceRequestedOnDesktop() -> desktop:voice:play-memory / desktop:voice:play-remote / desktop:voice:stream-* -> renderer playback entry`
 
-兼容链仍保留 `voice.play`，但 renderer 内部最终也会走同一个播放器函数。
+兼容链仍存在 `runtime_legacy` / `voice.playback.electron` 路由，但当前主线语音路径应优先视为 `voice.requested` 事件链。
 
 ### 3.3 JSON-RPC 错误码
 
