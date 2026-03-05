@@ -4,6 +4,9 @@
 
 AI Native runtime for an **Agentic desktop pet**, with a **controllable ReAct loop**.
 
+## Introduction video available at:
+【OpenClaw？Open-Yachiyo！把月读搬到你的桌面，首款基于八千代的陪伴型桌面AI】 https://www.bilibili.com/video/BV1brPkzFEr4/?share_source=copy_web&vd_source=cd3dd6ba09c5830f51d567b24900beb0
+
 🇨🇳 [中文说明](./README.zh.md)
 
 🎬 Demo Video: <https://www.bilibili.com/video/BV1brPkzFEr4/>
