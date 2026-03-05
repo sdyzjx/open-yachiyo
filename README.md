@@ -6,6 +6,8 @@ AI Native runtime for an **Agentic desktop pet**, with a **controllable ReAct lo
 
 🇨🇳 [中文说明](./README.zh.md)
 
+🎬 Demo Video: <https://www.bilibili.com/video/BV1brPkzFEr4/>
+
 ---
 
 ## What this project is
