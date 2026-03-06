@@ -22,6 +22,70 @@ function isObject(value) {
 }
 
 const SUPPORTED_TYPES = ['openai_compatible', 'tts_dashscope'];
+const SUPPORTED_LLM_ENDPOINT_MODES = ['auto', 'chat', 'responses'];
+const SUPPORTED_RESPONSES_FALLBACK_POLICIES = ['unsupported_only', 'any_error'];
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function validateResponsesConfig(providerName, responses) {
+  if (!isObject(responses)) {
+    throw new Error(`provider ${providerName} responses must be an object`);
+  }
+
+  if (responses.enabled !== undefined && typeof responses.enabled !== 'boolean') {
+    throw new Error(`provider ${providerName} responses.enabled must be a boolean`);
+  }
+
+  if (responses.fallback_to_chat !== undefined && typeof responses.fallback_to_chat !== 'boolean') {
+    throw new Error(`provider ${providerName} responses.fallback_to_chat must be a boolean`);
+  }
+
+  if (
+    responses.fallback_policy !== undefined
+    && !SUPPORTED_RESPONSES_FALLBACK_POLICIES.includes(responses.fallback_policy)
+  ) {
+    throw new Error(
+      `provider ${providerName} responses.fallback_policy must be one of: ${SUPPORTED_RESPONSES_FALLBACK_POLICIES.join(', ')}`
+    );
+  }
+
+  if (responses.session_cache === undefined) {
+    return;
+  }
+
+  if (!isObject(responses.session_cache)) {
+    throw new Error(`provider ${providerName} responses.session_cache must be an object`);
+  }
+
+  if (
+    responses.session_cache.enabled !== undefined
+    && typeof responses.session_cache.enabled !== 'boolean'
+  ) {
+    throw new Error(`provider ${providerName} responses.session_cache.enabled must be a boolean`);
+  }
+
+  if (
+    responses.session_cache.header_name !== undefined
+    && !isNonEmptyString(responses.session_cache.header_name)
+  ) {
+    throw new Error(`provider ${providerName} responses.session_cache.header_name must be a non-empty string`);
+  }
+
+  if (responses.session_cache.model_allowlist !== undefined) {
+    if (!Array.isArray(responses.session_cache.model_allowlist)) {
+      throw new Error(`provider ${providerName} responses.session_cache.model_allowlist must be an array`);
+    }
+    for (const modelName of responses.session_cache.model_allowlist) {
+      if (!isNonEmptyString(modelName)) {
+        throw new Error(
+          `provider ${providerName} responses.session_cache.model_allowlist must contain non-empty strings`
+        );
+      }
+    }
+  }
+}
 
 function validateConfig(config) {
   if (!isObject(config)) {
@@ -60,6 +124,17 @@ function validateConfig(config) {
       }
       if (typeof provider.model !== 'string' || !provider.model) {
         throw new Error(`provider ${name} must define model`);
+      }
+      if (
+        provider.llm_endpoint_mode !== undefined
+        && !SUPPORTED_LLM_ENDPOINT_MODES.includes(provider.llm_endpoint_mode)
+      ) {
+        throw new Error(
+          `provider ${name} llm_endpoint_mode must be one of: ${SUPPORTED_LLM_ENDPOINT_MODES.join(', ')}`
+        );
+      }
+      if (provider.responses !== undefined) {
+        validateResponsesConfig(name, provider.responses);
       }
     }
 

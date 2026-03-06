@@ -61,3 +61,91 @@ test('validateConfig rejects invalid provider map', () => {
     });
   }, /must define api_key or api_key_env/);
 });
+
+test('validateConfig accepts optional responses routing config for openai providers', () => {
+  const config = {
+    active_provider: 'qwen',
+    providers: {
+      qwen: {
+        type: 'openai_compatible',
+        display_name: 'Qwen',
+        base_url: 'https://example.com/v1',
+        model: 'qwen3.5-plus',
+        api_key: 'test-key',
+        llm_endpoint_mode: 'auto',
+        responses: {
+          enabled: true,
+          fallback_to_chat: true,
+          fallback_policy: 'unsupported_only',
+          session_cache: {
+            enabled: true,
+            header_name: 'x-dashscope-session-cache',
+            model_allowlist: ['qwen3.5-plus', 'qwen3.5-flash']
+          }
+        }
+      }
+    }
+  };
+
+  assert.doesNotThrow(() => validateConfig(config));
+});
+
+test('validateConfig rejects invalid responses routing config', () => {
+  assert.throws(() => {
+    validateConfig({
+      active_provider: 'qwen',
+      providers: {
+        qwen: {
+          type: 'openai_compatible',
+          display_name: 'Qwen',
+          base_url: 'https://example.com/v1',
+          model: 'qwen3.5-plus',
+          api_key: 'test-key',
+          llm_endpoint_mode: 'bogus'
+        }
+      }
+    });
+  }, /llm_endpoint_mode must be one of/);
+
+  assert.throws(() => {
+    validateConfig({
+      active_provider: 'qwen',
+      providers: {
+        qwen: {
+          type: 'openai_compatible',
+          display_name: 'Qwen',
+          base_url: 'https://example.com/v1',
+          model: 'qwen3.5-plus',
+          api_key: 'test-key',
+          responses: {
+            enabled: true,
+            fallback_policy: 'never',
+            session_cache: {
+              model_allowlist: ['qwen3.5-plus']
+            }
+          }
+        }
+      }
+    });
+  }, /responses.fallback_policy must be one of/);
+
+  assert.throws(() => {
+    validateConfig({
+      active_provider: 'qwen',
+      providers: {
+        qwen: {
+          type: 'openai_compatible',
+          display_name: 'Qwen',
+          base_url: 'https://example.com/v1',
+          model: 'qwen3.5-plus',
+          api_key: 'test-key',
+          responses: {
+            session_cache: {
+              model_allowlist: ['qwen3.5-plus', '']
+            }
+          }
+        }
+      }
+    });
+  }, /model_allowlist must contain non-empty strings/);
+});
