@@ -59,7 +59,7 @@ Commit target:
 
 ### Phase 3: Router and fallback
 
-Status: pending
+Status: completed
 
 Scope:
 
@@ -71,6 +71,10 @@ Acceptance:
 
 - route selection is deterministic
 - fallback emits observable state and preserves decision behavior
+- targeted tests pass:
+  - `test/runtime/stackedReasoner.test.js`
+  - `test/runtime/providerConfigStore.test.js`
+  - `test/runtime/responsesReasoner.test.js`
 
 Commit target:
 
@@ -118,6 +122,7 @@ Commit target:
 - 2026-03-06: Created tracker and locked phased implementation plan.
 - 2026-03-06: Completed provider config schema extension for dual-stack routing and added validation tests.
 - 2026-03-06: Added `ResponsesReasoner` with streaming/non-streaming support and contract-compatible tool decisions.
+- 2026-03-06: Added `StackedReasoner` with endpoint selection, `responses.model_allowlist`, and configurable responses-to-chat fallback.
 
 ## Usage
 

@@ -51,6 +51,17 @@ function validateResponsesConfig(providerName, responses) {
     );
   }
 
+  if (responses.model_allowlist !== undefined) {
+    if (!Array.isArray(responses.model_allowlist)) {
+      throw new Error(`provider ${providerName} responses.model_allowlist must be an array`);
+    }
+    for (const modelName of responses.model_allowlist) {
+      if (!isNonEmptyString(modelName)) {
+        throw new Error(`provider ${providerName} responses.model_allowlist must contain non-empty strings`);
+      }
+    }
+  }
+
   if (responses.session_cache === undefined) {
     return;
   }

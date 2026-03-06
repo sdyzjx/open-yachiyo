@@ -77,6 +77,7 @@ test('validateConfig accepts optional responses routing config for openai provid
           enabled: true,
           fallback_to_chat: true,
           fallback_policy: 'unsupported_only',
+          model_allowlist: ['qwen3.5-plus'],
           session_cache: {
             enabled: true,
             header_name: 'x-dashscope-session-cache',
@@ -128,6 +129,27 @@ test('validateConfig rejects invalid responses routing config', () => {
       }
     });
   }, /responses.fallback_policy must be one of/);
+
+  assert.throws(() => {
+    validateConfig({
+      active_provider: 'qwen',
+      providers: {
+        qwen: {
+          type: 'openai_compatible',
+          display_name: 'Qwen',
+          base_url: 'https://example.com/v1',
+          model: 'qwen3.5-plus',
+          api_key: 'test-key',
+          responses: {
+            model_allowlist: ['qwen3.5-plus', ''],
+            session_cache: {
+              model_allowlist: ['qwen3.5-plus']
+            }
+          }
+        }
+      }
+    });
+  }, /responses.model_allowlist must contain non-empty strings/);
 
   assert.throws(() => {
     validateConfig({
