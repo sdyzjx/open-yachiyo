@@ -107,7 +107,7 @@ Commit target:
 
 ### Phase 5: Docs and rollout
 
-Status: pending
+Status: completed
 
 Scope:
 
@@ -118,6 +118,8 @@ Acceptance:
 
 - doc covers both usage and implementation principles
 - relevant tests pass
+- broad runtime regression passes:
+  - `node --test test/runtime/*.test.js`
 
 Commit target:
 
@@ -133,18 +135,89 @@ Commit target:
 
 ## Usage
 
-This section will be completed as features land. Planned coverage:
+### Config example
 
-- how to force `chat/completions`
-- how to force `responses`
-- how `auto` routing works
-- how to enable session cache only for supported models
-- how fallback behaves and where to inspect it in logs
+```yaml
+active_provider: qwen
+providers:
+  qwen:
+    type: openai_compatible
+    display_name: Qwen
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen3.5-plus
+    api_key_env: DASHSCOPE_API_KEY
+    llm_endpoint_mode: auto
+    responses:
+      enabled: true
+      fallback_to_chat: true
+      fallback_policy: unsupported_only
+      model_allowlist:
+        - qwen3.5-plus
+        - qwen3.5-flash
+      session_cache:
+        enabled: true
+        header_name: x-dashscope-session-cache
+        model_allowlist:
+          - qwen3.5-plus
+```
+
+### Routing modes
+
+- `llm_endpoint_mode: chat`
+  Always use `chat/completions`.
+
+- `llm_endpoint_mode: responses`
+  Always try `responses`. If `responses.fallback_to_chat` is enabled, fallback still applies.
+
+- `llm_endpoint_mode: auto`
+  Prefer `responses` only when `responses.enabled` is true and the current model passes `responses.model_allowlist`. Otherwise stay on `chat/completions`.
+
+### Fallback behavior
+
+- `responses.fallback_to_chat: true`
+  Enables fallback from `responses` to `chat/completions`.
+
+- `responses.fallback_policy: unsupported_only`
+  Only fallback for unsupported-model or unsupported-endpoint style failures.
+
+- `responses.fallback_policy: any_error`
+  Fallback for any `responses` request failure.
+
+### Session cache behavior
+
+- Session cache is only applied on the `responses` path.
+- Session cache requires:
+  - `responses.session_cache.enabled: true`
+  - a session id from runtime
+  - the model to pass `responses.session_cache.model_allowlist` when the allowlist is not empty
+- When applied, the runtime injects the configured header, defaulting to `x-dashscope-session-cache`.
+- The router also remembers the last `response_id` per session and forwards it as `previous_response_id` on the next `responses` request for that same session.
+
+### Observable output
+
+The runtime now exposes route metadata through the normal loop output path:
+
+- `decision.route`
+- `decision.fallback_from`
+- `decision.provider_meta.response_id`
+- `decision.provider_meta.session_cache_applied`
+- `decision.provider_meta.previous_response_id`
+- `decision.provider_meta.usage`
 
 ## Principles
 
-This section will be completed as features land. Planned coverage:
+### Why dual-stack instead of replacement
 
-- why dual-stack is safer than replacing `chat/completions`
-- why session cache must be gated by model capability
-- why routing and fallback belong below the tool loop
+`chat/completions` is still the broadest compatibility path across providers. Replacing it outright would force every provider and model to support `responses`, which is not true in practice. Dual-stack keeps the legacy path stable while enabling `responses` only where it is supported and useful.
+
+### Why routing belongs below the tool loop
+
+The tool loop should only care about one contract: final text decisions and tool decisions. By keeping endpoint routing inside the reasoner layer, the orchestration layer stays stable and the fallback path does not need special handling in tool execution or prompt assembly.
+
+### Why session cache is model-gated
+
+Session cache is not a generic OpenAI-compatible feature. It depends on provider-specific support and, in the Qwen case, model support. Gating it with an allowlist keeps the feature explicit and prevents accidental header injection for unsupported models.
+
+### Why keep previous response ids in the router
+
+`previous_response_id` is transport-specific state. It does not belong in the conversation transcript itself, because the transcript should remain portable between `chat/completions` and `responses`. The router is the correct layer to hold that per-session transport state.
