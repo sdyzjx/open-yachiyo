@@ -37,7 +37,7 @@ Commit target:
 
 ### Phase 2: Responses reasoner
 
-Status: pending
+Status: completed
 
 Scope:
 
@@ -49,6 +49,9 @@ Acceptance:
 
 - unit tests cover non-streaming and streaming paths
 - output shape matches current tool loop contract
+- targeted tests pass:
+  - `test/runtime/responsesReasoner.test.js`
+  - `test/runtime/openaiReasoner.test.js`
 
 Commit target:
 
@@ -114,6 +117,7 @@ Commit target:
 
 - 2026-03-06: Created tracker and locked phased implementation plan.
 - 2026-03-06: Completed provider config schema extension for dual-stack routing and added validation tests.
+- 2026-03-06: Added `ResponsesReasoner` with streaming/non-streaming support and contract-compatible tool decisions.
 
 ## Usage
 
