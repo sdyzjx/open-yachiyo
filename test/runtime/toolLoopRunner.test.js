@@ -263,6 +263,54 @@ test('ToolLoopRunner emits tool_call delta/stable events in streaming mode', asy
   dispatcher.stop();
 });
 
+test('ToolLoopRunner passes session context into reasoner and exposes routing metadata', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const seenPayloads = [];
+  const reasoner = {
+    async decide(payload) {
+      seenPayloads.push(payload);
+      return {
+        type: 'final',
+        output: 'route-aware-final',
+        route: 'responses',
+        fallback_from: null,
+        provider_meta: {
+          response_id: 'resp_123',
+          session_cache_applied: true
+        }
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 'desktop-session-ctx',
+    input: 'route info',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.output, 'route-aware-final');
+  assert.equal(seenPayloads.length, 1);
+  assert.equal(seenPayloads[0].sessionId, 'desktop-session-ctx');
+  const finalEvent = events.find((event) => event.event === 'llm.final');
+  assert.equal(finalEvent.payload.decision.route, 'responses');
+  assert.equal(finalEvent.payload.decision.provider_meta.session_cache_applied, true);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner counts parse error once when callback and stream_meta both carry same error', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

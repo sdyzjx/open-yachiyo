@@ -82,7 +82,7 @@ Commit target:
 
 ### Phase 4: Runtime integration and observability
 
-Status: pending
+Status: completed
 
 Scope:
 
@@ -94,6 +94,12 @@ Acceptance:
 
 - tool loop remains backward compatible
 - integration tests cover routing and session state handoff
+- targeted tests pass:
+  - `test/runtime/llmProviderManager.test.js`
+  - `test/runtime/stackedReasoner.test.js`
+  - `test/runtime/toolLoopRunner.test.js`
+  - `test/runtime/responsesReasoner.test.js`
+  - `test/runtime/openaiReasoner.test.js`
 
 Commit target:
 
@@ -123,6 +129,7 @@ Commit target:
 - 2026-03-06: Completed provider config schema extension for dual-stack routing and added validation tests.
 - 2026-03-06: Added `ResponsesReasoner` with streaming/non-streaming support and contract-compatible tool decisions.
 - 2026-03-06: Added `StackedReasoner` with endpoint selection, `responses.model_allowlist`, and configurable responses-to-chat fallback.
+- 2026-03-06: Integrated stacked routing into provider manager and tool loop, with session cache injection and routing metadata exposure.
 
 ## Usage
 

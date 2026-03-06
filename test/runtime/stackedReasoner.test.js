@@ -153,3 +153,43 @@ test('StackedReasoner falls back on any error when policy is any_error', async (
   assert.equal(decision.output, 'chat-decide');
   assert.equal(decision.fallback_from, 'responses');
 });
+
+test('StackedReasoner injects session cache header and chains previous_response_id by session', async () => {
+  const requestOptionsSeen = [];
+  const reasoner = new StackedReasoner({
+    chatReasoner: createReasoner('chat'),
+    responsesReasoner: {
+      async decide(payload) {
+        requestOptionsSeen.push(payload.requestOptions);
+        return {
+          type: 'final',
+          output: 'responses-decide',
+          provider_meta: {
+            response_id: requestOptionsSeen.length === 1 ? 'resp_1' : 'resp_2'
+          }
+        };
+      },
+      async decideStream() {
+        throw new Error('not used');
+      }
+    },
+    endpointMode: 'auto',
+    responsesConfig: {
+      enabled: true,
+      session_cache: {
+        enabled: true,
+        header_name: 'x-dashscope-session-cache',
+        model_allowlist: ['qwen3.5-plus']
+      }
+    },
+    model: 'qwen3.5-plus'
+  });
+
+  const first = await reasoner.decide({ messages: [], tools: [], sessionId: 'desktop-session-1' });
+  const second = await reasoner.decide({ messages: [], tools: [], sessionId: 'desktop-session-1' });
+
+  assert.equal(first.provider_meta.session_cache_applied, true);
+  assert.equal(second.provider_meta.previous_response_id, 'resp_1');
+  assert.equal(requestOptionsSeen[0].headers['x-dashscope-session-cache'], 'desktop-session-1');
+  assert.equal(requestOptionsSeen[1].body.previous_response_id, 'resp_1');
+});

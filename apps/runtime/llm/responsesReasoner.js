@@ -66,6 +66,17 @@ function buildAssistantMessage({ content, toolCalls }) {
   };
 }
 
+function buildProviderMeta(responsePayload) {
+  if (!responsePayload || typeof responsePayload !== 'object') return null;
+  return {
+    response_id: typeof responsePayload.id === 'string' ? responsePayload.id : null,
+    status: typeof responsePayload.status === 'string' ? responsePayload.status : null,
+    usage: responsePayload.usage && typeof responsePayload.usage === 'object'
+      ? responsePayload.usage
+      : null
+  };
+}
+
 function parseSseEventChunk(rawChunk) {
   const lines = String(rawChunk || '')
     .split('\n')
@@ -146,20 +157,23 @@ class ResponsesReasoner {
       content,
       toolCalls
     });
+    const providerMeta = buildProviderMeta(responsePayload);
 
     if (toolCalls.length > 0) {
       return {
         type: 'tool',
         assistantMessage,
         tool: toolCalls[0],
-        tools: toolCalls
+        tools: toolCalls,
+        provider_meta: providerMeta
       };
     }
 
     return {
       type: 'final',
       assistantMessage,
-      output: content || '模型未返回文本输出。'
+      output: content || '模型未返回文本输出。',
+      provider_meta: providerMeta
     };
   }
 

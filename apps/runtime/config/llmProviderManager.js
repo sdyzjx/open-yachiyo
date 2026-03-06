@@ -1,4 +1,6 @@
 const { OpenAIReasoner } = require('../llm/openaiReasoner');
+const { ResponsesReasoner } = require('../llm/responsesReasoner');
+const { StackedReasoner } = require('../llm/stackedReasoner');
 
 class LlmProviderManager {
   constructor({ store }) {
@@ -50,20 +52,30 @@ class LlmProviderManager {
       timeout_ms: provider.timeout_ms || 20000,
       api_key: apiKey,
       max_retries: Number.isFinite(maxRetries) ? maxRetries : undefined,
-      retry_delay_ms: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined
+      retry_delay_ms: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined,
+      llm_endpoint_mode: provider.llm_endpoint_mode || 'auto',
+      responses: provider.responses || null
     });
 
     if (this.cacheKey === key && this.cachedReasoner) {
       return this.cachedReasoner;
     }
 
-    this.cachedReasoner = new OpenAIReasoner({
+    const sharedOptions = {
       apiKey,
       baseUrl: provider.base_url,
       model: provider.model,
       timeoutMs: Number(provider.timeout_ms) || 20000,
       maxRetries: Number.isFinite(maxRetries) ? maxRetries : undefined,
       retryDelayMs: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined
+    };
+
+    this.cachedReasoner = new StackedReasoner({
+      chatReasoner: new OpenAIReasoner(sharedOptions),
+      responsesReasoner: new ResponsesReasoner(sharedOptions),
+      endpointMode: provider.llm_endpoint_mode || 'auto',
+      responsesConfig: provider.responses || {},
+      model: provider.model
     });
     this.cacheKey = key;
     return this.cachedReasoner;

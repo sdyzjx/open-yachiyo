@@ -92,6 +92,39 @@ test('LlmProviderManager passes retry settings to reasoner from provider config'
   ].join('\n'));
 
   const reasoner = manager.getReasoner();
-  assert.equal(reasoner.maxRetries, 4);
-  assert.equal(reasoner.retryDelayMs, 120);
+  assert.equal(reasoner.chatReasoner.maxRetries, 4);
+  assert.equal(reasoner.chatReasoner.retryDelayMs, 120);
+  assert.equal(reasoner.responsesReasoner.maxRetries, 4);
+  assert.equal(reasoner.responsesReasoner.retryDelayMs, 120);
+});
+
+test('LlmProviderManager builds stacked reasoner with routing config', () => {
+  const { manager } = createManagerWithConfig([
+    'active_provider: qwen',
+    'providers:',
+    '  qwen:',
+    '    type: openai_compatible',
+    '    display_name: Qwen',
+    '    base_url: http://127.0.0.1:4100',
+    '    model: qwen3.5-plus',
+    '    api_key: key-1',
+    '    llm_endpoint_mode: auto',
+    '    responses:',
+    '      enabled: true',
+    '      fallback_to_chat: true',
+    '      fallback_policy: unsupported_only',
+    '      model_allowlist:',
+    '        - qwen3.5-plus',
+    '      session_cache:',
+    '        enabled: true',
+    '        header_name: x-dashscope-session-cache',
+    '        model_allowlist:',
+    '          - qwen3.5-plus'
+  ].join('\n'));
+
+  const reasoner = manager.getReasoner();
+  assert.equal(reasoner.endpointMode, 'auto');
+  assert.equal(reasoner.responsesConfig.enabled, true);
+  assert.deepEqual(reasoner.responsesConfig.model_allowlist, ['qwen3.5-plus']);
+  assert.equal(reasoner.responsesConfig.session_cache.enabled, true);
 });

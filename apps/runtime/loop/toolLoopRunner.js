@@ -95,7 +95,13 @@ function serializePromptMessagesForLog(messages = []) {
 
 function formatDecisionEvent(decision) {
   if (decision.type === 'final') {
-    return { type: 'final', preview: String(decision.output || '').slice(0, 160) };
+    return {
+      type: 'final',
+      preview: String(decision.output || '').slice(0, 160),
+      route: decision.route || null,
+      fallback_from: decision.fallback_from || null,
+      provider_meta: decision.provider_meta || null
+    };
   }
 
   const tools = Array.isArray(decision.tools) && decision.tools.length > 0
@@ -104,7 +110,10 @@ function formatDecisionEvent(decision) {
 
   return {
     type: 'tool',
-    tools: tools.map((t) => ({ name: t?.name, args: t?.args || {} }))
+    tools: tools.map((t) => ({ name: t?.name, args: t?.args || {} })),
+    route: decision.route || null,
+    fallback_from: decision.fallback_from || null,
+    provider_meta: decision.provider_meta || null
   };
 }
 
@@ -526,6 +535,8 @@ class ToolLoopRunner {
           decision = await reasoner.decideStream({
             messages: ctx.messages,
             tools: availableTools,
+            sessionId,
+            traceId,
             onDelta: (delta) => {
               emit('llm.stream.delta', {
                 delta: String(delta || '')
@@ -598,7 +609,9 @@ class ToolLoopRunner {
         } else {
           decision = await reasoner.decide({
             messages: ctx.messages,
-            tools: availableTools
+            tools: availableTools,
+            sessionId,
+            traceId
           });
         }
         publishChainEvent(this.bus, 'loop.decide.completed', {

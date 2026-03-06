@@ -39,6 +39,7 @@ class StackedReasoner {
     this.endpointMode = endpointMode;
     this.responsesConfig = responsesConfig && typeof responsesConfig === 'object' ? responsesConfig : {};
     this.model = model;
+    this.previousResponseIdBySession = new Map();
   }
 
   canUseResponses() {
@@ -56,24 +57,84 @@ class StackedReasoner {
     return isUnsupportedResponsesError(err);
   }
 
-  attachRoutingMeta(decision, route, fallbackFrom = null) {
+  shouldApplySessionCache(sessionId) {
+    if (!sessionId) return false;
+    const sessionCache = this.responsesConfig?.session_cache;
+    if (!sessionCache?.enabled) return false;
+    const allowlist = Array.isArray(sessionCache?.model_allowlist)
+      ? sessionCache.model_allowlist.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+    if (allowlist.length === 0) return true;
+    return allowlist.includes(String(this.model || '').trim());
+  }
+
+  buildResponsesRequestOptions(payload = {}) {
+    const sessionId = String(payload?.sessionId || payload?.session_id || '').trim();
+    const requestOptions = {
+      headers: {
+        ...(payload?.requestOptions?.headers || {})
+      },
+      body: {
+        ...(payload?.requestOptions?.body || {})
+      }
+    };
+
+    const sessionCacheApplied = this.shouldApplySessionCache(sessionId);
+    if (sessionCacheApplied) {
+      const headerName = String(
+        this.responsesConfig?.session_cache?.header_name || 'x-dashscope-session-cache'
+      ).trim();
+      requestOptions.headers[headerName] = sessionId;
+    }
+
+    const previousResponseId = sessionId ? this.previousResponseIdBySession.get(sessionId) : null;
+    if (previousResponseId && !requestOptions.body.previous_response_id) {
+      requestOptions.body.previous_response_id = previousResponseId;
+    }
+
+    return {
+      requestOptions,
+      sessionId,
+      sessionCacheApplied
+    };
+  }
+
+  attachRoutingMeta(decision, route, fallbackFrom = null, extraProviderMeta = null) {
     return {
       ...decision,
       route,
-      fallback_from: fallbackFrom
+      fallback_from: fallbackFrom,
+      provider_meta: {
+        ...(decision?.provider_meta || {}),
+        ...(extraProviderMeta || {})
+      }
     };
   }
 
   async runResponses(methodName, payload) {
+    const { requestOptions, sessionId, sessionCacheApplied } = this.buildResponsesRequestOptions(payload);
     try {
-      const decision = await this.responsesReasoner[methodName](payload);
-      return this.attachRoutingMeta(decision, 'responses');
+      const decision = await this.responsesReasoner[methodName]({
+        ...payload,
+        requestOptions
+      });
+      const responseId = decision?.provider_meta?.response_id || null;
+      if (sessionId && responseId) {
+        this.previousResponseIdBySession.set(sessionId, responseId);
+      }
+      return this.attachRoutingMeta(decision, 'responses', null, {
+        session_cache_applied: sessionCacheApplied,
+        previous_response_id: requestOptions.body.previous_response_id || null
+      });
     } catch (err) {
       if (!this.chatReasoner || !this.shouldFallback(err)) {
         throw err;
       }
       const fallbackDecision = await this.chatReasoner[methodName](payload);
-      return this.attachRoutingMeta(fallbackDecision, 'chat', 'responses');
+      return this.attachRoutingMeta(fallbackDecision, 'chat', 'responses', {
+        session_cache_applied: sessionCacheApplied,
+        fallback_reason: err?.message || String(err || 'responses fallback')
+      });
     }
   }
 
