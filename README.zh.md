@@ -37,6 +37,10 @@ npm run dev
 - `providers.<name>.model`
 - `providers.<name>.api_key` 或 `api_key_env`
 
+声线克隆 / TTS 配置：
+
+- `docs/TTS_VOICE_CLONE_GUIDE.md`
+
 健康检查：
 
 ```bash
@@ -76,6 +80,7 @@ npm run desktop:smoke
 - 架构：`docs/ARCHITECTURE.md`
 - 测试：`docs/TESTING.md`
 - 使用案例：`docs/RUNTIME_FEATURE_USAGE_CASES.md`
+- 声线克隆与 TTS 指南：`docs/TTS_VOICE_CLONE_GUIDE.md`
 
 ---
 

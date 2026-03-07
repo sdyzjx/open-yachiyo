@@ -41,6 +41,10 @@ Configure provider at `~/yachiyo/config/providers.yaml`:
 - `providers.<name>.model`
 - `providers.<name>.api_key` or `api_key_env`
 
+Voice clone / TTS setup:
+
+- `docs/TTS_VOICE_CLONE_GUIDE.md`
+
 Health check:
 
 ```bash
@@ -80,6 +84,7 @@ Docs:
 - Architecture: `docs/ARCHITECTURE.md`
 - Testing: `docs/TESTING.md`
 - Runtime usage cases: `docs/RUNTIME_FEATURE_USAGE_CASES.md`
+- Voice clone and TTS guide: `docs/TTS_VOICE_CLONE_GUIDE.md`
 
 ---
 
