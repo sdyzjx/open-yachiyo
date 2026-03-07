@@ -9,6 +9,7 @@
 
 ## Runtime Loop
 
+- `docs/modules/runtime/config-reference.md`
 - `docs/modules/runtime/multi-tool-loop.md`
 - `docs/modules/runtime/session-workspace-permission.md`
 - `docs/modules/runtime/skills-runtime.md`

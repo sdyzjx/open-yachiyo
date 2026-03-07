@@ -18,6 +18,7 @@ const el = {
   editor:        document.getElementById('editor'),
   loadBtn:       document.getElementById('loadBtn'),
   saveBtn:       document.getElementById('saveBtn'),
+  syncAllDefaultsBtn: document.getElementById('syncAllDefaultsBtn'),
   status:        document.getElementById('cv2-status'),
   fileLabel:     document.getElementById('cv2-file-label'),
   readonlyBadge: document.getElementById('cv2-readonly-badge'),
@@ -32,6 +33,30 @@ const el = {
   gitNextBtn:    document.getElementById('gitNextBtn'),
   gitPageInfo:   document.getElementById('gitPageInfo'),
 };
+
+function ensureSyncAllDefaultsButton() {
+  if (el.syncAllDefaultsBtn) {
+    return el.syncAllDefaultsBtn;
+  }
+  const headerActions = document.querySelector('.cv2-header-actions');
+  if (!headerActions) {
+    return null;
+  }
+  const button = document.createElement('button');
+  button.className = 'btn';
+  button.id = 'syncAllDefaultsBtn';
+  button.type = 'button';
+  button.textContent = '同步全部配置缺失字段';
+  const providersV1Link = Array.from(headerActions.querySelectorAll('a,button'))
+    .find((node) => node.textContent && node.textContent.includes('Providers'));
+  if (providersV1Link) {
+    headerActions.insertBefore(button, providersV1Link);
+  } else {
+    headerActions.appendChild(button);
+  }
+  el.syncAllDefaultsBtn = button;
+  return button;
+}
 
 let activeTabId = TABS[0].id;
 let ws = null;
@@ -157,6 +182,27 @@ async function saveTab() {
       body: JSON.stringify({ [tab.bodyKey]: el.editor.value }),
     });
     setStatus('已保存 ✓');
+    loadGitLog();
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+async function syncAllMissingDefaults() {
+  setStatus('同步全部配置缺失字段中…');
+  try {
+    const data = await fetchJson('/api/config/sync-missing-defaults', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    await loadTab();
+    const parts = (data.results || []).map((item) => `${item.id}+${item.addedCount}`);
+    setStatus(
+      data.totalAddedCount > 0
+        ? `已同步缺失字段 ✓ ${parts.join(' / ')}`
+        : '没有缺失字段需要同步'
+    );
     loadGitLog();
   } catch (err) {
     setStatus(err.message, true);
@@ -393,11 +439,13 @@ function sendAgentMessage() {
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 function init() {
+  const syncAllDefaultsBtn = ensureSyncAllDefaultsButton();
   initTheme();
   buildTabs();
   switchTab(TABS[0].id);
 
   el.loadBtn.addEventListener('click', loadTab);
+  syncAllDefaultsBtn?.addEventListener('click', syncAllMissingDefaults);
   el.saveBtn.addEventListener('click', saveTab);
   el.gitRefreshBtn.addEventListener('click', () => { gitPage = 0; loadGitLog(); });
   el.gitPrevBtn.addEventListener('click', () => { if (gitPage > 0) { gitPage--; renderGitPage(); } });
