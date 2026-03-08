@@ -4,6 +4,14 @@
 
 AI Native runtime for an **Agentic desktop pet**, with a **controllable ReAct loop**.
 
+## Quick Commands
+
+### Voice Control
+- `/voice on` - Enable forced voice output (text first, then voice in separate messages)
+- `/voice off` - Disable voice output, text-only replies
+
+---
+
 ## Introduction video available at:
 🎬 Demo Video: <https://www.bilibili.com/video/BV1brPkzFEr4/>
 

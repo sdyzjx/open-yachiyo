@@ -4,6 +4,14 @@
 
 AI Native 的 **Agentic 桌面宠物** 运行时，核心是**可控 ReAct 循环**。
 
+## 快捷命令
+
+### 语音控制
+- `/voice on` 或 `开启语音讲解` - 开启强制语音输出（先文字后语音，分两条消息）
+- `/voice off` 或 `关闭语音讲解` - 关闭语音输出，仅文字回复
+
+---
+
 🇺🇸 [English](./README.md)
 
 🎬 演示视频：<https://www.bilibili.com/video/BV1brPkzFEr4/>
