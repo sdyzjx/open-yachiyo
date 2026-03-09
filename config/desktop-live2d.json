@@ -17,7 +17,7 @@
   },
   "voice": {
     "path": "electron_native",
-    "transport": "non_streaming",
+    "transport": "realtime",
     "outputDelayMs": 9,
     "fallbackOnRealtimeError": true,
     "realtime": {

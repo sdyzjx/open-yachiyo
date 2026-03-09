@@ -2,6 +2,10 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const YAML = require('yaml');
+const {
+  parseJsonWithComments,
+  serializeDesktopLive2dUiConfig
+} = require('../desktop-live2d/main/config');
 
 const { getRuntimePaths } = require('../runtime/skills/runtimePaths');
 const { OnboardingError } = require('./voiceCloneService');
@@ -269,10 +273,38 @@ function mergeSkillsRaw(rawYaml, skillsInput = {}) {
   return YAML.stringify(next);
 }
 
+function mergeDesktopLive2dRaw(rawJson, desktopLive2dInput = {}) {
+  const parsed = parseJsonWithComments(String(rawJson || '')) || {};
+  if (!isPlainObject(parsed)) {
+    throw new OnboardingError('ONBOARDING_CONFIG_SAVE_FAILED', 'desktop-live2d.json root must be object');
+  }
+  const voice = isPlainObject(parsed.voice) ? parsed.voice : {};
+  const next = {
+    ...parsed,
+    voice: {
+      ...voice
+    }
+  };
+
+  if (desktopLive2dInput.voice_transport !== undefined) {
+    const transport = String(desktopLive2dInput.voice_transport || '').trim().toLowerCase();
+    if (!['realtime', 'non_streaming'].includes(transport)) {
+      throw new OnboardingError(
+        'ONBOARDING_CONFIG_SAVE_FAILED',
+        "desktop_live2d.voice_transport must be 'realtime' or 'non_streaming'"
+      );
+    }
+    next.voice.transport = transport;
+  }
+
+  return serializeDesktopLive2dUiConfig(next);
+}
+
 function saveOnboardingPreferences({
   voicePolicyPath,
   personaConfigStore,
   skillConfigStore,
+  desktopLive2dConfigPath,
   input = {}
 }) {
   if (isPlainObject(input.voice_policy)) {
@@ -293,6 +325,14 @@ function saveOnboardingPreferences({
     const rawSkills = skillConfigStore.loadRawYaml();
     const nextSkills = mergeSkillsRaw(rawSkills, input.skills);
     skillConfigStore.saveRawYaml(nextSkills);
+  }
+
+  if (desktopLive2dConfigPath && isPlainObject(input.desktop_live2d)) {
+    const rawDesktopLive2d = fs.existsSync(desktopLive2dConfigPath)
+      ? fs.readFileSync(desktopLive2dConfigPath, 'utf8')
+      : '{}';
+    const nextDesktopLive2d = mergeDesktopLive2dRaw(rawDesktopLive2d, input.desktop_live2d);
+    fs.writeFileSync(desktopLive2dConfigPath, nextDesktopLive2d, 'utf8');
   }
 }
 

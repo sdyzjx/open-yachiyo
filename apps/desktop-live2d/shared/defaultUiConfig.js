@@ -149,7 +149,7 @@
       // Runtime voice routing mode: keep electron-native event path by default.
       path: 'electron_native',
       // Playback transport mode for desktop side execution.
-      transport: 'non_streaming',
+      transport: 'realtime',
       // Delay audible playback slightly so lipsync can lead the waveform a touch.
       outputDelayMs: 9,
       // If realtime transport fails, fallback to non-streaming playback route.

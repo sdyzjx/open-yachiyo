@@ -31,6 +31,10 @@ const {
 const { canReadLongTermMemory } = require('../runtime/security/sessionPermissionPolicy');
 const { SkillRuntimeManager } = require('../runtime/skills/skillRuntimeManager');
 const { getRuntimePaths } = require('../runtime/skills/runtimePaths');
+const {
+  parseJsonWithComments,
+  serializeDesktopLive2dUiConfig
+} = require('../desktop-live2d/main/config');
 const { PersonaContextBuilder } = require('../runtime/persona/personaContextBuilder');
 const { PersonaProfileStore } = require('../runtime/persona/personaProfileStore');
 const { PersonaConfigStore } = require('../runtime/persona/personaConfigStore');
@@ -565,6 +569,7 @@ app.post('/api/onboarding/preferences/save', async (req, res) => {
       voicePolicyPath,
       personaConfigStore,
       skillConfigStore,
+      desktopLive2dConfigPath,
       input
     });
     await markOnboardingStep('complete');
@@ -905,13 +910,34 @@ app.put('/api/config/voice-policy/raw', (req, res) => {
   }
 });
 
-// --- Config v2: desktop-live2d.json (只读) ---
+// --- Config v2: desktop-live2d.json ---
 app.get('/api/config/desktop-live2d/raw', (_, res) => {
   try {
     const raw = fsSync.existsSync(desktopLive2dConfigPath) ? fsSync.readFileSync(desktopLive2dConfigPath, 'utf8') : '{}';
     res.json({ ok: true, json: raw });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.put('/api/config/desktop-live2d/raw', (req, res) => {
+  const rawJson = req.body?.json;
+  if (typeof rawJson !== 'string') {
+    res.status(400).json({ ok: false, error: 'body.json must be a string' });
+    return;
+  }
+  try {
+    const parsed = parseJsonWithComments(rawJson);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      res.status(400).json({ ok: false, error: 'desktop-live2d.json root must be an object' });
+      return;
+    }
+    const normalized = serializeDesktopLive2dUiConfig(parsed);
+    fsSync.writeFileSync(desktopLive2dConfigPath, normalized, 'utf8');
+    commitConfigChange('desktop-live2d.json');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });
 

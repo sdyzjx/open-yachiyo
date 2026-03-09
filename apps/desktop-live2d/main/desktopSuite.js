@@ -1303,7 +1303,7 @@ async function processVoiceRequestedOnDesktop({
   const voice = String(eventPayload?.voiceId || '');
   const sessionId = String(eventPayload?.session_id || '').trim() || null;
   const traceId = String(eventPayload?.trace_id || '').trim() || null;
-  const voiceTransport = String(voiceConfig?.transport || 'non_streaming').trim().toLowerCase();
+  const voiceTransport = String(voiceConfig?.transport || 'realtime').trim().toLowerCase();
   const voiceOutputDelayMs = Math.max(0, Math.min(500, Math.round(Number(voiceConfig?.outputDelayMs) || 0)));
   const fallbackOnRealtimeError = voiceConfig?.fallbackOnRealtimeError !== false;
   const realtimePrebufferMs = Math.max(40, Number(voiceConfig?.realtime?.prebufferMs) || 160);

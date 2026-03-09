@@ -94,6 +94,12 @@
         <label>max context chars <input id="prefMaxContextChars" type="number" value="1500" /></label>
         <label>workspace skills <input id="prefSkillsWorkspace" type="checkbox" checked /></label>
         <label>global skills <input id="prefSkillsGlobal" type="checkbox" checked /></label>
+        <label>desktop voice transport
+          <select id="prefDesktopVoiceTransport">
+            <option value="realtime" selected>realtime (default)</option>
+            <option value="non_streaming">non_streaming</option>
+          </select>
+        </label>
       </div>
       <div class="actions">
         <button id="savePrefsBtn" class="btn btn-primary">保存偏好</button>

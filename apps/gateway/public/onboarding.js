@@ -36,6 +36,7 @@ const el = {
   prefMaxContextChars: document.getElementById('prefMaxContextChars'),
   prefSkillsWorkspace: document.getElementById('prefSkillsWorkspace'),
   prefSkillsGlobal: document.getElementById('prefSkillsGlobal'),
+  prefDesktopVoiceTransport: document.getElementById('prefDesktopVoiceTransport'),
   savePrefsBtn: document.getElementById('savePrefsBtn'),
   backToStep2Btn: document.getElementById('backToStep2Btn'),
   completeBtn: document.getElementById('completeBtn')
@@ -203,6 +204,9 @@ async function savePreferences() {
         skills: {
           workspace: el.prefSkillsWorkspace.checked,
           global: el.prefSkillsGlobal.checked
+        },
+        desktop_live2d: {
+          voice_transport: el.prefDesktopVoiceTransport.value
         }
       })
     });
