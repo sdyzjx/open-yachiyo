@@ -13,6 +13,7 @@ const START_EMBEDDED_GATEWAY = process.env.DESKTOP_EXTERNAL_GATEWAY !== '1';
 const GATEWAY_CWD = app.isPackaged ? path.dirname(process.execPath) : PROJECT_ROOT;
 const GATEWAY_ENTRY_PACKAGED = path.join(process.resourcesPath, 'app.asar', 'apps', 'gateway', 'server.js');
 const GATEWAY_ENTRY_PATH = app.isPackaged ? GATEWAY_ENTRY_PACKAGED : GATEWAY_ENTRY;
+const APP_ICON_PATH = path.join(PROJECT_ROOT, 'assets', 'icon.ico');
 
 let gatewayProcess = null;
 let forceQuit = false;
@@ -115,6 +116,7 @@ function createMainWindow(entryUrl = GATEWAY_URL) {
     minWidth: 960,
     minHeight: 640,
     show: false,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -157,6 +159,10 @@ app.on('activate', () => {
     .then((entryUrl) => createMainWindow(entryUrl))
     .catch(() => createMainWindow());
 });
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.yachiyo.desktop');
+}
 
 ipcMain.handle('desktop:openPath', async (_event, targetPath) => {
   try {
