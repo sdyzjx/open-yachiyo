@@ -47,6 +47,19 @@
         <label class="radio-row"><input type="radio" name="ttsMode" value="normal" checked /> 普通 tts-vc</label>
         <label class="radio-row"><input type="radio" name="ttsMode" value="realtime" /> 实时 tts-vc-realtime</label>
       </fieldset>
+      <div class="reference-audio panel-soft">
+        <div class="reference-audio-head">
+          <strong>推荐参考音频</strong>
+          <span class="hint">安装包已内置，建议直接使用。</span>
+        </div>
+        <div class="reference-audio-path" id="referenceAudioPath">加载中...</div>
+        <div class="actions compact">
+          <button id="openReferenceAudioDirBtn" class="btn" type="button">打开所在目录</button>
+          <button id="copyReferenceAudioPathBtn" class="btn" type="button">复制路径</button>
+          <a id="referenceAudioDownloadLink" class="btn" href="/assets/reference/yachiyo_voice_ref_clone_18s.mp3" download>下载音频</a>
+          <a id="referenceAudioPreviewLink" class="btn" href="/assets/reference/yachiyo_voice_ref_clone_18s.mp3" target="_blank" rel="noreferrer">试听</a>
+        </div>
+      </div>
       <div class="grid">
         <label>Preferred Name <input id="voicePreferredName" value="yachiyo-main-voice" /></label>
         <label>手动 Voice ID（可选）<input id="voiceManualId" placeholder="可跳过克隆直接填写" /></label>

@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 
 const { waitForGateway } = require('./waitForGateway');
 
@@ -156,6 +156,18 @@ app.on('activate', () => {
   resolveInitialEntryUrl()
     .then((entryUrl) => createMainWindow(entryUrl))
     .catch(() => createMainWindow());
+});
+
+ipcMain.handle('desktop:openPath', async (_event, targetPath) => {
+  try {
+    const resolved = String(targetPath || '').trim();
+    if (!resolved) return { ok: false, error: 'path is required' };
+    const result = await shell.openPath(resolved);
+    if (result) return { ok: false, error: result };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
 });
 
 app.whenReady().then(async () => {

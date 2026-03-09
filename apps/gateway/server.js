@@ -90,6 +90,16 @@ const voicePolicyPath = process.env.VOICE_POLICY_PATH
   || require('node:path').resolve(runtimePaths.configDir, 'voice-policy.yaml');
 const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH
   || require('node:path').resolve(runtimePaths.configDir, 'desktop-live2d.json');
+const bundledReferenceAudioPath = path.resolve(
+  __dirname,
+  '..',
+  '..',
+  'assets',
+  'reference',
+  'yachiyo_voice_ref_clone_18s.mp3'
+);
+const userReferenceAudioDir = path.resolve(runtimePaths.dataDir, 'reference-audio');
+const userReferenceAudioPath = path.resolve(userReferenceAudioDir, 'yachiyo_voice_ref_clone_18s.mp3');
 const personaContextBuilder = new PersonaContextBuilder({
   workspaceDir: process.cwd(),
   profileStore: personaProfileStore,
@@ -179,6 +189,34 @@ function parsePositiveIntEnv(name, fallback = 1) {
     return Math.max(1, Number.parseInt(fallback, 10) || 1);
   }
   return value;
+}
+
+async function ensureReferenceAudioExported() {
+  const sourcePath = bundledReferenceAudioPath;
+  await fs.access(sourcePath);
+  await fs.mkdir(userReferenceAudioDir, { recursive: true });
+
+  let shouldCopy = true;
+  try {
+    const [srcStat, dstStat] = await Promise.all([
+      fs.stat(sourcePath),
+      fs.stat(userReferenceAudioPath)
+    ]);
+    shouldCopy = srcStat.size !== dstStat.size || srcStat.mtimeMs > dstStat.mtimeMs;
+  } catch {
+    shouldCopy = true;
+  }
+
+  if (shouldCopy) {
+    await fs.copyFile(sourcePath, userReferenceAudioPath);
+  }
+
+  return {
+    bundled_path: sourcePath,
+    user_path: userReferenceAudioPath,
+    user_dir: userReferenceAudioDir,
+    bundled_url: '/assets/reference/yachiyo_voice_ref_clone_18s.mp3'
+  };
 }
 
 async function persistSessionInputImages(sessionId, inputImages = [], workspaceRoot = '') {
@@ -386,6 +424,19 @@ app.get('/api/onboarding/health', async (_, res) => {
       }
     }
   });
+});
+
+app.get('/api/onboarding/reference-audio', async (_, res) => {
+  try {
+    const exported = await ensureReferenceAudioExported();
+    res.json({ ok: true, data: exported });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      code: 'ONBOARDING_REFERENCE_AUDIO_UNAVAILABLE',
+      error: err?.message || String(err)
+    });
+  }
 });
 
 app.post('/api/onboarding/provider/save', async (req, res) => {

@@ -20,6 +20,11 @@ const el = {
   voicePreferredName: document.getElementById('voicePreferredName'),
   voiceManualId: document.getElementById('voiceManualId'),
   voiceAudioFile: document.getElementById('voiceAudioFile'),
+  referenceAudioPath: document.getElementById('referenceAudioPath'),
+  openReferenceAudioDirBtn: document.getElementById('openReferenceAudioDirBtn'),
+  copyReferenceAudioPathBtn: document.getElementById('copyReferenceAudioPathBtn'),
+  referenceAudioDownloadLink: document.getElementById('referenceAudioDownloadLink'),
+  referenceAudioPreviewLink: document.getElementById('referenceAudioPreviewLink'),
   voiceCloneBtn: document.getElementById('voiceCloneBtn'),
   voiceSaveManualBtn: document.getElementById('voiceSaveManualBtn'),
   backToStep1Btn: document.getElementById('backToStep1Btn'),
@@ -34,6 +39,11 @@ const el = {
   savePrefsBtn: document.getElementById('savePrefsBtn'),
   backToStep2Btn: document.getElementById('backToStep2Btn'),
   completeBtn: document.getElementById('completeBtn')
+};
+
+const state = {
+  referenceAudioUserPath: '',
+  referenceAudioUserDir: ''
 };
 
 function applyTheme(pref) {
@@ -215,8 +225,64 @@ async function completeOnboarding() {
   }
 }
 
+async function initReferenceAudioInfo() {
+  try {
+    const response = await fetchJson('/api/onboarding/reference-audio');
+    const data = response?.data || {};
+    state.referenceAudioUserPath = String(data.user_path || '');
+    state.referenceAudioUserDir = String(data.user_dir || '');
+
+    const pathText = state.referenceAudioUserPath || String(data.bundled_path || '') || '未找到';
+    el.referenceAudioPath.textContent = pathText;
+    if (data.bundled_url) {
+      el.referenceAudioDownloadLink.href = data.bundled_url;
+      el.referenceAudioPreviewLink.href = data.bundled_url;
+    }
+  } catch (err) {
+    el.referenceAudioPath.textContent = `获取失败: ${err.message || String(err)}`;
+  }
+}
+
+async function openReferenceAudioDir() {
+  const target = state.referenceAudioUserDir;
+  if (!target) {
+    setStatus('参考音频目录不可用', true);
+    return;
+  }
+
+  const openPath = window.desktopRuntime && typeof window.desktopRuntime.openPath === 'function'
+    ? window.desktopRuntime.openPath
+    : null;
+  if (!openPath) {
+    setStatus(`请手动打开目录: ${target}`, true);
+    return;
+  }
+
+  const result = await openPath(target);
+  if (!result?.ok) {
+    setStatus(`打开目录失败: ${result?.error || 'unknown error'}`, true);
+    return;
+  }
+  setStatus('已打开参考音频目录');
+}
+
+async function copyReferenceAudioPath() {
+  const target = state.referenceAudioUserPath || el.referenceAudioPath.textContent || '';
+  if (!target) {
+    setStatus('没有可复制的路径', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(target);
+    setStatus('参考音频路径已复制');
+  } catch {
+    setStatus('复制失败，请手动复制', true);
+  }
+}
+
 async function init() {
   initTheme();
+  await initReferenceAudioInfo();
 
   try {
     const stateResp = await fetchJson('/api/onboarding/state');
@@ -233,6 +299,8 @@ async function init() {
 
   el.saveProviderBtn.addEventListener('click', saveProvider);
   el.voiceCloneBtn.addEventListener('click', cloneVoice);
+  el.openReferenceAudioDirBtn.addEventListener('click', openReferenceAudioDir);
+  el.copyReferenceAudioPathBtn.addEventListener('click', copyReferenceAudioPath);
   el.voiceSaveManualBtn.addEventListener('click', saveManualVoiceId);
   el.backToStep1Btn.addEventListener('click', () => switchStep(1));
   el.backToStep2Btn.addEventListener('click', () => switchStep(2));

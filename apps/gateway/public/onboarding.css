@@ -116,6 +116,49 @@ label {
   gap: 8px;
 }
 
+.actions.compact {
+  margin-top: 10px;
+}
+
+.panel-soft {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--panel-solid) 64%, transparent);
+}
+
+.reference-audio {
+  margin-bottom: 12px;
+}
+
+.reference-audio-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reference-audio-head strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reference-audio-path {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .status-bar {
   display: flex;
   align-items: center;
