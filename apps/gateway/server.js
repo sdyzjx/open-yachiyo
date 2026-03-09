@@ -39,6 +39,19 @@ const { ToolConfigStore } = require('../runtime/tooling/toolConfigStore');
 const { loadVoicePolicy } = require('../runtime/tooling/voice/policy');
 const { __internal: voiceInternal } = require('../runtime/tooling/adapters/voice');
 const { publishChainEvent } = require('../runtime/bus/chainDebug');
+const { cloneVoice, inspectVoiceCloneDependencies, OnboardingError } = require('./voiceCloneService');
+const {
+  readOnboardingState,
+  markOnboardingStep,
+  markOnboardingCompleted,
+  saveLlmProvider,
+  saveTtsProviderFromVoiceClone,
+  saveOnboardingPreferences,
+  DEFAULT_LLM_BASE_URL,
+  DEFAULT_TTS_BASE_URL,
+  DEFAULT_NORMAL_MODEL,
+  DEFAULT_REALTIME_MODEL
+} = require('./onboardingService');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -349,6 +362,172 @@ app.get('/api/version', (req, res) => {
   } catch (e) {
     res.json({ ok: true, data: { branch: 'unknown' } });
   }
+});
+
+app.get('/api/onboarding/state', async (_, res) => {
+  const state = await readOnboardingState();
+  res.json({ ok: true, data: state });
+});
+
+app.get('/api/onboarding/health', async (_, res) => {
+  const deps = await inspectVoiceCloneDependencies();
+  res.json({
+    ok: true,
+    data: {
+      dependencies: deps,
+      defaults: {
+        llm_base_url: DEFAULT_LLM_BASE_URL,
+        tts_base_url: DEFAULT_TTS_BASE_URL,
+        tts_model: DEFAULT_NORMAL_MODEL,
+        tts_realtime_model: DEFAULT_REALTIME_MODEL
+      }
+    }
+  });
+});
+
+app.post('/api/onboarding/provider/save', async (req, res) => {
+  const provider = req.body?.provider;
+  const activeProvider = req.body?.active_provider;
+  if (!provider || typeof provider !== 'object' || Array.isArray(provider)) {
+    res.status(400).json({ ok: false, error: 'body.provider must be an object' });
+    return;
+  }
+
+  try {
+    const nextConfig = saveLlmProvider({
+      providerStore,
+      providerInput: provider,
+      activeProvider
+    });
+    await markOnboardingStep('voice');
+    res.json({ ok: true, data: nextConfig });
+  } catch (err) {
+    const status = err instanceof OnboardingError ? 400 : 500;
+    res.status(status).json({
+      ok: false,
+      code: err.code || 'ONBOARDING_CONFIG_SAVE_FAILED',
+      error: err.message || String(err)
+    });
+  }
+});
+
+app.post('/api/onboarding/voice/clone', async (req, res) => {
+  const payload = req.body || {};
+  const targetMode = String(payload.target_mode || 'normal').trim().toLowerCase() === 'realtime'
+    ? 'realtime'
+    : 'normal';
+  const apiKey = String(payload.api_key || '').trim();
+  const apiKeyEnv = String(payload.api_key_env || '').trim();
+  const resolvedApiKey = apiKey || (apiKeyEnv ? process.env[apiKeyEnv] : '');
+  const audioDataUrl = payload.audio_data_url;
+  const preferredName = String(payload.preferred_name || '').trim();
+  const baseUrl = String(payload.base_url || DEFAULT_TTS_BASE_URL).trim();
+
+  if (typeof audioDataUrl !== 'string' || !audioDataUrl.trim()) {
+    res.status(400).json({ ok: false, code: 'ONBOARDING_AUDIO_INVALID', error: 'body.audio_data_url is required' });
+    return;
+  }
+  if (!resolvedApiKey) {
+    res.status(400).json({ ok: false, code: 'ONBOARDING_DASHSCOPE_AUTH_FAILED', error: 'api_key is required' });
+    return;
+  }
+
+  try {
+    const cloneResult = await cloneVoice({
+      apiKey: resolvedApiKey,
+      audioDataUrl,
+      preferredName,
+      baseUrl,
+      targetMode
+    });
+    const providersConfig = saveTtsProviderFromVoiceClone({
+      providerStore,
+      apiKey,
+      apiKeyEnv,
+      ttsBaseUrl: baseUrl,
+      targetMode,
+      voiceId: cloneResult.voiceId
+    });
+    await markOnboardingStep('preferences');
+    res.json({
+      ok: true,
+      data: {
+        target_mode: targetMode,
+        voice_id: cloneResult.voiceId,
+        target_model: cloneResult.targetModel,
+        provider_key: 'qwen3_tts',
+        providers: providersConfig
+      }
+    });
+  } catch (err) {
+    const code = err.code || 'ONBOARDING_DASHSCOPE_PROVIDER_DOWN';
+    const status = code === 'ONBOARDING_DASHSCOPE_AUTH_FAILED' || code === 'ONBOARDING_AUDIO_INVALID' ? 400 : 500;
+    res.status(status).json({
+      ok: false,
+      code,
+      error: err.message || String(err),
+      details: err.details || null
+    });
+  }
+});
+
+app.post('/api/onboarding/voice/save-manual', async (req, res) => {
+  const targetMode = String(req.body?.target_mode || 'normal').trim().toLowerCase() === 'realtime'
+    ? 'realtime'
+    : 'normal';
+  const voiceId = String(req.body?.voice_id || '').trim();
+  const apiKey = String(req.body?.api_key || '').trim();
+  const apiKeyEnv = String(req.body?.api_key_env || '').trim();
+  const baseUrl = String(req.body?.base_url || DEFAULT_TTS_BASE_URL).trim();
+  if (!voiceId) {
+    res.status(400).json({ ok: false, code: 'ONBOARDING_CONFIG_SAVE_FAILED', error: 'body.voice_id is required' });
+    return;
+  }
+  try {
+    const providersConfig = saveTtsProviderFromVoiceClone({
+      providerStore,
+      apiKey,
+      apiKeyEnv,
+      ttsBaseUrl: baseUrl,
+      targetMode,
+      voiceId
+    });
+    await markOnboardingStep('preferences');
+    res.json({ ok: true, data: { provider_key: 'qwen3_tts', providers: providersConfig } });
+  } catch (err) {
+    const status = err instanceof OnboardingError ? 400 : 500;
+    res.status(status).json({
+      ok: false,
+      code: err.code || 'ONBOARDING_CONFIG_SAVE_FAILED',
+      error: err.message || String(err)
+    });
+  }
+});
+
+app.post('/api/onboarding/preferences/save', async (req, res) => {
+  const input = req.body || {};
+  try {
+    saveOnboardingPreferences({
+      voicePolicyPath,
+      personaConfigStore,
+      skillConfigStore,
+      input
+    });
+    await markOnboardingStep('complete');
+    res.json({ ok: true });
+  } catch (err) {
+    const status = err instanceof OnboardingError ? 400 : 500;
+    res.status(status).json({
+      ok: false,
+      code: err.code || 'ONBOARDING_CONFIG_SAVE_FAILED',
+      error: err.message || String(err)
+    });
+  }
+});
+
+app.post('/api/onboarding/complete', async (_, res) => {
+  const state = await markOnboardingCompleted();
+  res.json({ ok: true, data: state });
 });
 
 app.get('/api/sessions/:sessionId', async (req, res) => {
