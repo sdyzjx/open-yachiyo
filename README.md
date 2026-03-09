@@ -78,6 +78,43 @@ npm run desktop:smoke
 
 ---
 
+## Windows Installer (EXE)
+
+Build the Windows installer:
+
+```bash
+npm run desktop:dist:win
+```
+
+Installer output:
+
+- `dist/Open Yachiyo-Setup-<version>-x64.exe`
+
+Install behavior:
+
+- one-click installer with selectable install directory
+- backend + Electron desktop start together from the installed app
+- desktop entry defaults to `apps/desktop-live2d/main/electronMain.js`
+
+---
+
+## First-Run Onboarding
+
+Startup routing is now:
+
+1. App launches Desktop Live2D first.
+2. Gateway health is checked (`/health`).
+3. If `llm.has_api_key` is `false`, onboarding opens automatically.
+4. After onboarding saves provider config, onboarding closes and Live2D is shown.
+
+Onboarding covers:
+
+- LLM provider setup
+- voice clone / TTS setup (including DashScope Qwen3 TTS VC modes)
+- basic preferences (including desktop voice transport: `realtime` / `non_streaming`)
+
+---
+
 ## Core Features
 
 - **Controllable runtime loop** with hard step boundaries
@@ -151,7 +188,7 @@ Parallel development and integration are handled with branch/worktree discipline
 ## Development Environment
 
 - Primary development machine: **MacBook Air M4 (macOS)**
-- Current status: **Windows is not yet adapted/validated**
+- Current status: **Windows installer flow is available and validated for desktop + onboarding**
 
 ---
 

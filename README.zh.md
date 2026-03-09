@@ -74,6 +74,43 @@ npm run desktop:smoke
 
 ---
 
+## Windows 安装器（EXE）
+
+构建 Windows 安装包：
+
+```bash
+npm run desktop:dist:win
+```
+
+安装包输出：
+
+- `dist/Open Yachiyo-Setup-<version>-x64.exe`
+
+安装行为：
+
+- 安装器支持选择安装目录
+- 安装后由一个 EXE 启动，后端与 Electron 一起拉起
+- 桌面入口默认使用 `apps/desktop-live2d/main/electronMain.js`
+
+---
+
+## 首次启动 Onboarding 引导
+
+当前启动分流逻辑：
+
+1. 先启动 Desktop Live2D。
+2. 检查网关健康接口（`/health`）。
+3. 若 `llm.has_api_key = false`，自动弹出 onboarding。
+4. 完成 provider 配置后，onboarding 自动关闭并回到 Live2D。
+
+Onboarding 覆盖：
+
+- LLM provider 配置
+- 声线克隆 / TTS 配置（含 DashScope Qwen3 TTS VC 模式）
+- 基础偏好配置（含 desktop voice transport：`realtime` / `non_streaming`）
+
+---
+
 ## 核心功能
 
 - **可控运行时循环**（硬步数边界）
@@ -149,7 +186,7 @@ OpenClaw 强在多渠道网关与编排能力。
 ## 开发环境说明
 
 - 主要开发环境：**MacBook Air M4（macOS）**
-- 当前状态：**暂未对 Windows 做适配与验证**
+- 当前状态：**Windows 安装器流程（桌面 + onboarding）已完成适配与验证**
 
 ---
 
