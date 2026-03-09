@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Config v2 — Yachiyo</title>
   <link rel="stylesheet" href="/system.css" />
-  <link rel="stylesheet" href="/config-v2.css" />
+  <link rel="stylesheet" href="/config-v2.css?v=20260304-3" />
 </head>
 <body>
   <div class="cv2-shell">
@@ -25,6 +25,7 @@
             <option value="dark">dark</option>
           </select>
         </label>
+        <button class="btn" id="syncAllDefaultsBtn" type="button">同步全部配置缺失字段</button>
         <a class="btn" href="/">Back to Chat</a>
         <a class="btn" href="/config.html">Providers (v1)</a>
       </div>
@@ -45,6 +46,7 @@
           <span id="cv2-readonly-badge" class="cv2-readonly-badge" aria-label="只读文件" hidden>只读</span>
           <div class="cv2-toolbar-actions">
             <button class="btn" id="loadBtn" type="button">重新加载</button>
+            <button class="btn" id="syncDefaultsBtn" type="button" hidden>补齐缺失默认参数</button>
             <button class="btn btn-primary" id="saveBtn" type="button">保存</button>
           </div>
         </div>
@@ -116,6 +118,6 @@
     </div><!-- /.cv2-main -->
   </div><!-- /.cv2-shell -->
 
-  <script src="/config-v2.js"></script>
+  <script src="/config-v2.js?v=20260304-3"></script>
 </body>
 </html>

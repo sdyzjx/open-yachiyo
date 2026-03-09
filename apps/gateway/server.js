@@ -39,6 +39,8 @@ const { ToolConfigStore } = require('../runtime/tooling/toolConfigStore');
 const { loadVoicePolicy } = require('../runtime/tooling/voice/policy');
 const { __internal: voiceInternal } = require('../runtime/tooling/adapters/voice');
 const { publishChainEvent } = require('../runtime/bus/chainDebug');
+const { syncDesktopLive2dMissingDefaults } = require('../desktop-live2d/main/config');
+const { syncAllConfigMissingDefaults } = require('./configSync');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -73,7 +75,7 @@ const personaConfigStore = new PersonaConfigStore();
 const skillConfigStore = new SkillConfigStore();
 const toolConfigStore = toolConfigManager.store;
 const voicePolicyPath = process.env.VOICE_POLICY_PATH || require('node:path').resolve(process.cwd(), 'config/voice-policy.yaml');
-const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH || require('node:path').resolve(process.cwd(), 'config/desktop-live2d.json');
+const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH || path.join(getRuntimePaths().configDir, 'desktop-live2d.json');
 const personaContextBuilder = new PersonaContextBuilder({
   workspaceDir: process.cwd(),
   profileStore: personaProfileStore,
@@ -679,6 +681,38 @@ app.get('/api/config/desktop-live2d/raw', (_, res) => {
     res.json({ ok: true, json: raw });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.post('/api/config/desktop-live2d/sync-defaults', (_, res) => {
+  try {
+    const { nextRaw, addedPaths } = syncDesktopLive2dMissingDefaults(desktopLive2dConfigPath);
+    commitConfigChange('desktop-live2d.json');
+    res.json({
+      ok: true,
+      json: fsSync.readFileSync(desktopLive2dConfigPath, 'utf8'),
+      addedPaths,
+      addedCount: addedPaths.length,
+      nextRaw
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.post('/api/config/sync-missing-defaults', (_, res) => {
+  try {
+    const results = syncAllConfigMissingDefaults();
+    for (const result of results) {
+      commitConfigChange(result.file);
+    }
+    res.json({
+      ok: true,
+      results,
+      totalAddedCount: results.reduce((sum, result) => sum + result.addedCount, 0)
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });
 

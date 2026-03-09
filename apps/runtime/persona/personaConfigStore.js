@@ -98,4 +98,4 @@ class PersonaConfigStore {
   }
 }
 
-module.exports = { PersonaConfigStore, normalizeConfig };
+module.exports = { PersonaConfigStore, normalizeConfig, DEFAULT_CONFIG };
