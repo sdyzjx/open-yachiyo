@@ -9,15 +9,17 @@ const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'apps', 'gateway', 'server.js');
 const GATEWAY_PORT = Number(process.env.PORT) || 3000;
 const GATEWAY_URL = process.env.DESKTOP_GATEWAY_URL || `http://127.0.0.1:${GATEWAY_PORT}`;
 const START_EMBEDDED_GATEWAY = process.env.DESKTOP_EXTERNAL_GATEWAY !== '1';
+const GATEWAY_CWD = app.isPackaged ? path.dirname(process.execPath) : PROJECT_ROOT;
 
 let gatewayProcess = null;
 let forceQuit = false;
 
 function startGatewayProcess() {
   gatewayProcess = spawn(process.execPath, [GATEWAY_ENTRY], {
-    cwd: PROJECT_ROOT,
+    cwd: GATEWAY_CWD,
     env: {
       ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
       HOST: process.env.HOST || '127.0.0.1',
       PORT: String(GATEWAY_PORT)
     },

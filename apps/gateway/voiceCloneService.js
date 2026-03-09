@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const process = require('node:process');
 
 const execFileAsync = promisify(execFile);
 
@@ -45,6 +46,30 @@ function mapMimeToSuffix(mime) {
   if (normalized === 'audio/mpeg' || normalized === 'audio/mp3') return '.mp3';
   if (normalized === 'audio/mp4' || normalized === 'audio/x-m4a' || normalized === 'audio/m4a') return '.m4a';
   return '.mp3';
+}
+
+function resolveBundledBinary(binaryName) {
+  const isWindows = process.platform === 'win32';
+  const fileName = isWindows ? `${binaryName}.exe` : binaryName;
+  const candidates = [];
+
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'bin', fileName));
+  }
+
+  if (process.execPath) {
+    candidates.push(path.join(path.dirname(process.execPath), 'resources', 'bin', fileName));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      require('node:fs').accessSync(candidate);
+      return candidate;
+    } catch {
+      // continue
+    }
+  }
+  return binaryName;
 }
 
 function parseAudioDataUrl(dataUrl) {
@@ -201,8 +226,8 @@ async function cloneVoice({
   preferredName = '',
   baseUrl = DEFAULT_BASE_URL,
   targetMode = 'normal',
-  ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg',
-  ffprobePath = process.env.FFPROBE_PATH || 'ffprobe'
+  ffmpegPath = process.env.FFMPEG_PATH || resolveBundledBinary('ffmpeg'),
+  ffprobePath = process.env.FFPROBE_PATH || resolveBundledBinary('ffprobe')
 }) {
   const resolvedApiKey = String(apiKey || '').trim();
   if (!resolvedApiKey) {
@@ -274,8 +299,8 @@ async function cloneVoice({
 }
 
 async function inspectVoiceCloneDependencies({
-  ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg',
-  ffprobePath = process.env.FFPROBE_PATH || 'ffprobe'
+  ffmpegPath = process.env.FFMPEG_PATH || resolveBundledBinary('ffmpeg'),
+  ffprobePath = process.env.FFPROBE_PATH || resolveBundledBinary('ffprobe')
 } = {}) {
   const snapshot = {
     ffmpeg: { ok: false, path: ffmpegPath, error: null },

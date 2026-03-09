@@ -2,6 +2,7 @@
   "name": "open-yachiyo",
   "version": "0.1.0",
   "private": true,
+  "main": "apps/desktop/main.js",
   "type": "commonjs",
   "scripts": {
     "dev": "node apps/gateway/server.js",
@@ -10,6 +11,8 @@
     "desktop:smoke": "node scripts/desktop-live2d-smoke.js",
     "desktop:dev": "electron apps/desktop/main.js",
     "desktop:start": "electron apps/desktop/main.js",
+    "desktop:pack:win": "electron-builder --win nsis --publish never",
+    "desktop:dist:win": "electron-builder --win nsis --x64 --publish never",
     "live2d:import": "node scripts/live2d-import.js",
     "test": "node --test \"test/**/*.test.js\"",
     "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')"
@@ -25,6 +28,52 @@
   },
   "devDependencies": {
     "electron": "^30.5.1",
+    "electron-builder": "^24.13.3",
     "yaml": "^2.8.2"
+  },
+  "build": {
+    "appId": "com.yachiyo.desktop",
+    "productName": "Open Yachiyo",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "apps/**/*",
+      "assets/**/*",
+      "config/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    }
   }
 }

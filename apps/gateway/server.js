@@ -81,12 +81,15 @@ const sessionStore = new FileSessionStore();
 const longTermMemoryStore = getDefaultLongTermMemoryStore();
 const workspaceManager = getDefaultSessionWorkspaceManager();
 const skillRuntimeManager = new SkillRuntimeManager({ workspaceDir: process.cwd() });
+const runtimePaths = getRuntimePaths();
 const personaProfileStore = new PersonaProfileStore();
 const personaConfigStore = new PersonaConfigStore();
 const skillConfigStore = new SkillConfigStore();
 const toolConfigStore = toolConfigManager.store;
-const voicePolicyPath = process.env.VOICE_POLICY_PATH || require('node:path').resolve(process.cwd(), 'config/voice-policy.yaml');
-const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH || require('node:path').resolve(process.cwd(), 'config/desktop-live2d.json');
+const voicePolicyPath = process.env.VOICE_POLICY_PATH
+  || require('node:path').resolve(runtimePaths.configDir, 'voice-policy.yaml');
+const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH
+  || require('node:path').resolve(runtimePaths.configDir, 'desktop-live2d.json');
 const personaContextBuilder = new PersonaContextBuilder({
   workspaceDir: process.cwd(),
   profileStore: personaProfileStore,
