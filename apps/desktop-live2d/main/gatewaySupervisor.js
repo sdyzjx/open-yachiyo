@@ -30,14 +30,19 @@ class GatewaySupervisor {
       return { mode: 'external', gatewayUrl: this.gatewayUrl };
     }
 
+    const packagedProjectRoot = String(this.projectRoot || '').toLowerCase().includes('.asar');
+    const gatewayCwd = packagedProjectRoot ? path.dirname(process.execPath) : this.projectRoot;
+
     this.child = this.spawnFn(process.execPath, [this.gatewayEntry], {
-      cwd: this.projectRoot,
+      cwd: gatewayCwd,
       env: {
         ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
         HOST: this.gatewayHost,
         PORT: String(this.gatewayPort)
       },
-      stdio: 'inherit'
+      stdio: packagedProjectRoot ? 'pipe' : 'inherit',
+      windowsHide: true
     });
 
     await this.waitForGatewayFn(this.gatewayUrl, { timeoutMs: 30000 });

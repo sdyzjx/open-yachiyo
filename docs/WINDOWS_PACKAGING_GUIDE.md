@@ -110,3 +110,15 @@ npm run desktop:pack:win
 2. 构建 `Setup.exe`
 3. 上传到发布渠道（网盘、Release、企业软件中心）
 4. 记录对应 commit hash 与安装包 sha256
+
+## 10. Desktop Startup Routing (Live2D + Onboarding)
+
+Current startup behavior after packaging:
+
+1. App entry uses `apps/desktop-live2d/main/electronMain.js`.
+2. Electron always boots desktop runtime (gateway + live2d suite).
+3. Startup then calls gateway `/health` and checks `llm.has_api_key`.
+4. If `has_api_key = false`, hide pet windows and open `/onboarding.html`.
+5. Onboarding window polls health; once API key is configured, it auto closes and shows Live2D pet windows.
+
+This implements the rule: launch desktop directly, and only show onboarding when provider config is effectively empty.
