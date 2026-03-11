@@ -1621,6 +1621,7 @@ async function startDesktopSuite({
   ipcMain,
   screen,
   shell = null,
+  projectRoot = null,
   onResizeModeChange = null,
   logger = console,
   onChatInput = null
@@ -1629,7 +1630,9 @@ async function startDesktopSuite({
     throw new Error('startDesktopSuite requires app, BrowserWindow, and ipcMain');
   }
 
-  const config = resolveDesktopLive2dConfig();
+  const config = resolveDesktopLive2dConfig({
+    projectRoot: projectRoot || undefined
+  });
   const modelValidation = validateModelAssetDirectory({
     modelDir: config.modelDir,
     modelJsonName: config.modelJsonName

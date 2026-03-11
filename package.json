@@ -13,6 +13,8 @@
     "desktop:start": "electron apps/desktop-live2d/main/electronMain.js",
     "desktop:pack:win": "electron-builder --win nsis --publish never",
     "desktop:dist:win": "electron-builder --win nsis --x64 --publish never",
+    "desktop:pack:mac": "electron-builder --mac dmg zip --publish never",
+    "desktop:dist:mac": "electron-builder --mac dmg zip --publish never",
     "live2d:import": "node scripts/live2d-import.js",
     "test": "node --test \"test/**/*.test.js\"",
     "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')"
@@ -66,6 +68,27 @@
         }
       ],
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

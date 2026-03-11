@@ -1,3 +1,4 @@
+const path = require('node:path');
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
 
 const { startDesktopSuite } = require('./desktopSuite');
@@ -14,6 +15,7 @@ let onboardingWindow = null;
 let onboardingCheckTimer = null;
 let onboardingCheckInFlight = false;
 let onboardingRequired = false;
+let openPathHandlerRegistered = false;
 
 function withTimeout(promise, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -75,6 +77,7 @@ function createOnboardingWindow(gatewayUrl) {
     show: false,
     title: 'Yachiyo Onboarding',
     webPreferences: {
+      preload: path.join(__dirname, 'onboardingPreload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
@@ -92,6 +95,25 @@ function createOnboardingWindow(gatewayUrl) {
 
   onboardingWindow = win;
   return win;
+}
+
+function ensureDesktopOpenPathHandler() {
+  if (openPathHandlerRegistered) {
+    return;
+  }
+
+  ipcMain.handle('desktop:openPath', async (_event, targetPath) => {
+    try {
+      const resolved = String(targetPath || '').trim();
+      if (!resolved) return { ok: false, error: 'path is required' };
+      const result = await shell.openPath(resolved);
+      if (result) return { ok: false, error: result };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+  openPathHandlerRegistered = true;
 }
 
 function closeOnboardingWindow() {
@@ -148,6 +170,7 @@ async function bootstrap() {
       ipcMain,
       screen,
       shell,
+      projectRoot: app.getAppPath(),
       onResizeModeChange: (enabled) => {
         trayController?.setResizeModeEnabled(enabled);
       },
@@ -159,7 +182,7 @@ async function bootstrap() {
         Tray,
         Menu,
         nativeImage,
-        projectRoot: process.cwd(),
+        projectRoot: suite?.config?.projectRoot || app.getAppPath(),
         onShow: () => {
           showPetWindow();
         },
@@ -258,6 +281,12 @@ app.whenReady().then(bootstrap).catch(async (err) => {
 
 app.on('before-quit', async () => {
   await teardown();
+});
+
+app.whenReady().then(() => {
+  ensureDesktopOpenPathHandler();
+}).catch(() => {
+  // bootstrap path already handles fatal startup errors
 });
 
 app.on('window-all-closed', () => {
