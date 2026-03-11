@@ -1,10 +1,29 @@
+const fs = require('node:fs');
 const path = require('node:path');
 
 const TRAY_TOOLTIP = 'Yachiyo Desktop Pet';
-const TRAY_ICON_RELATIVE_PATH = path.join('assets', 'live2d', 'yachiyo-kaguya', '八千代辉夜姬头像1.png');
+const TRAY_ICON_RELATIVE_PATHS = [
+  path.join('assets', 'icon.ico'),
+  path.join('assets', 'icon.png')
+];
 
 function resolveTrayIconPath({ projectRoot = process.cwd() } = {}) {
-  return path.resolve(projectRoot, TRAY_ICON_RELATIVE_PATH);
+  const candidateRoots = [
+    projectRoot,
+    process.resourcesPath,
+    path.join(process.resourcesPath || '', 'app.asar')
+  ].filter(Boolean);
+
+  for (const root of candidateRoots) {
+    for (const relativePath of TRAY_ICON_RELATIVE_PATHS) {
+      const candidate = path.resolve(root, relativePath);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return path.resolve(projectRoot, TRAY_ICON_RELATIVE_PATHS[0]);
 }
 
 function createTrayImage({ nativeImage, iconPath, size = 18 } = {}) {
@@ -136,7 +155,7 @@ function createTrayController({
 
 module.exports = {
   TRAY_TOOLTIP,
-  TRAY_ICON_RELATIVE_PATH,
+  TRAY_ICON_RELATIVE_PATHS,
   resolveTrayIconPath,
   createTrayImage,
   createTrayController

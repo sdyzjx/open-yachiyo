@@ -17,6 +17,11 @@ let onboardingCheckInFlight = false;
 let onboardingRequired = false;
 let openPathHandlerRegistered = false;
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 function withTimeout(promise, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`request timeout after ${timeoutMs}ms`)), timeoutMs);
@@ -212,6 +217,8 @@ async function bootstrap() {
     const completed = await isOnboardingCompleted(suite.summary.gatewayUrl);
     if (!completed) {
       enterOnboardingMode(suite.summary.gatewayUrl);
+    } else {
+      showPetWindow();
     }
 
     return suite;
@@ -296,5 +303,32 @@ app.on('window-all-closed', () => {
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     showPetWindow();
+    return;
   }
+  showPetWindow();
+});
+
+app.on('second-instance', () => {
+  if (onboardingRequired && onboardingWindow && !onboardingWindow.isDestroyed()) {
+    if (onboardingWindow.isMinimized?.()) {
+      onboardingWindow.restore();
+    }
+    onboardingWindow.show();
+    onboardingWindow.focus();
+    return;
+  }
+
+  if (suite?.window && !suite.window.isDestroyed()) {
+    if (suite.window.isMinimized?.()) {
+      suite.window.restore();
+    }
+    showPetWindow();
+    return;
+  }
+
+  void bootstrap().then(() => {
+    showPetWindow();
+  }).catch((err) => {
+    console.error('[desktop-live2d] second-instance bootstrap failed', err);
+  });
 });
