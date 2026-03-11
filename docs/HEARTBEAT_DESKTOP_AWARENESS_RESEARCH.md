@@ -279,6 +279,385 @@ The smallest viable version in this repository would look like this:
 
 This is enough to validate whether heartbeat can produce useful desktop awareness without overfitting the full OpenClaw implementation.
 
+## What OpenClaw Wake Flow Is Worth Reusing
+
+OpenClaw does not let every trigger directly run the model.
+
+Its wake path is effectively:
+
+`timer / cron / exec / hook -> requestHeartbeatNow -> wake coalescer -> runHeartbeatOnce`
+
+The important reusable properties are:
+
+- timers only request a wake; they do not directly run the heartbeat
+- wake requests are coalesced by target
+- wake reasons have different priorities
+- if the main lane is busy, heartbeat backs off and retries later
+- cron and exec first enqueue system events, then wake heartbeat
+
+For `open-yachiyo`, this is the right shape to copy. A random scheduler, a daily scheduler, a fixed interval scheduler, and future desktop events should all feed the same wake entrance instead of each inventing its own execution path.
+
+## Scheduling Requirements Mapped To A Concrete Model
+
+The requested wake behavior can be modeled with three schedule types:
+
+- `interval`
+  - wake every `n` duration
+- `daily_times`
+  - wake every day at specific local times
+- `random_window`
+  - for each fixed window of size `x`, randomly wake `y` times, with at least `z` gap
+
+### Why `random_window` Should Use Anchored Windows
+
+For the random mode, the implementation should not use a rolling window.
+
+It should use anchored windows, for example with timezone `Asia/Shanghai`:
+
+- `00:00-06:00`
+- `06:00-12:00`
+- `12:00-18:00`
+- `18:00-24:00`
+
+Within each anchored window:
+
+- generate `y` due times
+- persist them
+- ensure every adjacent pair respects `min_gap`
+- consume them one by one
+
+This makes the behavior restart-safe, explainable, and previewable.
+
+Validation rules should include:
+
+- `window > 0`
+- `count >= 1`
+- `min_gap >= 0`
+- if `count > 1`, then `(count - 1) * min_gap <= window`
+
+If the last rule fails, the scheduler must reject the config because the schedule is impossible to realize.
+
+## Configuration Shape
+
+The cleanest approach is to separate static config from runtime state:
+
+- static config: `config/heartbeat.yaml`
+- runtime state: `data/heartbeat-state.json`
+
+The YAML should be the source of truth for jobs and policy.
+The runtime state file should only store schedule execution state.
+
+### Example `heartbeat.yaml`
+
+```yaml
+version: 1
+defaults:
+  timezone: Asia/Shanghai
+  ack_token: HEARTBEAT_OK
+  retry_on_busy: true
+  retry_delay: 5m
+
+jobs:
+  - id: desktop-random-check
+    enabled: true
+    target:
+      session_id: desktop-main
+    schedule:
+      type: random_window
+      window: 6h
+      count: 2
+      min_gap: 90m
+    context:
+      rules_md: HEARTBEAT.md
+      observations: inbox
+    delivery:
+      silent: true
+
+  - id: desktop-fixed-summary
+    enabled: true
+    target:
+      session_id: desktop-main
+    schedule:
+      type: daily_times
+      times: ["09:00", "14:00", "21:30"]
+    context:
+      rules_md: HEARTBEAT.md
+      observations: inbox
+    delivery:
+      silent: true
+
+  - id: desktop-interval-check
+    enabled: true
+    target:
+      session_id: desktop-main
+    schedule:
+      type: interval
+      every: 2h
+    context:
+      rules_md: HEARTBEAT.md
+      observations: inbox
+    delivery:
+      silent: true
+```
+
+### Runtime State
+
+`heartbeat-state.json` should store fields such as:
+
+- `job_id`
+- `window_start_ms`
+- `window_end_ms`
+- `due_times_ms`
+- `next_due_ms`
+- `last_run_ms`
+- `last_success_ms`
+- `last_result`
+- `retry_after_ms`
+- `config_hash`
+
+This is especially important for `random_window`, because the random due times should survive process restart.
+
+## YAML Authoring And AI Editing
+
+The product can present this as "AI can write heartbeat YAML", but the implementation should not let the model write files directly.
+
+The safer pattern is:
+
+- frontend supports raw YAML editing
+- conversation uses a constrained tool call
+- backend validates structured input
+- backend renders canonical YAML and writes the file
+
+That means the actual tool should be something like:
+
+- `heartbeat.job.upsert`
+- `heartbeat.job.remove`
+- `heartbeat.config.preview`
+- `heartbeat.config.import_yaml`
+
+The important point is that tool arguments should be JSON with schema validation, not free-form file editing.
+
+This keeps the configuration stable and reduces malformed edits.
+
+## Silent Heartbeat As The First Stage
+
+The new requirement is not just "periodically send a reminder".
+
+It is closer to:
+
+`wake -> silent perception run -> internal decision -> optional visible action`
+
+This is the correct evolution of the design.
+
+### Silent Perception Run
+
+When the scheduler wakes a job, the first run should be a silent internal run:
+
+- inject one or more rule markdown files
+- inject recent observations
+- inject available capability summary
+- do not emit chat bubble
+- do not emit TTS
+- do not emit normal user-facing `runtime.final`
+
+The purpose of this run is:
+
+- perceive current environment
+- infer what is actionable
+- decide whether a next step should happen
+
+This is conceptually similar to OpenClaw heartbeat, but more explicit about silent perception.
+
+### Why A Dedicated Silent Mode Is Necessary
+
+The current runtime already routes `runtime.final` into desktop presentation and voice passthrough.
+
+If the silent perception run is not explicitly marked, it will accidentally:
+
+- show internal reasoning to the user
+- trigger bubble output
+- trigger TTS passthrough
+- pollute normal session history
+
+So the implementation needs an explicit mode such as:
+
+- `run_mode=heartbeat_silent`
+- `heartbeat_job_id=<id>`
+- `heartbeat_reason=interval|daily_time|random_window|manual|event`
+- `delivery_policy=silent`
+
+And this mode must affect:
+
+- prompt assembly
+- persistence behavior
+- event delivery filtering
+- tool policy
+
+## Second Stage: Action Execution
+
+The first stage should not directly act like a user-visible chat turn.
+
+Instead, it should produce a structured internal decision.
+
+Example decision shapes:
+
+```json
+{ "decision": "noop", "reason": "no_actionable_change" }
+```
+
+```json
+{
+  "decision": "notify_user",
+  "channel": "bubble",
+  "message": "编译完成了，要不要我帮你看一下错误摘要？"
+}
+```
+
+```json
+{
+  "decision": "speak",
+  "text": "测试已经跑完，我发现了两个失败项。"
+}
+```
+
+```json
+{
+  "decision": "tool_call",
+  "tool": "desktop.observe.snapshot",
+  "args": {}
+}
+```
+
+This creates a clean two-stage model:
+
+- stage 1: understand and decide
+- stage 2: execute and optionally become visible
+
+### Why Two Stages Are Better
+
+This split gives much tighter control over side effects.
+
+It allows:
+
+- silent background reasoning
+- selective user interruption
+- optional internal follow-up actions
+- auditability of why a visible action happened
+
+It also makes future guardrails easier, because high-side-effect tools can be kept out of the first stage.
+
+## Markdown Rule Files
+
+The rule markdown should be treated as heartbeat policy, not as user content.
+
+Suggested files:
+
+- `HEARTBEAT.md`
+  - general heartbeat rules
+- `DESKTOP_AWARENESS.md`
+  - environment interpretation rules
+- optional per-job markdown
+  - special rules for one job
+
+The content should define things like:
+
+- when to stay silent
+- when it is appropriate to interrupt
+- what kind of changes count as meaningful
+- when to wait for idle time
+- when direct tool action is allowed
+- when user-visible output is forbidden
+
+The scheduler job should reference these markdown files as context sources rather than copying large prompt text into YAML.
+
+## Observation Inbox
+
+Heartbeat should not directly inspect the desktop on every wake.
+
+Instead:
+
+- Electron main collects low-frequency observations
+- gateway stores them in a per-session inbox
+- silent heartbeat reads and summarizes them
+
+This keeps sensing and reasoning decoupled.
+
+Suggested observation examples:
+
+- active app changed
+- foreground dwell exceeded threshold
+- idle state entered or left
+- notification count crossed threshold
+- task completed
+- file changed
+- clipboard changed
+
+These should be normalized before entering the inbox.
+
+## Gateway-Side Daemon Design
+
+The heartbeat mechanism should live in gateway, not renderer.
+
+Recommended modules:
+
+- `apps/gateway/heartbeat/heartbeatConfigStore.js`
+  - load, validate, and save `heartbeat.yaml`
+- `apps/gateway/heartbeat/heartbeatStateStore.js`
+  - persist runtime state
+- `apps/gateway/heartbeat/heartbeatScheduler.js`
+  - compute next due jobs
+- `apps/gateway/heartbeat/heartbeatWake.js`
+  - coalesce and retry wake requests
+- `apps/gateway/heartbeat/heartbeatRunner.js`
+  - create synthetic silent runs
+- `apps/gateway/heartbeat/observationInbox.js`
+  - store normalized desktop observations
+
+The scheduler daemon should:
+
+- load config at boot
+- compute next wake per job
+- keep only one nearest timer armed
+- on due, send a wake request instead of directly running the model
+- support config hot reload
+
+## Persistence And Context Isolation
+
+This remains the largest architectural risk.
+
+Heartbeat turns must not be stored as normal `user` and `assistant` messages and then replayed by `buildRecentContextMessages`.
+
+For `open-yachiyo`, one of these must be done:
+
+- store heartbeat runs in a separate event channel
+- tag heartbeat messages and filter them out during normal context replay
+- use a dedicated heartbeat session separate from the main chat session
+
+The preferred option is tagged filtering because it preserves a coherent product identity while avoiding prompt pollution.
+
+## Frontend And API Surface
+
+The gateway already has a raw YAML config editing pattern, so heartbeat can plug into the same shape first.
+
+Minimum APIs:
+
+- `GET /api/config/heartbeat/raw`
+- `PUT /api/config/heartbeat/raw`
+- `GET /api/heartbeat/jobs`
+- `POST /api/heartbeat/wake`
+- `GET /api/heartbeat/preview`
+
+Useful first UI features:
+
+- raw YAML editor
+- schedule type selector
+- random window parameter editor
+- daily time list editor
+- next 24h wake preview
+- last run result / next due display
+
+The wake preview matters a lot for random schedules because users need to understand what the scheduler will do.
+
 ## Final Assessment
 
 Using heartbeat to implement desktop awareness is feasible and architecturally coherent, but only if heartbeat is used as an attention and decision loop.
@@ -286,15 +665,19 @@ Using heartbeat to implement desktop awareness is feasible and architecturally c
 The correct mental model is:
 
 - sensing happens on the desktop side
-- reasoning happens in the heartbeat loop
-- delivery happens through the existing desktop runtime output path
+- reasoning happens in a silent heartbeat loop
+- visible delivery happens only in a second-stage action path when needed
 
 The main danger is not technical inability. The main danger is session pollution and over-triggering.
 
 So the first implementation should prioritize:
 
+- explicit scheduler model
+- explicit wake coalescing
 - explicit heartbeat mode
+- explicit silent perception mode
 - observation normalization
 - queue-aware scheduling
 - quiet-run suppression
+- two-stage decision and action execution
 - persistence isolation from normal chat history
