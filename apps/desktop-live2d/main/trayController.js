@@ -6,6 +6,7 @@ const TRAY_ICON_RELATIVE_PATHS = [
   path.join('assets', 'icon.ico'),
   path.join('assets', 'icon.png')
 ];
+const TRAY_ICON_RELATIVE_PATH = TRAY_ICON_RELATIVE_PATHS[0];
 
 function resolveTrayIconPath({ projectRoot = process.cwd() } = {}) {
   const candidateRoots = [
@@ -155,6 +156,7 @@ function createTrayController({
 
 module.exports = {
   TRAY_TOOLTIP,
+  TRAY_ICON_RELATIVE_PATH,
   TRAY_ICON_RELATIVE_PATHS,
   resolveTrayIconPath,
   createTrayImage,

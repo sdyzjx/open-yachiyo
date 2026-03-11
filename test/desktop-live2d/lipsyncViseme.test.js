@@ -160,7 +160,13 @@ test('resolveVisemeFrame holds the previous speaking mouth shape across brief lo
     speaking: true,
     fallbackOpen: 0,
     fallbackForm: 0,
-    state: runtimeState
+    state: runtimeState,
+    config: {
+      silence: {
+        holdFrames: 2,
+        holdDecay: 0.82
+      }
+    }
   });
 
   assert.ok(activeFrame.mouthOpen > 0.25);

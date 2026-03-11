@@ -43,7 +43,7 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.debug.waveformCapture.includeApplied, true);
   assert.equal(config.uiConfig.voice.path, 'electron_native');
   assert.equal(config.uiConfig.voice.transport, 'realtime');
-  assert.equal(config.uiConfig.voice.outputDelayMs, 80);
+  assert.equal(config.uiConfig.voice.outputDelayMs, 9);
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, true);
   assert.equal(config.uiConfig.voice.realtime.prebufferMs, 160);
   assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 8000);
