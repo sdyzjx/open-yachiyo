@@ -106,7 +106,7 @@ npm run desktop:pack:win
 
 当前方案只做安装包分发，建议发布流程：
 
-1. 打 tag（如 `v0.1.0`）
+1. 打 tag（如 `v0.1.1`）
 2. 构建 `Setup.exe`
 3. 上传到发布渠道（网盘、Release、企业软件中心）
 4. 记录对应 commit hash 与安装包 sha256

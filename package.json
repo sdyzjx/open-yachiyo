@@ -1,6 +1,6 @@
 {
   "name": "open-yachiyo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "main": "apps/desktop-live2d/main/electronMain.js",
   "type": "commonjs",
