@@ -3,6 +3,7 @@
 - 全局运行时配置总表：`docs/modules/runtime/config-reference.md`
 - Runtime 桌面感知适配器：`docs/modules/runtime/desktop-perception-runtime.md`
 - Runtime 桌面视觉工具：`docs/modules/runtime/desktop-vision-runtime.md`
+- Runtime 桌面 inspect planner 注入：`docs/modules/runtime/desktop-inspect-planner.md`
 - 模块级细粒度文档：`docs/modules/desktop-live2d/module-reference.md`
 - 桌面感知与截图模块：`docs/modules/desktop-live2d/desktop-perception-reference.md`
 - 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`

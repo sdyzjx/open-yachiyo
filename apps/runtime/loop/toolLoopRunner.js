@@ -147,6 +147,23 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   ].join(' ');
 }
 
+function buildDesktopInspectPrompt(availableTools = []) {
+  const toolNames = new Set(
+    (Array.isArray(availableTools) ? availableTools : [])
+      .map((tool) => String(tool?.name || '').trim())
+      .filter(Boolean)
+  );
+  if (!toolNames.has('desktop.inspect.screen') && !toolNames.has('desktop.inspect.region')) {
+    return null;
+  }
+  return [
+    'Desktop visual inspection tools are available for this turn.',
+    'When the user asks about current desktop, screen, UI, dialog, window, button, error, or any visible on-screen state, inspect first before answering.',
+    'Use desktop.inspect.screen for full-screen questions and desktop.inspect.region when the user provides a specific area.',
+    'Do not guess unseen UI details when a desktop inspect tool is available.'
+  ].join(' ');
+}
+
 function normalizeBoolean(value, fallback = false) {
   if (value === true || value === false) return value;
   const raw = String(value || '').trim().toLowerCase();
@@ -284,6 +301,8 @@ class ToolLoopRunner {
       ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.'
       : null;
     const voiceAutoReplyPrompt = buildVoiceAutoReplyPrompt(runtimeContext);
+    const initialAvailableTools = this.listTools();
+    const desktopInspectPrompt = buildDesktopInspectPrompt(initialAvailableTools);
 
     const ctx = {
       sessionId,
@@ -312,6 +331,7 @@ class ToolLoopRunner {
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
+        ...(desktopInspectPrompt ? [{ role: 'system', content: desktopInspectPrompt }] : []),
         ...priorMessages,
         currentUserMessage
       ]
