@@ -29,6 +29,15 @@ const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
     }
   },
   {
+    name: 'desktop_capture_desktop',
+    method: 'desktop.capture.desktop',
+    description: 'Capture the full virtual desktop across all displays into one temporary image record.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
     name: 'desktop_capture_screen',
     method: 'desktop.capture.screen',
     description: 'Capture a full desktop display into a temporary image record.',

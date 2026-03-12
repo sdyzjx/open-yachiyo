@@ -30,6 +30,7 @@
 - `desktop.displays.list`
 - `desktop.windows.list`
 - `desktop.perception.capabilities`
+- `desktop.capture.desktop`
 - `desktop.capture.screen`
 - `desktop.capture.region`
 - `desktop.capture.window`

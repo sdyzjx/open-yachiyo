@@ -24,10 +24,12 @@ policy:
     - desktop.perception.capabilities
     - desktop.displays.list
     - desktop.windows.list
+    - desktop.capture.desktop
     - desktop.capture.screen
     - desktop.capture.region
     - desktop.capture.window
     - desktop.capture.delete
+    - desktop.inspect.desktop
     - desktop.inspect.screen
     - desktop.inspect.region
     - desktop.inspect.window
@@ -401,6 +403,17 @@ tools:
       properties: {}
       additionalProperties: false
 
+  - name: desktop.capture.desktop
+    type: local
+    adapter: desktop.capture.desktop
+    description: Capture the full virtual desktop across all displays through desktop-live2d RPC and return capture metadata.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
   - name: desktop.capture.screen
     type: local
     adapter: desktop.capture.screen
@@ -468,6 +481,19 @@ tools:
       anyOf:
         - required: [captureId]
         - required: [capture_id]
+      additionalProperties: false
+
+  - name: desktop.inspect.desktop
+    type: local
+    adapter: desktop.inspect.desktop
+    description: Capture the full virtual desktop and ask the active multimodal LLM to analyze the screenshot against a prompt.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 2000 }
+      required: [prompt]
       additionalProperties: false
 
   - name: desktop.inspect.screen

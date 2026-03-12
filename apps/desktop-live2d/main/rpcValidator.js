@@ -107,6 +107,10 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'desktop.capture.desktop': {
+    type: 'object',
+    additionalProperties: false
+  },
   'desktop.capture.screen': {
     type: 'object',
     additionalProperties: false,

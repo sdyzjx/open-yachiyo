@@ -5,6 +5,7 @@
 本文描述 `Phase 2B` 的高层桌面视觉工具。
 
 目标不是把截图重新塞回当前 tool loop，而是提供受控闭环工具：
+- `desktop.inspect.desktop`
 - `desktop.inspect.screen`
 - `desktop.inspect.region`
 - `desktop.inspect.window`
@@ -31,6 +32,7 @@
 - `desktop.inspect.screen`
 - `desktop.inspect.region`
 - `desktop.inspect.window`
+- `desktop.inspect.desktop`
 
 返回格式：
 
@@ -39,6 +41,7 @@
   "ok": true,
   "capture_id": "cap_xxx",
   "display_id": "display:1",
+  "display_ids": [],
   "source_id": null,
   "window_title": null,
   "bounds": { "x": 0, "y": 0, "width": 1512, "height": 982 },
@@ -87,10 +90,21 @@ inspect 工具直接读取桌面 capture 文件并转为：
 
 拿到 `source_id`，再对具体窗口做定向视觉分析。
 
+### 4.5 Full virtual desktop inspect
+
+`desktop.inspect.desktop` 内部调用：
+- `desktop.capture.desktop`
+
+适合多显示器整体问答：
+- 哪块屏幕上打开了什么
+- 整个桌面当前是什么工作状态
+- 左右屏分别出现了什么窗口或弹窗
+
 ## 5. Test coverage
 
 本阶段测试包括：
 - inspect screen / region 正常流程
+- inspect desktop 正常流程
 - inspect window 正常流程
 - screenshot metadata 到 image input 的转换
 - LLM 子调用返回 final 文本

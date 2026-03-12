@@ -66,10 +66,41 @@ function normalizeWindowTitle(source = {}) {
   return String(source.name || source.title || '').trim();
 }
 
+function computeVirtualDesktopBounds(displays = []) {
+  if (!Array.isArray(displays) || displays.length === 0) {
+    return null;
+  }
+  const normalized = displays.map((display) => toPlainBounds(display?.bounds));
+  const minX = Math.min(...normalized.map((bounds) => bounds.x));
+  const minY = Math.min(...normalized.map((bounds) => bounds.y));
+  const maxX = Math.max(...normalized.map((bounds) => bounds.x + bounds.width));
+  const maxY = Math.max(...normalized.map((bounds) => bounds.y + bounds.height));
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY)
+  };
+}
+
+function composeBitmapTile({ targetBuffer, targetWidth, targetHeight, tileBuffer, tileWidth, tileHeight, offsetX, offsetY }) {
+  if (!Buffer.isBuffer(targetBuffer) || !Buffer.isBuffer(tileBuffer)) {
+    throw new Error('desktop image composition requires bitmap buffers');
+  }
+  for (let y = 0; y < tileHeight; y += 1) {
+    const destY = offsetY + y;
+    if (destY < 0 || destY >= targetHeight) continue;
+    const sourceRowOffset = y * tileWidth * 4;
+    const destRowOffset = (destY * targetWidth + offsetX) * 4;
+    tileBuffer.copy(targetBuffer, destRowOffset, sourceRowOffset, sourceRowOffset + tileWidth * 4);
+  }
+}
+
 function createDesktopCaptureService({
   perceptionService,
   captureStore,
   desktopCapturer,
+  nativeImage,
   logger = console
 } = {}) {
   if (!perceptionService || typeof perceptionService.listDisplays !== 'function') {
@@ -213,6 +244,80 @@ function createDesktopCaptureService({
     return result;
   }
 
+  async function captureDesktop() {
+    const nativeImageAdapter = nativeImage || require('electron').nativeImage;
+    if (!nativeImageAdapter || typeof nativeImageAdapter.createFromBitmap !== 'function') {
+      throw new Error('desktop capture service requires Electron nativeImage.createFromBitmap');
+    }
+    const displays = perceptionService.listDisplays();
+    if (!Array.isArray(displays) || displays.length === 0) {
+      throw new Error('no display is available for desktop capture');
+    }
+    const desktopBounds = computeVirtualDesktopBounds(displays);
+    if (!desktopBounds || desktopBounds.width <= 0 || desktopBounds.height <= 0) {
+      throw new Error('desktop virtual bounds are unavailable');
+    }
+
+    const targetWidth = Math.round(desktopBounds.width);
+    const targetHeight = Math.round(desktopBounds.height);
+    const targetBuffer = Buffer.alloc(targetWidth * targetHeight * 4, 0);
+
+    for (const display of displays) {
+      const source = await loadDisplaySource(display);
+      let image = source.thumbnail;
+      if (!image || typeof image.toBitmap !== 'function') {
+        throw new Error(`screen source bitmap unavailable for ${display.id}`);
+      }
+      const tileWidth = Math.max(1, Math.round(display.bounds.width));
+      const tileHeight = Math.max(1, Math.round(display.bounds.height));
+      const currentSize = normalizeImageSize(image);
+      if ((currentSize.width !== tileWidth || currentSize.height !== tileHeight) && typeof image.resize === 'function') {
+        image = image.resize({ width: tileWidth, height: tileHeight });
+      }
+      const bitmap = image.toBitmap();
+      if (!Buffer.isBuffer(bitmap) || bitmap.length !== tileWidth * tileHeight * 4) {
+        throw new Error(`screen source bitmap size mismatch for ${display.id}`);
+      }
+      composeBitmapTile({
+        targetBuffer,
+        targetWidth,
+        targetHeight,
+        tileBuffer: bitmap,
+        tileWidth,
+        tileHeight,
+        offsetX: Math.round(display.bounds.x - desktopBounds.x),
+        offsetY: Math.round(display.bounds.y - desktopBounds.y)
+      });
+    }
+
+    const image = nativeImageAdapter.createFromBitmap(targetBuffer, {
+      width: targetWidth,
+      height: targetHeight,
+      scaleFactor: 1
+    });
+    if (!image || typeof image.toPNG !== 'function') {
+      throw new Error('desktop virtual image assembly failed');
+    }
+    const result = captureStore.createCaptureRecord({
+      scope: 'desktop',
+      displayId: '',
+      bounds: toPlainBounds(desktopBounds),
+      pixelSize: { width: targetWidth, height: targetHeight },
+      scaleFactor: 1,
+      buffer: Buffer.from(image.toPNG()),
+      extra: {
+        display_ids: displays.map((display) => display.id),
+        display_count: displays.length
+      }
+    });
+    logger.info?.('[desktop-perception] capture desktop created', {
+      capture_id: result.capture_id,
+      display_count: displays.length,
+      bounds: result.bounds
+    });
+    return result;
+  }
+
   async function captureRegion(params = {}) {
     const normalized = normalizeRegionCaptureRequest(params);
     if (!Number.isFinite(normalized.x) || !Number.isFinite(normalized.y) || !normalized.width || !normalized.height) {
@@ -327,6 +432,7 @@ function createDesktopCaptureService({
 
   return {
     listWindows,
+    captureDesktop,
     captureScreen,
     captureRegion,
     captureWindow
@@ -335,6 +441,7 @@ function createDesktopCaptureService({
 
 module.exports = {
   createDesktopCaptureService,
+  computeVirtualDesktopBounds,
   normalizeRegionCaptureRequest,
   normalizeWindowCaptureRequest,
   normalizeWindowSelector,

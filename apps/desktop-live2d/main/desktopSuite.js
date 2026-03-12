@@ -3619,6 +3619,13 @@ async function handleDesktopRpcRequest({
     return captureService.captureScreen(request.params || {});
   }
 
+  if (request.method === 'desktop.capture.desktop') {
+    if (!captureService || typeof captureService.captureDesktop !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureDesktop(request.params || {});
+  }
+
   if (request.method === 'desktop.capture.region') {
     if (!captureService || typeof captureService.captureRegion !== 'function') {
       return { ok: false, error: 'desktop capture service unavailable' };

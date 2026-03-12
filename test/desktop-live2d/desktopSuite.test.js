@@ -1258,6 +1258,36 @@ test('handleDesktopRpcRequest resolves local desktop capture tool without touchi
   assert.deepEqual(result.result, { capture_id: 'cap_1', display_id: 'display:2' });
 });
 
+test('handleDesktopRpcRequest captures the full virtual desktop without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.capture.desktop',
+      params: {}
+    },
+    captureService: {
+      async captureDesktop() {
+        return {
+          capture_id: 'cap_desktop_1',
+          display_ids: ['display:1', 'display:2'],
+          bounds: { x: -1280, y: 0, width: 2792, height: 982 }
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(result, {
+    capture_id: 'cap_desktop_1',
+    display_ids: ['display:1', 'display:2'],
+    bounds: { x: -1280, y: 0, width: 2792, height: 982 }
+  });
+});
+
 test('handleDesktopRpcRequest captures one window without touching renderer bridge', async () => {
   const result = await handleDesktopRpcRequest({
     request: {

@@ -9,6 +9,7 @@
 - 桌面感知能力与权限探测：`docs/modules/desktop-live2d/desktop-perception-capabilities.md`
 - 桌面截图安全与清理：`docs/modules/desktop-live2d/desktop-capture-safety.md`
 - 桌面窗口截图：`docs/modules/desktop-live2d/desktop-window-capture.md`
+- 桌面全虚拟桌面截图：`docs/modules/desktop-live2d/desktop-virtual-desktop-capture.md`
 - 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
 - Motion/Expression 资产补全文档：`docs/modules/desktop-live2d/model-motion-expression-assets.md`
 - Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`

@@ -28,6 +28,7 @@ const RPC_METHODS_V1 = Object.freeze([
   'desktop.perception.permissions',
   'desktop.perception.displays.list',
   'desktop.perception.windows.list',
+  'desktop.capture.desktop',
   'desktop.capture.screen',
   'desktop.capture.region',
   'desktop.capture.window',
