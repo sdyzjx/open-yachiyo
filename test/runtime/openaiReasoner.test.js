@@ -110,6 +110,19 @@ test('OpenAIReasoner returns final decision for text response', async () => {
   }
 });
 
+test('OpenAIReasoner buildPayload omits tool fields when tools are empty', () => {
+  const reasoner = new OpenAIReasoner({ apiKey: 'k', baseUrl: 'http://127.0.0.1:1', model: 'mock' });
+  const payload = reasoner.buildPayload({
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'describe this' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } }] }],
+    tools: [],
+    stream: false
+  });
+
+  assert.equal(Object.hasOwn(payload, 'tool_choice'), false);
+  assert.equal(Object.hasOwn(payload, 'tools'), false);
+  assert.equal(payload.messages[0].content[1].image_url.url, 'data:image/png;base64,abc');
+});
+
 test('OpenAIReasoner decideStream emits deltas and returns final decision', async () => {
   const { server, port } = await startMockServer((req, res) => {
     if (req.url !== '/chat/completions') {
