@@ -13,6 +13,7 @@
 - 整屏截图
 - 区域截图
 - capture 生命周期
+- 截图降采样
 
 不覆盖：
 - OCR
@@ -52,11 +53,18 @@
 职责：
 - 基于 Electron desktop capture 能力抓取图片
 - 按显示器或区域生成截图
+- 对大尺寸截图做统一降采样
 - 将截图写入 capture store
 
 核心方法：
 - `captureScreen({ displayId })`
 - `captureRegion({ x, y, width, height, displayId })`
+
+统一约束：
+- capture 输出图像默认按比例缩到不超过 `1280x720`
+- 小于该尺寸的截图不会被放大
+- `bounds` 始终表示原始桌面逻辑坐标
+- `pixel_size` 表示降采样后实际写盘尺寸
 
 ## 3. 坐标规则
 
@@ -109,6 +117,24 @@
 - 清理过程必须同时删除：
   - 内存中的 record
   - 落盘的图片文件
+
+## 5.1 截图降采样策略
+
+为了降低桌面视觉工具的上传体积和分析延迟，`desktopCaptureService` 会对以下 capture 统一执行降采样：
+- `desktop.capture.screen`
+- `desktop.capture.desktop`
+- `desktop.capture.region`
+- `desktop.capture.window`
+
+规则：
+- 最大包络尺寸：`1280x720`
+- 保持长宽比
+- 不做放大
+
+这意味着：
+- 全屏或多显示器截图通常会被缩小
+- 较小区域截图会保持原尺寸
+- runtime 视觉工具读取到的是降采样后的 capture 文件，而不是原始全分辨率图像
 
 ## 6. 安全约束
 

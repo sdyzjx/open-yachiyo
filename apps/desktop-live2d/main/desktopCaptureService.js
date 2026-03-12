@@ -53,6 +53,44 @@ function normalizeImageSize(image) {
   };
 }
 
+function computeDownsampledSize({ width, height, maxWidth = 1280, maxHeight = 720 } = {}) {
+  const sourceWidth = Math.max(0, Number(width) || 0);
+  const sourceHeight = Math.max(0, Number(height) || 0);
+  if (sourceWidth <= 0 || sourceHeight <= 0) {
+    return { width: sourceWidth, height: sourceHeight, resized: false };
+  }
+  if (sourceWidth <= maxWidth && sourceHeight <= maxHeight) {
+    return { width: sourceWidth, height: sourceHeight, resized: false };
+  }
+
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+    resized: true
+  };
+}
+
+function downsampleCaptureImage(image, opts = {}) {
+  const size = normalizeImageSize(image);
+  const target = computeDownsampledSize({
+    width: size.width,
+    height: size.height,
+    maxWidth: opts.maxWidth,
+    maxHeight: opts.maxHeight
+  });
+  if (!target.resized) {
+    return image;
+  }
+  if (typeof image?.resize !== 'function') {
+    return image;
+  }
+  return image.resize({
+    width: target.width,
+    height: target.height
+  });
+}
+
 function boundsContainBounds(outer, inner) {
   return (
     inner.x >= outer.x &&
@@ -114,6 +152,10 @@ function createDesktopCaptureService({
   if (!captureAdapter || typeof captureAdapter.getSources !== 'function') {
     throw new Error('desktop capture service requires Electron desktopCapturer');
   }
+  const captureDownsample = {
+    maxWidth: 1280,
+    maxHeight: 720
+  };
 
   function resolveWindowThumbnailSize() {
     const displays = typeof perceptionService.listDisplays === 'function'
@@ -223,7 +265,7 @@ function createDesktopCaptureService({
   async function captureScreen(params = {}) {
     const display = resolveTargetDisplay(normalizeCaptureDisplaySelector(params));
     const source = await loadDisplaySource(display);
-    const image = source.thumbnail;
+    const image = downsampleCaptureImage(source.thumbnail, captureDownsample);
     const pixelSize = normalizeImageSize(image);
     const result = captureStore.createCaptureRecord({
       scope: 'display',
@@ -312,13 +354,14 @@ function createDesktopCaptureService({
 
   async function captureDesktop() {
     const composed = await composeVirtualDesktopCapture();
+    const image = downsampleCaptureImage(composed.image, captureDownsample);
     const result = captureStore.createCaptureRecord({
       scope: 'desktop',
       displayId: '',
       bounds: composed.bounds,
-      pixelSize: composed.pixelSize,
+      pixelSize: normalizeImageSize(image),
       scaleFactor: 1,
-      buffer: Buffer.from(composed.image.toPNG()),
+      buffer: Buffer.from(image.toPNG()),
       extra: {
         display_ids: composed.displayIds,
         display_count: composed.displayCount
@@ -373,13 +416,14 @@ function createDesktopCaptureService({
           width: Math.max(1, Math.round(globalBounds.width)),
           height: Math.max(1, Math.round(globalBounds.height))
         });
+        const downsampled = downsampleCaptureImage(cropped, captureDownsample);
         const result = captureStore.createCaptureRecord({
           scope: 'region',
           displayId: '',
           bounds: toPlainBounds(globalBounds),
-          pixelSize: normalizeImageSize(cropped),
+          pixelSize: normalizeImageSize(downsampled),
           scaleFactor: 1,
-          buffer: Buffer.from(cropped.toPNG()),
+          buffer: Buffer.from(downsampled.toPNG()),
           extra: {
             display_ids: composed.displayIds,
             display_count: composed.displayCount
@@ -415,7 +459,8 @@ function createDesktopCaptureService({
     }
 
     const cropped = image.crop(cropRect);
-    const pixelSize = normalizeImageSize(cropped);
+    const downsampled = downsampleCaptureImage(cropped, captureDownsample);
+    const pixelSize = normalizeImageSize(downsampled);
     const displayRelativeBounds = {
       x: globalBounds.x - display.bounds.x,
       y: globalBounds.y - display.bounds.y,
@@ -428,7 +473,7 @@ function createDesktopCaptureService({
       bounds: toPlainBounds(globalBounds),
       pixelSize,
       scaleFactor: display.scale_factor,
-      buffer: Buffer.from(cropped.toPNG()),
+      buffer: Buffer.from(downsampled.toPNG()),
       extra: {
         electron_display_id: display.electron_id,
         display_relative_bounds: displayRelativeBounds
@@ -444,7 +489,7 @@ function createDesktopCaptureService({
 
   async function captureWindow(params = {}) {
     const source = resolveWindowSource(await loadWindowSources({ includeThumbnail: true }), params);
-    const image = source.thumbnail;
+    const image = downsampleCaptureImage(source.thumbnail, captureDownsample);
     if (!image || typeof image.toPNG !== 'function') {
       throw new Error('desktop window source thumbnail unavailable');
     }
@@ -485,6 +530,8 @@ function createDesktopCaptureService({
 
 module.exports = {
   createDesktopCaptureService,
+  computeDownsampledSize,
+  downsampleCaptureImage,
   computeVirtualDesktopBounds,
   normalizeRegionCaptureRequest,
   normalizeWindowCaptureRequest,

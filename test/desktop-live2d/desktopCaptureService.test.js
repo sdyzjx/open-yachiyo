@@ -8,6 +8,8 @@ const { createDesktopPerceptionService } = require('../../apps/desktop-live2d/ma
 const { createDesktopCaptureStore } = require('../../apps/desktop-live2d/main/desktopCaptureStore');
 const {
   createDesktopCaptureService,
+  computeDownsampledSize,
+  downsampleCaptureImage,
   computeVirtualDesktopBounds,
   normalizeRegionCaptureRequest,
   normalizeWindowCaptureRequest,
@@ -130,6 +132,23 @@ test('computeVirtualDesktopBounds merges all display bounds', () => {
   });
 });
 
+test('computeDownsampledSize preserves smaller images and fits larger ones into 1280x720', () => {
+  assert.deepEqual(
+    computeDownsampledSize({ width: 640, height: 360 }),
+    { width: 640, height: 360, resized: false }
+  );
+  assert.deepEqual(
+    computeDownsampledSize({ width: 3024, height: 1964 }),
+    { width: 1109, height: 720, resized: true }
+  );
+});
+
+test('downsampleCaptureImage resizes images larger than 720p envelope', () => {
+  const image = createFakeImage({ width: 3024, height: 1964, label: 'primary' });
+  const downsampled = downsampleCaptureImage(image);
+  assert.deepEqual(downsampled.getSize(), { width: 1109, height: 720 });
+});
+
 test('desktop capture service captures one full display', async () => {
   const { perceptionService, captureStore } = createTestServices();
   const desktopCapturer = {
@@ -150,7 +169,7 @@ test('desktop capture service captures one full display', async () => {
   const record = await captureService.captureScreen({ display_id: 'display:2' });
   assert.equal(record.scope, 'display');
   assert.equal(record.display_id, 'display:2');
-  assert.deepEqual(record.pixel_size, { width: 3024, height: 1964 });
+  assert.deepEqual(record.pixel_size, { width: 1109, height: 720 });
   assert.equal(fs.existsSync(record.path), true);
 });
 
@@ -192,7 +211,7 @@ test('desktop capture service captures the full virtual desktop across displays'
   assert.deepEqual(record.display_ids, ['display:1', 'display:2']);
   assert.equal(record.display_count, 2);
   assert.deepEqual(record.bounds, { x: -1280, y: 0, width: 2792, height: 982 });
-  assert.deepEqual(record.pixel_size, { width: 2792, height: 982 });
+  assert.deepEqual(record.pixel_size, { width: 1280, height: 450 });
   assert.deepEqual(createBitmapCalls, [{
     bytes: 2792 * 982 * 4,
     options: { width: 2792, height: 982, scaleFactor: 1 }
@@ -341,4 +360,24 @@ test('desktop capture service captures one window by source id', async () => {
   assert.equal(record.source_id, 'window:101:0');
   assert.equal(record.window_title, 'Browser');
   assert.deepEqual(record.pixel_size, { width: 1280, height: 720 });
+});
+
+test('desktop capture service downsamples large windows to 720p envelope', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'window:101:0', name: 'Browser', thumbnail: createFakeImage({ width: 3024, height: 1964, label: 'browser' }) }
+      ];
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    logger: { info() {} }
+  });
+
+  const record = await captureService.captureWindow({ source_id: 'window:101:0' });
+  assert.deepEqual(record.pixel_size, { width: 1109, height: 720 });
 });
