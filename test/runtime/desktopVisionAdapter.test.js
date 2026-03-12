@@ -8,6 +8,7 @@ const {
   normalizePrompt,
   normalizeCaptureRecord,
   readCaptureAsDataUrl,
+  normalizeInspectError,
   createDesktopVisionAdapters
 } = desktopVisionAdapters.__internal;
 
@@ -55,6 +56,16 @@ test('desktop vision buildInspectMessages emits text and image parts', () => {
     type: 'image_url',
     image_url: { url: 'data:image/png;base64,abc' }
   });
+});
+
+test('desktop vision normalizeInspectError wraps runtime errors with stage context', () => {
+  const normalized = normalizeInspectError(new Error('boom'), {
+    stage: 'analyze',
+    captureId: 'cap_123'
+  });
+  assert.equal(normalized.code, 'RUNTIME_ERROR');
+  assert.match(normalized.message, /desktop inspect failed during analyze/i);
+  assert.equal(normalized.details.capture_id, 'cap_123');
 });
 
 test('desktop inspect screen captures and performs multimodal subcall', async () => {
@@ -168,6 +179,25 @@ test('desktop inspect surfaces runtime error when multimodal subcall returns too
 
   await assert.rejects(
     adapters['desktop.inspect.screen']({ prompt: '检查这个界面' }, {}),
-    /tool decision unexpectedly/i
+    (err) => {
+      assert.equal(err.code, 'RUNTIME_ERROR');
+      assert.match(err.message, /tool decision unexpectedly/i);
+      assert.equal(err.details.capture_id, 'cap_bad');
+      assert.equal(err.details.stage, 'analyze');
+      return true;
+    }
+  );
+});
+
+test('desktop inspect preserves capture-stage failure semantics', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async () => {
+      throw new Error('rpc timeout');
+    }
+  });
+
+  await assert.rejects(
+    adapters['desktop.inspect.screen']({ prompt: '检查这个界面' }, {}),
+    /desktop inspect failed during capture/i
   );
 });

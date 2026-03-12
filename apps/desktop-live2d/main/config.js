@@ -66,6 +66,11 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
   const uiConfigPath = path.resolve(
     env.DESKTOP_LIVE2D_CONFIG_PATH || path.join(runtimePaths.configDir, 'desktop-live2d.json')
   );
+  const desktopCaptureTtlMs = toPositiveInt(env.DESKTOP_LIVE2D_CAPTURE_TTL_MS, 5 * 60 * 1000);
+  const desktopCaptureCleanupIntervalMs = toPositiveInt(
+    env.DESKTOP_LIVE2D_CAPTURE_CLEANUP_INTERVAL_MS,
+    Math.min(desktopCaptureTtlMs, 60 * 1000)
+  );
   const uiConfig = loadDesktopLive2dUiConfig(uiConfigPath, {
     templatePath: path.resolve(projectRoot, 'config', 'desktop-live2d.json')
   });
@@ -87,7 +92,8 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
     desktopCaptureDir: path.resolve(
       env.DESKTOP_LIVE2D_CAPTURE_DIR || path.join(projectRoot, DESKTOP_CAPTURE_RELATIVE_DIR)
     ),
-    desktopCaptureTtlMs: toPositiveInt(env.DESKTOP_LIVE2D_CAPTURE_TTL_MS, 5 * 60 * 1000),
+    desktopCaptureTtlMs,
+    desktopCaptureCleanupIntervalMs,
     mouthWaveformDir: path.resolve(
       env.DESKTOP_LIVE2D_MOUTH_WAVEFORM_DIR || path.join(runtimePaths.dataDir, 'desktop-live2d', 'mouth-waveforms')
     ),
