@@ -28,9 +28,12 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.window'));
 });
 
 test('ToolRegistry keeps scheduling metadata from config', () => {
@@ -42,16 +45,20 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
+  const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
   const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
   const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
+  const desktopInspectWindow = tools.find((tool) => tool.name === 'desktop.inspect.window');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
   assert.equal(desktopCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
+  assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
   assert.equal(desktopInspect?.side_effect_level, 'read');
   assert.equal(Boolean(desktopInspect?.requires_lock), true);
+  assert.equal(Boolean(desktopInspectWindow?.requires_lock), true);
 });
 
 test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
@@ -88,6 +95,12 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
         run: async () => JSON.stringify({ displays: [{ id: 'display:1', primary: true }] })
       };
     }
+    if (name === 'desktop.windows.list') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ windows: [{ source_id: 'window:42:0', title: 'Browser' }] })
+      };
+    }
     if (name === 'desktop.perception.capabilities') {
       return {
         ...tool,
@@ -105,11 +118,14 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
 
   const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
   const displays = await executor.execute({ name: 'desktop.displays.list', args: {} });
+  const windows = await executor.execute({ name: 'desktop.windows.list', args: {} });
   const capabilities = await executor.execute({ name: 'desktop.perception.capabilities', args: {} });
   const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
 
   assert.equal(displays.ok, true);
   assert.deepEqual(JSON.parse(displays.result), { displays: [{ id: 'display:1', primary: true }] });
+  assert.equal(windows.ok, true);
+  assert.deepEqual(JSON.parse(windows.result), { windows: [{ source_id: 'window:42:0', title: 'Browser' }] });
   assert.equal(capabilities.ok, true);
   assert.deepEqual(JSON.parse(capabilities.result), { screen_capture: true, desktop_inspect: false });
   assert.equal(deleted.ok, true);
@@ -135,6 +151,18 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
         })
       };
     }
+    if (name === 'desktop.inspect.window') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({
+          ok: true,
+          capture_id: 'cap-window-1',
+          source_id: 'window:42:0',
+          window_title: 'Browser',
+          analysis: '当前窗口显示浏览器登录页。'
+        })
+      };
+    }
     return tool;
   };
 
@@ -150,6 +178,19 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
     capture_id: 'cap-inspect-1',
     display_id: 'display:1',
     analysis: '屏幕上显示一个终端窗口。'
+  });
+
+  const inspectedWindow = await executor.execute({
+    name: 'desktop.inspect.window',
+    args: { prompt: '这个窗口里是什么？', source_id: 'window:42:0' }
+  });
+  assert.equal(inspectedWindow.ok, true);
+  assert.deepEqual(JSON.parse(inspectedWindow.result), {
+    ok: true,
+    capture_id: 'cap-window-1',
+    source_id: 'window:42:0',
+    window_title: 'Browser',
+    analysis: '当前窗口显示浏览器登录页。'
   });
 });
 

@@ -9,6 +9,9 @@ const { createDesktopCaptureStore } = require('../../apps/desktop-live2d/main/de
 const {
   createDesktopCaptureService,
   normalizeRegionCaptureRequest,
+  normalizeWindowCaptureRequest,
+  normalizeWindowSelector,
+  normalizeWindowTitle,
   parseSourceDisplayId
 } = require('../../apps/desktop-live2d/main/desktopCaptureService');
 
@@ -80,6 +83,27 @@ test('normalizeRegionCaptureRequest keeps display selector and positive size', (
   });
 });
 
+test('normalizeWindowCaptureRequest keeps source id and title selectors', () => {
+  assert.deepEqual(normalizeWindowSelector({
+    source_id: 'window:42:0',
+    window_title: 'Browser'
+  }), {
+    sourceId: 'window:42:0',
+    title: 'Browser'
+  });
+  assert.deepEqual(normalizeWindowCaptureRequest({
+    title: 'Editor'
+  }), {
+    sourceId: null,
+    title: 'Editor'
+  });
+});
+
+test('normalizeWindowTitle falls back to empty string', () => {
+  assert.equal(normalizeWindowTitle({ name: 'Browser' }), 'Browser');
+  assert.equal(normalizeWindowTitle({}), '');
+});
+
 test('desktop capture service captures one full display', async () => {
   const { perceptionService, captureStore } = createTestServices();
   const desktopCapturer = {
@@ -133,4 +157,65 @@ test('desktop capture service captures one region within a single display', asyn
   assert.deepEqual(record.bounds, { x: 20, y: 10, width: 100, height: 50 });
   assert.deepEqual(record.display_relative_bounds, { x: 20, y: 10, width: 100, height: 50 });
   assert.deepEqual(record.pixel_size, { width: 200, height: 100 });
+});
+
+test('desktop capture service lists capturable windows', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'window:101:0', name: 'Browser', thumbnail: createFakeImage({ width: 1, height: 1, label: 'browser' }) },
+        { id: 'window:202:0', name: 'Terminal', thumbnail: createFakeImage({ width: 1, height: 1, label: 'terminal' }) }
+      ];
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    logger: { info() {} }
+  });
+
+  const result = await captureService.listWindows();
+  assert.deepEqual(result, {
+    windows: [
+      {
+        source_id: 'window:101:0',
+        title: 'Browser',
+        display_id: null,
+        electron_display_id: null,
+        thumbnail_available: true
+      },
+      {
+        source_id: 'window:202:0',
+        title: 'Terminal',
+        display_id: null,
+        electron_display_id: null,
+        thumbnail_available: true
+      }
+    ]
+  });
+});
+
+test('desktop capture service captures one window by source id', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'window:101:0', name: 'Browser', thumbnail: createFakeImage({ width: 1280, height: 720, label: 'browser' }) }
+      ];
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    logger: { info() {} }
+  });
+
+  const record = await captureService.captureWindow({ source_id: 'window:101:0' });
+  assert.equal(record.scope, 'window');
+  assert.equal(record.source_id, 'window:101:0');
+  assert.equal(record.window_title, 'Browser');
+  assert.deepEqual(record.pixel_size, { width: 1280, height: 720 });
 });

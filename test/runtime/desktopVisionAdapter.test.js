@@ -22,10 +22,14 @@ test('desktop vision normalizeCaptureRecord validates required fields', () => {
     capture_id: 'cap_1',
     path: '/tmp/cap_1.png',
     mime_type: 'image/png',
-    display_id: 'display:1'
+    display_id: 'display:1',
+    source_id: 'window:42:0',
+    window_title: 'Browser'
   });
   assert.equal(record.capture_id, 'cap_1');
   assert.equal(record.path, '/tmp/cap_1.png');
+  assert.equal(record.source_id, 'window:42:0');
+  assert.equal(record.window_title, 'Browser');
   assert.throws(() => normalizeCaptureRecord({ capture_id: 'cap_2' }), /incomplete/i);
 });
 
@@ -159,6 +163,42 @@ test('desktop inspect region forwards capture args and returns analysis payload'
   assert.equal(result.capture_id, 'cap_region_1');
   assert.equal(result.analysis, '按钮处于禁用状态。');
   assert.deepEqual(result.bounds, { x: 10, y: 20, width: 300, height: 160 });
+});
+
+test('desktop inspect window forwards selector args and returns window metadata', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async ({ method, params }) => {
+      assert.equal(method, 'desktop.capture.window');
+      assert.deepEqual(params, { source_id: 'window:42:0' });
+      return {
+        capture_id: 'cap_window_1',
+        path: '/tmp/cap_window_1.png',
+        mime_type: 'image/png',
+        source_id: 'window:42:0',
+        window_title: 'Browser',
+        pixel_size: { width: 1280, height: 720 },
+        scale_factor: 1
+      };
+    },
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('window-bytes')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'final', output: '这是一个浏览器登录窗口。' })
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.window']({
+    prompt: '这个窗口里是什么？',
+    source_id: 'window:42:0'
+  }, {});
+
+  const result = JSON.parse(raw);
+  assert.equal(result.capture_id, 'cap_window_1');
+  assert.equal(result.source_id, 'window:42:0');
+  assert.equal(result.window_title, 'Browser');
+  assert.equal(result.analysis, '这是一个浏览器登录窗口。');
 });
 
 test('desktop inspect surfaces runtime error when multimodal subcall returns tool decision', async () => {

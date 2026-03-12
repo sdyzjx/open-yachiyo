@@ -210,8 +210,10 @@ function createDesktopPerceptionAdapters({
       return stringifyResult(merged);
     },
     'desktop.displays.list': buildAdapter('desktop.perception.displays.list', invokeRpc),
+    'desktop.windows.list': buildAdapter('desktop.perception.windows.list', invokeRpc),
     'desktop.capture.screen': buildAdapter('desktop.capture.screen', invokeRpc),
     'desktop.capture.region': buildAdapter('desktop.capture.region', invokeRpc),
+    'desktop.capture.window': buildAdapter('desktop.capture.window', invokeRpc),
     'desktop.capture.delete': buildAdapter('desktop.capture.delete', invokeRpc)
   };
 }

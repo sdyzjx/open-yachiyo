@@ -35,6 +35,8 @@ function normalizeCaptureRecord(record) {
     path: capturePath,
     mime_type: String(record.mime_type || 'image/png').trim() || 'image/png',
     display_id: String(record.display_id || '').trim(),
+    source_id: String(record.source_id || '').trim() || null,
+    window_title: String(record.window_title || '').trim() || null,
     bounds: record.bounds && typeof record.bounds === 'object' ? { ...record.bounds } : null,
     pixel_size: record.pixel_size && typeof record.pixel_size === 'object' ? { ...record.pixel_size } : null,
     scale_factor: Number(record.scale_factor) || 1
@@ -163,6 +165,8 @@ function createDesktopVisionAdapters({
         ok: true,
         capture_id: captureRecord.capture_id,
         display_id: captureRecord.display_id || null,
+        source_id: captureRecord.source_id,
+        window_title: captureRecord.window_title,
         bounds: captureRecord.bounds,
         pixel_size: captureRecord.pixel_size,
         scale_factor: captureRecord.scale_factor,
@@ -185,6 +189,12 @@ function createDesktopVisionAdapters({
     }),
     'desktop.inspect.region': async (args = {}, context = {}) => inspectViaCapture({
       captureMethod: 'desktop.capture.region',
+      captureArgs: args,
+      prompt: args.prompt,
+      traceId: context.trace_id || null
+    }),
+    'desktop.inspect.window': async (args = {}, context = {}) => inspectViaCapture({
+      captureMethod: 'desktop.capture.window',
       captureArgs: args,
       prompt: args.prompt,
       traceId: context.trace_id || null

@@ -103,6 +103,10 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'desktop.perception.windows.list': {
+    type: 'object',
+    additionalProperties: false
+  },
   'desktop.capture.screen': {
     type: 'object',
     additionalProperties: false,
@@ -123,6 +127,24 @@ const METHOD_SCHEMAS = Object.freeze({
       displayId: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] },
       display_id: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] }
     }
+  },
+  'desktop.capture.window': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      sourceId: { type: 'string', minLength: 1, maxLength: 256 },
+      source_id: { type: 'string', minLength: 1, maxLength: 256 },
+      title: { type: 'string', minLength: 1, maxLength: 512 },
+      windowTitle: { type: 'string', minLength: 1, maxLength: 512 },
+      window_title: { type: 'string', minLength: 1, maxLength: 512 }
+    },
+    anyOf: [
+      { required: ['sourceId'] },
+      { required: ['source_id'] },
+      { required: ['title'] },
+      { required: ['windowTitle'] },
+      { required: ['window_title'] }
+    ]
   },
   'desktop.capture.get': {
     type: 'object',

@@ -23,11 +23,14 @@ policy:
     - live2d.react
     - desktop.perception.capabilities
     - desktop.displays.list
+    - desktop.windows.list
     - desktop.capture.screen
     - desktop.capture.region
+    - desktop.capture.window
     - desktop.capture.delete
     - desktop.inspect.screen
     - desktop.inspect.region
+    - desktop.inspect.window
   deny: []
   byProvider: {}
 
@@ -378,6 +381,16 @@ tools:
       properties: {}
       additionalProperties: false
 
+  - name: desktop.windows.list
+    type: local
+    adapter: desktop.windows.list
+    description: List capturable desktop windows exposed by the desktop-live2d RPC server.
+    side_effect_level: read
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
   - name: desktop.perception.capabilities
     type: local
     adapter: desktop.perception.capabilities
@@ -417,6 +430,28 @@ tools:
         displayId: { type: [integer, string] }
         display_id: { type: [integer, string] }
       required: [x, y, width, height]
+      additionalProperties: false
+
+  - name: desktop.capture.window
+    type: local
+    adapter: desktop.capture.window
+    description: Capture one desktop window through desktop-live2d RPC and return capture metadata.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        sourceId: { type: string, minLength: 1, maxLength: 256 }
+        source_id: { type: string, minLength: 1, maxLength: 256 }
+        title: { type: string, minLength: 1, maxLength: 512 }
+        windowTitle: { type: string, minLength: 1, maxLength: 512 }
+        window_title: { type: string, minLength: 1, maxLength: 512 }
+      anyOf:
+        - required: [sourceId]
+        - required: [source_id]
+        - required: [title]
+        - required: [windowTitle]
+        - required: [window_title]
       additionalProperties: false
 
   - name: desktop.capture.delete
@@ -467,4 +502,28 @@ tools:
         displayId: { type: [integer, string] }
         display_id: { type: [integer, string] }
       required: [prompt, x, y, width, height]
+      additionalProperties: false
+
+  - name: desktop.inspect.window
+    type: local
+    adapter: desktop.inspect.window
+    description: Capture one desktop window and ask the active multimodal LLM to analyze the screenshot against a prompt.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 2000 }
+        sourceId: { type: string, minLength: 1, maxLength: 256 }
+        source_id: { type: string, minLength: 1, maxLength: 256 }
+        title: { type: string, minLength: 1, maxLength: 512 }
+        windowTitle: { type: string, minLength: 1, maxLength: 512 }
+        window_title: { type: string, minLength: 1, maxLength: 512 }
+      required: [prompt]
+      anyOf:
+        - required: [prompt, sourceId]
+        - required: [prompt, source_id]
+        - required: [prompt, title]
+        - required: [prompt, windowTitle]
+        - required: [prompt, window_title]
       additionalProperties: false

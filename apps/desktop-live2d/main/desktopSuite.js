@@ -3295,8 +3295,10 @@ async function startDesktopSuite({
       'chat.panel.append',
       'chat.panel.clear',
       'desktop.perception.displays.list',
+      'desktop.perception.windows.list',
       'desktop.capture.screen',
       'desktop.capture.region',
+      'desktop.capture.window',
       'desktop.capture.get',
       'desktop.capture.delete',
       'tool.list',
@@ -3578,6 +3580,12 @@ async function handleDesktopRpcRequest({
     };
   }
 
+  if (request.method === 'desktop.perception.windows.list') {
+    return typeof captureService?.listWindows === 'function'
+      ? captureService.listWindows()
+      : { windows: [] };
+  }
+
   if (request.method === 'desktop.perception.capabilities') {
     return typeof perceptionService?.getCapabilities === 'function'
       ? perceptionService.getCapabilities()
@@ -3616,6 +3624,13 @@ async function handleDesktopRpcRequest({
       return { ok: false, error: 'desktop capture service unavailable' };
     }
     return captureService.captureRegion(request.params || {});
+  }
+
+  if (request.method === 'desktop.capture.window') {
+    if (!captureService || typeof captureService.captureWindow !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureWindow(request.params || {});
   }
 
   if (request.method === 'desktop.capture.get') {
