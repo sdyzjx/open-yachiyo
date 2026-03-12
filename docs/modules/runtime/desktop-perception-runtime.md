@@ -28,9 +28,11 @@
 ## 3. Supported runtime tools
 
 - `desktop.displays.list`
+- `desktop.windows.list`
 - `desktop.perception.capabilities`
 - `desktop.capture.screen`
 - `desktop.capture.region`
+- `desktop.capture.window`
 - `desktop.capture.delete`
 
 这些工具目前都通过：

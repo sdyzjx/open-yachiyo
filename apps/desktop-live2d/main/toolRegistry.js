@@ -20,6 +20,15 @@ const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
     }
   },
   {
+    name: 'desktop_windows_list',
+    method: 'desktop.perception.windows.list',
+    description: 'List capturable desktop windows and their source identifiers for window-oriented capture.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
     name: 'desktop_capture_screen',
     method: 'desktop.capture.screen',
     description: 'Capture a full desktop display into a temporary image record.',
@@ -45,6 +54,21 @@ const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
         height: { type: 'integer' },
         displayId: { anyOf: [{ type: 'integer' }, { type: 'string' }] },
         display_id: { anyOf: [{ type: 'integer' }, { type: 'string' }] }
+      }
+    }
+  },
+  {
+    name: 'desktop_capture_window',
+    method: 'desktop.capture.window',
+    description: 'Capture one desktop window into a temporary image record by source id or title.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sourceId: { type: 'string' },
+        source_id: { type: 'string' },
+        title: { type: 'string' },
+        windowTitle: { type: 'string' },
+        window_title: { type: 'string' }
       }
     }
   },

@@ -60,6 +60,12 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     method: 'desktop.perception.displays.list',
     params: {}
   });
+  const windowsList = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'window-list-1',
+    method: 'desktop.perception.windows.list',
+    params: {}
+  });
   const regionCapture = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'capture-1',
@@ -72,11 +78,22 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
       height: 100
     }
   });
+  const windowCapture = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capture-window-1',
+    method: 'desktop.capture.window',
+    params: {
+      source_id: 'window:42:0'
+    }
+  });
 
   assert.equal(capabilities.ok, true);
   assert.equal(displaysList.ok, true);
+  assert.equal(windowsList.ok, true);
   assert.equal(regionCapture.ok, true);
+  assert.equal(windowCapture.ok, true);
   assert.equal(regionCapture.request.method, 'desktop.capture.region');
+  assert.equal(windowCapture.request.method, 'desktop.capture.window');
 });
 
 test('validateRpcRequest accepts debug.mouthOverride.set payload', () => {

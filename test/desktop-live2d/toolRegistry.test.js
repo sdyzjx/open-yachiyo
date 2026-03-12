@@ -13,6 +13,8 @@ test('listDesktopTools returns non-empty tool definitions', () => {
   assert.ok(tools.some((item) => item.name === 'desktop_model_set_param'));
   assert.ok(tools.some((item) => item.name === 'desktop_perception_capabilities'));
   assert.ok(tools.some((item) => item.name === 'desktop_capture_screen'));
+  assert.ok(tools.some((item) => item.name === 'desktop_windows_list'));
+  assert.ok(tools.some((item) => item.name === 'desktop_capture_window'));
 });
 
 test('resolveToolInvoke maps tool name to rpc method and args', () => {
@@ -34,6 +36,16 @@ test('resolveToolInvoke maps local desktop perception tools', () => {
 
   assert.equal(resolved.method, 'desktop.capture.region');
   assert.deepEqual(resolved.params, { x: 0, y: 0, width: 320, height: 240 });
+});
+
+test('resolveToolInvoke maps window capture tool', () => {
+  const resolved = resolveToolInvoke({
+    name: 'desktop_capture_window',
+    args: { source_id: 'window:42:0' }
+  });
+
+  assert.equal(resolved.method, 'desktop.capture.window');
+  assert.deepEqual(resolved.params, { source_id: 'window:42:0' });
 });
 
 test('resolveToolInvoke maps desktop perception capabilities tool', () => {

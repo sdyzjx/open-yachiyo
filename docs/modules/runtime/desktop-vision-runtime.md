@@ -7,6 +7,7 @@
 目标不是把截图重新塞回当前 tool loop，而是提供受控闭环工具：
 - `desktop.inspect.screen`
 - `desktop.inspect.region`
+- `desktop.inspect.window`
 
 这些工具内部完成：
 1. 调用桌宠 RPC 截图
@@ -29,6 +30,7 @@
 
 - `desktop.inspect.screen`
 - `desktop.inspect.region`
+- `desktop.inspect.window`
 
 返回格式：
 
@@ -37,6 +39,8 @@
   "ok": true,
   "capture_id": "cap_xxx",
   "display_id": "display:1",
+  "source_id": null,
+  "window_title": null,
   "bounds": { "x": 0, "y": 0, "width": 1512, "height": 982 },
   "pixel_size": { "width": 3024, "height": 1964 },
   "scale_factor": 2,
@@ -73,10 +77,21 @@ inspect 工具直接读取桌面 capture 文件并转为：
 
 随后作为 user message 中的 `image_url` part 发送给当前激活的 provider/model。
 
+### 4.4 Window inspect
+
+`desktop.inspect.window` 内部调用：
+- `desktop.capture.window`
+
+它允许 agent 先通过：
+- `desktop.windows.list`
+
+拿到 `source_id`，再对具体窗口做定向视觉分析。
+
 ## 5. Test coverage
 
 本阶段测试包括：
 - inspect screen / region 正常流程
+- inspect window 正常流程
 - screenshot metadata 到 image input 的转换
 - LLM 子调用返回 final 文本
 - LLM 子调用异常返回 tool decision

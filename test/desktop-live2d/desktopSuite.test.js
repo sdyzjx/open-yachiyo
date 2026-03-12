@@ -1146,6 +1146,32 @@ test('handleDesktopRpcRequest returns display list without touching renderer bri
   });
 });
 
+test('handleDesktopRpcRequest returns window list without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.perception.windows.list',
+      params: {}
+    },
+    captureService: {
+      async listWindows() {
+        return {
+          windows: [{ source_id: 'window:42:0', title: 'Browser' }]
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    windows: [{ source_id: 'window:42:0', title: 'Browser' }]
+  });
+});
+
 test('handleDesktopRpcRequest returns perception capabilities without touching renderer bridge', async () => {
   const result = await handleDesktopRpcRequest({
     request: { method: 'desktop.perception.capabilities', params: {} },
@@ -1230,6 +1256,36 @@ test('handleDesktopRpcRequest resolves local desktop capture tool without touchi
   assert.deepEqual(calls, [{ display_id: 'display:2' }]);
   assert.equal(result.ok, true);
   assert.deepEqual(result.result, { capture_id: 'cap_1', display_id: 'display:2' });
+});
+
+test('handleDesktopRpcRequest captures one window without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.capture.window',
+      params: { source_id: 'window:42:0' }
+    },
+    captureService: {
+      async captureWindow(params) {
+        return {
+          capture_id: 'cap_window_1',
+          source_id: params.source_id,
+          window_title: 'Browser'
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(result, {
+    capture_id: 'cap_window_1',
+    source_id: 'window:42:0',
+    window_title: 'Browser'
+  });
 });
 
 test('createCaptureCleanupController schedules cleanup and logs only capture ids', () => {

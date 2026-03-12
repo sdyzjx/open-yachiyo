@@ -22,6 +22,15 @@ function normalizeCaptureDisplaySelector(params = {}) {
   return params.displayId ?? params.display_id ?? null;
 }
 
+function normalizeWindowSelector(params = {}) {
+  const sourceId = String(params.sourceId ?? params.source_id ?? '').trim();
+  const title = String(params.title ?? params.windowTitle ?? params.window_title ?? '').trim();
+  return {
+    sourceId: sourceId || null,
+    title: title || null
+  };
+}
+
 function normalizeRegionCaptureRequest(params = {}) {
   return {
     x: Number(params.x),
@@ -30,6 +39,10 @@ function normalizeRegionCaptureRequest(params = {}) {
     height: toPositiveInteger(params.height),
     displayId: normalizeCaptureDisplaySelector(params)
   };
+}
+
+function normalizeWindowCaptureRequest(params = {}) {
+  return normalizeWindowSelector(params);
 }
 
 function normalizeImageSize(image) {
@@ -49,6 +62,10 @@ function boundsContainBounds(outer, inner) {
   );
 }
 
+function normalizeWindowTitle(source = {}) {
+  return String(source.name || source.title || '').trim();
+}
+
 function createDesktopCaptureService({
   perceptionService,
   captureStore,
@@ -65,6 +82,22 @@ function createDesktopCaptureService({
   const captureAdapter = desktopCapturer || require('electron').desktopCapturer;
   if (!captureAdapter || typeof captureAdapter.getSources !== 'function') {
     throw new Error('desktop capture service requires Electron desktopCapturer');
+  }
+
+  function resolveWindowThumbnailSize() {
+    const displays = typeof perceptionService.listDisplays === 'function'
+      ? perceptionService.listDisplays()
+      : [];
+    const maxWidth = displays.reduce((acc, display) => (
+      Math.max(acc, Math.round(display.bounds.width * display.scale_factor))
+    ), 1920);
+    const maxHeight = displays.reduce((acc, display) => (
+      Math.max(acc, Math.round(display.bounds.height * display.scale_factor))
+    ), 1080);
+    return {
+      width: Math.min(4096, Math.max(1, maxWidth)),
+      height: Math.min(4096, Math.max(1, maxHeight))
+    };
   }
 
   async function loadDisplaySource(display) {
@@ -87,6 +120,14 @@ function createDesktopCaptureService({
     return matched;
   }
 
+  async function loadWindowSources({ includeThumbnail = true } = {}) {
+    return captureAdapter.getSources({
+      types: ['window'],
+      fetchWindowIcons: false,
+      thumbnailSize: includeThumbnail ? resolveWindowThumbnailSize() : { width: 1, height: 1 }
+    });
+  }
+
   function resolveTargetDisplay(displayId) {
     const requested = displayId != null ? perceptionService.resolveDisplayById(displayId) : null;
     const display = requested || perceptionService.getPrimaryDisplay();
@@ -94,6 +135,58 @@ function createDesktopCaptureService({
       throw new Error('no display is available for desktop capture');
     }
     return display;
+  }
+
+  function toWindowDescriptor(source = {}) {
+    const electronDisplayId = parseSourceDisplayId(source);
+    const display = electronDisplayId != null ? perceptionService.resolveDisplayById(electronDisplayId) : null;
+    return {
+      source_id: String(source.id || '').trim(),
+      title: normalizeWindowTitle(source),
+      display_id: display?.id || null,
+      electron_display_id: electronDisplayId,
+      thumbnail_available: Boolean(source.thumbnail && typeof source.thumbnail.toPNG === 'function')
+    };
+  }
+
+  function resolveWindowSource(sources, params = {}) {
+    const selector = normalizeWindowCaptureRequest(params);
+    if (!selector.sourceId && !selector.title) {
+      throw new Error('desktop.capture.window requires source id or title');
+    }
+
+    if (selector.sourceId) {
+      const matched = sources.find((source) => String(source.id || '').trim() === selector.sourceId);
+      if (!matched) {
+        throw new Error(`window source not found: ${selector.sourceId}`);
+      }
+      return matched;
+    }
+
+    const titleQuery = selector.title.toLowerCase();
+    const exact = sources.filter((source) => normalizeWindowTitle(source).toLowerCase() === titleQuery);
+    if (exact.length === 1) {
+      return exact[0];
+    }
+    if (exact.length > 1) {
+      throw new Error(`window title is ambiguous: ${selector.title}`);
+    }
+
+    const fuzzy = sources.filter((source) => normalizeWindowTitle(source).toLowerCase().includes(titleQuery));
+    if (fuzzy.length === 1) {
+      return fuzzy[0];
+    }
+    if (fuzzy.length > 1) {
+      throw new Error(`window title is ambiguous: ${selector.title}`);
+    }
+    throw new Error(`window title not found: ${selector.title}`);
+  }
+
+  async function listWindows() {
+    const sources = await loadWindowSources({ includeThumbnail: false });
+    return {
+      windows: sources.map((source) => toWindowDescriptor(source))
+    };
   }
 
   async function captureScreen(params = {}) {
@@ -200,14 +293,51 @@ function createDesktopCaptureService({
     return result;
   }
 
+  async function captureWindow(params = {}) {
+    const source = resolveWindowSource(await loadWindowSources({ includeThumbnail: true }), params);
+    const image = source.thumbnail;
+    if (!image || typeof image.toPNG !== 'function') {
+      throw new Error('desktop window source thumbnail unavailable');
+    }
+    const pixelSize = normalizeImageSize(image);
+    const descriptor = toWindowDescriptor(source);
+    const display = descriptor.display_id
+      ? perceptionService.resolveDisplayById(descriptor.display_id)
+      : null;
+    const result = captureStore.createCaptureRecord({
+      scope: 'window',
+      displayId: descriptor.display_id || '',
+      bounds: null,
+      pixelSize,
+      scaleFactor: display?.scale_factor || 1,
+      buffer: Buffer.from(image.toPNG()),
+      extra: {
+        electron_display_id: descriptor.electron_display_id,
+        source_id: descriptor.source_id,
+        window_title: descriptor.title
+      }
+    });
+    logger.info?.('[desktop-perception] capture window created', {
+      capture_id: result.capture_id,
+      source_id: descriptor.source_id,
+      window_title: descriptor.title
+    });
+    return result;
+  }
+
   return {
+    listWindows,
     captureScreen,
-    captureRegion
+    captureRegion,
+    captureWindow
   };
 }
 
 module.exports = {
   createDesktopCaptureService,
   normalizeRegionCaptureRequest,
+  normalizeWindowCaptureRequest,
+  normalizeWindowSelector,
+  normalizeWindowTitle,
   parseSourceDisplayId
 };
