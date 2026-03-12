@@ -25,6 +25,8 @@ policy:
     - desktop.capture.screen
     - desktop.capture.region
     - desktop.capture.delete
+    - desktop.inspect.screen
+    - desktop.inspect.region
   deny: []
   byProvider: {}
 
@@ -420,4 +422,38 @@ tools:
       anyOf:
         - required: [captureId]
         - required: [capture_id]
+      additionalProperties: false
+
+  - name: desktop.inspect.screen
+    type: local
+    adapter: desktop.inspect.screen
+    description: Capture one display and ask the active multimodal LLM to analyze the screenshot against a prompt.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 2000 }
+        displayId: { type: [integer, string] }
+        display_id: { type: [integer, string] }
+      required: [prompt]
+      additionalProperties: false
+
+  - name: desktop.inspect.region
+    type: local
+    adapter: desktop.inspect.region
+    description: Capture one desktop region and ask the active multimodal LLM to analyze the screenshot against a prompt.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 2000 }
+        x: { type: integer }
+        y: { type: integer }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        displayId: { type: [integer, string] }
+        display_id: { type: [integer, string] }
+      required: [prompt, x, y, width, height]
       additionalProperties: false

@@ -1,0 +1,173 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const desktopVisionAdapters = require('../../apps/runtime/tooling/adapters/desktopVision');
+
+const {
+  buildInspectMessages,
+  normalizePrompt,
+  normalizeCaptureRecord,
+  readCaptureAsDataUrl,
+  createDesktopVisionAdapters
+} = desktopVisionAdapters.__internal;
+
+test('desktop vision normalizePrompt requires non-empty prompt', () => {
+  assert.equal(normalizePrompt('  inspect this  '), 'inspect this');
+  assert.throws(() => normalizePrompt('   '), /non-empty prompt/i);
+});
+
+test('desktop vision normalizeCaptureRecord validates required fields', () => {
+  const record = normalizeCaptureRecord({
+    capture_id: 'cap_1',
+    path: '/tmp/cap_1.png',
+    mime_type: 'image/png',
+    display_id: 'display:1'
+  });
+  assert.equal(record.capture_id, 'cap_1');
+  assert.equal(record.path, '/tmp/cap_1.png');
+  assert.throws(() => normalizeCaptureRecord({ capture_id: 'cap_2' }), /incomplete/i);
+});
+
+test('desktop vision readCaptureAsDataUrl encodes capture file', () => {
+  const fsModule = {
+    existsSync: (filePath) => filePath === '/tmp/cap_1.png',
+    readFileSync: () => Buffer.from('png-data')
+  };
+  const dataUrl = readCaptureAsDataUrl({
+    capture_id: 'cap_1',
+    path: '/tmp/cap_1.png',
+    mime_type: 'image/png'
+  }, { fsModule });
+
+  assert.ok(dataUrl.startsWith('data:image/png;base64,'));
+});
+
+test('desktop vision buildInspectMessages emits text and image parts', () => {
+  const messages = buildInspectMessages({
+    prompt: 'What is on the screen?',
+    imageDataUrl: 'data:image/png;base64,abc'
+  });
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].role, 'system');
+  assert.equal(messages[1].role, 'user');
+  assert.deepEqual(messages[1].content[0], { type: 'text', text: 'What is on the screen?' });
+  assert.deepEqual(messages[1].content[1], {
+    type: 'image_url',
+    image_url: { url: 'data:image/png;base64,abc' }
+  });
+});
+
+test('desktop inspect screen captures and performs multimodal subcall', async () => {
+  const rpcCalls = [];
+  const reasonerCalls = [];
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async ({ method, params, traceId }) => {
+      rpcCalls.push({ method, params, traceId });
+      return {
+        capture_id: 'cap_screen_1',
+        path: '/tmp/cap_screen_1.png',
+        mime_type: 'image/png',
+        display_id: 'display:2',
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        pixel_size: { width: 2400, height: 1600 },
+        scale_factor: 2
+      };
+    },
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('screen-bytes')
+    },
+    getReasoner: () => ({
+      decide: async ({ messages, tools }) => {
+        reasonerCalls.push({ messages, tools });
+        return { type: 'final', output: '发现一个登录弹窗。' };
+      }
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.screen']({
+    display_id: 'display:2',
+    prompt: '这张截图里有什么？'
+  }, {
+    trace_id: 'trace-inspect-screen'
+  });
+
+  const result = JSON.parse(raw);
+  assert.equal(result.ok, true);
+  assert.equal(result.capture_id, 'cap_screen_1');
+  assert.equal(result.analysis, '发现一个登录弹窗。');
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].method, 'desktop.capture.screen');
+  assert.equal(rpcCalls[0].traceId, 'trace-inspect-screen');
+  assert.equal(reasonerCalls.length, 1);
+  assert.deepEqual(reasonerCalls[0].tools, []);
+  assert.equal(reasonerCalls[0].messages[1].content[0].text, '这张截图里有什么？');
+  assert.match(reasonerCalls[0].messages[1].content[1].image_url.url, /^data:image\/png;base64,/);
+});
+
+test('desktop inspect region forwards capture args and returns analysis payload', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async ({ method, params }) => {
+      assert.equal(method, 'desktop.capture.region');
+      assert.deepEqual(params, {
+        x: 10,
+        y: 20,
+        width: 300,
+        height: 160,
+        display_id: 'display:1'
+      });
+      return {
+        capture_id: 'cap_region_1',
+        path: '/tmp/cap_region_1.png',
+        mime_type: 'image/png',
+        display_id: 'display:1',
+        bounds: { x: 10, y: 20, width: 300, height: 160 },
+        pixel_size: { width: 600, height: 320 },
+        scale_factor: 2
+      };
+    },
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('region-bytes')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'final', output: '按钮处于禁用状态。' })
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.region']({
+    x: 10,
+    y: 20,
+    width: 300,
+    height: 160,
+    prompt: '按钮是什么状态？',
+    display_id: 'display:1'
+  }, {});
+
+  const result = JSON.parse(raw);
+  assert.equal(result.capture_id, 'cap_region_1');
+  assert.equal(result.analysis, '按钮处于禁用状态。');
+  assert.deepEqual(result.bounds, { x: 10, y: 20, width: 300, height: 160 });
+});
+
+test('desktop inspect surfaces runtime error when multimodal subcall returns tool decision', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async () => ({
+      capture_id: 'cap_bad',
+      path: '/tmp/cap_bad.png',
+      mime_type: 'image/png'
+    }),
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('region-bytes')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'tool', tool: { name: 'echo', args: { text: 'x' } } })
+    })
+  });
+
+  await assert.rejects(
+    adapters['desktop.inspect.screen']({ prompt: '检查这个界面' }, {}),
+    /tool decision unexpectedly/i
+  );
+});

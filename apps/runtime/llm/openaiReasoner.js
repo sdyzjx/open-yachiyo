@@ -60,21 +60,27 @@ class OpenAIReasoner {
   }
 
   buildPayload({ messages, tools, stream = false }) {
-    return {
+    const normalizedTools = Array.isArray(tools) ? tools : [];
+    const payload = {
       model: this.model,
       temperature: 0.2,
-      tool_choice: 'auto',
       stream: Boolean(stream),
-      messages,
-      tools: tools.map((tool) => ({
+      messages
+    };
+
+    if (normalizedTools.length > 0) {
+      payload.tool_choice = 'auto';
+      payload.tools = normalizedTools.map((tool) => ({
         type: 'function',
         function: {
           name: tool.name,
           description: tool.description || '',
           parameters: tool.input_schema || { type: 'object', properties: {}, additionalProperties: true }
         }
-      }))
-    };
+      }));
+    }
+
+    return payload;
   }
 
   buildDecisionFromAssistantMessage(message) {

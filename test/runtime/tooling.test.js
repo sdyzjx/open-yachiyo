@@ -28,6 +28,8 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
 });
 
 test('ToolRegistry keeps scheduling metadata from config', () => {
@@ -39,11 +41,14 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
+  const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
   assert.equal(desktopCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
+  assert.equal(desktopInspect?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopInspect?.requires_lock), true);
 });
 
 test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
@@ -97,6 +102,43 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   assert.deepEqual(JSON.parse(displays.result), { displays: [{ id: 'display:1', primary: true }] });
   assert.equal(deleted.ok, true);
   assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
+});
+
+test('ToolExecutor desktop inspect tools return JSON string payloads', async () => {
+  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
+  const config = store.load();
+  const registry = new ToolRegistry({ config });
+  const originalGet = registry.get.bind(registry);
+  registry.get = (name) => {
+    const tool = originalGet(name);
+    if (!tool) return null;
+    if (name === 'desktop.inspect.screen') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({
+          ok: true,
+          capture_id: 'cap-inspect-1',
+          display_id: 'display:1',
+          analysis: '屏幕上显示一个终端窗口。'
+        })
+      };
+    }
+    return tool;
+  };
+
+  const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
+  const inspected = await executor.execute({
+    name: 'desktop.inspect.screen',
+    args: { prompt: '这张图里有什么？' }
+  });
+
+  assert.equal(inspected.ok, true);
+  assert.deepEqual(JSON.parse(inspected.result), {
+    ok: true,
+    capture_id: 'cap-inspect-1',
+    display_id: 'display:1',
+    analysis: '屏幕上显示一个终端窗口。'
+  });
 });
 
 test('ToolExecutor rejects unsupported live2d semantic args by schema', async () => {
