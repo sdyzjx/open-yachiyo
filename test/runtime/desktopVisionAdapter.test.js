@@ -172,6 +172,7 @@ test('desktop inspect region forwards capture args and returns analysis payload'
         path: '/tmp/cap_region_1.png',
         mime_type: 'image/png',
         display_id: 'display:1',
+        display_ids: ['display:1'],
         bounds: { x: 10, y: 20, width: 300, height: 160 },
         pixel_size: { width: 600, height: 320 },
         scale_factor: 2
@@ -198,7 +199,41 @@ test('desktop inspect region forwards capture args and returns analysis payload'
   const result = JSON.parse(raw);
   assert.equal(result.capture_id, 'cap_region_1');
   assert.equal(result.analysis, '按钮处于禁用状态。');
+  assert.deepEqual(result.display_ids, ['display:1']);
   assert.deepEqual(result.bounds, { x: 10, y: 20, width: 300, height: 160 });
+});
+
+test('desktop inspect region preserves multi-display capture metadata', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async () => ({
+      capture_id: 'cap_region_multi',
+      path: '/tmp/cap_region_multi.png',
+      mime_type: 'image/png',
+      display_ids: ['display:1', 'display:2'],
+      bounds: { x: -100, y: 10, width: 200, height: 40 },
+      pixel_size: { width: 200, height: 40 },
+      scale_factor: 1
+    }),
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('region-multi')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'final', output: '这个区域横跨左右两个显示器。' })
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.region']({
+    x: -100,
+    y: 10,
+    width: 200,
+    height: 40,
+    prompt: '这个区域跨了几块屏幕？'
+  }, {});
+
+  const result = JSON.parse(raw);
+  assert.deepEqual(result.display_ids, ['display:1', 'display:2']);
+  assert.equal(result.analysis, '这个区域横跨左右两个显示器。');
 });
 
 test('desktop inspect window forwards selector args and returns window metadata', async () => {

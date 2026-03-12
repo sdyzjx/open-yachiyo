@@ -244,7 +244,7 @@ function createDesktopCaptureService({
     return result;
   }
 
-  async function captureDesktop() {
+  async function composeVirtualDesktopCapture() {
     const nativeImageAdapter = nativeImage || require('electron').nativeImage;
     if (!nativeImageAdapter || typeof nativeImageAdapter.createFromBitmap !== 'function') {
       throw new Error('desktop capture service requires Electron nativeImage.createFromBitmap');
@@ -274,6 +274,9 @@ function createDesktopCaptureService({
       if ((currentSize.width !== tileWidth || currentSize.height !== tileHeight) && typeof image.resize === 'function') {
         image = image.resize({ width: tileWidth, height: tileHeight });
       }
+      if (normalizeImageSize(image).width !== tileWidth || normalizeImageSize(image).height !== tileHeight) {
+        throw new Error(`screen source resize mismatch for ${display.id}`);
+      }
       const bitmap = image.toBitmap();
       if (!Buffer.isBuffer(bitmap) || bitmap.length !== tileWidth * tileHeight * 4) {
         throw new Error(`screen source bitmap size mismatch for ${display.id}`);
@@ -298,21 +301,32 @@ function createDesktopCaptureService({
     if (!image || typeof image.toPNG !== 'function') {
       throw new Error('desktop virtual image assembly failed');
     }
+    return {
+      image,
+      bounds: toPlainBounds(desktopBounds),
+      pixelSize: { width: targetWidth, height: targetHeight },
+      displayIds: displays.map((display) => display.id),
+      displayCount: displays.length
+    };
+  }
+
+  async function captureDesktop() {
+    const composed = await composeVirtualDesktopCapture();
     const result = captureStore.createCaptureRecord({
       scope: 'desktop',
       displayId: '',
-      bounds: toPlainBounds(desktopBounds),
-      pixelSize: { width: targetWidth, height: targetHeight },
+      bounds: composed.bounds,
+      pixelSize: composed.pixelSize,
       scaleFactor: 1,
-      buffer: Buffer.from(image.toPNG()),
+      buffer: Buffer.from(composed.image.toPNG()),
       extra: {
-        display_ids: displays.map((display) => display.id),
-        display_count: displays.length
+        display_ids: composed.displayIds,
+        display_count: composed.displayCount
       }
     });
     logger.info?.('[desktop-perception] capture desktop created', {
       capture_id: result.capture_id,
-      display_count: displays.length,
+      display_count: composed.displayCount,
       bounds: result.bounds
     });
     return result;
@@ -346,7 +360,37 @@ function createDesktopCaptureService({
       };
       display = perceptionService.resolveDisplayForBounds(globalBounds);
       if (!display) {
-        throw new Error('desktop.capture.region currently requires the region to fit within a single display');
+        const composed = await composeVirtualDesktopCapture();
+        if (!boundsContainBounds(composed.bounds, globalBounds)) {
+          throw new Error('desktop.capture.region requires the requested bounds to stay within the virtual desktop');
+        }
+        if (typeof composed.image.crop !== 'function') {
+          throw new Error('desktop virtual image cropping is unavailable');
+        }
+        const cropped = composed.image.crop({
+          x: Math.max(0, Math.round(globalBounds.x - composed.bounds.x)),
+          y: Math.max(0, Math.round(globalBounds.y - composed.bounds.y)),
+          width: Math.max(1, Math.round(globalBounds.width)),
+          height: Math.max(1, Math.round(globalBounds.height))
+        });
+        const result = captureStore.createCaptureRecord({
+          scope: 'region',
+          displayId: '',
+          bounds: toPlainBounds(globalBounds),
+          pixelSize: normalizeImageSize(cropped),
+          scaleFactor: 1,
+          buffer: Buffer.from(cropped.toPNG()),
+          extra: {
+            display_ids: composed.displayIds,
+            display_count: composed.displayCount
+          }
+        });
+        logger.info?.('[desktop-perception] capture region created', {
+          capture_id: result.capture_id,
+          display_ids: result.display_ids,
+          bounds: result.bounds
+        });
+        return result;
       }
     }
 

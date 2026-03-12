@@ -100,6 +100,12 @@ inspect 工具直接读取桌面 capture 文件并转为：
 - 整个桌面当前是什么工作状态
 - 左右屏分别出现了什么窗口或弹窗
 
+### 4.6 Cross-display region inspect
+
+`desktop.inspect.region` 现在可以继承跨显示器区域截图的 metadata：
+- 当 region 覆盖多块屏幕时，返回结果里的 `display_ids` 会列出所有涉及的显示器
+- 这样 agent 可以在分析文本里区分“单屏局部问题”和“跨屏连续区域”
+
 ## 5. Test coverage
 
 本阶段测试包括：

@@ -230,6 +230,58 @@ test('desktop capture service captures one region within a single display', asyn
   assert.deepEqual(record.pixel_size, { width: 200, height: 100 });
 });
 
+test('desktop capture service captures one region across multiple displays via virtual desktop composition', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'screen:1:0', display_id: '1', thumbnail: createFakeImage({ width: 1280, height: 720, label: 'left' }) },
+        { id: 'screen:2:0', display_id: '2', thumbnail: createFakeImage({ width: 3024, height: 1964, label: 'primary' }) }
+      ];
+    }
+  };
+  const nativeImage = {
+    createFromBitmap(buffer, options) {
+      return {
+        getSize() {
+          return { width: options.width, height: options.height };
+        },
+        toPNG() {
+          return Buffer.from(`desktop:${options.width}x${options.height}:${buffer.length}`);
+        },
+        crop(rect) {
+          return createFakeImage({
+            width: rect.width,
+            height: rect.height,
+            label: `desktop-crop:${rect.x},${rect.y}`
+          });
+        }
+      };
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    nativeImage,
+    logger: { info() {} }
+  });
+
+  const record = await captureService.captureRegion({
+    x: -100,
+    y: 10,
+    width: 200,
+    height: 40
+  });
+
+  assert.equal(record.scope, 'region');
+  assert.equal(record.display_id, '');
+  assert.deepEqual(record.display_ids, ['display:1', 'display:2']);
+  assert.equal(record.display_count, 2);
+  assert.deepEqual(record.bounds, { x: -100, y: 10, width: 200, height: 40 });
+  assert.deepEqual(record.pixel_size, { width: 200, height: 40 });
+});
+
 test('desktop capture service lists capturable windows', async () => {
   const { perceptionService, captureStore } = createTestServices();
   const desktopCapturer = {
