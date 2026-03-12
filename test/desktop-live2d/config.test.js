@@ -16,10 +16,13 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   const yachiyoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-home-'));
   const config = resolveDesktopLive2dConfig({ env: { YACHIYO_HOME: yachiyoHome } });
 
+  assert.equal(config.assetRoot, config.projectRoot);
+  assert.equal(config.workspaceRoot, config.projectRoot);
   assert.equal(config.rpcPort, 17373);
   assert.equal(config.modelJsonName, '八千代辉夜姬.model3.json');
   assert.ok(config.modelRelativePath.includes('assets/live2d/yachiyo-kaguya/八千代辉夜姬.model3.json'));
   assert.ok(config.windowStatePath.endsWith(path.join('desktop-live2d', 'window-state.json')));
+  assert.equal(config.desktopCaptureDir, path.join(yachiyoHome, 'data', 'desktop-live2d', 'captures'));
   assert.equal(config.gatewayExternal, false);
   assert.equal(config.desktopCaptureTtlMs, 5 * 60 * 1000);
   assert.equal(config.desktopCaptureCleanupIntervalMs, 60 * 1000);
@@ -68,9 +71,12 @@ test('resolveDesktopLive2dConfig respects env overrides', () => {
       DESKTOP_LIVE2D_CAPTURE_TTL_MS: '90000',
       DESKTOP_LIVE2D_CAPTURE_CLEANUP_INTERVAL_MS: '15000'
     },
-    projectRoot: '/tmp/project'
+    assetRoot: '/tmp/app.asar',
+    workspaceRoot: '/tmp/project'
   });
 
+  assert.equal(config.assetRoot, '/tmp/app.asar');
+  assert.equal(config.workspaceRoot, '/tmp/project');
   assert.equal(config.gatewayPort, 3100);
   assert.equal(config.gatewayUrl, 'http://127.0.0.1:3200');
   assert.equal(config.rpcPort, 18080);
@@ -78,6 +84,19 @@ test('resolveDesktopLive2dConfig respects env overrides', () => {
   assert.equal(config.gatewayExternal, true);
   assert.equal(config.desktopCaptureTtlMs, 90000);
   assert.equal(config.desktopCaptureCleanupIntervalMs, 15000);
+  assert.equal(config.modelDir, path.join('/tmp/app.asar', 'assets', 'live2d', 'yachiyo-kaguya'));
+});
+
+test('resolveDesktopLive2dConfig keeps projectRoot as backward-compatible asset alias', () => {
+  const yachiyoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-home-'));
+  const config = resolveDesktopLive2dConfig({
+    env: { YACHIYO_HOME: yachiyoHome },
+    projectRoot: '/tmp/project'
+  });
+
+  assert.equal(config.assetRoot, '/tmp/project');
+  assert.equal(config.workspaceRoot, '/tmp/project');
+  assert.equal(config.projectRoot, '/tmp/project');
   assert.equal(config.modelDir, path.join('/tmp/project', 'assets', 'live2d', 'yachiyo-kaguya'));
 });
 
