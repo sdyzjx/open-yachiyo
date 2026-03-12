@@ -8,6 +8,7 @@
 - Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`
 - 施工与阶段计划：`docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
 - 桌面感知阶段计划：`docs/DESKTOP_PERCEPTION_DEVELOPMENT_PLAN.md`
+- 桌面感知执行 planner：`docs/DESKTOP_PERCEPTION_EXECUTION_PLANNER.md`
 - 开发与排障日志：`docs/process/desktop-live2d-resize-dragzone-debug-log.md`
 - Lipsync 开发日志：`docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`
 
