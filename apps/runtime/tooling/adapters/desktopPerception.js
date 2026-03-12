@@ -211,6 +211,7 @@ function createDesktopPerceptionAdapters({
     },
     'desktop.displays.list': buildAdapter('desktop.perception.displays.list', invokeRpc),
     'desktop.windows.list': buildAdapter('desktop.perception.windows.list', invokeRpc),
+    'desktop.capture.desktop': buildAdapter('desktop.capture.desktop', invokeRpc),
     'desktop.capture.screen': buildAdapter('desktop.capture.screen', invokeRpc),
     'desktop.capture.region': buildAdapter('desktop.capture.region', invokeRpc),
     'desktop.capture.window': buildAdapter('desktop.capture.window', invokeRpc),

@@ -27,10 +27,12 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.motion.play'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.desktop'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.desktop'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.window'));
@@ -44,18 +46,23 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
 
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
+  const desktopVirtualCapture = tools.find((tool) => tool.name === 'desktop.capture.desktop');
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
   const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
   const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
+  const desktopInspectDesktop = tools.find((tool) => tool.name === 'desktop.inspect.desktop');
   const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
   const desktopInspectWindow = tools.find((tool) => tool.name === 'desktop.inspect.window');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
+  assert.equal(desktopVirtualCapture?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopVirtualCapture?.requires_lock), true);
   assert.equal(desktopCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
   assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopInspectDesktop?.requires_lock), true);
   assert.equal(desktopInspect?.side_effect_level, 'read');
   assert.equal(Boolean(desktopInspect?.requires_lock), true);
   assert.equal(Boolean(desktopInspectWindow?.requires_lock), true);
@@ -107,6 +114,12 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
         run: async () => JSON.stringify({ screen_capture: true, desktop_inspect: false })
       };
     }
+    if (name === 'desktop.capture.desktop') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] })
+      };
+    }
     if (name === 'desktop.capture.delete') {
       return {
         ...tool,
@@ -120,6 +133,7 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   const displays = await executor.execute({ name: 'desktop.displays.list', args: {} });
   const windows = await executor.execute({ name: 'desktop.windows.list', args: {} });
   const capabilities = await executor.execute({ name: 'desktop.perception.capabilities', args: {} });
+  const desktopCapture = await executor.execute({ name: 'desktop.capture.desktop', args: {} });
   const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
 
   assert.equal(displays.ok, true);
@@ -128,6 +142,8 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   assert.deepEqual(JSON.parse(windows.result), { windows: [{ source_id: 'window:42:0', title: 'Browser' }] });
   assert.equal(capabilities.ok, true);
   assert.deepEqual(JSON.parse(capabilities.result), { screen_capture: true, desktop_inspect: false });
+  assert.equal(desktopCapture.ok, true);
+  assert.deepEqual(JSON.parse(desktopCapture.result), { capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] });
   assert.equal(deleted.ok, true);
   assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
 });
@@ -151,6 +167,17 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
         })
       };
     }
+    if (name === 'desktop.inspect.desktop') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({
+          ok: true,
+          capture_id: 'cap-desktop-1',
+          display_ids: ['display:1', 'display:2'],
+          analysis: '整个桌面包含一个编辑器和一个浏览器窗口。'
+        })
+      };
+    }
     if (name === 'desktop.inspect.window') {
       return {
         ...tool,
@@ -171,6 +198,10 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
     name: 'desktop.inspect.screen',
     args: { prompt: '这张图里有什么？' }
   });
+  const inspectedDesktop = await executor.execute({
+    name: 'desktop.inspect.desktop',
+    args: { prompt: '这个多显示器桌面上有什么？' }
+  });
 
   assert.equal(inspected.ok, true);
   assert.deepEqual(JSON.parse(inspected.result), {
@@ -178,6 +209,13 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
     capture_id: 'cap-inspect-1',
     display_id: 'display:1',
     analysis: '屏幕上显示一个终端窗口。'
+  });
+  assert.equal(inspectedDesktop.ok, true);
+  assert.deepEqual(JSON.parse(inspectedDesktop.result), {
+    ok: true,
+    capture_id: 'cap-desktop-1',
+    display_ids: ['display:1', 'display:2'],
+    analysis: '整个桌面包含一个编辑器和一个浏览器窗口。'
   });
 
   const inspectedWindow = await executor.execute({

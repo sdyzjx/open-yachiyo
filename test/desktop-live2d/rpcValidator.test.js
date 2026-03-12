@@ -66,6 +66,12 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     method: 'desktop.perception.windows.list',
     params: {}
   });
+  const desktopCapture = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capture-desktop-1',
+    method: 'desktop.capture.desktop',
+    params: {}
+  });
   const regionCapture = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'capture-1',
@@ -90,8 +96,10 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
   assert.equal(capabilities.ok, true);
   assert.equal(displaysList.ok, true);
   assert.equal(windowsList.ok, true);
+  assert.equal(desktopCapture.ok, true);
   assert.equal(regionCapture.ok, true);
   assert.equal(windowCapture.ok, true);
+  assert.equal(desktopCapture.request.method, 'desktop.capture.desktop');
   assert.equal(regionCapture.request.method, 'desktop.capture.region');
   assert.equal(windowCapture.request.method, 'desktop.capture.window');
 });

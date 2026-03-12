@@ -118,6 +118,14 @@ test('desktop perception adapters return JSON strings from runtime tools', async
         }));
         return;
       }
+      if (req.method === 'desktop.capture.desktop') {
+        ws.send(JSON.stringify({
+          jsonrpc: '2.0',
+          id: req.id,
+          result: { capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] }
+        }));
+        return;
+      }
       ws.send(JSON.stringify({
         jsonrpc: '2.0',
         id: req.id,
@@ -143,10 +151,12 @@ test('desktop perception adapters return JSON strings from runtime tools', async
 
   const displays = await desktopPerceptionAdapters['desktop.displays.list']({}, { trace_id: 'trace-a' });
   const windows = await desktopPerceptionAdapters['desktop.windows.list']({}, { trace_id: 'trace-w' });
+  const desktopCapture = await desktopPerceptionAdapters['desktop.capture.desktop']({}, { trace_id: 'trace-desktop' });
   const deleted = await desktopPerceptionAdapters['desktop.capture.delete']({ capture_id: 'cap-a' }, { trace_id: 'trace-b' });
 
   assert.deepEqual(JSON.parse(displays), { displays: [{ id: 'display:1', primary: true }] });
   assert.deepEqual(JSON.parse(windows), { windows: [{ source_id: 'window:42:0', title: 'Browser' }] });
+  assert.deepEqual(JSON.parse(desktopCapture), { capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] });
   assert.deepEqual(JSON.parse(deleted), { ok: true, deleted: true, capture_id: 'cap-a' });
 });
 

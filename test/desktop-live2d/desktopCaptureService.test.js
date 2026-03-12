@@ -8,6 +8,7 @@ const { createDesktopPerceptionService } = require('../../apps/desktop-live2d/ma
 const { createDesktopCaptureStore } = require('../../apps/desktop-live2d/main/desktopCaptureStore');
 const {
   createDesktopCaptureService,
+  computeVirtualDesktopBounds,
   normalizeRegionCaptureRequest,
   normalizeWindowCaptureRequest,
   normalizeWindowSelector,
@@ -16,12 +17,23 @@ const {
 } = require('../../apps/desktop-live2d/main/desktopCaptureService');
 
 function createFakeImage({ width, height, label = 'img' }) {
+  const fillByte = label.charCodeAt(0) || 0;
   return {
     getSize() {
       return { width, height };
     },
     toPNG() {
       return Buffer.from(`${label}:${width}x${height}`);
+    },
+    toBitmap() {
+      return Buffer.alloc(width * height * 4, fillByte);
+    },
+    resize({ width: nextWidth, height: nextHeight }) {
+      return createFakeImage({
+        width: nextWidth,
+        height: nextHeight,
+        label: `resize:${label}`
+      });
     },
     crop(rect) {
       return createFakeImage({
@@ -104,6 +116,20 @@ test('normalizeWindowTitle falls back to empty string', () => {
   assert.equal(normalizeWindowTitle({}), '');
 });
 
+test('computeVirtualDesktopBounds merges all display bounds', () => {
+  const bounds = computeVirtualDesktopBounds([
+    { bounds: { x: -1280, y: 0, width: 1280, height: 720 } },
+    { bounds: { x: 0, y: 0, width: 1512, height: 982 } }
+  ]);
+
+  assert.deepEqual(bounds, {
+    x: -1280,
+    y: 0,
+    width: 2792,
+    height: 982
+  });
+});
+
 test('desktop capture service captures one full display', async () => {
   const { perceptionService, captureStore } = createTestServices();
   const desktopCapturer = {
@@ -126,6 +152,51 @@ test('desktop capture service captures one full display', async () => {
   assert.equal(record.display_id, 'display:2');
   assert.deepEqual(record.pixel_size, { width: 3024, height: 1964 });
   assert.equal(fs.existsSync(record.path), true);
+});
+
+test('desktop capture service captures the full virtual desktop across displays', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const createBitmapCalls = [];
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'screen:1:0', display_id: '1', thumbnail: createFakeImage({ width: 1280, height: 720, label: 'left' }) },
+        { id: 'screen:2:0', display_id: '2', thumbnail: createFakeImage({ width: 3024, height: 1964, label: 'primary' }) }
+      ];
+    }
+  };
+  const nativeImage = {
+    createFromBitmap(buffer, options) {
+      createBitmapCalls.push({
+        bytes: buffer.length,
+        options
+      });
+      return createFakeImage({
+        width: options.width,
+        height: options.height,
+        label: `desktop:${options.width}x${options.height}`
+      });
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    nativeImage,
+    logger: { info() {} }
+  });
+
+  const record = await captureService.captureDesktop();
+  assert.equal(record.scope, 'desktop');
+  assert.equal(record.display_id, '');
+  assert.deepEqual(record.display_ids, ['display:1', 'display:2']);
+  assert.equal(record.display_count, 2);
+  assert.deepEqual(record.bounds, { x: -1280, y: 0, width: 2792, height: 982 });
+  assert.deepEqual(record.pixel_size, { width: 2792, height: 982 });
+  assert.deepEqual(createBitmapCalls, [{
+    bytes: 2792 * 982 * 4,
+    options: { width: 2792, height: 982, scaleFactor: 1 }
+  }]);
 });
 
 test('desktop capture service captures one region within a single display', async () => {

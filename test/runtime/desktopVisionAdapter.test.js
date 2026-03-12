@@ -23,11 +23,13 @@ test('desktop vision normalizeCaptureRecord validates required fields', () => {
     path: '/tmp/cap_1.png',
     mime_type: 'image/png',
     display_id: 'display:1',
+    display_ids: ['display:1', 'display:2'],
     source_id: 'window:42:0',
     window_title: 'Browser'
   });
   assert.equal(record.capture_id, 'cap_1');
   assert.equal(record.path, '/tmp/cap_1.png');
+  assert.deepEqual(record.display_ids, ['display:1', 'display:2']);
   assert.equal(record.source_id, 'window:42:0');
   assert.equal(record.window_title, 'Browser');
   assert.throws(() => normalizeCaptureRecord({ capture_id: 'cap_2' }), /incomplete/i);
@@ -118,6 +120,40 @@ test('desktop inspect screen captures and performs multimodal subcall', async ()
   assert.deepEqual(reasonerCalls[0].tools, []);
   assert.equal(reasonerCalls[0].messages[1].content[0].text, '这张截图里有什么？');
   assert.match(reasonerCalls[0].messages[1].content[1].image_url.url, /^data:image\/png;base64,/);
+});
+
+test('desktop inspect desktop captures the virtual desktop and returns display metadata', async () => {
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async ({ method, params }) => {
+      assert.equal(method, 'desktop.capture.desktop');
+      assert.deepEqual(params, {});
+      return {
+        capture_id: 'cap_desktop_1',
+        path: '/tmp/cap_desktop_1.png',
+        mime_type: 'image/png',
+        display_ids: ['display:1', 'display:2'],
+        bounds: { x: -1280, y: 0, width: 2792, height: 982 },
+        pixel_size: { width: 2792, height: 982 },
+        scale_factor: 1
+      };
+    },
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('desktop-bytes')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'final', output: '左侧屏幕是编辑器，右侧屏幕是浏览器。' })
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.desktop']({
+    prompt: '描述这个多显示器桌面。'
+  }, {});
+
+  const result = JSON.parse(raw);
+  assert.equal(result.capture_id, 'cap_desktop_1');
+  assert.deepEqual(result.display_ids, ['display:1', 'display:2']);
+  assert.equal(result.analysis, '左侧屏幕是编辑器，右侧屏幕是浏览器。');
 });
 
 test('desktop inspect region forwards capture args and returns analysis payload', async () => {
