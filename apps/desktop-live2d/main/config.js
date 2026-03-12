@@ -51,7 +51,16 @@ function normalizeDragZoneConfig(input = {}, defaults = DEFAULT_UI_CONFIG.intera
   };
 }
 
-function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_ROOT } = {}) {
+function resolveDesktopLive2dConfig({
+  env = process.env,
+  projectRoot = null,
+  assetRoot = null,
+  workspaceRoot = null
+} = {}) {
+  const resolvedAssetRoot = path.resolve(assetRoot || projectRoot || PROJECT_ROOT);
+  const resolvedWorkspaceRoot = workspaceRoot
+    ? path.resolve(workspaceRoot)
+    : (projectRoot ? path.resolve(projectRoot) : resolvedAssetRoot);
   const runtimePaths = getRuntimePaths({ env });
   const gatewayPort = toPositiveInt(env.PORT, 3000);
   const gatewayUrl = env.DESKTOP_GATEWAY_URL || `http://127.0.0.1:${gatewayPort}`;
@@ -72,12 +81,15 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
     Math.min(desktopCaptureTtlMs, 60 * 1000)
   );
   const uiConfig = loadDesktopLive2dUiConfig(uiConfigPath, {
-    templatePath: path.resolve(projectRoot, 'config', 'desktop-live2d.json')
+    templatePath: path.resolve(resolvedAssetRoot, 'config', 'desktop-live2d.json')
   });
 
   return {
-    projectRoot,
-    modelDir: path.join(projectRoot, MODEL_ASSET_RELATIVE_DIR),
+    assetRoot: resolvedAssetRoot,
+    workspaceRoot: resolvedWorkspaceRoot,
+    // Keep the legacy field for existing callers that still treat projectRoot as the asset root.
+    projectRoot: resolvedAssetRoot,
+    modelDir: path.join(resolvedAssetRoot, MODEL_ASSET_RELATIVE_DIR),
     modelJsonName: MODEL_JSON_NAME,
     modelRelativePath: toPortablePath(path.join('..', '..', '..', MODEL_ASSET_RELATIVE_DIR, MODEL_JSON_NAME)),
     runtimeSummaryPath: path.resolve(
@@ -90,7 +102,7 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
       env.DESKTOP_LIVE2D_BACKUP_ROOT || path.join(runtimePaths.dataDir, 'backups', 'live2d')
     ),
     desktopCaptureDir: path.resolve(
-      env.DESKTOP_LIVE2D_CAPTURE_DIR || path.join(projectRoot, DESKTOP_CAPTURE_RELATIVE_DIR)
+      env.DESKTOP_LIVE2D_CAPTURE_DIR || path.join(runtimePaths.home, DESKTOP_CAPTURE_RELATIVE_DIR)
     ),
     desktopCaptureTtlMs,
     desktopCaptureCleanupIntervalMs,

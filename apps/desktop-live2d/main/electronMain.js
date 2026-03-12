@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = 
 
 const { startDesktopSuite } = require('./desktopSuite');
 const { createTrayController } = require('./trayController');
+const { resolveDesktopPathRoots } = require('./desktopPathRoots');
 
 const ONBOARDING_CHECK_INTERVAL_MS = 2500;
 const HTTP_TIMEOUT_MS = 5000;
@@ -169,13 +170,19 @@ async function bootstrap() {
       return suite;
     }
 
+    const roots = resolveDesktopPathRoots({
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath()
+    });
+
     suite = await startDesktopSuite({
       app,
       BrowserWindow,
       ipcMain,
       screen,
       shell,
-      projectRoot: app.getAppPath(),
+      assetRoot: roots.assetRoot,
+      workspaceRoot: roots.workspaceRoot,
       onResizeModeChange: (enabled) => {
         trayController?.setResizeModeEnabled(enabled);
       },
@@ -187,7 +194,7 @@ async function bootstrap() {
         Tray,
         Menu,
         nativeImage,
-        projectRoot: suite?.config?.projectRoot || app.getAppPath(),
+        projectRoot: suite?.config?.assetRoot || roots.assetRoot,
         onShow: () => {
           showPetWindow();
         },

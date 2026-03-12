@@ -75,9 +75,10 @@ function normalizeLive2dPresetConfig(config = {}) {
   };
 }
 
-function loadLive2dPresetConfig({ projectRoot, env = process.env, logger = console } = {}) {
+function loadLive2dPresetConfig({ assetRoot = null, projectRoot = null, env = process.env, logger = console } = {}) {
+  const resolvedAssetRoot = assetRoot || projectRoot || process.cwd();
   const presetPath = path.resolve(
-    env.LIVE2D_PRESETS_PATH || path.join(projectRoot || process.cwd(), 'config', 'live2d-presets.yaml')
+    env.LIVE2D_PRESETS_PATH || path.join(resolvedAssetRoot, 'config', 'live2d-presets.yaml')
   );
 
   try {
@@ -1625,6 +1626,8 @@ async function startDesktopSuite({
   screen,
   systemPreferences = null,
   shell = null,
+  assetRoot = null,
+  workspaceRoot = null,
   projectRoot = null,
   onResizeModeChange = null,
   logger = console,
@@ -1635,14 +1638,15 @@ async function startDesktopSuite({
   }
 
   const config = resolveDesktopLive2dConfig({
-    projectRoot: projectRoot || undefined
+    assetRoot: assetRoot || projectRoot || undefined,
+    workspaceRoot: workspaceRoot || projectRoot || undefined
   });
   const modelValidation = validateModelAssetDirectory({
     modelDir: config.modelDir,
     modelJsonName: config.modelJsonName
   });
   const live2dPresetConfig = loadLive2dPresetConfig({
-    projectRoot: config.projectRoot,
+    assetRoot: config.assetRoot,
     env: process.env,
     logger
   });
@@ -1670,7 +1674,7 @@ async function startDesktopSuite({
   });
 
   const gatewaySupervisor = new GatewaySupervisor({
-    projectRoot: config.projectRoot,
+    projectRoot: config.assetRoot,
     gatewayUrl: config.gatewayUrl,
     gatewayHost: config.gatewayHost,
     gatewayPort: config.gatewayPort,
@@ -1723,8 +1727,8 @@ async function startDesktopSuite({
     bubbleWidth: bubbleRuntimeConfig.width,
     bubbleHeight: bubbleRuntimeConfig.height
   });
-  await chatWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
-  await bubbleWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
+  await chatWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
+  await bubbleWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
 
   const chatPanelConfig = config.uiConfig?.chat?.panel || {};
   const chatState = {
@@ -3233,7 +3237,7 @@ async function startDesktopSuite({
 
   const rendererReadyPromise = waitForRendererReady({ ipcMain, timeoutMs: 15000 });
 
-  await avatarWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
+  await avatarWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
   await rendererReadyPromise;
   syncAvatarWindowMousePassthrough();
   syncChatStateToRenderer();
