@@ -41,6 +41,7 @@ const {
   createBubbleMetricsListener,
   createActionTelemetryListener,
   createChatInputListener,
+  createCaptureCleanupController,
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,
@@ -1229,6 +1230,55 @@ test('handleDesktopRpcRequest resolves local desktop capture tool without touchi
   assert.deepEqual(calls, [{ display_id: 'display:2' }]);
   assert.equal(result.ok, true);
   assert.deepEqual(result.result, { capture_id: 'cap_1', display_id: 'display:2' });
+});
+
+test('createCaptureCleanupController schedules cleanup and logs only capture ids', () => {
+  const intervals = [];
+  const cleared = [];
+  const loggerCalls = [];
+  const controller = createCaptureCleanupController({
+    captureStore: {
+      cleanupExpiredCaptures(referenceNow) {
+        return {
+          ok: true,
+          deleted_count: referenceNow === 42 ? 1 : 0,
+          deleted_capture_ids: referenceNow === 42 ? ['cap_old_1'] : []
+        };
+      }
+    },
+    intervalMs: 5000,
+    now: () => 99,
+    logger: {
+      info(message, payload) {
+        loggerCalls.push({ message, payload });
+      }
+    },
+    setIntervalFn(handler, interval) {
+      intervals.push({ handler, interval });
+      return 'timer-1';
+    },
+    clearIntervalFn(timer) {
+      cleared.push(timer);
+    }
+  });
+
+  assert.equal(intervals.length, 1);
+  assert.equal(intervals[0].interval, 5000);
+  assert.deepEqual(controller.runOnce(42), {
+    ok: true,
+    deleted_count: 1,
+    deleted_capture_ids: ['cap_old_1']
+  });
+  assert.deepEqual(loggerCalls, [{
+    message: '[desktop-perception] cleaned expired captures',
+    payload: {
+      deleted_count: 1,
+      deleted_capture_ids: ['cap_old_1']
+    }
+  }]);
+
+  controller.stop();
+  assert.deepEqual(cleared, ['timer-1']);
 });
 
 test('isNewSessionCommand matches /new command only', () => {

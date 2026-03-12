@@ -1657,6 +1657,11 @@ async function startDesktopSuite({
     captureStore,
     logger
   });
+  const captureCleanupController = createCaptureCleanupController({
+    captureStore,
+    intervalMs: config.desktopCaptureCleanupIntervalMs,
+    logger
+  });
 
   logger.info?.('[desktop-live2d] desktop_up_start', {
     modelDir: config.modelDir,
@@ -3320,6 +3325,7 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
     mouthWaveformRecorder.dispose();
+    captureCleanupController.stop();
 
     if (rpcServerRef) {
       await rpcServerRef.stop();
@@ -3505,6 +3511,46 @@ function createChatInputListener({ logger = console, onChatInput = null } = {}) 
     });
     if (typeof onChatInput === 'function') {
       onChatInput(normalized);
+    }
+  };
+}
+
+function createCaptureCleanupController({
+  captureStore = null,
+  intervalMs = 60 * 1000,
+  logger = console,
+  setIntervalFn = setInterval,
+  clearIntervalFn = clearInterval,
+  now = () => Date.now()
+} = {}) {
+  if (!captureStore || typeof captureStore.cleanupExpiredCaptures !== 'function') {
+    return {
+      runOnce() {
+        return { ok: false, deleted_count: 0, deleted_capture_ids: [] };
+      },
+      stop() {}
+    };
+  }
+
+  function runOnce(referenceNow = now()) {
+    const result = captureStore.cleanupExpiredCaptures(referenceNow);
+    if (result.deleted_count > 0) {
+      logger.info?.('[desktop-perception] cleaned expired captures', {
+        deleted_count: result.deleted_count,
+        deleted_capture_ids: result.deleted_capture_ids
+      });
+    }
+    return result;
+  }
+
+  const timer = setIntervalFn(() => {
+    runOnce();
+  }, Math.max(1000, Number(intervalMs) || 60 * 1000));
+
+  return {
+    runOnce,
+    stop() {
+      clearIntervalFn(timer);
     }
   };
 }
@@ -4077,6 +4123,7 @@ module.exports = {
   createBubbleMetricsListener,
   createActionTelemetryListener,
   createChatInputListener,
+  createCaptureCleanupController,
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,

@@ -79,6 +79,28 @@ function sanitizeCaptureArgs(args = {}) {
   return cloned;
 }
 
+function normalizeInspectError(err, { stage, captureId = null } = {}) {
+  if (err instanceof ToolingError) {
+    if (captureId && (!err.details || !Object.hasOwn(err.details, 'capture_id'))) {
+      err.details = {
+        ...(err.details || {}),
+        capture_id: captureId,
+        stage
+      };
+    }
+    return err;
+  }
+
+  return new ToolingError(
+    ErrorCode.RUNTIME_ERROR,
+    `desktop inspect failed during ${stage}: ${err?.message || String(err || 'unknown error')}`,
+    {
+      stage,
+      capture_id: captureId
+    }
+  );
+}
+
 function extractFinalAnalysis(decision) {
   if (!decision || typeof decision !== 'object') {
     throw new ToolingError(ErrorCode.RUNTIME_ERROR, 'desktop inspect LLM returned no decision');
@@ -106,30 +128,52 @@ function createDesktopVisionAdapters({
 } = {}) {
   async function inspectViaCapture({ captureMethod, captureArgs = {}, prompt, traceId = null }) {
     const normalizedPrompt = normalizePrompt(prompt);
-    const captureRecord = normalizeCaptureRecord(await invokeRpc({
-      method: captureMethod,
-      params: sanitizeCaptureArgs(captureArgs),
-      traceId
-    }));
-    const imageDataUrl = readCaptureAsDataUrl(captureRecord, { fsModule });
-    const reasoner = await Promise.resolve(getReasoner());
-    const decision = await reasoner.decide({
-      messages: buildInspectMessages({
-        prompt: normalizedPrompt,
-        imageDataUrl
-      }),
-      tools: []
-    });
-    const analysis = extractFinalAnalysis(decision);
-    return JSON.stringify({
-      ok: true,
-      capture_id: captureRecord.capture_id,
-      display_id: captureRecord.display_id || null,
-      bounds: captureRecord.bounds,
-      pixel_size: captureRecord.pixel_size,
-      scale_factor: captureRecord.scale_factor,
-      analysis
-    });
+    let captureRecord = null;
+    try {
+      captureRecord = normalizeCaptureRecord(await invokeRpc({
+        method: captureMethod,
+        params: sanitizeCaptureArgs(captureArgs),
+        traceId
+      }));
+    } catch (err) {
+      throw normalizeInspectError(err, { stage: 'capture' });
+    }
+
+    let imageDataUrl;
+    try {
+      imageDataUrl = readCaptureAsDataUrl(captureRecord, { fsModule });
+    } catch (err) {
+      throw normalizeInspectError(err, {
+        stage: 'read_capture',
+        captureId: captureRecord.capture_id
+      });
+    }
+
+    try {
+      const reasoner = await Promise.resolve(getReasoner());
+      const decision = await reasoner.decide({
+        messages: buildInspectMessages({
+          prompt: normalizedPrompt,
+          imageDataUrl
+        }),
+        tools: []
+      });
+      const analysis = extractFinalAnalysis(decision);
+      return JSON.stringify({
+        ok: true,
+        capture_id: captureRecord.capture_id,
+        display_id: captureRecord.display_id || null,
+        bounds: captureRecord.bounds,
+        pixel_size: captureRecord.pixel_size,
+        scale_factor: captureRecord.scale_factor,
+        analysis
+      });
+    } catch (err) {
+      throw normalizeInspectError(err, {
+        stage: 'analyze',
+        captureId: captureRecord.capture_id
+      });
+    }
   }
 
   return {
@@ -159,6 +203,7 @@ module.exports = {
     readCaptureAsDataUrl,
     buildInspectMessages,
     sanitizeCaptureArgs,
+    normalizeInspectError,
     extractFinalAnalysis,
     createDesktopVisionAdapters
   }

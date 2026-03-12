@@ -21,6 +21,8 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.ok(config.modelRelativePath.includes('assets/live2d/yachiyo-kaguya/八千代辉夜姬.model3.json'));
   assert.ok(config.windowStatePath.endsWith(path.join('desktop-live2d', 'window-state.json')));
   assert.equal(config.gatewayExternal, false);
+  assert.equal(config.desktopCaptureTtlMs, 5 * 60 * 1000);
+  assert.equal(config.desktopCaptureCleanupIntervalMs, 60 * 1000);
   assert.equal(config.uiConfig.chat.panel.enabled, true);
   assert.equal(config.uiConfig.chat.panel.defaultVisible, false);
   assert.equal(config.uiConfig.window.maxWidth, 900);
@@ -62,7 +64,9 @@ test('resolveDesktopLive2dConfig respects env overrides', () => {
       DESKTOP_GATEWAY_URL: 'http://127.0.0.1:3200',
       DESKTOP_LIVE2D_RPC_PORT: '18080',
       DESKTOP_LIVE2D_RPC_TOKEN: 'fixed',
-      DESKTOP_EXTERNAL_GATEWAY: '1'
+      DESKTOP_EXTERNAL_GATEWAY: '1',
+      DESKTOP_LIVE2D_CAPTURE_TTL_MS: '90000',
+      DESKTOP_LIVE2D_CAPTURE_CLEANUP_INTERVAL_MS: '15000'
     },
     projectRoot: '/tmp/project'
   });
@@ -72,6 +76,8 @@ test('resolveDesktopLive2dConfig respects env overrides', () => {
   assert.equal(config.rpcPort, 18080);
   assert.equal(config.rpcToken, 'fixed');
   assert.equal(config.gatewayExternal, true);
+  assert.equal(config.desktopCaptureTtlMs, 90000);
+  assert.equal(config.desktopCaptureCleanupIntervalMs, 15000);
   assert.equal(config.modelDir, path.join('/tmp/project', 'assets', 'live2d', 'yachiyo-kaguya'));
 });
 
