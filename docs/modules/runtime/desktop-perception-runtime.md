@@ -13,8 +13,8 @@
 - 将桌宠截图能力与当前 LLM provider 可用性合并成 `desktop_inspect`
 
 尚未覆盖：
-- 高层 `desktop_inspect_*`
-- 多模态图片分析
+- loop 层的截图 artifact 注入细节
+- 主模型多模态图片分析流程
 
 ## 2. Module
 
@@ -55,15 +55,17 @@
 
 本阶段所有 desktop perception runtime tools 统一返回 JSON 字符串。
 
-### 4.2 Why no inspect tools yet
+### 4.2 Why perception adapters stay capture-only
 
 当前 runtime 的多模态图片注入链路天然属于：
 - 用户输入图片
 
-而不是：
-- 工具执行后动态生成图片再回灌当前同一轮推理
+本模块因此保持 capture-only：
+- `desktop.capture.*`
+- `desktop.capture.get`
+- `desktop.capture.delete`
 
-因此高层 inspect 工具在下一阶段单独实现。
+图片分析由 loop 在后续阶段统一接管，而不是在 perception adapter 内直接发起子 LLM 调用。
 
 ### 4.3 Capability aggregation
 
@@ -77,7 +79,7 @@
 
 这样 planner 和 agent 可以先判断：
 - 桌面截图是否可用
-- 当前是否具备高层 inspect 的基本前提
+- 当前是否具备“截图后主模型可继续分析”的基本前提
 
 ## 5. Test coverage
 

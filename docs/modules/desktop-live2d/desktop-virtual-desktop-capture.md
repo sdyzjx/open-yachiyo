@@ -6,7 +6,7 @@
 
 目标：
 - 在多显示器场景下提供一张覆盖全部屏幕的拼接截图
-- 让 runtime 侧可以直接调用 `desktop.inspect.desktop`
+- 让 runtime 侧可以直接调用 `desktop.capture.desktop`
 - 保持与现有 `capture store` / TTL / 安全策略一致
 
 ## 2. Module
@@ -29,7 +29,6 @@ desktop main local tool：
 
 runtime tool：
 - `desktop.capture.desktop`
-- `desktop.inspect.desktop`
 
 ## 4. Design
 
@@ -80,8 +79,9 @@ runtime tool：
 
 ## 5. Runtime usage
 
-高层视觉闭环优先使用：
-- `desktop.inspect.desktop`
+高层视觉闭环主路径使用：
+- `desktop.capture.desktop`
+- 后续由 loop 注入截图给主模型分析
 
 适用场景：
 - “看一下我整个桌面现在是什么状态”
@@ -98,4 +98,3 @@ runtime tool：
 - 多显示器拼接 capture 生成
 - RPC / tool 注册
 - runtime perception adapter 暴露 `desktop.capture.desktop`
-- runtime vision adapter 暴露 `desktop.inspect.desktop`

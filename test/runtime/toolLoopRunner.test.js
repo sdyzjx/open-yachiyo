@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { RuntimeEventBus } = require('../../apps/runtime/bus/eventBus');
 const { ToolExecutor } = require('../../apps/runtime/executor/toolExecutor');
@@ -1409,7 +1412,7 @@ test('ToolLoopRunner injects live2d action planning guidance into system prompt'
   dispatcher.stop();
 });
 
-test('ToolLoopRunner injects desktop inspect guidance when desktop inspect tools are available', async () => {
+test('ToolLoopRunner injects desktop capture guidance when desktop capture tools are available', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
   const dispatcher = new ToolCallDispatcher({ bus, executor });
@@ -1421,32 +1424,30 @@ test('ToolLoopRunner injects desktop inspect guidance when desktop inspect tools
     getReasoner: () => ({
       async decide({ messages }) {
         seenMessages = messages;
-        return { type: 'final', output: 'ok-desktop-inspect-guidance' };
+        return { type: 'final', output: 'ok-desktop-capture-guidance' };
       }
     }),
     listTools: () => [
       ...executor.listTools(),
       {
-        name: 'desktop.inspect.screen',
+        name: 'desktop.capture.screen',
         input_schema: {
           type: 'object',
-          properties: { prompt: { type: 'string' } },
-          required: ['prompt'],
+          properties: { display_id: { type: ['string', 'integer'] } },
           additionalProperties: false
         }
       },
       {
-        name: 'desktop.inspect.region',
+        name: 'desktop.capture.region',
         input_schema: {
           type: 'object',
           properties: {
-            prompt: { type: 'string' },
             x: { type: 'integer' },
             y: { type: 'integer' },
             width: { type: 'integer' },
             height: { type: 'integer' }
           },
-          required: ['prompt', 'x', 'y', 'width', 'height'],
+          required: ['x', 'y', 'width', 'height'],
           additionalProperties: false
         }
       }
@@ -1455,18 +1456,18 @@ test('ToolLoopRunner injects desktop inspect guidance when desktop inspect tools
     toolResultTimeoutMs: 500
   });
 
-  const result = await runner.run({ sessionId: 's-desktop-inspect', input: '看一下当前桌面上是什么' });
+  const result = await runner.run({ sessionId: 's-desktop-capture', input: '看一下当前桌面上是什么' });
   assert.equal(result.state, 'DONE');
-  assert.equal(result.output, 'ok-desktop-inspect-guidance');
+  assert.equal(result.output, 'ok-desktop-capture-guidance');
   assert.equal(
-    seenMessages.some((m) => /desktop\.inspect\.screen/.test(String(m.content || '')) && /Do not guess unseen UI details/.test(String(m.content || ''))),
+    seenMessages.some((m) => /desktop\.capture\.screen/.test(String(m.content || '')) && /MUST first call/.test(String(m.content || ''))),
     true
   );
 
   dispatcher.stop();
 });
 
-test('ToolLoopRunner does not inject desktop inspect guidance when tools are unavailable', async () => {
+test('ToolLoopRunner does not inject desktop capture guidance when tools are unavailable', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
   const dispatcher = new ToolCallDispatcher({ bus, executor });
@@ -1478,7 +1479,7 @@ test('ToolLoopRunner does not inject desktop inspect guidance when tools are una
     getReasoner: () => ({
       async decide({ messages }) {
         seenMessages = messages;
-        return { type: 'final', output: 'ok-no-desktop-inspect-guidance' };
+        return { type: 'final', output: 'ok-no-desktop-capture-guidance' };
       }
     }),
     listTools: () => executor.listTools(),
@@ -1486,15 +1487,106 @@ test('ToolLoopRunner does not inject desktop inspect guidance when tools are una
     toolResultTimeoutMs: 500
   });
 
-  const result = await runner.run({ sessionId: 's-no-desktop-inspect', input: 'hello' });
+  const result = await runner.run({ sessionId: 's-no-desktop-capture', input: 'hello' });
   assert.equal(result.state, 'DONE');
-  assert.equal(result.output, 'ok-no-desktop-inspect-guidance');
+  assert.equal(result.output, 'ok-no-desktop-capture-guidance');
   assert.equal(
-    seenMessages.some((m) => /desktop\.inspect\.screen/.test(String(m.content || ''))),
+    seenMessages.some((m) => /desktop\.capture\.screen/.test(String(m.content || ''))),
     false
   );
 
   dispatcher.stop();
+});
+
+test('ToolLoopRunner attaches desktop capture artifact into next reasoner turn', async () => {
+  const bus = new RuntimeEventBus();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-capture-loop-'));
+  const capturePath = path.join(tmpDir, 'capture.png');
+  fs.writeFileSync(capturePath, Buffer.from('not-a-real-png-but-good-enough'));
+
+  const captureTool = {
+    name: 'desktop.capture.screen',
+    input_schema: {
+      type: 'object',
+      properties: { display_id: { type: ['string', 'integer'] } },
+      additionalProperties: false
+    },
+    side_effect_level: 'read',
+    requires_lock: true
+  };
+
+  const executor = {
+    listTools() {
+      return [captureTool];
+    },
+    async execute(tool) {
+      assert.equal(tool.name, 'desktop.capture.screen');
+      return {
+        ok: true,
+        result: JSON.stringify({
+          capture_id: 'cap-loop-1',
+          path: capturePath,
+          mime_type: 'image/png',
+          display_id: 'display:1',
+          bounds: { x: 0, y: 0, width: 1280, height: 720 },
+          pixel_size: { width: 1280, height: 720 },
+          scale_factor: 1
+        })
+      };
+    }
+  };
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const seenMessages = [];
+  let decideCount = 0;
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        decideCount += 1;
+        seenMessages.push(messages);
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: { call_id: 'capture-call-1', name: 'desktop.capture.screen', args: {} }
+          };
+        }
+        return { type: 'final', output: 'desktop-capture-attached-ok' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 1000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-desktop-capture-attach',
+    input: '我桌面上在看什么',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'desktop-capture-attached-ok');
+  assert.equal(decideCount, 2);
+  assert.ok(seenMessages[1].some((message) => (
+    message.role === 'system'
+      && /tool-generated desktop screenshot/i.test(String(message.content || ''))
+  )));
+  const imageMessage = seenMessages[1].find((message) => (
+    message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some((part) => part?.type === 'image_url')
+  ));
+  assert.ok(imageMessage);
+  assert.ok(
+    imageMessage.content.some((part) => part?.type === 'image_url' && /^data:image\/png;base64,/.test(String(part.image_url?.url || '')))
+  );
+  assert.ok(events.some((event) => event.event === 'tool.capture.attached'));
+
+  dispatcher.stop();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test('ToolLoopRunner continues when shell.exec returns APPROVAL_REQUIRED', async () => {

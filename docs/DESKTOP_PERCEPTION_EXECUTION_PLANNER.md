@@ -165,7 +165,7 @@
 - `test/runtime/desktopVisionAdapter.test.js`
 
 覆盖：
-- 正常 screenshot -> multimodal analyze
+- legacy inspect adapter 兼容测试
 - capture 失败
 - multimodal subcall 失败
 - 多显示器参数透传
@@ -180,23 +180,28 @@
 独立 commit：
 - `feat(runtime): add desktop inspect tools`
 
+备注：
+- 这一阶段后来被 capture-first loop 注图方案取代
+- `desktop.inspect.*` 现已降为兼容层，不再是对外主路径
+
 ### Phase 2C: Planner/runtime prompting integration
 
 #### Goal
 
-让 planner 知道什么时候该用桌面视觉工具，而不是继续盲猜。
+让 planner 知道什么时候该先截图，再交给主模型看图，而不是继续盲猜。
 
 #### Changes
 
 更新 planner prompt / system guidance：
-- 当用户问“看一下桌面上是什么”“这个界面报什么错”“看一下这个区域”时，优先调用 `desktop_inspect_*`
+- 当用户问“看一下桌面上是什么”“这个界面报什么错”“看一下这个区域”时，必须先调用 `desktop.capture.*`
+- 截图成功后由 loop 自动把图片注入下一轮模型上下文
 - 避免在没有视觉上下文时臆测 UI 状态
 
 #### Optional additions
 
 新增轻量 prompt hints：
-- 当前 session 存在桌面视觉能力
-- 优先先看后答
+- 当前 session 存在桌面截图能力
+- 先截图、后分析
 
 #### Tests
 
@@ -207,7 +212,7 @@
 #### Commit
 
 独立 commit：
-- `feat(runtime): teach planner to use desktop inspect tools`
+- `feat(runtime): teach planner to use desktop capture tools`
 
 ### Phase 3A: Capabilities and permission surfacing
 
@@ -255,7 +260,7 @@ runtime tool：
 - capture cleanup 定时化
 - debug 日志不输出图像内容
 - 超时/失败错误码统一
-- inspect tools 输出可审计但不过量
+- legacy inspect adapters 输出可审计但不过量
 
 #### Tests
 
@@ -285,7 +290,7 @@ runtime tool：
 #### Deliverables
 
 - `desktop.capture.window`
-- `desktop_inspect_window`
+- 主 loop 继续复用 capture-first 注图分析
 
 #### Commit
 
@@ -312,7 +317,7 @@ runtime tool：
 
 新增建议：
 - `apps/runtime/tooling/adapters/desktopPerception.js`
-- `apps/runtime/tooling/adapters/desktopVision.js`
+- `apps/runtime/tooling/adapters/desktopVision.js`（兼容层，非主链路）
 
 可能修改：
 - `apps/runtime/tooling/toolRegistry.js`
@@ -345,7 +350,7 @@ node --test test/runtime/tooling.test.js test/runtime/toolLoopRunner.test.js tes
 
 1. `feat(runtime): add desktop perception rpc adapter`
 2. `feat(runtime): add desktop inspect tools`
-3. `feat(runtime): teach planner to use desktop inspect tools`
+3. `feat(runtime): teach planner to use desktop capture tools`
 4. `feat(desktop): surface perception capabilities`
 5. `chore(desktop): harden capture cleanup and safety`
 6. `feat(desktop): add window capture support`

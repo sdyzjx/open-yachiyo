@@ -30,11 +30,6 @@ policy:
     - desktop.capture.window
     - desktop.capture.get
     - desktop.capture.delete
-    - desktop.inspect.desktop
-    - desktop.inspect.capture
-    - desktop.inspect.screen
-    - desktop.inspect.region
-    - desktop.inspect.window
   deny: []
   byProvider: {}
 
@@ -398,7 +393,7 @@ tools:
   - name: desktop.perception.capabilities
     type: local
     adapter: desktop.perception.capabilities
-    description: Report whether desktop screen capture and inspect prerequisites are currently available.
+    description: Report whether desktop screen capture and follow-up image analysis prerequisites are currently available.
     side_effect_level: read
     input_schema:
       type: object
@@ -498,93 +493,4 @@ tools:
       anyOf:
         - required: [captureId]
         - required: [capture_id]
-      additionalProperties: false
-
-  - name: desktop.inspect.desktop
-    type: local
-    adapter: desktop.inspect.desktop
-    description: Capture the full virtual desktop and ask the active multimodal LLM to analyze the screenshot against a prompt.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        prompt: { type: string, minLength: 1, maxLength: 2000 }
-      required: [prompt]
-      additionalProperties: false
-
-  - name: desktop.inspect.capture
-    type: local
-    adapter: desktop.inspect.capture
-    description: Reuse one existing desktop capture record and ask the active multimodal LLM to analyze it against a prompt.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        prompt: { type: string, minLength: 1, maxLength: 2000 }
-        captureId: { type: string, minLength: 1, maxLength: 128 }
-        capture_id: { type: string, minLength: 1, maxLength: 128 }
-      required: [prompt]
-      anyOf:
-        - required: [prompt, captureId]
-        - required: [prompt, capture_id]
-      additionalProperties: false
-
-  - name: desktop.inspect.screen
-    type: local
-    adapter: desktop.inspect.screen
-    description: Capture one display and ask the active multimodal LLM to analyze the screenshot against a prompt.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        prompt: { type: string, minLength: 1, maxLength: 2000 }
-        displayId: { type: [integer, string] }
-        display_id: { type: [integer, string] }
-      required: [prompt]
-      additionalProperties: false
-
-  - name: desktop.inspect.region
-    type: local
-    adapter: desktop.inspect.region
-    description: Capture one desktop region and ask the active multimodal LLM to analyze the screenshot against a prompt.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        prompt: { type: string, minLength: 1, maxLength: 2000 }
-        x: { type: integer }
-        y: { type: integer }
-        width: { type: integer, minimum: 1 }
-        height: { type: integer, minimum: 1 }
-        displayId: { type: [integer, string] }
-        display_id: { type: [integer, string] }
-      required: [prompt, x, y, width, height]
-      additionalProperties: false
-
-  - name: desktop.inspect.window
-    type: local
-    adapter: desktop.inspect.window
-    description: Capture one desktop window and ask the active multimodal LLM to analyze the screenshot against a prompt.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        prompt: { type: string, minLength: 1, maxLength: 2000 }
-        sourceId: { type: string, minLength: 1, maxLength: 256 }
-        source_id: { type: string, minLength: 1, maxLength: 256 }
-        title: { type: string, minLength: 1, maxLength: 512 }
-        windowTitle: { type: string, minLength: 1, maxLength: 512 }
-        window_title: { type: string, minLength: 1, maxLength: 512 }
-      required: [prompt]
-      anyOf:
-        - required: [prompt, sourceId]
-        - required: [prompt, source_id]
-        - required: [prompt, title]
-        - required: [prompt, windowTitle]
-        - required: [prompt, window_title]
       additionalProperties: false

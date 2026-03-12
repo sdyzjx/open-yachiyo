@@ -7,7 +7,7 @@
 目标：
 - 让临时截图不依赖调用方手动删除也能过期清理
 - 保持调试日志可审计，但不输出图像内容
-- 让桌面视觉工具的错误边界更清晰
+- 让桌面截图与 legacy 视觉兼容层的错误边界更清晰
 
 ## 2. Capture cleanup lifecycle
 
@@ -34,12 +34,12 @@
 - 图片 base64
 - 图像二进制内容
 
-## 3. Inspect error normalization
+## 3. Legacy inspect error normalization
 
 对应实现：
 - `apps/runtime/tooling/adapters/desktopVision.js`
 
-`desktop.inspect.screen` / `desktop.inspect.region` 现在按阶段归一化错误：
+legacy `desktop.inspect.screen` / `desktop.inspect.region` 现在按阶段归一化错误：
 - `capture`
 - `read_capture`
 - `analyze`
@@ -60,6 +60,6 @@
 本阶段覆盖：
 - cleanup controller 定时调度与停止
 - config 默认值与环境变量覆盖
-- desktop inspect 错误归一化
+- legacy desktop inspect 错误归一化
 - desktop-side full regression
 - runtime-side targeted regression

@@ -33,11 +33,7 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
-  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.desktop'));
-  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.capture'));
-  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
-  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
-  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.window'));
+  assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.inspect.')), false);
 });
 
 test('ToolRegistry keeps scheduling metadata from config', () => {
@@ -53,10 +49,6 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
   const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
   const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
-  const desktopInspectDesktop = tools.find((tool) => tool.name === 'desktop.inspect.desktop');
-  const desktopInspectCapture = tools.find((tool) => tool.name === 'desktop.inspect.capture');
-  const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
-  const desktopInspectWindow = tools.find((tool) => tool.name === 'desktop.inspect.window');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
@@ -67,11 +59,7 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
   assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
-  assert.equal(Boolean(desktopInspectDesktop?.requires_lock), true);
-  assert.equal(Boolean(desktopInspectCapture?.requires_lock), true);
-  assert.equal(desktopInspect?.side_effect_level, 'read');
-  assert.equal(Boolean(desktopInspect?.requires_lock), true);
-  assert.equal(Boolean(desktopInspectWindow?.requires_lock), true);
+  assert.equal(tools.some((tool) => tool.name.startsWith('desktop.inspect.')), false);
 });
 
 test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
@@ -161,110 +149,6 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   assert.deepEqual(JSON.parse(desktopCaptureGet.result), { capture_id: 'cap-1', path: '/tmp/cap-1.png', mime_type: 'image/png' });
   assert.equal(deleted.ok, true);
   assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
-});
-
-test('ToolExecutor desktop inspect tools return JSON string payloads', async () => {
-  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
-  const config = store.load();
-  const registry = new ToolRegistry({ config });
-  const originalGet = registry.get.bind(registry);
-  registry.get = (name) => {
-    const tool = originalGet(name);
-    if (!tool) return null;
-    if (name === 'desktop.inspect.screen') {
-      return {
-        ...tool,
-        run: async () => JSON.stringify({
-          ok: true,
-          capture_id: 'cap-inspect-1',
-          display_id: 'display:1',
-          analysis: '屏幕上显示一个终端窗口。'
-        })
-      };
-    }
-    if (name === 'desktop.inspect.desktop') {
-      return {
-        ...tool,
-        run: async () => JSON.stringify({
-          ok: true,
-          capture_id: 'cap-desktop-1',
-          display_ids: ['display:1', 'display:2'],
-          analysis: '整个桌面包含一个编辑器和一个浏览器窗口。'
-        })
-      };
-    }
-    if (name === 'desktop.inspect.capture') {
-      return {
-        ...tool,
-        run: async () => JSON.stringify({
-          ok: true,
-          capture_id: 'cap-existing-1',
-          analysis: '这张复用截图展示了浏览器和终端。'
-        })
-      };
-    }
-    if (name === 'desktop.inspect.window') {
-      return {
-        ...tool,
-        run: async () => JSON.stringify({
-          ok: true,
-          capture_id: 'cap-window-1',
-          source_id: 'window:42:0',
-          window_title: 'Browser',
-          analysis: '当前窗口显示浏览器登录页。'
-        })
-      };
-    }
-    return tool;
-  };
-
-  const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
-  const inspected = await executor.execute({
-    name: 'desktop.inspect.screen',
-    args: { prompt: '这张图里有什么？' }
-  });
-  const inspectedDesktop = await executor.execute({
-    name: 'desktop.inspect.desktop',
-    args: { prompt: '这个多显示器桌面上有什么？' }
-  });
-  const inspectedCapture = await executor.execute({
-    name: 'desktop.inspect.capture',
-    args: { prompt: '复用这张截图。', capture_id: 'cap-existing-1' }
-  });
-
-  assert.equal(inspected.ok, true);
-  assert.deepEqual(JSON.parse(inspected.result), {
-    ok: true,
-    capture_id: 'cap-inspect-1',
-    display_id: 'display:1',
-    analysis: '屏幕上显示一个终端窗口。'
-  });
-  assert.equal(inspectedDesktop.ok, true);
-  assert.deepEqual(JSON.parse(inspectedDesktop.result), {
-    ok: true,
-    capture_id: 'cap-desktop-1',
-    display_ids: ['display:1', 'display:2'],
-    analysis: '整个桌面包含一个编辑器和一个浏览器窗口。'
-  });
-  assert.equal(inspectedCapture.ok, true);
-  assert.deepEqual(JSON.parse(inspectedCapture.result), {
-    ok: true,
-    capture_id: 'cap-existing-1',
-    analysis: '这张复用截图展示了浏览器和终端。'
-  });
-
-  const inspectedWindow = await executor.execute({
-    name: 'desktop.inspect.window',
-    args: { prompt: '这个窗口里是什么？', source_id: 'window:42:0' }
-  });
-  assert.equal(inspectedWindow.ok, true);
-  assert.deepEqual(JSON.parse(inspectedWindow.result), {
-    ok: true,
-    capture_id: 'cap-window-1',
-    source_id: 'window:42:0',
-    window_title: 'Browser',
-    analysis: '当前窗口显示浏览器登录页。'
-  });
 });
 
 test('ToolExecutor rejects unsupported live2d semantic args by schema', async () => {

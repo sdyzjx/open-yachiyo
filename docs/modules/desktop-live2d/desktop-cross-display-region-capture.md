@@ -8,7 +8,7 @@
 
 这让多显示器场景下的局部视觉分析更自然，例如：
 - 截取两个屏幕交界处的连续区域
-- 让 `desktop.inspect.region` 判断跨屏区域内容
+- 让 loop 在下一轮基于跨屏截图继续判断内容
 
 ## 2. Module
 
@@ -44,13 +44,12 @@
 
 runtime 侧不需要新增新工具：
 - `desktop.capture.region`
-- `desktop.inspect.region`
 
-它们会自动继承新的 metadata，并可在返回结果中带出：
+它会自动继承新的 metadata，并可在返回结果中带出：
 - `display_ids`
 
 ## 6. Test coverage
 
 本阶段测试覆盖：
 - desktop main 侧跨屏区域 capture
-- runtime 侧 inspect.region 保留 `display_ids`
+- runtime 侧 capture metadata 保留 `display_ids`
