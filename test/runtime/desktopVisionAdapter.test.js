@@ -8,6 +8,7 @@ const {
   normalizePrompt,
   normalizeCaptureRecord,
   readCaptureAsDataUrl,
+  normalizeCaptureLookupArgs,
   normalizeInspectError,
   createDesktopVisionAdapters
 } = desktopVisionAdapters.__internal;
@@ -72,6 +73,13 @@ test('desktop vision normalizeInspectError wraps runtime errors with stage conte
   assert.equal(normalized.code, 'RUNTIME_ERROR');
   assert.match(normalized.message, /desktop inspect failed during analyze/i);
   assert.equal(normalized.details.capture_id, 'cap_123');
+});
+
+test('desktop vision normalizeCaptureLookupArgs requires capture_id', () => {
+  assert.deepEqual(normalizeCaptureLookupArgs({ captureId: 'cap_1' }), {
+    capture_id: 'cap_1'
+  });
+  assert.throws(() => normalizeCaptureLookupArgs({}), /capture_id/i);
 });
 
 test('desktop inspect screen captures and performs multimodal subcall', async () => {
@@ -154,6 +162,44 @@ test('desktop inspect desktop captures the virtual desktop and returns display m
   assert.equal(result.capture_id, 'cap_desktop_1');
   assert.deepEqual(result.display_ids, ['display:1', 'display:2']);
   assert.equal(result.analysis, '左侧屏幕是编辑器，右侧屏幕是浏览器。');
+});
+
+test('desktop inspect capture reuses existing capture metadata without recapturing', async () => {
+  const rpcCalls = [];
+  const adapters = createDesktopVisionAdapters({
+    invokeRpc: async ({ method, params }) => {
+      rpcCalls.push({ method, params });
+      assert.equal(method, 'desktop.capture.get');
+      assert.deepEqual(params, { capture_id: 'cap_existing_1' });
+      return {
+        capture_id: 'cap_existing_1',
+        path: '/tmp/cap_existing_1.png',
+        mime_type: 'image/png',
+        display_ids: ['display:1', 'display:2'],
+        bounds: { x: -1280, y: 0, width: 2792, height: 982 },
+        pixel_size: { width: 2792, height: 982 },
+        scale_factor: 1
+      };
+    },
+    fsModule: {
+      existsSync: () => true,
+      readFileSync: () => Buffer.from('existing-bytes')
+    },
+    getReasoner: () => ({
+      decide: async () => ({ type: 'final', output: '这张缓存截图包含左右两个工作区。' })
+    })
+  });
+
+  const raw = await adapters['desktop.inspect.capture']({
+    capture_id: 'cap_existing_1',
+    prompt: '总结这张已有截图。'
+  }, {});
+
+  const result = JSON.parse(raw);
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(result.capture_id, 'cap_existing_1');
+  assert.deepEqual(result.display_ids, ['display:1', 'display:2']);
+  assert.equal(result.analysis, '这张缓存截图包含左右两个工作区。');
 });
 
 test('desktop inspect region forwards capture args and returns analysis payload', async () => {

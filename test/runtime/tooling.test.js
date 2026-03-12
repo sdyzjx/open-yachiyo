@@ -28,11 +28,13 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.desktop'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.get'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.desktop'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.capture'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.window'));
@@ -47,10 +49,12 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
   const desktopVirtualCapture = tools.find((tool) => tool.name === 'desktop.capture.desktop');
+  const desktopCaptureGet = tools.find((tool) => tool.name === 'desktop.capture.get');
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
   const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
   const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
   const desktopInspectDesktop = tools.find((tool) => tool.name === 'desktop.inspect.desktop');
+  const desktopInspectCapture = tools.find((tool) => tool.name === 'desktop.inspect.capture');
   const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
   const desktopInspectWindow = tools.find((tool) => tool.name === 'desktop.inspect.window');
 
@@ -58,11 +62,13 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
   assert.equal(desktopVirtualCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopVirtualCapture?.requires_lock), true);
+  assert.equal(desktopCaptureGet?.side_effect_level, 'read');
   assert.equal(desktopCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
   assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
   assert.equal(Boolean(desktopInspectDesktop?.requires_lock), true);
+  assert.equal(Boolean(desktopInspectCapture?.requires_lock), true);
   assert.equal(desktopInspect?.side_effect_level, 'read');
   assert.equal(Boolean(desktopInspect?.requires_lock), true);
   assert.equal(Boolean(desktopInspectWindow?.requires_lock), true);
@@ -120,6 +126,12 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
         run: async () => JSON.stringify({ capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] })
       };
     }
+    if (name === 'desktop.capture.get') {
+      return {
+        ...tool,
+        run: async (args) => JSON.stringify({ capture_id: args.capture_id || args.captureId, path: '/tmp/cap-1.png', mime_type: 'image/png' })
+      };
+    }
     if (name === 'desktop.capture.delete') {
       return {
         ...tool,
@@ -134,6 +146,7 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   const windows = await executor.execute({ name: 'desktop.windows.list', args: {} });
   const capabilities = await executor.execute({ name: 'desktop.perception.capabilities', args: {} });
   const desktopCapture = await executor.execute({ name: 'desktop.capture.desktop', args: {} });
+  const desktopCaptureGet = await executor.execute({ name: 'desktop.capture.get', args: { capture_id: 'cap-1' } });
   const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
 
   assert.equal(displays.ok, true);
@@ -144,6 +157,8 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
   assert.deepEqual(JSON.parse(capabilities.result), { screen_capture: true, desktop_inspect: false });
   assert.equal(desktopCapture.ok, true);
   assert.deepEqual(JSON.parse(desktopCapture.result), { capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] });
+  assert.equal(desktopCaptureGet.ok, true);
+  assert.deepEqual(JSON.parse(desktopCaptureGet.result), { capture_id: 'cap-1', path: '/tmp/cap-1.png', mime_type: 'image/png' });
   assert.equal(deleted.ok, true);
   assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
 });
@@ -178,6 +193,16 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
         })
       };
     }
+    if (name === 'desktop.inspect.capture') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({
+          ok: true,
+          capture_id: 'cap-existing-1',
+          analysis: '这张复用截图展示了浏览器和终端。'
+        })
+      };
+    }
     if (name === 'desktop.inspect.window') {
       return {
         ...tool,
@@ -202,6 +227,10 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
     name: 'desktop.inspect.desktop',
     args: { prompt: '这个多显示器桌面上有什么？' }
   });
+  const inspectedCapture = await executor.execute({
+    name: 'desktop.inspect.capture',
+    args: { prompt: '复用这张截图。', capture_id: 'cap-existing-1' }
+  });
 
   assert.equal(inspected.ok, true);
   assert.deepEqual(JSON.parse(inspected.result), {
@@ -216,6 +245,12 @@ test('ToolExecutor desktop inspect tools return JSON string payloads', async () 
     capture_id: 'cap-desktop-1',
     display_ids: ['display:1', 'display:2'],
     analysis: '整个桌面包含一个编辑器和一个浏览器窗口。'
+  });
+  assert.equal(inspectedCapture.ok, true);
+  assert.deepEqual(JSON.parse(inspectedCapture.result), {
+    ok: true,
+    capture_id: 'cap-existing-1',
+    analysis: '这张复用截图展示了浏览器和终端。'
   });
 
   const inspectedWindow = await executor.execute({

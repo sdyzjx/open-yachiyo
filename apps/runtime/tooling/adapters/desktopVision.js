@@ -84,6 +84,16 @@ function sanitizeCaptureArgs(args = {}) {
   return cloned;
 }
 
+function normalizeCaptureLookupArgs(args = {}) {
+  const captureId = String(args.captureId ?? args.capture_id ?? '').trim();
+  if (!captureId) {
+    throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'desktop inspect capture requires capture_id');
+  }
+  return {
+    capture_id: captureId
+  };
+}
+
 function normalizeInspectError(err, { stage, captureId = null } = {}) {
   if (err instanceof ToolingError) {
     if (captureId && (!err.details || !Object.hasOwn(err.details, 'capture_id'))) {
@@ -131,8 +141,33 @@ function createDesktopVisionAdapters({
   getReasoner = createDefaultReasonerProvider(),
   fsModule = fs
 } = {}) {
-  async function inspectViaCapture({ captureMethod, captureArgs = {}, prompt, traceId = null }) {
+  async function analyzeCaptureRecord({ captureRecord, prompt }) {
     const normalizedPrompt = normalizePrompt(prompt);
+    const imageDataUrl = readCaptureAsDataUrl(captureRecord, { fsModule });
+    const reasoner = await Promise.resolve(getReasoner());
+    const decision = await reasoner.decide({
+      messages: buildInspectMessages({
+        prompt: normalizedPrompt,
+        imageDataUrl
+      }),
+      tools: []
+    });
+    const analysis = extractFinalAnalysis(decision);
+    return JSON.stringify({
+      ok: true,
+      capture_id: captureRecord.capture_id,
+      display_id: captureRecord.display_id || null,
+      display_ids: captureRecord.display_ids,
+      source_id: captureRecord.source_id,
+      window_title: captureRecord.window_title,
+      bounds: captureRecord.bounds,
+      pixel_size: captureRecord.pixel_size,
+      scale_factor: captureRecord.scale_factor,
+      analysis
+    });
+  }
+
+  async function inspectViaCapture({ captureMethod, captureArgs = {}, prompt, traceId = null }) {
     let captureRecord = null;
     try {
       captureRecord = normalizeCaptureRecord(await invokeRpc({
@@ -144,47 +179,44 @@ function createDesktopVisionAdapters({
       throw normalizeInspectError(err, { stage: 'capture' });
     }
 
-    let imageDataUrl;
     try {
-      imageDataUrl = readCaptureAsDataUrl(captureRecord, { fsModule });
-    } catch (err) {
-      throw normalizeInspectError(err, {
-        stage: 'read_capture',
-        captureId: captureRecord.capture_id
-      });
-    }
-
-    try {
-      const reasoner = await Promise.resolve(getReasoner());
-      const decision = await reasoner.decide({
-        messages: buildInspectMessages({
-          prompt: normalizedPrompt,
-          imageDataUrl
-        }),
-        tools: []
-      });
-      const analysis = extractFinalAnalysis(decision);
-      return JSON.stringify({
-        ok: true,
-        capture_id: captureRecord.capture_id,
-        display_id: captureRecord.display_id || null,
-        display_ids: captureRecord.display_ids,
-        source_id: captureRecord.source_id,
-        window_title: captureRecord.window_title,
-        bounds: captureRecord.bounds,
-        pixel_size: captureRecord.pixel_size,
-        scale_factor: captureRecord.scale_factor,
-        analysis
+      return await analyzeCaptureRecord({
+        captureRecord,
+        prompt
       });
     } catch (err) {
       throw normalizeInspectError(err, {
-        stage: 'analyze',
+        stage: err instanceof ToolingError && err.message.includes('capture file') ? 'read_capture' : 'analyze',
         captureId: captureRecord.capture_id
       });
     }
   }
 
   return {
+    'desktop.inspect.capture': async (args = {}, context = {}) => {
+      let captureRecord = null;
+      try {
+        captureRecord = normalizeCaptureRecord(await invokeRpc({
+          method: 'desktop.capture.get',
+          params: normalizeCaptureLookupArgs(args),
+          traceId: context.trace_id || null
+        }));
+      } catch (err) {
+        throw normalizeInspectError(err, { stage: 'capture' });
+      }
+
+      try {
+        return await analyzeCaptureRecord({
+          captureRecord,
+          prompt: args.prompt
+        });
+      } catch (err) {
+        throw normalizeInspectError(err, {
+          stage: err instanceof ToolingError && err.message.includes('capture file') ? 'read_capture' : 'analyze',
+          captureId: captureRecord.capture_id
+        });
+      }
+    },
     'desktop.inspect.desktop': async (args = {}, context = {}) => inspectViaCapture({
       captureMethod: 'desktop.capture.desktop',
       captureArgs: args,
@@ -223,6 +255,7 @@ module.exports = {
     readCaptureAsDataUrl,
     buildInspectMessages,
     sanitizeCaptureArgs,
+    normalizeCaptureLookupArgs,
     normalizeInspectError,
     extractFinalAnalysis,
     createDesktopVisionAdapters
