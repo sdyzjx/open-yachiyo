@@ -364,11 +364,14 @@ class ToolLoopRunner {
     };
 
     // passthrough select bus topics to runtime.event stream (e.g. for Electron IPC)
-    const PASSTHROUGH_TOPICS = ['voice.playback.electron'];
-    const passthroughUnsubs = PASSTHROUGH_TOPICS.map((topic) => {
+    const PASSTHROUGH_TOPICS = {
+      'voice.playback.electron': 'voice.playback.electron',
+      'tool.call.progress': 'tool.progress'
+    };
+    const passthroughUnsubs = Object.entries(PASSTHROUGH_TOPICS).map(([topic, eventName]) => {
       const handler = (payload) => {
         if (payload?.session_id && payload.session_id !== sessionId) return;
-        emit(topic, payload);
+        emit(eventName, payload);
       };
       return this.bus.subscribe(topic, handler);
     });

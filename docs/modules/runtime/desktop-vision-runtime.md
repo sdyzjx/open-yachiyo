@@ -120,6 +120,42 @@ inspect 工具直接读取桌面 capture 文件并转为：
 - 先 capture，再延迟分析
 - 避免重复截屏对桌面状态造成扰动
 
+### 4.8 Tool progress signaling
+
+桌面视觉工具通常比普通本地工具慢，因为它们会执行：
+1. 桌面截图
+2. 本地文件读取
+3. 独立多模态 LLM 子调用
+
+为避免 loop 只能在最终完成时才知道状态，`desktop.inspect.*` 会在执行期间通过 bus 发布：
+- `tool.call.progress`
+
+当前已定义阶段：
+- `capture_completed`
+- `capture_loaded`
+- `analysis_started`
+- `analysis_completed`
+
+这些阶段事件会由 `ToolLoopRunner` 转发成 runtime 事件：
+- `tool.progress`
+
+loop / UI 可以自行决定是否向用户显示：
+- “截图已完成，正在准备视觉分析”
+- “截图已完成，正在调用模型分析桌面内容”
+
+runtime 只负责透传，不在工具适配层内直接做任何 UI 决策。
+
+### 4.9 Tool result timeout
+
+桌面视觉工具的默认等待窗口已提升，网关现在通过：
+- `RUNTIME_TOOL_RESULT_TIMEOUT_MS`
+
+控制 `ToolLoopRunner` 的工具结果等待时间；默认值为 `30000ms`。
+
+这样做的目的是：
+- 给 `desktop.inspect.*` 这类长耗时工具更合理的完成窗口
+- 同时保留 `tool.progress` 让 loop 在分析期间可以先行反馈状态
+
 ## 5. Test coverage
 
 本阶段测试包括：
@@ -131,3 +167,5 @@ inspect 工具直接读取桌面 capture 文件并转为：
 - LLM 子调用返回 final 文本
 - LLM 子调用异常返回 tool decision
 - OpenAIReasoner 在无工具时不发送 `tool_choice/tools`
+- tool progress 阶段事件发布
+- `ToolLoopRunner` 将 `tool.call.progress` 转发为 `tool.progress`

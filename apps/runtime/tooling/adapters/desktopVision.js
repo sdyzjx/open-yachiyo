@@ -13,6 +13,15 @@ const DEFAULT_INSPECT_SYSTEM_PROMPT = [
   'Keep the answer concise and actionable.'
 ].join(' ');
 
+function createProgressPublisher(publishEvent) {
+  if (typeof publishEvent !== 'function') {
+    return () => {};
+  }
+  return (payload = {}) => {
+    publishEvent('tool.call.progress', payload);
+  };
+}
+
 function normalizePrompt(value) {
   const prompt = String(value || '').trim();
   if (!prompt) {
@@ -126,6 +135,19 @@ function extractFinalAnalysis(decision) {
   return String(decision.output || '').trim() || '模型未返回文本输出。';
 }
 
+function buildProgressPayload(stage, captureRecord = null, overrides = {}) {
+  return {
+    stage,
+    capture_id: captureRecord?.capture_id || null,
+    display_id: captureRecord?.display_id || null,
+    display_ids: Array.isArray(captureRecord?.display_ids) ? captureRecord.display_ids : [],
+    source_id: captureRecord?.source_id || null,
+    window_title: captureRecord?.window_title || null,
+    public_message: overrides.public_message || null,
+    ...overrides
+  };
+}
+
 function createDefaultReasonerProvider() {
   let manager = null;
   return () => {
@@ -141,9 +163,12 @@ function createDesktopVisionAdapters({
   getReasoner = createDefaultReasonerProvider(),
   fsModule = fs
 } = {}) {
-  async function analyzeCaptureRecord({ captureRecord, prompt }) {
+  async function analyzeCaptureRecord({ captureRecord, prompt, publishProgress }) {
     const normalizedPrompt = normalizePrompt(prompt);
     const imageDataUrl = readCaptureAsDataUrl(captureRecord, { fsModule });
+    publishProgress(buildProgressPayload('analysis_started', captureRecord, {
+      public_message: '截图已完成，正在调用模型分析桌面内容。'
+    }));
     const reasoner = await Promise.resolve(getReasoner());
     const decision = await reasoner.decide({
       messages: buildInspectMessages({
@@ -153,6 +178,9 @@ function createDesktopVisionAdapters({
       tools: []
     });
     const analysis = extractFinalAnalysis(decision);
+    publishProgress(buildProgressPayload('analysis_completed', captureRecord, {
+      public_message: '桌面分析已完成。'
+    }));
     return JSON.stringify({
       ok: true,
       capture_id: captureRecord.capture_id,
@@ -167,13 +195,22 @@ function createDesktopVisionAdapters({
     });
   }
 
-  async function inspectViaCapture({ captureMethod, captureArgs = {}, prompt, traceId = null }) {
+  async function inspectViaCapture({
+    captureMethod,
+    captureArgs = {},
+    prompt,
+    traceId = null,
+    publishProgress = () => {}
+  }) {
     let captureRecord = null;
     try {
       captureRecord = normalizeCaptureRecord(await invokeRpc({
         method: captureMethod,
         params: sanitizeCaptureArgs(captureArgs),
         traceId
+      }));
+      publishProgress(buildProgressPayload('capture_completed', captureRecord, {
+        public_message: '截图已完成，正在准备视觉分析。'
       }));
     } catch (err) {
       throw normalizeInspectError(err, { stage: 'capture' });
@@ -182,7 +219,8 @@ function createDesktopVisionAdapters({
     try {
       return await analyzeCaptureRecord({
         captureRecord,
-        prompt
+        prompt,
+        publishProgress
       });
     } catch (err) {
       throw normalizeInspectError(err, {
@@ -194,12 +232,16 @@ function createDesktopVisionAdapters({
 
   return {
     'desktop.inspect.capture': async (args = {}, context = {}) => {
+      const publishProgress = createProgressPublisher(context.publishEvent);
       let captureRecord = null;
       try {
         captureRecord = normalizeCaptureRecord(await invokeRpc({
           method: 'desktop.capture.get',
           params: normalizeCaptureLookupArgs(args),
           traceId: context.trace_id || null
+        }));
+        publishProgress(buildProgressPayload('capture_loaded', captureRecord, {
+          public_message: '已读取已有截图，正在准备视觉分析。'
         }));
       } catch (err) {
         throw normalizeInspectError(err, { stage: 'capture' });
@@ -208,7 +250,8 @@ function createDesktopVisionAdapters({
       try {
         return await analyzeCaptureRecord({
           captureRecord,
-          prompt: args.prompt
+          prompt: args.prompt,
+          publishProgress
         });
       } catch (err) {
         throw normalizeInspectError(err, {
@@ -221,25 +264,29 @@ function createDesktopVisionAdapters({
       captureMethod: 'desktop.capture.desktop',
       captureArgs: args,
       prompt: args.prompt,
-      traceId: context.trace_id || null
+      traceId: context.trace_id || null,
+      publishProgress: createProgressPublisher(context.publishEvent)
     }),
     'desktop.inspect.screen': async (args = {}, context = {}) => inspectViaCapture({
       captureMethod: 'desktop.capture.screen',
       captureArgs: args,
       prompt: args.prompt,
-      traceId: context.trace_id || null
+      traceId: context.trace_id || null,
+      publishProgress: createProgressPublisher(context.publishEvent)
     }),
     'desktop.inspect.region': async (args = {}, context = {}) => inspectViaCapture({
       captureMethod: 'desktop.capture.region',
       captureArgs: args,
       prompt: args.prompt,
-      traceId: context.trace_id || null
+      traceId: context.trace_id || null,
+      publishProgress: createProgressPublisher(context.publishEvent)
     }),
     'desktop.inspect.window': async (args = {}, context = {}) => inspectViaCapture({
       captureMethod: 'desktop.capture.window',
       captureArgs: args,
       prompt: args.prompt,
-      traceId: context.trace_id || null
+      traceId: context.trace_id || null,
+      publishProgress: createProgressPublisher(context.publishEvent)
     })
   };
 }
@@ -258,6 +305,8 @@ module.exports = {
     normalizeCaptureLookupArgs,
     normalizeInspectError,
     extractFinalAnalysis,
+    createProgressPublisher,
+    buildProgressPayload,
     createDesktopVisionAdapters
   }
 };

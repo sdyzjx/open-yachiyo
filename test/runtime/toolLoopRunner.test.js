@@ -209,6 +209,52 @@ test('ToolLoopRunner emits llm.stream events when streaming decision is enabled'
   dispatcher.stop();
 });
 
+test('ToolLoopRunner forwards tool progress bus events into runtime events', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decide() {
+      bus.publish('tool.call.progress', {
+        session_id: 's-tool-progress',
+        call_id: 'progress-call-1',
+        stage: 'analysis_started',
+        public_message: '截图已完成，正在分析。'
+      });
+      return {
+        type: 'final',
+        output: 'tool-progress-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-tool-progress',
+    input: 'progress please',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'tool-progress-ok');
+  const progressEvent = events.find((evt) => evt.event === 'tool.progress');
+  assert.ok(progressEvent);
+  assert.equal(progressEvent.payload.stage, 'analysis_started');
+  assert.equal(progressEvent.payload.public_message, '截图已完成，正在分析。');
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner emits tool_call delta/stable events in streaming mode', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

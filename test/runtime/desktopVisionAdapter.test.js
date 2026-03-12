@@ -10,6 +10,8 @@ const {
   readCaptureAsDataUrl,
   normalizeCaptureLookupArgs,
   normalizeInspectError,
+  createProgressPublisher,
+  buildProgressPayload,
   createDesktopVisionAdapters
 } = desktopVisionAdapters.__internal;
 
@@ -82,9 +84,38 @@ test('desktop vision normalizeCaptureLookupArgs requires capture_id', () => {
   assert.throws(() => normalizeCaptureLookupArgs({}), /capture_id/i);
 });
 
+test('desktop vision progress publisher no-ops without publishEvent', () => {
+  const publishProgress = createProgressPublisher(null);
+  assert.doesNotThrow(() => publishProgress({ stage: 'capture_completed' }));
+});
+
+test('desktop vision buildProgressPayload includes capture metadata', () => {
+  assert.deepEqual(
+    buildProgressPayload('capture_completed', {
+      capture_id: 'cap_1',
+      display_id: 'display:1',
+      display_ids: ['display:1'],
+      source_id: 'window:42:0',
+      window_title: 'Browser'
+    }, {
+      public_message: '截图已完成。'
+    }),
+    {
+      stage: 'capture_completed',
+      capture_id: 'cap_1',
+      display_id: 'display:1',
+      display_ids: ['display:1'],
+      source_id: 'window:42:0',
+      window_title: 'Browser',
+      public_message: '截图已完成。'
+    }
+  );
+});
+
 test('desktop inspect screen captures and performs multimodal subcall', async () => {
   const rpcCalls = [];
   const reasonerCalls = [];
+  const progressEvents = [];
   const adapters = createDesktopVisionAdapters({
     invokeRpc: async ({ method, params, traceId }) => {
       rpcCalls.push({ method, params, traceId });
@@ -114,7 +145,10 @@ test('desktop inspect screen captures and performs multimodal subcall', async ()
     display_id: 'display:2',
     prompt: '这张截图里有什么？'
   }, {
-    trace_id: 'trace-inspect-screen'
+    trace_id: 'trace-inspect-screen',
+    publishEvent: (topic, payload) => {
+      progressEvents.push({ topic, payload });
+    }
   });
 
   const result = JSON.parse(raw);
@@ -128,6 +162,15 @@ test('desktop inspect screen captures and performs multimodal subcall', async ()
   assert.deepEqual(reasonerCalls[0].tools, []);
   assert.equal(reasonerCalls[0].messages[1].content[0].text, '这张截图里有什么？');
   assert.match(reasonerCalls[0].messages[1].content[1].image_url.url, /^data:image\/png;base64,/);
+  assert.deepEqual(
+    progressEvents.map((entry) => entry.topic),
+    ['tool.call.progress', 'tool.call.progress', 'tool.call.progress']
+  );
+  assert.deepEqual(
+    progressEvents.map((entry) => entry.payload.stage),
+    ['capture_completed', 'analysis_started', 'analysis_completed']
+  );
+  assert.equal(progressEvents[0].payload.capture_id, 'cap_screen_1');
 });
 
 test('desktop inspect desktop captures the virtual desktop and returns display metadata', async () => {
