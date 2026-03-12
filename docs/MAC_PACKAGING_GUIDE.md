@@ -23,6 +23,41 @@ npm run desktop:dist:mac
 npm run desktop:pack:mac
 ```
 
+## 2.1 开发期快速更新已安装应用
+
+如果你已经把应用装到 `/Applications/Open Yachiyo.app`，开发期最快的更新方式不是反复产出 `dmg`，而是直接生成 `.app` 目录并覆盖安装：
+
+```bash
+npm run desktop:dir:mac
+npm run desktop:install:mac
+```
+
+其中：
+- `desktop:dir:mac` 只生成 `.app` 目录，默认产物在 `dist/mac-arm64/Open Yachiyo.app`
+- `desktop:install:mac` 会把最新构建的 `.app` 内容同步到 `/Applications/Open Yachiyo.app`
+
+等价的一行命令：
+
+```bash
+npm run desktop:dir:mac && npm run desktop:install:mac
+```
+
+适用场景：
+- 你已经完成一次安装
+- 只是想快速更新最新代码
+- 希望尽量保持 macOS 对该应用的权限授权记录
+
+注意：
+- 覆盖安装前最好先退出正在运行的 `Open Yachiyo`
+- 该流程不包含签名更新或自动更新发布，只适用于本地开发迭代
+- 如需自定义安装目录，可设置 `INSTALL_PARENT`
+
+示例：
+
+```bash
+INSTALL_PARENT="$HOME/Applications" npm run desktop:install:mac
+```
+
 ## 3. ffmpeg / ffprobe
 
 若希望 onboarding 内置声线克隆能力，建议放置：
