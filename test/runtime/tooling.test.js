@@ -26,6 +26,8 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'shell.approve'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.motion.play'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
 });
 
 test('ToolRegistry keeps scheduling metadata from config', () => {
@@ -36,9 +38,12 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
 
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
+  const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
+  assert.equal(desktopCapture?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopCapture?.requires_lock), true);
 });
 
 test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
@@ -59,6 +64,39 @@ test('ToolExecutor rejects invalid args by schema', async () => {
   const result = await executor.execute({ name: 'add', args: { a: 'x', b: 1 } });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'VALIDATION_ERROR');
+});
+
+test('ToolExecutor desktop perception tools return JSON string payloads', async () => {
+  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
+  const config = store.load();
+  const registry = new ToolRegistry({ config });
+  const originalGet = registry.get.bind(registry);
+  registry.get = (name) => {
+    const tool = originalGet(name);
+    if (!tool) return null;
+    if (name === 'desktop.displays.list') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ displays: [{ id: 'display:1', primary: true }] })
+      };
+    }
+    if (name === 'desktop.capture.delete') {
+      return {
+        ...tool,
+        run: async (args) => JSON.stringify({ ok: true, deleted: true, capture_id: args.capture_id || args.captureId })
+      };
+    }
+    return tool;
+  };
+
+  const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
+  const displays = await executor.execute({ name: 'desktop.displays.list', args: {} });
+  const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
+
+  assert.equal(displays.ok, true);
+  assert.deepEqual(JSON.parse(displays.result), { displays: [{ id: 'display:1', primary: true }] });
+  assert.equal(deleted.ok, true);
+  assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
 });
 
 test('ToolExecutor rejects unsupported live2d semantic args by schema', async () => {

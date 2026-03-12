@@ -21,6 +21,10 @@ policy:
     - live2d.emote
     - live2d.gesture
     - live2d.react
+    - desktop.displays.list
+    - desktop.capture.screen
+    - desktop.capture.region
+    - desktop.capture.delete
   deny: []
   byProvider: {}
 
@@ -359,4 +363,61 @@ tools:
         queue_policy: { type: string, enum: [append, replace, interrupt] }
         timeoutMs: { type: integer, minimum: 500, maximum: 120000 }
       required: [intent]
+      additionalProperties: false
+
+  - name: desktop.displays.list
+    type: local
+    adapter: desktop.displays.list
+    description: List desktop displays exposed by the desktop-live2d RPC server.
+    side_effect_level: read
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: desktop.capture.screen
+    type: local
+    adapter: desktop.capture.screen
+    description: Capture one full display through desktop-live2d RPC and return capture metadata.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        displayId: { type: [integer, string] }
+        display_id: { type: [integer, string] }
+      additionalProperties: false
+
+  - name: desktop.capture.region
+    type: local
+    adapter: desktop.capture.region
+    description: Capture one rectangular desktop region through desktop-live2d RPC and return capture metadata.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        x: { type: integer }
+        y: { type: integer }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        displayId: { type: [integer, string] }
+        display_id: { type: [integer, string] }
+      required: [x, y, width, height]
+      additionalProperties: false
+
+  - name: desktop.capture.delete
+    type: local
+    adapter: desktop.capture.delete
+    description: Delete one temporary desktop capture through desktop-live2d RPC.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        captureId: { type: string, minLength: 1, maxLength: 128 }
+        capture_id: { type: string, minLength: 1, maxLength: 128 }
+      anyOf:
+        - required: [captureId]
+        - required: [capture_id]
       additionalProperties: false
