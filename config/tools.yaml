@@ -28,8 +28,10 @@ policy:
     - desktop.capture.screen
     - desktop.capture.region
     - desktop.capture.window
+    - desktop.capture.get
     - desktop.capture.delete
     - desktop.inspect.desktop
+    - desktop.inspect.capture
     - desktop.inspect.screen
     - desktop.inspect.region
     - desktop.inspect.window
@@ -483,6 +485,21 @@ tools:
         - required: [capture_id]
       additionalProperties: false
 
+  - name: desktop.capture.get
+    type: local
+    adapter: desktop.capture.get
+    description: Read one temporary desktop capture metadata record through desktop-live2d RPC.
+    side_effect_level: read
+    input_schema:
+      type: object
+      properties:
+        captureId: { type: string, minLength: 1, maxLength: 128 }
+        capture_id: { type: string, minLength: 1, maxLength: 128 }
+      anyOf:
+        - required: [captureId]
+        - required: [capture_id]
+      additionalProperties: false
+
   - name: desktop.inspect.desktop
     type: local
     adapter: desktop.inspect.desktop
@@ -494,6 +511,24 @@ tools:
       properties:
         prompt: { type: string, minLength: 1, maxLength: 2000 }
       required: [prompt]
+      additionalProperties: false
+
+  - name: desktop.inspect.capture
+    type: local
+    adapter: desktop.inspect.capture
+    description: Reuse one existing desktop capture record and ask the active multimodal LLM to analyze it against a prompt.
+    side_effect_level: read
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 2000 }
+        captureId: { type: string, minLength: 1, maxLength: 128 }
+        capture_id: { type: string, minLength: 1, maxLength: 128 }
+      required: [prompt]
+      anyOf:
+        - required: [prompt, captureId]
+        - required: [prompt, capture_id]
       additionalProperties: false
 
   - name: desktop.inspect.screen

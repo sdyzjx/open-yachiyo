@@ -6,6 +6,7 @@
 
 目标不是把截图重新塞回当前 tool loop，而是提供受控闭环工具：
 - `desktop.inspect.desktop`
+- `desktop.inspect.capture`
 - `desktop.inspect.screen`
 - `desktop.inspect.region`
 - `desktop.inspect.window`
@@ -33,6 +34,7 @@
 - `desktop.inspect.region`
 - `desktop.inspect.window`
 - `desktop.inspect.desktop`
+- `desktop.inspect.capture`
 
 返回格式：
 
@@ -106,11 +108,24 @@ inspect 工具直接读取桌面 capture 文件并转为：
 - 当 region 覆盖多块屏幕时，返回结果里的 `display_ids` 会列出所有涉及的显示器
 - 这样 agent 可以在分析文本里区分“单屏局部问题”和“跨屏连续区域”
 
+### 4.7 Capture reuse inspect
+
+`desktop.inspect.capture` 内部调用：
+- `desktop.capture.get`
+
+它不会重新触发截图，而是直接复用已有 `capture_id` 对应的图片文件。
+
+适合：
+- 同一张截图问多个问题
+- 先 capture，再延迟分析
+- 避免重复截屏对桌面状态造成扰动
+
 ## 5. Test coverage
 
 本阶段测试包括：
 - inspect screen / region 正常流程
 - inspect desktop 正常流程
+- inspect capture 复用流程
 - inspect window 正常流程
 - screenshot metadata 到 image input 的转换
 - LLM 子调用返回 final 文本

@@ -34,6 +34,7 @@
 - `desktop.capture.screen`
 - `desktop.capture.region`
 - `desktop.capture.window`
+- `desktop.capture.get`
 - `desktop.capture.delete`
 
 这些工具目前都通过：
