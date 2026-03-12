@@ -6,6 +6,7 @@
 - Runtime 桌面 inspect planner 注入：`docs/modules/runtime/desktop-inspect-planner.md`
 - 模块级细粒度文档：`docs/modules/desktop-live2d/module-reference.md`
 - 桌面感知与截图模块：`docs/modules/desktop-live2d/desktop-perception-reference.md`
+- 桌面感知能力与权限探测：`docs/modules/desktop-live2d/desktop-perception-capabilities.md`
 - 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
 - Motion/Expression 资产补全文档：`docs/modules/desktop-live2d/model-motion-expression-assets.md`
 - Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`

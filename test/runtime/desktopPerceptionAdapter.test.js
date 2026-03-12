@@ -9,7 +9,8 @@ const {
   normalizeRpcUrl,
   buildRequestId,
   mapRpcCodeToToolingCode,
-  sanitizeRpcParams
+  sanitizeRpcParams,
+  createDesktopPerceptionAdapters
 } = desktopPerceptionAdapters.__internal;
 
 async function createWsServer() {
@@ -137,6 +138,33 @@ test('desktop perception adapters return JSON strings from runtime tools', async
 
   assert.deepEqual(JSON.parse(displays), { displays: [{ id: 'display:1', primary: true }] });
   assert.deepEqual(JSON.parse(deleted), { ok: true, deleted: true, capture_id: 'cap-a' });
+});
+
+test('desktop perception capabilities adapter merges LLM provider readiness', async () => {
+  const adapters = createDesktopPerceptionAdapters({
+    invokeRpc: async ({ method }) => {
+      assert.equal(method, 'desktop.perception.capabilities');
+      return {
+        platform: 'darwin',
+        displays_available: true,
+        screen_capture: true,
+        region_capture: true,
+        reason: null
+      };
+    },
+    getLlmProviderSummary: async () => ({
+      active_provider: 'qwen35_plus',
+      active_model: 'qwen3.5-flash',
+      has_api_key: true
+    })
+  });
+
+  const payload = await adapters['desktop.perception.capabilities']({}, { trace_id: 'trace-cap' });
+  const parsed = JSON.parse(payload);
+
+  assert.equal(parsed.screen_capture, true);
+  assert.equal(parsed.desktop_inspect, true);
+  assert.equal(parsed.llm_provider.active_provider, 'qwen35_plus');
 });
 
 test('invokeDesktopRpc maps rpc errors to tooling errors', async (t) => {

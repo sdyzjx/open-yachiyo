@@ -42,7 +42,15 @@ function boundsContainBounds(outer, inner) {
   );
 }
 
-function createDesktopPerceptionService({ screen } = {}) {
+function normalizePermissionStatus(value, { platform = process.platform } = {}) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) {
+    return platform === 'darwin' ? 'unknown' : 'not_required';
+  }
+  return raw.replace(/_/g, '-');
+}
+
+function createDesktopPerceptionService({ screen, systemPreferences = null, platform = process.platform } = {}) {
   if (!screen || typeof screen.getAllDisplays !== 'function' || typeof screen.getPrimaryDisplay !== 'function') {
     throw new Error('desktop perception service requires Electron screen adapter');
   }
@@ -94,16 +102,73 @@ function createDesktopPerceptionService({ screen } = {}) {
     )) || null;
   }
 
+  function getPermissions() {
+    const displays = listDisplays();
+    const screenCapture = {
+      status: platform === 'darwin' ? 'unknown' : 'not_required',
+      requires_permission: platform === 'darwin',
+      reason: null
+    };
+
+    if (platform === 'darwin') {
+      if (typeof systemPreferences?.getMediaAccessStatus === 'function') {
+        try {
+          screenCapture.status = normalizePermissionStatus(systemPreferences.getMediaAccessStatus('screen'), { platform });
+        } catch (err) {
+          screenCapture.status = 'unknown';
+          screenCapture.reason = String(err?.message || 'screen capture permission probe failed');
+        }
+      } else {
+        screenCapture.reason = 'systemPreferences.getMediaAccessStatus unavailable';
+      }
+    }
+
+    return {
+      platform,
+      displays_available: displays.length > 0,
+      screen_capture: screenCapture
+    };
+  }
+
+  function getCapabilities() {
+    const displays = listDisplays();
+    const permissions = getPermissions();
+    const permissionStatus = permissions.screen_capture?.status || 'unknown';
+    const permissionDenied = permissionStatus === 'denied' || permissionStatus === 'restricted';
+    const displayAvailable = displays.length > 0;
+    const screenCaptureEnabled = displayAvailable && !permissionDenied;
+
+    let reason = null;
+    if (!displayAvailable) {
+      reason = 'no displays are available';
+    } else if (permissionDenied) {
+      reason = `screen capture permission is ${permissionStatus}`;
+    } else if (permissions.screen_capture?.reason) {
+      reason = permissions.screen_capture.reason;
+    }
+
+    return {
+      platform,
+      displays_available: displayAvailable,
+      screen_capture: screenCaptureEnabled,
+      region_capture: screenCaptureEnabled,
+      reason
+    };
+  }
+
   return {
     listDisplays,
     resolveDisplayById,
     getPrimaryDisplay,
-    resolveDisplayForBounds
+    resolveDisplayForBounds,
+    getPermissions,
+    getCapabilities
   };
 }
 
 module.exports = {
   createDesktopPerceptionService,
   normalizeDisplayToken,
+  normalizePermissionStatus,
   toPlainBounds
 };

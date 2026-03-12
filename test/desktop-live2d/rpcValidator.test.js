@@ -48,6 +48,12 @@ test('validateRpcRequest accepts tool.invoke payload', () => {
 });
 
 test('validateRpcRequest accepts desktop perception and capture payloads', () => {
+  const capabilities = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capability-1',
+    method: 'desktop.perception.capabilities',
+    params: {}
+  });
   const displaysList = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'display-1',
@@ -67,6 +73,7 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     }
   });
 
+  assert.equal(capabilities.ok, true);
   assert.equal(displaysList.ok, true);
   assert.equal(regionCapture.ok, true);
   assert.equal(regionCapture.request.method, 'desktop.capture.region');

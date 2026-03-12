@@ -1,6 +1,8 @@
 const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
 
+const { ProviderConfigStore } = require('../../config/providerConfigStore');
+const { LlmProviderManager } = require('../../config/llmProviderManager');
 const { ToolingError, ErrorCode } = require('../errors');
 
 const DEFAULT_RPC_HOST = '127.0.0.1';
@@ -158,9 +160,19 @@ function stringifyResult(value) {
   return JSON.stringify(value == null ? {} : value);
 }
 
-function buildAdapter(method) {
+function createDefaultProviderSummaryLoader() {
+  let manager = null;
+  return () => {
+    if (!manager) {
+      manager = new LlmProviderManager({ store: new ProviderConfigStore() });
+    }
+    return manager.getConfigSummary();
+  };
+}
+
+function buildAdapter(method, invokeRpc = invokeDesktopRpc) {
   return async (args = {}, context = {}) => {
-    const result = await invokeDesktopRpc({
+    const result = await invokeRpc({
       method,
       params: args,
       traceId: context.trace_id || null
@@ -169,12 +181,42 @@ function buildAdapter(method) {
   };
 }
 
-const adapters = {
-  'desktop.displays.list': buildAdapter('desktop.perception.displays.list'),
-  'desktop.capture.screen': buildAdapter('desktop.capture.screen'),
-  'desktop.capture.region': buildAdapter('desktop.capture.region'),
-  'desktop.capture.delete': buildAdapter('desktop.capture.delete')
-};
+function createDesktopPerceptionAdapters({
+  invokeRpc = invokeDesktopRpc,
+  getLlmProviderSummary = createDefaultProviderSummaryLoader()
+} = {}) {
+  return {
+    'desktop.perception.capabilities': async (args = {}, context = {}) => {
+      const result = await invokeRpc({
+        method: 'desktop.perception.capabilities',
+        params: args,
+        traceId: context.trace_id || null
+      });
+      const llmProvider = await Promise.resolve(getLlmProviderSummary());
+      const hasApiKey = Boolean(llmProvider?.has_api_key);
+      const screenCapture = Boolean(result?.screen_capture);
+      const merged = {
+        ...(result && typeof result === 'object' ? result : {}),
+        desktop_inspect: screenCapture && hasApiKey,
+        llm_provider: {
+          active_provider: llmProvider?.active_provider || null,
+          active_model: llmProvider?.active_model || null,
+          has_api_key: hasApiKey
+        }
+      };
+      if (!merged.reason && !merged.desktop_inspect && hasApiKey === false) {
+        merged.reason = 'active LLM provider has no API key';
+      }
+      return stringifyResult(merged);
+    },
+    'desktop.displays.list': buildAdapter('desktop.perception.displays.list', invokeRpc),
+    'desktop.capture.screen': buildAdapter('desktop.capture.screen', invokeRpc),
+    'desktop.capture.region': buildAdapter('desktop.capture.region', invokeRpc),
+    'desktop.capture.delete': buildAdapter('desktop.capture.delete', invokeRpc)
+  };
+}
+
+const adapters = createDesktopPerceptionAdapters();
 
 module.exports = {
   ...adapters,
@@ -183,6 +225,8 @@ module.exports = {
     normalizeRpcUrl,
     buildRequestId,
     mapRpcCodeToToolingCode,
-    sanitizeRpcParams
+    sanitizeRpcParams,
+    createDefaultProviderSummaryLoader,
+    createDesktopPerceptionAdapters
   }
 };

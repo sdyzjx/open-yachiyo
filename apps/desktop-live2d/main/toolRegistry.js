@@ -2,6 +2,15 @@ const { buildRpcError } = require('./rpcValidator');
 
 const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
   {
+    name: 'desktop_perception_capabilities',
+    method: 'desktop.perception.capabilities',
+    description: 'Report desktop capture capabilities and whether screen capture is currently available.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
     name: 'desktop_displays_list',
     method: 'desktop.perception.displays.list',
     description: 'List desktop displays and their bounds for screen capture planning.',

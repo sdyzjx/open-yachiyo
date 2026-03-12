@@ -24,6 +24,8 @@ const RPC_METHODS_V1 = Object.freeze([
   'chat.panel.hide',
   'chat.panel.append',
   'chat.panel.clear',
+  'desktop.perception.capabilities',
+  'desktop.perception.permissions',
   'desktop.perception.displays.list',
   'desktop.capture.screen',
   'desktop.capture.region',

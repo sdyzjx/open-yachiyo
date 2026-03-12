@@ -1145,6 +1145,37 @@ test('handleDesktopRpcRequest returns display list without touching renderer bri
   });
 });
 
+test('handleDesktopRpcRequest returns perception capabilities without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: { method: 'desktop.perception.capabilities', params: {} },
+    perceptionService: {
+      getCapabilities() {
+        return {
+          platform: 'darwin',
+          displays_available: true,
+          screen_capture: true,
+          region_capture: true,
+          reason: null
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    platform: 'darwin',
+    displays_available: true,
+    screen_capture: true,
+    region_capture: true,
+    reason: null
+  });
+});
+
 test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => {
   const calls = [];
   const result = await handleDesktopRpcRequest({

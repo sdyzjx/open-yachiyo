@@ -1623,6 +1623,7 @@ async function startDesktopSuite({
   BrowserWindow,
   ipcMain,
   screen,
+  systemPreferences = null,
   shell = null,
   projectRoot = null,
   onResizeModeChange = null,
@@ -1646,7 +1647,7 @@ async function startDesktopSuite({
     logger
   });
   const display = screen?.getPrimaryDisplay?.();
-  const perceptionService = createDesktopPerceptionService({ screen });
+  const perceptionService = createDesktopPerceptionService({ screen, systemPreferences });
   const captureStore = createDesktopCaptureStore({
     captureDir: config.desktopCaptureDir,
     ttlMs: config.desktopCaptureTtlMs
@@ -3529,6 +3530,32 @@ async function handleDesktopRpcRequest({
         ? perceptionService.listDisplays()
         : []
     };
+  }
+
+  if (request.method === 'desktop.perception.capabilities') {
+    return typeof perceptionService?.getCapabilities === 'function'
+      ? perceptionService.getCapabilities()
+      : {
+          platform: process.platform,
+          displays_available: false,
+          screen_capture: false,
+          region_capture: false,
+          reason: 'desktop perception service unavailable'
+        };
+  }
+
+  if (request.method === 'desktop.perception.permissions') {
+    return typeof perceptionService?.getPermissions === 'function'
+      ? perceptionService.getPermissions()
+      : {
+          platform: process.platform,
+          displays_available: false,
+          screen_capture: {
+            status: 'unknown',
+            requires_permission: process.platform === 'darwin',
+            reason: 'desktop perception service unavailable'
+          }
+        };
   }
 
   if (request.method === 'desktop.capture.screen') {

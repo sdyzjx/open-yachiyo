@@ -21,6 +21,7 @@ policy:
     - live2d.emote
     - live2d.gesture
     - live2d.react
+    - desktop.perception.capabilities
     - desktop.displays.list
     - desktop.capture.screen
     - desktop.capture.region
@@ -371,6 +372,16 @@ tools:
     type: local
     adapter: desktop.displays.list
     description: List desktop displays exposed by the desktop-live2d RPC server.
+    side_effect_level: read
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: desktop.perception.capabilities
+    type: local
+    adapter: desktop.perception.capabilities
+    description: Report whether desktop screen capture and inspect prerequisites are currently available.
     side_effect_level: read
     input_schema:
       type: object

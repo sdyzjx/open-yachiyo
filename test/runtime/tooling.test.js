@@ -28,6 +28,7 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.screen'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.inspect.region'));
 });
@@ -41,12 +42,14 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
+  const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
   const desktopInspect = tools.find((tool) => tool.name === 'desktop.inspect.screen');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
   assert.equal(desktopCapture?.side_effect_level, 'read');
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
+  assert.equal(desktopCapabilities?.side_effect_level, 'read');
   assert.equal(desktopInspect?.side_effect_level, 'read');
   assert.equal(Boolean(desktopInspect?.requires_lock), true);
 });
@@ -85,6 +88,12 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
         run: async () => JSON.stringify({ displays: [{ id: 'display:1', primary: true }] })
       };
     }
+    if (name === 'desktop.perception.capabilities') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ screen_capture: true, desktop_inspect: false })
+      };
+    }
     if (name === 'desktop.capture.delete') {
       return {
         ...tool,
@@ -96,10 +105,13 @@ test('ToolExecutor desktop perception tools return JSON string payloads', async 
 
   const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
   const displays = await executor.execute({ name: 'desktop.displays.list', args: {} });
+  const capabilities = await executor.execute({ name: 'desktop.perception.capabilities', args: {} });
   const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
 
   assert.equal(displays.ok, true);
   assert.deepEqual(JSON.parse(displays.result), { displays: [{ id: 'display:1', primary: true }] });
+  assert.equal(capabilities.ok, true);
+  assert.deepEqual(JSON.parse(capabilities.result), { screen_capture: true, desktop_inspect: false });
   assert.equal(deleted.ok, true);
   assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
 });

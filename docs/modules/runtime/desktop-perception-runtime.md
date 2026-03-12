@@ -8,6 +8,10 @@
 - runtime -> desktop RPC adapter
 - runtime tool registry 暴露桌面感知工具
 
+`Phase 3A` 追加：
+- runtime 能力探测工具 `desktop.perception.capabilities`
+- 将桌宠截图能力与当前 LLM provider 可用性合并成 `desktop_inspect`
+
 尚未覆盖：
 - 高层 `desktop_inspect_*`
 - 多模态图片分析
@@ -24,6 +28,7 @@
 ## 3. Supported runtime tools
 
 - `desktop.displays.list`
+- `desktop.perception.capabilities`
 - `desktop.capture.screen`
 - `desktop.capture.region`
 - `desktop.capture.delete`
@@ -55,6 +60,20 @@
 - 工具执行后动态生成图片再回灌当前同一轮推理
 
 因此高层 inspect 工具在下一阶段单独实现。
+
+### 4.3 Capability aggregation
+
+`desktop.perception.capabilities` 不只是简单透传桌宠 RPC：
+
+它还会读取当前 runtime 的 active provider 摘要，并生成：
+- `desktop_inspect`
+- `llm_provider.active_provider`
+- `llm_provider.active_model`
+- `llm_provider.has_api_key`
+
+这样 planner 和 agent 可以先判断：
+- 桌面截图是否可用
+- 当前是否具备高层 inspect 的基本前提
 
 ## 5. Test coverage
 

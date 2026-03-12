@@ -91,6 +91,14 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'desktop.perception.capabilities': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.perception.permissions': {
+    type: 'object',
+    additionalProperties: false
+  },
   'desktop.perception.displays.list': {
     type: 'object',
     additionalProperties: false
