@@ -2,10 +2,12 @@
 
 - 全局运行时配置总表：`docs/modules/runtime/config-reference.md`
 - 模块级细粒度文档：`docs/modules/desktop-live2d/module-reference.md`
+- 桌面感知与截图模块：`docs/modules/desktop-live2d/desktop-perception-reference.md`
 - 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
 - Motion/Expression 资产补全文档：`docs/modules/desktop-live2d/model-motion-expression-assets.md`
 - Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`
 - 施工与阶段计划：`docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
+- 桌面感知阶段计划：`docs/DESKTOP_PERCEPTION_DEVELOPMENT_PLAN.md`
 - 开发与排障日志：`docs/process/desktop-live2d-resize-dragzone-debug-log.md`
 - Lipsync 开发日志：`docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`
 

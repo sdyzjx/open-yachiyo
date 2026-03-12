@@ -9,8 +9,9 @@ const {
 test('listDesktopTools returns non-empty tool definitions', () => {
   const tools = listDesktopTools();
   assert.ok(Array.isArray(tools));
-  assert.ok(tools.length >= 6);
+  assert.ok(tools.length >= 9);
   assert.ok(tools.some((item) => item.name === 'desktop_model_set_param'));
+  assert.ok(tools.some((item) => item.name === 'desktop_capture_screen'));
 });
 
 test('resolveToolInvoke maps tool name to rpc method and args', () => {
@@ -22,6 +23,16 @@ test('resolveToolInvoke maps tool name to rpc method and args', () => {
   assert.equal(resolved.method, 'model.param.set');
   assert.equal(resolved.toolName, 'desktop_model_set_param');
   assert.deepEqual(resolved.params, { name: 'ParamAngleX', value: 10 });
+});
+
+test('resolveToolInvoke maps local desktop perception tools', () => {
+  const resolved = resolveToolInvoke({
+    name: 'desktop_capture_region',
+    args: { x: 0, y: 0, width: 320, height: 240 }
+  });
+
+  assert.equal(resolved.method, 'desktop.capture.region');
+  assert.deepEqual(resolved.params, { x: 0, y: 0, width: 320, height: 240 });
 });
 
 test('resolveToolInvoke rejects non-whitelisted tools', () => {

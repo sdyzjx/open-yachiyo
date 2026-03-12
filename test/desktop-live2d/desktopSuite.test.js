@@ -1124,6 +1124,27 @@ test('handleDesktopRpcRequest returns tool list without touching renderer bridge
   assert.ok(result.tools.some((tool) => tool.name === 'desktop_chat_show'));
 });
 
+test('handleDesktopRpcRequest returns display list without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: { method: 'desktop.perception.displays.list', params: {} },
+    perceptionService: {
+      listDisplays() {
+        return [{ id: 'display:1', primary: true }];
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    displays: [{ id: 'display:1', primary: true }]
+  });
+});
+
 test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => {
   const calls = [];
   const result = await handleDesktopRpcRequest({
@@ -1148,6 +1169,35 @@ test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => 
   assert.equal(calls[0].timeoutMs, 3456);
   assert.deepEqual(calls[0].params, { name: 'ParamAngleX', value: 3 });
   assert.equal(result.ok, true);
+});
+
+test('handleDesktopRpcRequest resolves local desktop capture tool without touching renderer bridge', async () => {
+  const calls = [];
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'tool.invoke',
+      params: {
+        name: 'desktop_capture_screen',
+        arguments: { display_id: 'display:2' }
+      }
+    },
+    captureService: {
+      async captureScreen(params) {
+        calls.push(params);
+        return { capture_id: 'cap_1', display_id: 'display:2' };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(calls, [{ display_id: 'display:2' }]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result, { capture_id: 'cap_1', display_id: 'display:2' });
 });
 
 test('isNewSessionCommand matches /new command only', () => {

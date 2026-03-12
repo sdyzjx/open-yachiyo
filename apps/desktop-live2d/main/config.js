@@ -7,6 +7,7 @@ const {
   PROJECT_ROOT,
   MODEL_ASSET_RELATIVE_DIR,
   MODEL_JSON_NAME,
+  DESKTOP_CAPTURE_RELATIVE_DIR,
   DEFAULT_RPC_PORT,
   DEFAULT_RENDERER_TIMEOUT_MS
 } = require('./constants');
@@ -83,6 +84,10 @@ function resolveDesktopLive2dConfig({ env = process.env, projectRoot = PROJECT_R
     importBackupRoot: path.resolve(
       env.DESKTOP_LIVE2D_BACKUP_ROOT || path.join(runtimePaths.dataDir, 'backups', 'live2d')
     ),
+    desktopCaptureDir: path.resolve(
+      env.DESKTOP_LIVE2D_CAPTURE_DIR || path.join(projectRoot, DESKTOP_CAPTURE_RELATIVE_DIR)
+    ),
+    desktopCaptureTtlMs: toPositiveInt(env.DESKTOP_LIVE2D_CAPTURE_TTL_MS, 5 * 60 * 1000),
     mouthWaveformDir: path.resolve(
       env.DESKTOP_LIVE2D_MOUTH_WAVEFORM_DIR || path.join(runtimePaths.dataDir, 'desktop-live2d', 'mouth-waveforms')
     ),
