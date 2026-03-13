@@ -33,6 +33,7 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
+  assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.locate.')), false);
   assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.inspect.')), false);
 });
 
@@ -59,6 +60,7 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
   assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
+  assert.equal(tools.some((tool) => tool.name.startsWith('desktop.locate.')), false);
   assert.equal(tools.some((tool) => tool.name.startsWith('desktop.inspect.')), false);
 });
 

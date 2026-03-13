@@ -30,8 +30,6 @@ policy:
     - desktop.capture.window
     - desktop.capture.get
     - desktop.capture.delete
-    - desktop.locate.capture
-    - desktop.locate.desktop
   deny: []
   byProvider: {}
 
@@ -495,42 +493,4 @@ tools:
       anyOf:
         - required: [captureId]
         - required: [capture_id]
-      additionalProperties: false
-
-  - name: desktop.locate.capture
-    type: local
-    adapter: desktop.locate.capture
-    description: Locate a requested target within an existing desktop capture and return structured bounds instead of requiring manual coordinate estimation.
-    side_effect_level: read
-    input_schema:
-      type: object
-      properties:
-        captureId: { type: string, minLength: 1, maxLength: 128 }
-        capture_id: { type: string, minLength: 1, maxLength: 128 }
-        target: { type: string, minLength: 1, maxLength: 512 }
-        targetType: { type: string, minLength: 1, maxLength: 64 }
-        target_type: { type: string, minLength: 1, maxLength: 64 }
-        expectedCount: { type: integer, minimum: 1, maximum: 5 }
-        expected_count: { type: integer, minimum: 1, maximum: 5 }
-      required: [target]
-      anyOf:
-        - required: [captureId]
-        - required: [capture_id]
-      additionalProperties: false
-
-  - name: desktop.locate.desktop
-    type: local
-    adapter: desktop.locate.desktop
-    description: Capture the full virtual desktop and locate a requested target, returning structured bounds for follow-up actions.
-    side_effect_level: read
-    requires_lock: true
-    input_schema:
-      type: object
-      properties:
-        target: { type: string, minLength: 1, maxLength: 512 }
-        targetType: { type: string, minLength: 1, maxLength: 64 }
-        target_type: { type: string, minLength: 1, maxLength: 64 }
-        expectedCount: { type: integer, minimum: 1, maximum: 5 }
-        expected_count: { type: integer, minimum: 1, maximum: 5 }
-      required: [target]
       additionalProperties: false

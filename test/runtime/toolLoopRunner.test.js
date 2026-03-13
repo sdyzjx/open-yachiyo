@@ -1536,17 +1536,6 @@ test('ToolLoopRunner injects desktop capture guidance when desktop capture tools
           additionalProperties: false
         }
       },
-      {
-        name: 'desktop.locate.desktop',
-        input_schema: {
-          type: 'object',
-          properties: {
-            target: { type: 'string' }
-          },
-          required: ['target'],
-          additionalProperties: false
-        }
-      }
     ],
     maxStep: 1,
     toolResultTimeoutMs: 500
@@ -1560,12 +1549,12 @@ test('ToolLoopRunner injects desktop capture guidance when desktop capture tools
     true
   );
   assert.equal(
-    seenMessages.some((m) => /desktop\.locate\.\*/.test(String(m.content || '')) && /prefer/.test(String(m.content || ''))),
+    seenMessages.some((m) => /display_id/.test(String(m.content || '')) && /relative to that display/.test(String(m.content || ''))),
     true
   );
   assert.equal(
-    seenMessages.some((m) => /display_id/.test(String(m.content || '')) && /relative to that display/.test(String(m.content || ''))),
-    true
+    seenMessages.some((m) => /desktop\.locate\.\*/.test(String(m.content || ''))),
+    false
   );
 
   dispatcher.stop();

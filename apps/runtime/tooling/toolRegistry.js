@@ -7,7 +7,6 @@ const asrAdapters = require('./adapters/asr');
 const live2dAdapters = require('./adapters/live2d');
 const desktopPerceptionAdapters = require('./adapters/desktopPerception');
 const desktopVisionAdapters = require('./adapters/desktopVision');
-const desktopLocateAdapters = require('./adapters/desktopLocate');
 const { ToolingError, ErrorCode } = require('./errors');
 
 const ADAPTERS = {
@@ -19,8 +18,7 @@ const ADAPTERS = {
   ...asrAdapters,
   ...live2dAdapters,
   ...desktopPerceptionAdapters,
-  ...desktopVisionAdapters,
-  ...desktopLocateAdapters
+  ...desktopVisionAdapters
 };
 
 class ToolRegistry {
