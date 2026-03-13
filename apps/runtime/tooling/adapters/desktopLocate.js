@@ -38,6 +38,21 @@ function normalizeExpectedCount(value) {
   return Math.max(1, Math.min(5, Math.round(parsed)));
 }
 
+function sanitizeLocateCaptureArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return {};
+  }
+  const {
+    target,
+    targetType,
+    target_type,
+    expectedCount,
+    expected_count,
+    ...captureArgs
+  } = args;
+  return desktopVisionInternal.sanitizeCaptureArgs(captureArgs);
+}
+
 function buildLocateMessages({ target, targetType, expectedCount, imageDataUrl, captureRecord }) {
   const imageWidth = Number(captureRecord?.pixel_size?.width) || 0;
   const imageHeight = Number(captureRecord?.pixel_size?.height) || 0;
@@ -277,7 +292,7 @@ function createDesktopLocateAdapters({
     const expectedCount = normalizeExpectedCount(args.expected_count || args.expectedCount);
     const captureRecord = normalizeCaptureRecord(await invokeRpc({
       method: captureMethod,
-      params: desktopVisionInternal.sanitizeCaptureArgs(captureArgs),
+      params: sanitizeLocateCaptureArgs(captureArgs),
       traceId: context.trace_id || null
     }));
     publishProgress(buildLocateProgressPayload('capture_completed', captureRecord, {
@@ -334,6 +349,7 @@ module.exports = {
     normalizeTarget,
     normalizeTargetType,
     normalizeExpectedCount,
+    sanitizeLocateCaptureArgs,
     buildLocateMessages,
     parseJsonObjectText,
     normalizePixelBounds,

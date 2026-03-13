@@ -7,6 +7,7 @@ const {
   normalizeTarget,
   normalizeTargetType,
   normalizeExpectedCount,
+  sanitizeLocateCaptureArgs,
   buildLocateMessages,
   parseJsonObjectText,
   projectPixelBoundsToDesktopBounds,
@@ -21,6 +22,21 @@ test('desktop locate normalizers enforce basic target contract', () => {
   assert.equal(normalizeExpectedCount(0), 1);
   assert.equal(normalizeExpectedCount(8), 5);
   assert.throws(() => normalizeTarget('   '), /non-empty target/i);
+});
+
+test('desktop locate sanitizeLocateCaptureArgs strips locate-only fields', () => {
+  assert.deepEqual(
+    sanitizeLocateCaptureArgs({
+      target: 'Open Yachiyo icon',
+      targetType: 'icon',
+      target_type: 'icon',
+      expectedCount: 2,
+      expected_count: 3,
+      prompt: 'ignored',
+      display_id: 'display:2'
+    }),
+    { display_id: 'display:2' }
+  );
 });
 
 test('desktop locate buildLocateMessages includes schema and image', () => {
@@ -159,8 +175,10 @@ test('desktop locate capture returns structured matches with desktop and display
 });
 
 test('desktop locate desktop captures and locates in one step', async () => {
+  const rpcCalls = [];
   const adapters = createDesktopLocateAdapters({
-    invokeRpc: async ({ method }) => {
+    invokeRpc: async ({ method, params }) => {
+      rpcCalls.push({ method, params });
       if (method === 'desktop.capture.desktop') {
         return {
           capture_id: 'cap_desktop_1',
@@ -199,4 +217,8 @@ test('desktop locate desktop captures and locates in one step', async () => {
   assert.equal(result.capture_id, 'cap_desktop_1');
   assert.equal(result.found, false);
   assert.deepEqual(result.matches, []);
+  assert.deepEqual(rpcCalls[0], {
+    method: 'desktop.capture.desktop',
+    params: {}
+  });
 });
