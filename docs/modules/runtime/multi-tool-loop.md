@@ -36,6 +36,30 @@
      - 若 `APPROVAL_REQUIRED`：回写 tool message，等待下一步由模型调用 `shell.approve`
      - 其他错误：回写结构化错误并触发重规划重试（最多 `toolErrorMaxRetries` 次）
 
+### 单回复回合约束消耗
+
+`ToolLoopRunner` 还维护“当前这次用户回复已经完成过哪些强约束工具”的状态。
+
+当前覆盖：
+
+- `live2d.*`
+- `voice.tts_aliyun_vc`
+
+规则：
+
+1. system prompt 可以要求“在最终文本前先调用工具”
+2. 但这个要求只在**当前回复回合**内生效一次
+3. 一旦这类工具成功执行，loop 会：
+   - 标记该要求已满足
+   - 向后续步骤注入简短状态提示
+   - 从下一步 `availableTools` 中临时移除同类工具
+4. 直到产出最终 `final` 文本，这个 satisfied 状态都保持有效
+
+这个机制用于避免：
+
+- `live2d.emote` 成功后下一步再次被要求执行
+- `voice.tts_aliyun_vc` 成功后同一回复里重复 TTS
+
 ### 重试策略
 
 - 默认最大报错重试次数：`5`

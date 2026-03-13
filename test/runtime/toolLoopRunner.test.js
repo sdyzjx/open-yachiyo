@@ -1386,6 +1386,150 @@ test('ToolLoopRunner injects forced voice auto-reply prompt when session overrid
   dispatcher.stop();
 });
 
+test('ToolLoopRunner consumes live2d and voice reply-turn requirements after successful tool execution', { concurrency: false }, async () => {
+  const bus = new RuntimeEventBus();
+  const tools = [
+    {
+      name: 'live2d.emote',
+      description: 'live2d emote',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          emotion: { type: 'string' },
+          intensity: { type: 'string' },
+          duration_sec: { type: 'number' }
+        },
+        required: ['emotion'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'voice.tts_aliyun_vc',
+      description: 'voice tool',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          voiceTag: { type: 'string' }
+        },
+        required: ['text'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'echo',
+      description: 'echo',
+      side_effect_level: 'none',
+      input_schema: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false
+      }
+    }
+  ];
+  const unsubscribe = bus.subscribe('tool.call.requested', (payload) => {
+    const toolName = String(payload?.tool?.name || '');
+    let result = 'ok';
+    if (toolName === 'live2d.emote') {
+      result = JSON.stringify({ ok: true, mode: 'event' });
+    } else if (toolName === 'voice.tts_aliyun_vc') {
+      result = JSON.stringify({ status: 'accepted' });
+    }
+    setImmediate(() => {
+      bus.publish('tool.call.result', {
+        trace_id: payload.trace_id,
+        session_id: payload.session_id,
+        step_index: payload.step_index,
+        call_id: payload.call_id,
+        name: toolName,
+        ok: true,
+        result,
+        metrics: { latency_ms: 0 }
+      });
+    });
+  });
+
+  let decideCount = 0;
+  const seenToolSets = [];
+  const seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages, tools }) {
+        decideCount += 1;
+        seenToolSets.push((tools || []).map((tool) => tool.name));
+        seenMessages.push(messages);
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'live2d-turn-1',
+              name: 'live2d.emote',
+              args: { emotion: 'happy_bright', intensity: 'medium', duration_sec: 3 }
+            }
+          };
+        }
+        if (decideCount === 2) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'voice-turn-1',
+              name: 'voice.tts_aliyun_vc',
+              args: { text: '你好呀', voiceTag: 'zh' }
+            }
+          };
+        }
+        return {
+          type: 'final',
+          output: 'requirements-consumed-ok'
+        };
+      }
+    }),
+    listTools: () => tools,
+    maxStep: 5,
+    toolResultTimeoutMs: 1000
+  });
+
+  try {
+    const result = await runner.run({
+      sessionId: 's-turn-requirements',
+      input: '打个招呼',
+      runtimeContext: { voice_auto_reply_enabled: true, voice_auto_reply_mode: 'force_on' }
+    });
+
+    assert.equal(result.state, 'DONE');
+    assert.equal(result.output, 'requirements-consumed-ok');
+    assert.equal(decideCount, 3);
+    assert.deepEqual(seenToolSets[0].includes('live2d.emote'), true);
+    assert.deepEqual(seenToolSets[0].includes('voice.tts_aliyun_vc'), true);
+    assert.deepEqual(seenToolSets[1].includes('live2d.emote'), false);
+    assert.deepEqual(seenToolSets[1].includes('voice.tts_aliyun_vc'), true);
+    assert.deepEqual(seenToolSets[2].includes('live2d.emote'), false);
+    assert.deepEqual(seenToolSets[2].includes('voice.tts_aliyun_vc'), false);
+    assert.equal(
+      seenMessages[1].some((message) => (
+        message.role === 'system'
+          && /Live2D action has already been completed|live2d\.\* action has completed successfully/i.test(String(message.content || ''))
+      )),
+      true
+    );
+    assert.equal(
+      seenMessages[2].some((message) => (
+        message.role === 'system'
+          && /voice\.tts_aliyun_vc has completed successfully|required voice\.tts_aliyun_vc call has already been completed/i.test(String(message.content || ''))
+      )),
+      true
+    );
+  } finally {
+    unsubscribe();
+  }
+});
+
 test('ToolLoopRunner emits llm.prompt.assembled with fully assembled messages', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
