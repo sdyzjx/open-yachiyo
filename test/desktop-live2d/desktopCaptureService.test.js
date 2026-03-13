@@ -8,6 +8,7 @@ const { createDesktopPerceptionService } = require('../../apps/desktop-live2d/ma
 const { createDesktopCaptureStore } = require('../../apps/desktop-live2d/main/desktopCaptureStore');
 const {
   createDesktopCaptureService,
+  buildOutOfBoundsError,
   computeDownsampledSize,
   downsampleCaptureImage,
   computeVirtualDesktopBounds,
@@ -299,6 +300,86 @@ test('desktop capture service captures one region across multiple displays via v
   assert.equal(record.display_count, 2);
   assert.deepEqual(record.bounds, { x: -100, y: 10, width: 200, height: 40 });
   assert.deepEqual(record.pixel_size, { width: 200, height: 40 });
+});
+
+test('buildOutOfBoundsError exposes requested and desktop bounds for replanning', () => {
+  const error = buildOutOfBoundsError({
+    message: 'desktop.capture.region requires the requested bounds to stay within the virtual desktop',
+    requestedBounds: { x: 4200, y: 1000, width: 300, height: 500 },
+    virtualDesktopBounds: { x: -1920, y: 0, width: 4480, height: 1440 },
+    displayId: null,
+    hint: 'Use capture bounds offsets.'
+  });
+
+  assert.equal(error.code, -32005);
+  assert.equal(error.data.reason, 'OUT_OF_BOUNDS');
+  assert.deepEqual(error.data.requested_bounds, { x: 4200, y: 1000, width: 300, height: 500 });
+  assert.deepEqual(error.data.virtual_desktop_bounds, { x: -1920, y: 0, width: 4480, height: 1440 });
+  assert.equal(error.data.display_id_present, false);
+});
+
+test('desktop capture service returns structured out-of-bounds error for invalid virtual desktop regions', async () => {
+  const { perceptionService, captureStore } = createTestServices();
+  const desktopCapturer = {
+    async getSources() {
+      return [
+        { id: 'screen:1:0', display_id: '1', thumbnail: createFakeImage({ width: 1280, height: 720, label: 'left' }) },
+        { id: 'screen:2:0', display_id: '2', thumbnail: createFakeImage({ width: 3024, height: 1964, label: 'primary' }) }
+      ];
+    }
+  };
+  const nativeImage = {
+    createFromBitmap(buffer, options) {
+      return {
+        getSize() {
+          return { width: options.width, height: options.height };
+        },
+        toPNG() {
+          return Buffer.from(`desktop:${options.width}x${options.height}:${buffer.length}`);
+        },
+        crop(rect) {
+          return createFakeImage({
+            width: rect.width,
+            height: rect.height,
+            label: `desktop-crop:${rect.x},${rect.y}`
+          });
+        }
+      };
+    }
+  };
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    desktopCapturer,
+    nativeImage,
+    logger: { info() {} }
+  });
+
+  await assert.rejects(
+    captureService.captureRegion({
+      x: 2200,
+      y: 100,
+      width: 800,
+      height: 200
+    }),
+    (error) => {
+      assert.equal(error.code, -32005);
+      assert.equal(error.data.reason, 'OUT_OF_BOUNDS');
+      assert.deepEqual(error.data.virtual_desktop_bounds, {
+        x: -1280,
+        y: 0,
+        width: 2792,
+        height: 982
+      });
+      assert.deepEqual(error.data.requested_bounds, {
+        x: 2200,
+        y: 100,
+        width: 800,
+        height: 200
+      });
+      return true;
+    }
+  );
 });
 
 test('desktop capture service lists capturable windows', async () => {

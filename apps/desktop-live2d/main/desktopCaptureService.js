@@ -121,6 +121,29 @@ function computeVirtualDesktopBounds(displays = []) {
   };
 }
 
+function buildOutOfBoundsError({
+  message,
+  requestedBounds,
+  virtualDesktopBounds = null,
+  displayBounds = null,
+  displayId = null,
+  hint = null
+} = {}) {
+  return {
+    code: -32005,
+    message,
+    data: {
+      reason: 'OUT_OF_BOUNDS',
+      requested_bounds: requestedBounds ? toPlainBounds(requestedBounds) : null,
+      virtual_desktop_bounds: virtualDesktopBounds ? toPlainBounds(virtualDesktopBounds) : null,
+      display_bounds: displayBounds ? toPlainBounds(displayBounds) : null,
+      display_id: displayId == null ? null : String(displayId),
+      display_id_present: displayId != null,
+      hint: hint || null
+    }
+  };
+}
+
 function composeBitmapTile({ targetBuffer, targetWidth, targetHeight, tileBuffer, tileWidth, tileHeight, offsetX, offsetY }) {
   if (!Buffer.isBuffer(targetBuffer) || !Buffer.isBuffer(tileBuffer)) {
     throw new Error('desktop image composition requires bitmap buffers');
@@ -405,7 +428,13 @@ function createDesktopCaptureService({
       if (!display) {
         const composed = await composeVirtualDesktopCapture();
         if (!boundsContainBounds(composed.bounds, globalBounds)) {
-          throw new Error('desktop.capture.region requires the requested bounds to stay within the virtual desktop');
+          throw buildOutOfBoundsError({
+            message: 'desktop.capture.region requires the requested bounds to stay within the virtual desktop',
+            requestedBounds: globalBounds,
+            virtualDesktopBounds: composed.bounds,
+            displayId: normalized.displayId,
+            hint: 'When using a desktop capture artifact, convert local image coordinates into global desktop coordinates with the capture bounds offsets.'
+          });
         }
         if (typeof composed.image.crop !== 'function') {
           throw new Error('desktop virtual image cropping is unavailable');
@@ -439,7 +468,13 @@ function createDesktopCaptureService({
     }
 
     if (!boundsContainBounds(display.bounds, globalBounds)) {
-      throw new Error('desktop.capture.region requires the requested bounds to stay within one display');
+      throw buildOutOfBoundsError({
+        message: 'desktop.capture.region requires the requested bounds to stay within one display',
+        requestedBounds: globalBounds,
+        displayBounds: display.bounds,
+        displayId: display.id,
+        hint: 'Provide display_id to use display-relative coordinates, or keep global coordinates fully within the selected display bounds.'
+      });
     }
 
     const source = await loadDisplaySource(display);
@@ -532,6 +567,7 @@ module.exports = {
   createDesktopCaptureService,
   computeDownsampledSize,
   downsampleCaptureImage,
+  buildOutOfBoundsError,
   computeVirtualDesktopBounds,
   normalizeRegionCaptureRequest,
   normalizeWindowCaptureRequest,

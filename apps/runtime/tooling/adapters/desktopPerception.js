@@ -25,10 +25,12 @@ function buildRequestId(traceId) {
   return trace ? `desktop-${trace}-${suffix}` : `desktop-${suffix}`;
 }
 
-function mapRpcCodeToToolingCode(rpcCode) {
-  const code = Number(rpcCode);
+function mapRpcCodeToToolingCode(rpcError) {
+  const code = Number(rpcError?.code ?? rpcError);
+  const reason = String(rpcError?.data?.reason || '').trim().toUpperCase();
   if (code === -32602) return ErrorCode.VALIDATION_ERROR;
-  if (code === -32006 || code === -32005) return ErrorCode.PERMISSION_DENIED;
+  if (code === -32006) return ErrorCode.PERMISSION_DENIED;
+  if (code === -32005 && reason === 'OUT_OF_BOUNDS') return ErrorCode.OUT_OF_BOUNDS;
   if (code === -32003) return ErrorCode.TIMEOUT;
   return ErrorCode.RUNTIME_ERROR;
 }
@@ -114,7 +116,7 @@ function invokeDesktopRpc({
         finish(
           reject,
           new ToolingError(
-            mapRpcCodeToToolingCode(message.error.code),
+            mapRpcCodeToToolingCode(message.error),
             `desktop rpc error(${message.error.code}): ${message.error.message || 'unknown error'}`,
             {
               request_id: requestId,

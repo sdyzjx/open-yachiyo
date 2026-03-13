@@ -35,6 +35,7 @@ test('desktop perception buildRequestId embeds trace id prefix', () => {
 test('desktop perception rpc code mapping matches tooling semantics', () => {
   assert.equal(mapRpcCodeToToolingCode(-32602), 'VALIDATION_ERROR');
   assert.equal(mapRpcCodeToToolingCode(-32006), 'PERMISSION_DENIED');
+  assert.equal(mapRpcCodeToToolingCode({ code: -32005, data: { reason: 'OUT_OF_BOUNDS' } }), 'OUT_OF_BOUNDS');
   assert.equal(mapRpcCodeToToolingCode(-32003), 'TIMEOUT');
   assert.equal(mapRpcCodeToToolingCode(-32001), 'RUNTIME_ERROR');
 });
@@ -234,6 +235,62 @@ test('invokeDesktopRpc maps rpc errors to tooling errors', async (t) => {
     (err) => {
       assert.equal(err.code, 'VALIDATION_ERROR');
       assert.equal(err.details.trace_id, 'trace-desktop-err');
+      return true;
+    }
+  );
+});
+
+test('invokeDesktopRpc maps out-of-bounds rpc errors without treating them as permissions', async (t) => {
+  const token = 'desktop-token-4';
+  const { wss, port } = await createWsServer();
+  t.after(async () => {
+    await new Promise((resolve) => wss.close(resolve));
+  });
+
+  wss.on('connection', (ws, request) => {
+    const url = new URL(request.url || '/', 'ws://localhost');
+    if (url.searchParams.get('token') !== token) {
+      ws.close(1008, 'unauthorized');
+      return;
+    }
+    ws.on('message', (raw) => {
+      const req = JSON.parse(String(raw));
+      ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id: req.id,
+        error: {
+          code: -32005,
+          message: 'desktop.capture.region requires the requested bounds to stay within the virtual desktop',
+          data: {
+            reason: 'OUT_OF_BOUNDS',
+            requested_bounds: { x: 4200, y: 1000, width: 300, height: 500 },
+            virtual_desktop_bounds: { x: -1920, y: 0, width: 4480, height: 1440 }
+          }
+        }
+      }));
+    });
+  });
+
+  await assert.rejects(
+    invokeDesktopRpc({
+      method: 'desktop.capture.region',
+      params: { x: 4200, y: 1000, width: 300, height: 500 },
+      env: {
+        DESKTOP_LIVE2D_RPC_HOST: '127.0.0.1',
+        DESKTOP_LIVE2D_RPC_PORT: String(port),
+        DESKTOP_LIVE2D_RPC_TOKEN: token
+      },
+      traceId: 'trace-desktop-oob'
+    }),
+    (err) => {
+      assert.equal(err.code, 'OUT_OF_BOUNDS');
+      assert.equal(err.details.rpcError.data.reason, 'OUT_OF_BOUNDS');
+      assert.deepEqual(err.details.rpcError.data.virtual_desktop_bounds, {
+        x: -1920,
+        y: 0,
+        width: 4480,
+        height: 1440
+      });
       return true;
     }
   );

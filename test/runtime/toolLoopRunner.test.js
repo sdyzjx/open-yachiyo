@@ -997,6 +997,91 @@ test('ToolLoopRunner stops when tool error retries exceed configured limit', asy
   dispatcher.stop();
 });
 
+test('ToolLoopRunner does not retry non-retryable tool errors such as out-of-bounds captures', async () => {
+  const bus = new RuntimeEventBus();
+  let attempts = 0;
+
+  const executor = {
+    listTools() {
+      return [
+        {
+          name: 'desktop.capture.region',
+          input_schema: {
+            type: 'object',
+            properties: {
+              x: { type: 'integer' }
+            },
+            additionalProperties: true
+          },
+          side_effect_level: 'read',
+          requires_lock: true
+        }
+      ];
+    },
+    async execute() {
+      attempts += 1;
+      return {
+        ok: false,
+        code: 'OUT_OF_BOUNDS',
+        error: 'desktop rpc error(-32005): desktop.capture.region requires the requested bounds to stay within the virtual desktop',
+        details: {
+          rpcError: {
+            code: -32005,
+            data: {
+              reason: 'OUT_OF_BOUNDS',
+              requested_bounds: { x: 4200, y: 1000, width: 300, height: 500 },
+              virtual_desktop_bounds: { x: -1920, y: 0, width: 4480, height: 1440 }
+            }
+          }
+        }
+      };
+    }
+  };
+
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let reasonerCalls = 0;
+  const reasoner = {
+    async decide() {
+      reasonerCalls += 1;
+      return {
+        type: 'tool',
+        tool: { call_id: `oob-${reasonerCalls}`, name: 'desktop.capture.region', args: { x: 4200 } }
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 8,
+    toolResultTimeoutMs: 1000,
+    toolErrorMaxRetries: 5
+  });
+
+  const result = await runner.run({
+    sessionId: 's-no-retry-oob',
+    input: 'capture region',
+    onEvent: (evt) => events.push(evt)
+  });
+
+  assert.equal(result.state, 'ERROR');
+  assert.match(result.output, /stay within the virtual desktop/);
+  assert.equal(result.output.includes('最大重试次数'), false);
+  assert.equal(attempts, 1);
+  assert.equal(reasonerCalls, 1);
+  assert.equal(events.some((evt) => evt.event === 'tool.retry.scheduled'), false);
+  assert.equal(
+    events.some((evt) => evt.event === 'tool.error' && evt.payload.non_retryable === true),
+    true
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects seedMessages into reasoner prompt', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
@@ -1450,6 +1535,17 @@ test('ToolLoopRunner injects desktop capture guidance when desktop capture tools
           required: ['x', 'y', 'width', 'height'],
           additionalProperties: false
         }
+      },
+      {
+        name: 'desktop.locate.desktop',
+        input_schema: {
+          type: 'object',
+          properties: {
+            target: { type: 'string' }
+          },
+          required: ['target'],
+          additionalProperties: false
+        }
       }
     ],
     maxStep: 1,
@@ -1461,6 +1557,14 @@ test('ToolLoopRunner injects desktop capture guidance when desktop capture tools
   assert.equal(result.output, 'ok-desktop-capture-guidance');
   assert.equal(
     seenMessages.some((m) => /desktop\.capture\.screen/.test(String(m.content || '')) && /MUST first call/.test(String(m.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((m) => /desktop\.locate\.\*/.test(String(m.content || '')) && /prefer/.test(String(m.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((m) => /display_id/.test(String(m.content || '')) && /relative to that display/.test(String(m.content || ''))),
     true
   );
 

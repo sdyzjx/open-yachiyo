@@ -109,6 +109,18 @@ function formatDecisionEvent(decision) {
   };
 }
 
+function isToolResultRetryable(toolResult = {}) {
+  const code = String(toolResult?.code || '').trim().toUpperCase();
+  const rpcReason = String(toolResult?.details?.rpcError?.data?.reason || '').trim().toUpperCase();
+  const errorText = String(toolResult?.error || '').toLowerCase();
+  if (code === 'APPROVAL_REQUIRED') return false;
+  if (code === 'VALIDATION_ERROR' || code === 'OUT_OF_BOUNDS') return false;
+  if (rpcReason === 'OUT_OF_BOUNDS') return false;
+  if (errorText.includes('stay within the virtual desktop')) return false;
+  if (errorText.includes('stay within one display')) return false;
+  return true;
+}
+
 function normalizeToolCalls(decision) {
   const calls = Array.isArray(decision.tools) && decision.tools.length > 0
     ? decision.tools
@@ -154,6 +166,7 @@ function buildDesktopCapturePrompt(availableTools = []) {
       .map((tool) => String(tool?.name || '').trim())
       .filter(Boolean)
   );
+  const hasLocateTool = toolNames.has('desktop.locate.capture') || toolNames.has('desktop.locate.desktop');
   if (
     !toolNames.has('desktop.capture.screen')
     && !toolNames.has('desktop.capture.region')
@@ -167,6 +180,11 @@ function buildDesktopCapturePrompt(availableTools = []) {
     'When the user asks about current desktop, screen, UI, dialog, window, button, error, or any visible on-screen state, you MUST first call an appropriate desktop.capture.* tool before answering.',
     'Use desktop.capture.screen for one display, desktop.capture.region for a specific area, desktop.capture.window for one window, and desktop.capture.desktop for the full virtual desktop.',
     'After a desktop.capture.* tool succeeds, the loop will attach the screenshot in the next turn. Analyze that attached screenshot directly instead of guessing.',
+    hasLocateTool
+      ? 'When you need the position of an icon, button, text block, or other on-screen target, prefer desktop.locate.* tools. Use the returned display_id and display_relative_bounds directly instead of manually estimating desktop.capture.region coordinates.'
+      : 'Do not manually guess region coordinates from screenshots unless they are explicitly known from prior tool output.',
+    'If desktop.capture.region includes display_id, then x/y/width/height are relative to that display and must fit within that display bounds.',
+    'If desktop.capture.region omits display_id, then x/y/width/height are global desktop coordinates and must stay within the target capture or virtual desktop bounds.',
     'Do not answer desktop-visibility questions without first capturing a screenshot.'
   ].join(' ');
 }
@@ -875,15 +893,16 @@ class ToolLoopRunner {
                 continue;
               }
 
-              const nextRetryCount = toolErrorRetryCount + 1;
-              const retryLimitReached = nextRetryCount > this.toolErrorMaxRetries;
+              const retryAllowed = isToolResultRetryable(toolResult);
+              const nextRetryCount = retryAllowed ? (toolErrorRetryCount + 1) : toolErrorRetryCount;
+              const retryLimitReached = !retryAllowed || nextRetryCount > this.toolErrorMaxRetries;
               const retryPayload = {
                 ok: false,
                 code: toolResult.code || 'RUNTIME_ERROR',
                 error: toolResult.error,
                 details: toolResult.details || null,
-                retryable: !retryLimitReached,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retryable: retryAllowed && !retryLimitReached,
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               };
               const retryContent = JSON.stringify(retryPayload);
@@ -900,7 +919,7 @@ class ToolLoopRunner {
                 error: toolResult.error,
                 code: toolResult.code,
                 details: toolResult.details || null,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               });
               emit('tool.result', {
@@ -909,8 +928,8 @@ class ToolLoopRunner {
                 result: retryContent,
                 code: toolResult.code || 'RUNTIME_ERROR',
                 error: true,
-                retryable: !retryLimitReached,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retryable: retryAllowed && !retryLimitReached,
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               });
 
@@ -921,12 +940,15 @@ class ToolLoopRunner {
                   error: toolResult.error,
                   name: effectiveCall.name,
                   code: toolResult.code,
-                  retry_exhausted: true,
-                  retry_count: this.toolErrorMaxRetries,
+                  retry_exhausted: retryAllowed,
+                  non_retryable: !retryAllowed,
+                  retry_count: retryAllowed ? this.toolErrorMaxRetries : toolErrorRetryCount,
                   retry_limit: this.toolErrorMaxRetries
                 });
                 return {
-                  output: `工具执行失败：${toolResult.error}（已达到最大重试次数 ${this.toolErrorMaxRetries}）`,
+                  output: retryAllowed
+                    ? `工具执行失败：${toolResult.error}（已达到最大重试次数 ${this.toolErrorMaxRetries}）`
+                    : `工具执行失败：${toolResult.error}`,
                   traceId,
                   state: sm.state
                 };
