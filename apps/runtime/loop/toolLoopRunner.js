@@ -140,6 +140,14 @@ function shouldHintPersonaTool(input) {
   return keywords.some((kw) => text.includes(kw));
 }
 
+function isLive2dToolName(name) {
+  return String(name || '').trim().startsWith('live2d.');
+}
+
+function isVoiceAutoReplyToolName(name) {
+  return String(name || '').trim() === 'voice.tts_aliyun_vc';
+}
+
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
   if (runtimeContext?.voice_auto_reply_mode === 'force_on') {
@@ -158,6 +166,37 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
     'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
     'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
   ].join(' ');
+}
+
+function buildSatisfiedTurnRequirementPrompt(turnRequirements = {}, availableTools = []) {
+  const toolNames = new Set(
+    (Array.isArray(availableTools) ? availableTools : [])
+      .map((tool) => String(tool?.name || '').trim())
+      .filter(Boolean)
+  );
+  const parts = [];
+  if (turnRequirements?.live2d_satisfied && Array.from(toolNames).some((name) => isLive2dToolName(name))) {
+    parts.push(
+      'Status update for the current reply turn: the required Live2D action has already been completed. Do not call another live2d.* tool before producing the final answer.'
+    );
+  }
+  if (turnRequirements?.voice_tts_satisfied && toolNames.has('voice.tts_aliyun_vc')) {
+    parts.push(
+      'Status update for the current reply turn: the required voice.tts_aliyun_vc call has already been completed. Do not call voice.tts_aliyun_vc again before producing the final answer.'
+    );
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+function filterToolsForSatisfiedTurnRequirements(availableTools = [], turnRequirements = {}) {
+  if (!Array.isArray(availableTools) || availableTools.length === 0) return [];
+  return availableTools.filter((tool) => {
+    const toolName = String(tool?.name || '').trim();
+    if (!toolName) return false;
+    if (turnRequirements?.live2d_satisfied && isLive2dToolName(toolName)) return false;
+    if (turnRequirements?.voice_tts_satisfied && isVoiceAutoReplyToolName(toolName)) return false;
+    return true;
+  });
 }
 
 function buildDesktopCapturePrompt(availableTools = []) {
@@ -425,6 +464,10 @@ class ToolLoopRunner {
       stepIndex: 0,
       input,
       observations: [],
+      turnRequirements: {
+        live2d_satisfied: false,
+        voice_tts_satisfied: false
+      },
       desktopCaptureAttachment: null,
       messages: [
         {
@@ -538,14 +581,17 @@ class ToolLoopRunner {
 
       while (ctx.stepIndex < this.maxStep) {
         ctx.stepIndex += 1;
-        const availableTools = this.listTools();
+        const allAvailableTools = this.listTools();
+        const availableTools = filterToolsForSatisfiedTurnRequirements(allAvailableTools, ctx.turnRequirements);
         const toolDefByName = new Map(
           (Array.isArray(availableTools) ? availableTools : [])
             .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
             .map((tool) => [tool.name, tool])
         );
+        const satisfiedTurnRequirementPrompt = buildSatisfiedTurnRequirementPrompt(ctx.turnRequirements, allAvailableTools);
         const reasonerMessages = [
           ...ctx.messages,
+          ...(satisfiedTurnRequirementPrompt ? [{ role: 'system', content: satisfiedTurnRequirementPrompt }] : []),
           ...(ctx.desktopCaptureAttachment?.analysis_prompt
             ? [{ role: 'system', content: ctx.desktopCaptureAttachment.analysis_prompt }]
             : []),
@@ -990,6 +1036,21 @@ class ToolLoopRunner {
               name: effectiveCall.name,
               result: toolResult.result
             });
+
+            if (!ctx.turnRequirements.live2d_satisfied && isLive2dToolName(effectiveCall.name)) {
+              ctx.turnRequirements.live2d_satisfied = true;
+              ctx.messages.push({
+                role: 'system',
+                content: 'Status update for the current reply turn: one live2d.* action has completed successfully. Do not call another live2d.* tool before producing the final answer.'
+              });
+            }
+            if (!ctx.turnRequirements.voice_tts_satisfied && isVoiceAutoReplyToolName(effectiveCall.name)) {
+              ctx.turnRequirements.voice_tts_satisfied = true;
+              ctx.messages.push({
+                role: 'system',
+                content: 'Status update for the current reply turn: voice.tts_aliyun_vc has completed successfully. Do not call voice.tts_aliyun_vc again before producing the final answer.'
+              });
+            }
 
             const desktopCaptureArtifact = normalizeDesktopCaptureArtifact(effectiveCall.name, toolResult.result);
             if (desktopCaptureArtifact) {
