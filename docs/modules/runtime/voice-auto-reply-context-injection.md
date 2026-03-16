@@ -6,7 +6,11 @@ This feature adds an optional runtime context switch that injects a voice auto-r
 When enabled, the model is guided to call `voice.tts_aliyun_vc` before long text replies.
 When disabled, no voice auto-reply prompt is injected.
 
-This implementation is context-injection only. It does not enforce tool scheduling or finalization gates.
+Current behavior includes turn-local consumption inside `ToolLoopRunner`:
+
+- when `voice.tts_aliyun_vc` succeeds once in the current reply turn, the loop marks the voice requirement as satisfied
+- later steps in the same reply turn no longer expose `voice.tts_aliyun_vc` back to the planner
+- the loop also injects a short status system message so the model knows TTS is already completed for this reply
 
 ## Switch Model
 The runtime switch source is:
@@ -43,9 +47,17 @@ Prompt intent:
 2. `RuntimeRpcWorker` passes `runtimeContext` into `ToolLoopRunner`.
 3. `ToolLoopRunner` conditionally appends a `system` message.
 
+## Turn-local constraint
+
+The prompt text says "before returning the final answer", but the runtime treats this as a **reply-turn local requirement**, not a per-step requirement.
+
+That means:
+
+- one successful `voice.tts_aliyun_vc` call is enough for one final user-facing reply
+- the loop must not keep asking the model to call TTS again on every subsequent tool step
+- a new user request starts a new turn and re-enables the requirement
+
 ## Non-goals
-- No strict enforcement if model ignores instruction.
-- No voice tool reorder logic.
 - No playback/transport changes.
 
 ## APIs

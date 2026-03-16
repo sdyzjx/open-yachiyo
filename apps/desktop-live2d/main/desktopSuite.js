@@ -15,6 +15,9 @@ const { Live2dRpcServer } = require('./rpcServer');
 const { IpcRpcBridge } = require('./ipcBridge');
 const { GatewayRuntimeClient, createDesktopSessionId } = require('./gatewayRuntimeClient');
 const { listDesktopTools, resolveToolInvoke } = require('./toolRegistry');
+const { createDesktopPerceptionService } = require('./desktopPerceptionService');
+const { createDesktopCaptureStore } = require('./desktopCaptureStore');
+const { createDesktopCaptureService } = require('./desktopCaptureService');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
 const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
 const {
@@ -72,9 +75,10 @@ function normalizeLive2dPresetConfig(config = {}) {
   };
 }
 
-function loadLive2dPresetConfig({ projectRoot, env = process.env, logger = console } = {}) {
+function loadLive2dPresetConfig({ assetRoot = null, projectRoot = null, env = process.env, logger = console } = {}) {
+  const resolvedAssetRoot = assetRoot || projectRoot || process.cwd();
   const presetPath = path.resolve(
-    env.LIVE2D_PRESETS_PATH || path.join(projectRoot || process.cwd(), 'config', 'live2d-presets.yaml')
+    env.LIVE2D_PRESETS_PATH || path.join(resolvedAssetRoot, 'config', 'live2d-presets.yaml')
   );
 
   try {
@@ -1620,7 +1624,10 @@ async function startDesktopSuite({
   BrowserWindow,
   ipcMain,
   screen,
+  systemPreferences = null,
   shell = null,
+  assetRoot = null,
+  workspaceRoot = null,
   projectRoot = null,
   onResizeModeChange = null,
   logger = console,
@@ -1631,18 +1638,34 @@ async function startDesktopSuite({
   }
 
   const config = resolveDesktopLive2dConfig({
-    projectRoot: projectRoot || undefined
+    assetRoot: assetRoot || projectRoot || undefined,
+    workspaceRoot: workspaceRoot || projectRoot || undefined
   });
   const modelValidation = validateModelAssetDirectory({
     modelDir: config.modelDir,
     modelJsonName: config.modelJsonName
   });
   const live2dPresetConfig = loadLive2dPresetConfig({
-    projectRoot: config.projectRoot,
+    assetRoot: config.assetRoot,
     env: process.env,
     logger
   });
   const display = screen?.getPrimaryDisplay?.();
+  const perceptionService = createDesktopPerceptionService({ screen, systemPreferences });
+  const captureStore = createDesktopCaptureStore({
+    captureDir: config.desktopCaptureDir,
+    ttlMs: config.desktopCaptureTtlMs
+  });
+  const captureService = createDesktopCaptureService({
+    perceptionService,
+    captureStore,
+    logger
+  });
+  const captureCleanupController = createCaptureCleanupController({
+    captureStore,
+    intervalMs: config.desktopCaptureCleanupIntervalMs,
+    logger
+  });
 
   logger.info?.('[desktop-live2d] desktop_up_start', {
     modelDir: config.modelDir,
@@ -1651,7 +1674,7 @@ async function startDesktopSuite({
   });
 
   const gatewaySupervisor = new GatewaySupervisor({
-    projectRoot: config.projectRoot,
+    projectRoot: config.assetRoot,
     gatewayUrl: config.gatewayUrl,
     gatewayHost: config.gatewayHost,
     gatewayPort: config.gatewayPort,
@@ -1704,8 +1727,8 @@ async function startDesktopSuite({
     bubbleWidth: bubbleRuntimeConfig.width,
     bubbleHeight: bubbleRuntimeConfig.height
   });
-  await chatWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
-  await bubbleWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
+  await chatWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
+  await bubbleWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
 
   const chatPanelConfig = config.uiConfig?.chat?.panel || {};
   const chatState = {
@@ -3214,7 +3237,7 @@ async function startDesktopSuite({
 
   const rendererReadyPromise = waitForRendererReady({ ipcMain, timeoutMs: 15000 });
 
-  await avatarWindow.loadFile(path.join(config.projectRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
+  await avatarWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
   await rendererReadyPromise;
   syncAvatarWindowMousePassthrough();
   syncChatStateToRenderer();
@@ -3245,7 +3268,10 @@ async function startDesktopSuite({
       appendChatMessage,
       clearChatMessages,
       showBubble,
-      avatarWindow
+      avatarWindow,
+      perceptionService,
+      captureStore,
+      captureService
     }),
     logger
   });
@@ -3272,6 +3298,13 @@ async function startDesktopSuite({
       'chat.panel.hide',
       'chat.panel.append',
       'chat.panel.clear',
+      'desktop.perception.displays.list',
+      'desktop.perception.windows.list',
+      'desktop.capture.screen',
+      'desktop.capture.region',
+      'desktop.capture.window',
+      'desktop.capture.get',
+      'desktop.capture.delete',
       'tool.list',
       'tool.invoke'
     ]
@@ -3298,6 +3331,7 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
     mouthWaveformRecorder.dispose();
+    captureCleanupController.stop();
 
     if (rpcServerRef) {
       await rpcServerRef.stop();
@@ -3487,6 +3521,46 @@ function createChatInputListener({ logger = console, onChatInput = null } = {}) 
   };
 }
 
+function createCaptureCleanupController({
+  captureStore = null,
+  intervalMs = 60 * 1000,
+  logger = console,
+  setIntervalFn = setInterval,
+  clearIntervalFn = clearInterval,
+  now = () => Date.now()
+} = {}) {
+  if (!captureStore || typeof captureStore.cleanupExpiredCaptures !== 'function') {
+    return {
+      runOnce() {
+        return { ok: false, deleted_count: 0, deleted_capture_ids: [] };
+      },
+      stop() {}
+    };
+  }
+
+  function runOnce(referenceNow = now()) {
+    const result = captureStore.cleanupExpiredCaptures(referenceNow);
+    if (result.deleted_count > 0) {
+      logger.info?.('[desktop-perception] cleaned expired captures', {
+        deleted_count: result.deleted_count,
+        deleted_capture_ids: result.deleted_capture_ids
+      });
+    }
+    return result;
+  }
+
+  const timer = setIntervalFn(() => {
+    runOnce();
+  }, Math.max(1000, Number(intervalMs) || 60 * 1000));
+
+  return {
+    runOnce,
+    stop() {
+      clearIntervalFn(timer);
+    }
+  };
+}
+
 async function handleDesktopRpcRequest({
   request,
   bridge,
@@ -3495,9 +3569,96 @@ async function handleDesktopRpcRequest({
   appendChatMessage = null,
   clearChatMessages = null,
   showBubble = null,
-  avatarWindow = null
+  avatarWindow = null,
+  perceptionService = null,
+  captureStore = null,
+  captureService = null
 }) {
   console.log(`[Desktop RPC] Received method: ${request.method}`, request.params);
+
+  if (request.method === 'desktop.perception.displays.list') {
+    return {
+      displays: typeof perceptionService?.listDisplays === 'function'
+        ? perceptionService.listDisplays()
+        : []
+    };
+  }
+
+  if (request.method === 'desktop.perception.windows.list') {
+    return typeof captureService?.listWindows === 'function'
+      ? captureService.listWindows()
+      : { windows: [] };
+  }
+
+  if (request.method === 'desktop.perception.capabilities') {
+    return typeof perceptionService?.getCapabilities === 'function'
+      ? perceptionService.getCapabilities()
+      : {
+          platform: process.platform,
+          displays_available: false,
+          screen_capture: false,
+          region_capture: false,
+          reason: 'desktop perception service unavailable'
+        };
+  }
+
+  if (request.method === 'desktop.perception.permissions') {
+    return typeof perceptionService?.getPermissions === 'function'
+      ? perceptionService.getPermissions()
+      : {
+          platform: process.platform,
+          displays_available: false,
+          screen_capture: {
+            status: 'unknown',
+            requires_permission: process.platform === 'darwin',
+            reason: 'desktop perception service unavailable'
+          }
+        };
+  }
+
+  if (request.method === 'desktop.capture.screen') {
+    if (!captureService || typeof captureService.captureScreen !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureScreen(request.params || {});
+  }
+
+  if (request.method === 'desktop.capture.desktop') {
+    if (!captureService || typeof captureService.captureDesktop !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureDesktop(request.params || {});
+  }
+
+  if (request.method === 'desktop.capture.region') {
+    if (!captureService || typeof captureService.captureRegion !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureRegion(request.params || {});
+  }
+
+  if (request.method === 'desktop.capture.window') {
+    if (!captureService || typeof captureService.captureWindow !== 'function') {
+      return { ok: false, error: 'desktop capture service unavailable' };
+    }
+    return captureService.captureWindow(request.params || {});
+  }
+
+  if (request.method === 'desktop.capture.get') {
+    if (!captureStore || typeof captureStore.getCaptureRecord !== 'function') {
+      return null;
+    }
+    const captureId = request.params?.captureId || request.params?.capture_id || '';
+    return captureStore.getCaptureRecord(captureId);
+  }
+
+  if (request.method === 'desktop.capture.delete') {
+    if (!captureStore || typeof captureStore.deleteCaptureRecord !== 'function') {
+      return { ok: false, deleted: false };
+    }
+    const captureId = request.params?.captureId || request.params?.capture_id || '';
+    return captureStore.deleteCaptureRecord(captureId);
+  }
 
   if (request.method === 'tool.list') {
     return {
@@ -3510,6 +3671,29 @@ async function handleDesktopRpcRequest({
       name: request.params?.name,
       args: request.params?.arguments
     });
+    if (resolved.method.startsWith('desktop.')) {
+      const result = await handleDesktopRpcRequest({
+        request: {
+          method: resolved.method,
+          params: resolved.params
+        },
+        bridge,
+        rendererTimeoutMs,
+        setChatPanelVisible,
+        appendChatMessage,
+        clearChatMessages,
+        showBubble,
+        avatarWindow,
+        perceptionService,
+        captureStore,
+        captureService
+      });
+      return {
+        ok: true,
+        tool: resolved.toolName,
+        result
+      };
+    }
     const result = await bridge.invoke({
       method: resolved.method,
       params: resolved.params,
@@ -3965,6 +4149,7 @@ module.exports = {
   createBubbleMetricsListener,
   createActionTelemetryListener,
   createChatInputListener,
+  createCaptureCleanupController,
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,

@@ -13,6 +13,8 @@
     "desktop:start": "electron apps/desktop-live2d/main/electronMain.js",
     "desktop:pack:win": "electron-builder --win nsis --publish never",
     "desktop:dist:win": "electron-builder --win nsis --x64 --publish never",
+    "desktop:dir:mac": "electron-builder --mac dir --arm64 --publish never",
+    "desktop:install:mac": "bash scripts/install-mac-dev-build.sh",
     "desktop:pack:mac": "electron-builder --mac dmg zip --publish never",
     "desktop:dist:mac": "electron-builder --mac dmg zip --publish never",
     "live2d:import": "node scripts/live2d-import.js",

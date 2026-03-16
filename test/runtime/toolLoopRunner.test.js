@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { RuntimeEventBus } = require('../../apps/runtime/bus/eventBus');
 const { ToolExecutor } = require('../../apps/runtime/executor/toolExecutor');
@@ -205,6 +208,52 @@ test('ToolLoopRunner emits llm.stream events when streaming decision is enabled'
   assert.deepEqual(deltas, ['你好', '，世界']);
   const finalEvent = events.find((evt) => evt.event === 'llm.final');
   assert.equal(finalEvent.payload.streamed, true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner forwards tool progress bus events into runtime events', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const reasoner = {
+    async decide() {
+      bus.publish('tool.call.progress', {
+        session_id: 's-tool-progress',
+        call_id: 'progress-call-1',
+        stage: 'analysis_started',
+        public_message: '截图已完成，正在分析。'
+      });
+      return {
+        type: 'final',
+        output: 'tool-progress-ok'
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 2,
+    toolResultTimeoutMs: 2000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-tool-progress',
+    input: 'progress please',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'tool-progress-ok');
+  const progressEvent = events.find((evt) => evt.event === 'tool.progress');
+  assert.ok(progressEvent);
+  assert.equal(progressEvent.payload.stage, 'analysis_started');
+  assert.equal(progressEvent.payload.public_message, '截图已完成，正在分析。');
 
   dispatcher.stop();
 });
@@ -948,6 +997,91 @@ test('ToolLoopRunner stops when tool error retries exceed configured limit', asy
   dispatcher.stop();
 });
 
+test('ToolLoopRunner does not retry non-retryable tool errors such as out-of-bounds captures', async () => {
+  const bus = new RuntimeEventBus();
+  let attempts = 0;
+
+  const executor = {
+    listTools() {
+      return [
+        {
+          name: 'desktop.capture.region',
+          input_schema: {
+            type: 'object',
+            properties: {
+              x: { type: 'integer' }
+            },
+            additionalProperties: true
+          },
+          side_effect_level: 'read',
+          requires_lock: true
+        }
+      ];
+    },
+    async execute() {
+      attempts += 1;
+      return {
+        ok: false,
+        code: 'OUT_OF_BOUNDS',
+        error: 'desktop rpc error(-32005): desktop.capture.region requires the requested bounds to stay within the virtual desktop',
+        details: {
+          rpcError: {
+            code: -32005,
+            data: {
+              reason: 'OUT_OF_BOUNDS',
+              requested_bounds: { x: 4200, y: 1000, width: 300, height: 500 },
+              virtual_desktop_bounds: { x: -1920, y: 0, width: 4480, height: 1440 }
+            }
+          }
+        }
+      };
+    }
+  };
+
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let reasonerCalls = 0;
+  const reasoner = {
+    async decide() {
+      reasonerCalls += 1;
+      return {
+        type: 'tool',
+        tool: { call_id: `oob-${reasonerCalls}`, name: 'desktop.capture.region', args: { x: 4200 } }
+      };
+    }
+  };
+
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => reasoner,
+    listTools: () => executor.listTools(),
+    maxStep: 8,
+    toolResultTimeoutMs: 1000,
+    toolErrorMaxRetries: 5
+  });
+
+  const result = await runner.run({
+    sessionId: 's-no-retry-oob',
+    input: 'capture region',
+    onEvent: (evt) => events.push(evt)
+  });
+
+  assert.equal(result.state, 'ERROR');
+  assert.match(result.output, /stay within the virtual desktop/);
+  assert.equal(result.output.includes('最大重试次数'), false);
+  assert.equal(attempts, 1);
+  assert.equal(reasonerCalls, 1);
+  assert.equal(events.some((evt) => evt.event === 'tool.retry.scheduled'), false);
+  assert.equal(
+    events.some((evt) => evt.event === 'tool.error' && evt.payload.non_retryable === true),
+    true
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects seedMessages into reasoner prompt', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
@@ -1252,6 +1386,150 @@ test('ToolLoopRunner injects forced voice auto-reply prompt when session overrid
   dispatcher.stop();
 });
 
+test('ToolLoopRunner consumes live2d and voice reply-turn requirements after successful tool execution', { concurrency: false }, async () => {
+  const bus = new RuntimeEventBus();
+  const tools = [
+    {
+      name: 'live2d.emote',
+      description: 'live2d emote',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          emotion: { type: 'string' },
+          intensity: { type: 'string' },
+          duration_sec: { type: 'number' }
+        },
+        required: ['emotion'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'voice.tts_aliyun_vc',
+      description: 'voice tool',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          voiceTag: { type: 'string' }
+        },
+        required: ['text'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'echo',
+      description: 'echo',
+      side_effect_level: 'none',
+      input_schema: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false
+      }
+    }
+  ];
+  const unsubscribe = bus.subscribe('tool.call.requested', (payload) => {
+    const toolName = String(payload?.tool?.name || '');
+    let result = 'ok';
+    if (toolName === 'live2d.emote') {
+      result = JSON.stringify({ ok: true, mode: 'event' });
+    } else if (toolName === 'voice.tts_aliyun_vc') {
+      result = JSON.stringify({ status: 'accepted' });
+    }
+    setImmediate(() => {
+      bus.publish('tool.call.result', {
+        trace_id: payload.trace_id,
+        session_id: payload.session_id,
+        step_index: payload.step_index,
+        call_id: payload.call_id,
+        name: toolName,
+        ok: true,
+        result,
+        metrics: { latency_ms: 0 }
+      });
+    });
+  });
+
+  let decideCount = 0;
+  const seenToolSets = [];
+  const seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages, tools }) {
+        decideCount += 1;
+        seenToolSets.push((tools || []).map((tool) => tool.name));
+        seenMessages.push(messages);
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'live2d-turn-1',
+              name: 'live2d.emote',
+              args: { emotion: 'happy_bright', intensity: 'medium', duration_sec: 3 }
+            }
+          };
+        }
+        if (decideCount === 2) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'voice-turn-1',
+              name: 'voice.tts_aliyun_vc',
+              args: { text: '你好呀', voiceTag: 'zh' }
+            }
+          };
+        }
+        return {
+          type: 'final',
+          output: 'requirements-consumed-ok'
+        };
+      }
+    }),
+    listTools: () => tools,
+    maxStep: 5,
+    toolResultTimeoutMs: 1000
+  });
+
+  try {
+    const result = await runner.run({
+      sessionId: 's-turn-requirements',
+      input: '打个招呼',
+      runtimeContext: { voice_auto_reply_enabled: true, voice_auto_reply_mode: 'force_on' }
+    });
+
+    assert.equal(result.state, 'DONE');
+    assert.equal(result.output, 'requirements-consumed-ok');
+    assert.equal(decideCount, 3);
+    assert.deepEqual(seenToolSets[0].includes('live2d.emote'), true);
+    assert.deepEqual(seenToolSets[0].includes('voice.tts_aliyun_vc'), true);
+    assert.deepEqual(seenToolSets[1].includes('live2d.emote'), false);
+    assert.deepEqual(seenToolSets[1].includes('voice.tts_aliyun_vc'), true);
+    assert.deepEqual(seenToolSets[2].includes('live2d.emote'), false);
+    assert.deepEqual(seenToolSets[2].includes('voice.tts_aliyun_vc'), false);
+    assert.equal(
+      seenMessages[1].some((message) => (
+        message.role === 'system'
+          && /Live2D action has already been completed|live2d\.\* action has completed successfully/i.test(String(message.content || ''))
+      )),
+      true
+    );
+    assert.equal(
+      seenMessages[2].some((message) => (
+        message.role === 'system'
+          && /voice\.tts_aliyun_vc has completed successfully|required voice\.tts_aliyun_vc call has already been completed/i.test(String(message.content || ''))
+      )),
+      true
+    );
+  } finally {
+    unsubscribe();
+  }
+});
+
 test('ToolLoopRunner emits llm.prompt.assembled with fully assembled messages', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);
@@ -1361,6 +1639,191 @@ test('ToolLoopRunner injects live2d action planning guidance into system prompt'
   assert.match(String(seenMessages[0]?.content || ''), /duration_sec/);
 
   dispatcher.stop();
+});
+
+test('ToolLoopRunner injects desktop capture guidance when desktop capture tools are available', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-desktop-capture-guidance' };
+      }
+    }),
+    listTools: () => [
+      ...executor.listTools(),
+      {
+        name: 'desktop.capture.screen',
+        input_schema: {
+          type: 'object',
+          properties: { display_id: { type: ['string', 'integer'] } },
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'desktop.capture.region',
+        input_schema: {
+          type: 'object',
+          properties: {
+            x: { type: 'integer' },
+            y: { type: 'integer' },
+            width: { type: 'integer' },
+            height: { type: 'integer' }
+          },
+          required: ['x', 'y', 'width', 'height'],
+          additionalProperties: false
+        }
+      },
+    ],
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({ sessionId: 's-desktop-capture', input: '看一下当前桌面上是什么' });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-desktop-capture-guidance');
+  assert.equal(
+    seenMessages.some((m) => /desktop\.capture\.screen/.test(String(m.content || '')) && /MUST first call/.test(String(m.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((m) => /display_id/.test(String(m.content || '')) && /relative to that display/.test(String(m.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((m) => /desktop\.locate\.\*/.test(String(m.content || ''))),
+    false
+  );
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner does not inject desktop capture guidance when tools are unavailable', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-no-desktop-capture-guidance' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({ sessionId: 's-no-desktop-capture', input: 'hello' });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-no-desktop-capture-guidance');
+  assert.equal(
+    seenMessages.some((m) => /desktop\.capture\.screen/.test(String(m.content || ''))),
+    false
+  );
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner attaches desktop capture artifact into next reasoner turn', async () => {
+  const bus = new RuntimeEventBus();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-capture-loop-'));
+  const capturePath = path.join(tmpDir, 'capture.png');
+  fs.writeFileSync(capturePath, Buffer.from('not-a-real-png-but-good-enough'));
+
+  const captureTool = {
+    name: 'desktop.capture.screen',
+    input_schema: {
+      type: 'object',
+      properties: { display_id: { type: ['string', 'integer'] } },
+      additionalProperties: false
+    },
+    side_effect_level: 'read',
+    requires_lock: true
+  };
+
+  const executor = {
+    listTools() {
+      return [captureTool];
+    },
+    async execute(tool) {
+      assert.equal(tool.name, 'desktop.capture.screen');
+      return {
+        ok: true,
+        result: JSON.stringify({
+          capture_id: 'cap-loop-1',
+          path: capturePath,
+          mime_type: 'image/png',
+          display_id: 'display:1',
+          bounds: { x: 0, y: 0, width: 1280, height: 720 },
+          pixel_size: { width: 1280, height: 720 },
+          scale_factor: 1
+        })
+      };
+    }
+  };
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  const seenMessages = [];
+  let decideCount = 0;
+  const events = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        decideCount += 1;
+        seenMessages.push(messages);
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: { call_id: 'capture-call-1', name: 'desktop.capture.screen', args: {} }
+          };
+        }
+        return { type: 'final', output: 'desktop-capture-attached-ok' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 4,
+    toolResultTimeoutMs: 1000
+  });
+
+  const result = await runner.run({
+    sessionId: 's-desktop-capture-attach',
+    input: '我桌面上在看什么',
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'desktop-capture-attached-ok');
+  assert.equal(decideCount, 2);
+  assert.ok(seenMessages[1].some((message) => (
+    message.role === 'system'
+      && /tool-generated desktop screenshot/i.test(String(message.content || ''))
+  )));
+  const imageMessage = seenMessages[1].find((message) => (
+    message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some((part) => part?.type === 'image_url')
+  ));
+  assert.ok(imageMessage);
+  assert.ok(
+    imageMessage.content.some((part) => part?.type === 'image_url' && /^data:image\/png;base64,/.test(String(part.image_url?.url || '')))
+  );
+  assert.ok(events.some((event) => event.event === 'tool.capture.attached'));
+
+  dispatcher.stop();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test('ToolLoopRunner continues when shell.exec returns APPROVAL_REQUIRED', async () => {

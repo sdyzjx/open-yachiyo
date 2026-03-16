@@ -91,6 +91,89 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'desktop.perception.capabilities': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.perception.permissions': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.perception.displays.list': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.perception.windows.list': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.capture.desktop': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.capture.screen': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      displayId: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] },
+      display_id: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] }
+    }
+  },
+  'desktop.capture.region': {
+    type: 'object',
+    required: ['x', 'y', 'width', 'height'],
+    additionalProperties: false,
+    properties: {
+      x: { type: 'integer' },
+      y: { type: 'integer' },
+      width: { type: 'integer', minimum: 1 },
+      height: { type: 'integer', minimum: 1 },
+      displayId: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] },
+      display_id: { anyOf: [{ type: 'integer' }, { type: 'string', minLength: 1, maxLength: 128 }] }
+    }
+  },
+  'desktop.capture.window': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      sourceId: { type: 'string', minLength: 1, maxLength: 256 },
+      source_id: { type: 'string', minLength: 1, maxLength: 256 },
+      title: { type: 'string', minLength: 1, maxLength: 512 },
+      windowTitle: { type: 'string', minLength: 1, maxLength: 512 },
+      window_title: { type: 'string', minLength: 1, maxLength: 512 }
+    },
+    anyOf: [
+      { required: ['sourceId'] },
+      { required: ['source_id'] },
+      { required: ['title'] },
+      { required: ['windowTitle'] },
+      { required: ['window_title'] }
+    ]
+  },
+  'desktop.capture.get': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      captureId: { type: 'string', minLength: 1, maxLength: 128 },
+      capture_id: { type: 'string', minLength: 1, maxLength: 128 }
+    },
+    anyOf: [
+      { required: ['captureId'] },
+      { required: ['capture_id'] }
+    ]
+  },
+  'desktop.capture.delete': {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      captureId: { type: 'string', minLength: 1, maxLength: 128 },
+      capture_id: { type: 'string', minLength: 1, maxLength: 128 }
+    },
+    anyOf: [
+      { required: ['captureId'] },
+      { required: ['capture_id'] }
+    ]
+  },
   'chat.panel.append': {
     type: 'object',
     required: ['text'],

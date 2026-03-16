@@ -11,6 +11,10 @@
 - 首次启动模板：`config/desktop-live2d.json`
 - 配置加载入口：`apps/desktop-live2d/main/config.js`
 
+补充路径模型文档：
+
+- `docs/modules/desktop-live2d/desktop-path-roots-and-packaging.md`
+
 ## 1. 真实生效文件与加载链
 
 ### 1.1 文件位置
@@ -36,6 +40,33 @@
    - `bridge.getRuntimeConfig()`
    - `runtimeUiConfig = runtimeConfig.uiConfig || null`
    - 后续 renderer 逻辑从 `runtimeUiConfig` 取配置
+
+### 1.2.1 路径根规则
+
+desktop-live2d 现在区分三种路径语义：
+
+- `assetRoot`
+  - 用于读取打包进应用的静态资源
+  - 包括模型目录、renderer HTML、默认配置模板、图标
+- `workspaceRoot`
+  - 用于表达开发工作区根；打包态下可以是 `null`
+- `dataRoot`
+  - 用于写入运行时数据，来自 `~/yachiyo/data`
+
+当前代码中的几个关键落点：
+
+- `modelDir`
+  - 基于 `assetRoot`
+- `desktopCaptureDir`
+  - 默认基于 `~/yachiyo/data/desktop-live2d/captures`
+- `runtimeSummaryPath` / `windowStatePath` / `mouthWaveformDir`
+  - 基于 `~/yachiyo/data/**`
+
+兼容性说明：
+
+- `resolveDesktopLive2dConfig()` 仍然保留 `projectRoot`
+- 但它现在只是 `assetRoot` 的兼容别名
+- 新代码应优先使用 `assetRoot/workspaceRoot`
 
 补充事实：
 

@@ -47,6 +47,63 @@ test('validateRpcRequest accepts tool.invoke payload', () => {
   assert.equal(result.request.method, 'tool.invoke');
 });
 
+test('validateRpcRequest accepts desktop perception and capture payloads', () => {
+  const capabilities = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capability-1',
+    method: 'desktop.perception.capabilities',
+    params: {}
+  });
+  const displaysList = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'display-1',
+    method: 'desktop.perception.displays.list',
+    params: {}
+  });
+  const windowsList = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'window-list-1',
+    method: 'desktop.perception.windows.list',
+    params: {}
+  });
+  const desktopCapture = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capture-desktop-1',
+    method: 'desktop.capture.desktop',
+    params: {}
+  });
+  const regionCapture = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capture-1',
+    method: 'desktop.capture.region',
+    params: {
+      display_id: 'display:2',
+      x: 10,
+      y: 20,
+      width: 200,
+      height: 100
+    }
+  });
+  const windowCapture = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'capture-window-1',
+    method: 'desktop.capture.window',
+    params: {
+      source_id: 'window:42:0'
+    }
+  });
+
+  assert.equal(capabilities.ok, true);
+  assert.equal(displaysList.ok, true);
+  assert.equal(windowsList.ok, true);
+  assert.equal(desktopCapture.ok, true);
+  assert.equal(regionCapture.ok, true);
+  assert.equal(windowCapture.ok, true);
+  assert.equal(desktopCapture.request.method, 'desktop.capture.desktop');
+  assert.equal(regionCapture.request.method, 'desktop.capture.region');
+  assert.equal(windowCapture.request.method, 'desktop.capture.window');
+});
+
 test('validateRpcRequest accepts debug.mouthOverride.set payload', () => {
   const result = validateRpcRequest({
     jsonrpc: '2.0',
@@ -81,6 +138,18 @@ test('validateRpcRequest rejects invalid param types', () => {
     id: 9,
     method: 'param.set',
     params: { name: 'ParamAngleX', value: 'not-number' }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, -32602);
+});
+
+test('validateRpcRequest rejects desktop.capture.get without capture id', () => {
+  const result = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'cap-get',
+    method: 'desktop.capture.get',
+    params: {}
   });
 
   assert.equal(result.ok, false);

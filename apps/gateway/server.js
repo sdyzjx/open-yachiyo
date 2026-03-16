@@ -261,7 +261,7 @@ const runner = new ToolLoopRunner({
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
   maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
   toolErrorMaxRetries: parsePositiveIntEnv('RUNTIME_TOOL_ERROR_MAX_RETRIES', 5),
-  toolResultTimeoutMs: 10000,
+  toolResultTimeoutMs: parsePositiveIntEnv('RUNTIME_TOOL_RESULT_TIMEOUT_MS', 30000),
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
   toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', true),

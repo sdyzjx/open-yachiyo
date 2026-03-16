@@ -41,6 +41,7 @@ const {
   createBubbleMetricsListener,
   createActionTelemetryListener,
   createChatInputListener,
+  createCaptureCleanupController,
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,
@@ -1124,6 +1125,84 @@ test('handleDesktopRpcRequest returns tool list without touching renderer bridge
   assert.ok(result.tools.some((tool) => tool.name === 'desktop_chat_show'));
 });
 
+test('handleDesktopRpcRequest returns display list without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: { method: 'desktop.perception.displays.list', params: {} },
+    perceptionService: {
+      listDisplays() {
+        return [{ id: 'display:1', primary: true }];
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    displays: [{ id: 'display:1', primary: true }]
+  });
+});
+
+test('handleDesktopRpcRequest returns window list without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.perception.windows.list',
+      params: {}
+    },
+    captureService: {
+      async listWindows() {
+        return {
+          windows: [{ source_id: 'window:42:0', title: 'Browser' }]
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    windows: [{ source_id: 'window:42:0', title: 'Browser' }]
+  });
+});
+
+test('handleDesktopRpcRequest returns perception capabilities without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: { method: 'desktop.perception.capabilities', params: {} },
+    perceptionService: {
+      getCapabilities() {
+        return {
+          platform: 'darwin',
+          displays_available: true,
+          screen_capture: true,
+          region_capture: true,
+          reason: null
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3000
+  });
+
+  assert.deepEqual(result, {
+    platform: 'darwin',
+    displays_available: true,
+    screen_capture: true,
+    region_capture: true,
+    reason: null
+  });
+});
+
 test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => {
   const calls = [];
   const result = await handleDesktopRpcRequest({
@@ -1148,6 +1227,144 @@ test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => 
   assert.equal(calls[0].timeoutMs, 3456);
   assert.deepEqual(calls[0].params, { name: 'ParamAngleX', value: 3 });
   assert.equal(result.ok, true);
+});
+
+test('handleDesktopRpcRequest resolves local desktop capture tool without touching renderer bridge', async () => {
+  const calls = [];
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'tool.invoke',
+      params: {
+        name: 'desktop_capture_screen',
+        arguments: { display_id: 'display:2' }
+      }
+    },
+    captureService: {
+      async captureScreen(params) {
+        calls.push(params);
+        return { capture_id: 'cap_1', display_id: 'display:2' };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(calls, [{ display_id: 'display:2' }]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result, { capture_id: 'cap_1', display_id: 'display:2' });
+});
+
+test('handleDesktopRpcRequest captures the full virtual desktop without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.capture.desktop',
+      params: {}
+    },
+    captureService: {
+      async captureDesktop() {
+        return {
+          capture_id: 'cap_desktop_1',
+          display_ids: ['display:1', 'display:2'],
+          bounds: { x: -1280, y: 0, width: 2792, height: 982 }
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(result, {
+    capture_id: 'cap_desktop_1',
+    display_ids: ['display:1', 'display:2'],
+    bounds: { x: -1280, y: 0, width: 2792, height: 982 }
+  });
+});
+
+test('handleDesktopRpcRequest captures one window without touching renderer bridge', async () => {
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.capture.window',
+      params: { source_id: 'window:42:0' }
+    },
+    captureService: {
+      async captureWindow(params) {
+        return {
+          capture_id: 'cap_window_1',
+          source_id: params.source_id,
+          window_title: 'Browser'
+        };
+      }
+    },
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(result, {
+    capture_id: 'cap_window_1',
+    source_id: 'window:42:0',
+    window_title: 'Browser'
+  });
+});
+
+test('createCaptureCleanupController schedules cleanup and logs only capture ids', () => {
+  const intervals = [];
+  const cleared = [];
+  const loggerCalls = [];
+  const controller = createCaptureCleanupController({
+    captureStore: {
+      cleanupExpiredCaptures(referenceNow) {
+        return {
+          ok: true,
+          deleted_count: referenceNow === 42 ? 1 : 0,
+          deleted_capture_ids: referenceNow === 42 ? ['cap_old_1'] : []
+        };
+      }
+    },
+    intervalMs: 5000,
+    now: () => 99,
+    logger: {
+      info(message, payload) {
+        loggerCalls.push({ message, payload });
+      }
+    },
+    setIntervalFn(handler, interval) {
+      intervals.push({ handler, interval });
+      return 'timer-1';
+    },
+    clearIntervalFn(timer) {
+      cleared.push(timer);
+    }
+  });
+
+  assert.equal(intervals.length, 1);
+  assert.equal(intervals[0].interval, 5000);
+  assert.deepEqual(controller.runOnce(42), {
+    ok: true,
+    deleted_count: 1,
+    deleted_capture_ids: ['cap_old_1']
+  });
+  assert.deepEqual(loggerCalls, [{
+    message: '[desktop-perception] cleaned expired captures',
+    payload: {
+      deleted_count: 1,
+      deleted_capture_ids: ['cap_old_1']
+    }
+  }]);
+
+  controller.stop();
+  assert.deepEqual(cleared, ['timer-1']);
 });
 
 test('isNewSessionCommand matches /new command only', () => {

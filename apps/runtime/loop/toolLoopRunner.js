@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const { v4: uuidv4 } = require('uuid');
 const Ajv = require('ajv');
 const { RuntimeState, RuntimeStateMachine } = require('./stateMachine');
@@ -108,6 +109,18 @@ function formatDecisionEvent(decision) {
   };
 }
 
+function isToolResultRetryable(toolResult = {}) {
+  const code = String(toolResult?.code || '').trim().toUpperCase();
+  const rpcReason = String(toolResult?.details?.rpcError?.data?.reason || '').trim().toUpperCase();
+  const errorText = String(toolResult?.error || '').toLowerCase();
+  if (code === 'APPROVAL_REQUIRED') return false;
+  if (code === 'VALIDATION_ERROR' || code === 'OUT_OF_BOUNDS') return false;
+  if (rpcReason === 'OUT_OF_BOUNDS') return false;
+  if (errorText.includes('stay within the virtual desktop')) return false;
+  if (errorText.includes('stay within one display')) return false;
+  return true;
+}
+
 function normalizeToolCalls(decision) {
   const calls = Array.isArray(decision.tools) && decision.tools.length > 0
     ? decision.tools
@@ -125,6 +138,14 @@ function shouldHintPersonaTool(input) {
   if (!text.trim()) return false;
   const keywords = ['修改人格', '人格', '称呼', '叫我', 'persona', 'nickname', 'custom name'];
   return keywords.some((kw) => text.includes(kw));
+}
+
+function isLive2dToolName(name) {
+  return String(name || '').trim().startsWith('live2d.');
+}
+
+function isVoiceAutoReplyToolName(name) {
+  return String(name || '').trim() === 'voice.tts_aliyun_vc';
 }
 
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
@@ -145,6 +166,156 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
     'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
     'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
   ].join(' ');
+}
+
+function buildSatisfiedTurnRequirementPrompt(turnRequirements = {}, availableTools = []) {
+  const toolNames = new Set(
+    (Array.isArray(availableTools) ? availableTools : [])
+      .map((tool) => String(tool?.name || '').trim())
+      .filter(Boolean)
+  );
+  const parts = [];
+  if (turnRequirements?.live2d_satisfied && Array.from(toolNames).some((name) => isLive2dToolName(name))) {
+    parts.push(
+      'Status update for the current reply turn: the required Live2D action has already been completed. Do not call another live2d.* tool before producing the final answer.'
+    );
+  }
+  if (turnRequirements?.voice_tts_satisfied && toolNames.has('voice.tts_aliyun_vc')) {
+    parts.push(
+      'Status update for the current reply turn: the required voice.tts_aliyun_vc call has already been completed. Do not call voice.tts_aliyun_vc again before producing the final answer.'
+    );
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+function filterToolsForSatisfiedTurnRequirements(availableTools = [], turnRequirements = {}) {
+  if (!Array.isArray(availableTools) || availableTools.length === 0) return [];
+  return availableTools.filter((tool) => {
+    const toolName = String(tool?.name || '').trim();
+    if (!toolName) return false;
+    if (turnRequirements?.live2d_satisfied && isLive2dToolName(toolName)) return false;
+    if (turnRequirements?.voice_tts_satisfied && isVoiceAutoReplyToolName(toolName)) return false;
+    return true;
+  });
+}
+
+function buildDesktopCapturePrompt(availableTools = []) {
+  const toolNames = new Set(
+    (Array.isArray(availableTools) ? availableTools : [])
+      .map((tool) => String(tool?.name || '').trim())
+      .filter(Boolean)
+  );
+  const hasLocateTool = toolNames.has('desktop.locate.capture') || toolNames.has('desktop.locate.desktop');
+  if (
+    !toolNames.has('desktop.capture.screen')
+    && !toolNames.has('desktop.capture.region')
+    && !toolNames.has('desktop.capture.window')
+    && !toolNames.has('desktop.capture.desktop')
+  ) {
+    return null;
+  }
+  return [
+    'Desktop capture tools are available for this turn.',
+    'When the user asks about current desktop, screen, UI, dialog, window, button, error, or any visible on-screen state, you MUST first call an appropriate desktop.capture.* tool before answering.',
+    'Use desktop.capture.screen for one display, desktop.capture.region for a specific area, desktop.capture.window for one window, and desktop.capture.desktop for the full virtual desktop.',
+    'After a desktop.capture.* tool succeeds, the loop will attach the screenshot in the next turn. Analyze that attached screenshot directly instead of guessing.',
+    hasLocateTool
+      ? 'When you need the position of an icon, button, text block, or other on-screen target, prefer desktop.locate.* tools. Use the returned display_id and display_relative_bounds directly instead of manually estimating desktop.capture.region coordinates.'
+      : 'Do not manually guess region coordinates from screenshots unless they are explicitly known from prior tool output.',
+    'If desktop.capture.region includes display_id, then x/y/width/height are relative to that display and must fit within that display bounds.',
+    'If desktop.capture.region omits display_id, then x/y/width/height are global desktop coordinates and must stay within the target capture or virtual desktop bounds.',
+    'Do not answer desktop-visibility questions without first capturing a screenshot.'
+  ].join(' ');
+}
+
+function buildDesktopCaptureAnalysisPrompt(artifact = null) {
+  if (!artifact) return null;
+  return [
+    'A tool-generated desktop screenshot is attached in the next user message.',
+    'Analyze that screenshot directly to answer the latest user request.',
+    'If the screenshot already contains enough evidence, answer directly instead of calling another desktop.capture.* tool.',
+    'Do not invent invisible details.'
+  ].join(' ');
+}
+
+function parseJsonObject(value) {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDesktopCaptureArtifact(toolName, rawResult) {
+  const safeToolName = String(toolName || '').trim();
+  if (
+    !safeToolName.startsWith('desktop.capture.')
+    || safeToolName === 'desktop.capture.delete'
+  ) {
+    return null;
+  }
+  const parsed = parseJsonObject(rawResult);
+  if (!parsed) return null;
+  const captureId = String(parsed.capture_id || '').trim();
+  const capturePath = String(parsed.path || '').trim();
+  const mimeType = String(parsed.mime_type || 'image/png').trim() || 'image/png';
+  if (!captureId || !capturePath) {
+    return null;
+  }
+  return {
+    scope: safeToolName.slice('desktop.capture.'.length),
+    capture_id: captureId,
+    path: capturePath,
+    mime_type: mimeType,
+    display_id: String(parsed.display_id || '').trim() || null,
+    display_ids: Array.isArray(parsed.display_ids)
+      ? parsed.display_ids.map((value) => String(value || '').trim()).filter(Boolean)
+      : [],
+    source_id: String(parsed.source_id || '').trim() || null,
+    window_title: String(parsed.window_title || '').trim() || null,
+    bounds: parsed.bounds && typeof parsed.bounds === 'object' ? { ...parsed.bounds } : null,
+    pixel_size: parsed.pixel_size && typeof parsed.pixel_size === 'object' ? { ...parsed.pixel_size } : null,
+    scale_factor: Number(parsed.scale_factor) || 1
+  };
+}
+
+function readDesktopCaptureDataUrl(artifact) {
+  if (!artifact?.path || !fs.existsSync(artifact.path)) {
+    return null;
+  }
+  const buffer = fs.readFileSync(artifact.path);
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    return null;
+  }
+  return `data:${artifact.mime_type};base64,${buffer.toString('base64')}`;
+}
+
+function buildDesktopCaptureUserMessage(artifact, dataUrl) {
+  if (!artifact || !dataUrl) return null;
+  const descriptor = [
+    `capture_id=${artifact.capture_id}`,
+    artifact.scope ? `scope=${artifact.scope}` : null,
+    artifact.display_id ? `display_id=${artifact.display_id}` : null,
+    artifact.window_title ? `window_title=${artifact.window_title}` : null
+  ].filter(Boolean).join(', ');
+  return {
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: `Tool-generated desktop screenshot attached (${descriptor}). Analyze this screenshot to answer the latest user request.`
+      },
+      {
+        type: 'image_url',
+        image_url: { url: dataUrl }
+      }
+    ]
+  };
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -284,6 +455,8 @@ class ToolLoopRunner {
       ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.'
       : null;
     const voiceAutoReplyPrompt = buildVoiceAutoReplyPrompt(runtimeContext);
+    const initialAvailableTools = this.listTools();
+    const desktopCapturePrompt = buildDesktopCapturePrompt(initialAvailableTools);
 
     const ctx = {
       sessionId,
@@ -291,6 +464,11 @@ class ToolLoopRunner {
       stepIndex: 0,
       input,
       observations: [],
+      turnRequirements: {
+        live2d_satisfied: false,
+        voice_tts_satisfied: false
+      },
+      desktopCaptureAttachment: null,
       messages: [
         {
           role: 'system',
@@ -312,6 +490,7 @@ class ToolLoopRunner {
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
+        ...(desktopCapturePrompt ? [{ role: 'system', content: desktopCapturePrompt }] : []),
         ...priorMessages,
         currentUserMessage
       ]
@@ -344,11 +523,14 @@ class ToolLoopRunner {
     };
 
     // passthrough select bus topics to runtime.event stream (e.g. for Electron IPC)
-    const PASSTHROUGH_TOPICS = ['voice.playback.electron'];
-    const passthroughUnsubs = PASSTHROUGH_TOPICS.map((topic) => {
+    const PASSTHROUGH_TOPICS = {
+      'voice.playback.electron': 'voice.playback.electron',
+      'tool.call.progress': 'tool.progress'
+    };
+    const passthroughUnsubs = Object.entries(PASSTHROUGH_TOPICS).map(([topic, eventName]) => {
       const handler = (payload) => {
         if (payload?.session_id && payload.session_id !== sessionId) return;
-        emit(topic, payload);
+        emit(eventName, payload);
       };
       return this.bus.subscribe(topic, handler);
     });
@@ -399,17 +581,27 @@ class ToolLoopRunner {
 
       while (ctx.stepIndex < this.maxStep) {
         ctx.stepIndex += 1;
-        const availableTools = this.listTools();
+        const allAvailableTools = this.listTools();
+        const availableTools = filterToolsForSatisfiedTurnRequirements(allAvailableTools, ctx.turnRequirements);
         const toolDefByName = new Map(
           (Array.isArray(availableTools) ? availableTools : [])
             .filter((tool) => tool && typeof tool.name === 'string' && tool.name)
             .map((tool) => [tool.name, tool])
         );
+        const satisfiedTurnRequirementPrompt = buildSatisfiedTurnRequirementPrompt(ctx.turnRequirements, allAvailableTools);
+        const reasonerMessages = [
+          ...(satisfiedTurnRequirementPrompt ? [{ role: 'system', content: satisfiedTurnRequirementPrompt }] : []),
+          ...ctx.messages,
+          ...(ctx.desktopCaptureAttachment?.analysis_prompt
+            ? [{ role: 'system', content: ctx.desktopCaptureAttachment.analysis_prompt }]
+            : []),
+          ...(ctx.desktopCaptureAttachment?.message ? [ctx.desktopCaptureAttachment.message] : [])
+        ];
         publishChainEvent(this.bus, 'loop.decide.start', {
           session_id: sessionId,
           trace_id: traceId,
           step_index: ctx.stepIndex,
-          messages: ctx.messages.length
+          messages: reasonerMessages.length
         });
 
         const pendingToolCallPromises = new Map();
@@ -524,7 +716,7 @@ class ToolLoopRunner {
             mode: 'decision_stream'
           });
           decision = await reasoner.decideStream({
-            messages: ctx.messages,
+            messages: reasonerMessages,
             tools: availableTools,
             onDelta: (delta) => {
               emit('llm.stream.delta', {
@@ -597,7 +789,7 @@ class ToolLoopRunner {
           });
         } else {
           decision = await reasoner.decide({
-            messages: ctx.messages,
+            messages: reasonerMessages,
             tools: availableTools
           });
         }
@@ -747,15 +939,16 @@ class ToolLoopRunner {
                 continue;
               }
 
-              const nextRetryCount = toolErrorRetryCount + 1;
-              const retryLimitReached = nextRetryCount > this.toolErrorMaxRetries;
+              const retryAllowed = isToolResultRetryable(toolResult);
+              const nextRetryCount = retryAllowed ? (toolErrorRetryCount + 1) : toolErrorRetryCount;
+              const retryLimitReached = !retryAllowed || nextRetryCount > this.toolErrorMaxRetries;
               const retryPayload = {
                 ok: false,
                 code: toolResult.code || 'RUNTIME_ERROR',
                 error: toolResult.error,
                 details: toolResult.details || null,
-                retryable: !retryLimitReached,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retryable: retryAllowed && !retryLimitReached,
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               };
               const retryContent = JSON.stringify(retryPayload);
@@ -772,7 +965,7 @@ class ToolLoopRunner {
                 error: toolResult.error,
                 code: toolResult.code,
                 details: toolResult.details || null,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               });
               emit('tool.result', {
@@ -781,8 +974,8 @@ class ToolLoopRunner {
                 result: retryContent,
                 code: toolResult.code || 'RUNTIME_ERROR',
                 error: true,
-                retryable: !retryLimitReached,
-                retry_count: Math.min(nextRetryCount, this.toolErrorMaxRetries),
+                retryable: retryAllowed && !retryLimitReached,
+                retry_count: retryAllowed ? Math.min(nextRetryCount, this.toolErrorMaxRetries) : toolErrorRetryCount,
                 retry_limit: this.toolErrorMaxRetries
               });
 
@@ -793,12 +986,15 @@ class ToolLoopRunner {
                   error: toolResult.error,
                   name: effectiveCall.name,
                   code: toolResult.code,
-                  retry_exhausted: true,
-                  retry_count: this.toolErrorMaxRetries,
+                  retry_exhausted: retryAllowed,
+                  non_retryable: !retryAllowed,
+                  retry_count: retryAllowed ? this.toolErrorMaxRetries : toolErrorRetryCount,
                   retry_limit: this.toolErrorMaxRetries
                 });
                 return {
-                  output: `工具执行失败：${toolResult.error}（已达到最大重试次数 ${this.toolErrorMaxRetries}）`,
+                  output: retryAllowed
+                    ? `工具执行失败：${toolResult.error}（已达到最大重试次数 ${this.toolErrorMaxRetries}）`
+                    : `工具执行失败：${toolResult.error}`,
                   traceId,
                   state: sm.state
                 };
@@ -840,6 +1036,40 @@ class ToolLoopRunner {
               name: effectiveCall.name,
               result: toolResult.result
             });
+
+            if (!ctx.turnRequirements.live2d_satisfied && isLive2dToolName(effectiveCall.name)) {
+              ctx.turnRequirements.live2d_satisfied = true;
+            }
+            if (!ctx.turnRequirements.voice_tts_satisfied && isVoiceAutoReplyToolName(effectiveCall.name)) {
+              ctx.turnRequirements.voice_tts_satisfied = true;
+            }
+
+            const desktopCaptureArtifact = normalizeDesktopCaptureArtifact(effectiveCall.name, toolResult.result);
+            if (desktopCaptureArtifact) {
+              const imageDataUrl = readDesktopCaptureDataUrl(desktopCaptureArtifact);
+              if (imageDataUrl) {
+                ctx.desktopCaptureAttachment = {
+                  artifact: desktopCaptureArtifact,
+                  analysis_prompt: buildDesktopCaptureAnalysisPrompt(desktopCaptureArtifact),
+                  message: buildDesktopCaptureUserMessage(desktopCaptureArtifact, imageDataUrl)
+                };
+                emit('tool.capture.attached', {
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  capture_id: desktopCaptureArtifact.capture_id,
+                  scope: desktopCaptureArtifact.scope
+                });
+              } else {
+                publishChainEvent(this.bus, 'loop.desktop_capture.unavailable', {
+                  session_id: sessionId,
+                  trace_id: traceId,
+                  step_index: ctx.stepIndex,
+                  call_id: effectiveCall.call_id,
+                  tool_name: effectiveCall.name,
+                  capture_id: desktopCaptureArtifact.capture_id
+                });
+              }
+            }
 
             emit('tool.result', {
               call_id: effectiveCall.call_id,

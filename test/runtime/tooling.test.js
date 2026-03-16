@@ -26,6 +26,15 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'shell.approve'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.motion.play'));
   assert.ok(cfg.tools.some((t) => t.name === 'live2d.react'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.screen'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.desktop'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.get'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.displays.list'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
+  assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
+  assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.locate.')), false);
+  assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.inspect.')), false);
 });
 
 test('ToolRegistry keeps scheduling metadata from config', () => {
@@ -36,9 +45,23 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
 
   const getTime = tools.find((tool) => tool.name === 'get_time');
   const live2dGesture = tools.find((tool) => tool.name === 'live2d.gesture');
+  const desktopVirtualCapture = tools.find((tool) => tool.name === 'desktop.capture.desktop');
+  const desktopCaptureGet = tools.find((tool) => tool.name === 'desktop.capture.get');
+  const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
+  const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
+  const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
+  assert.equal(desktopVirtualCapture?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopVirtualCapture?.requires_lock), true);
+  assert.equal(desktopCaptureGet?.side_effect_level, 'read');
+  assert.equal(desktopCapture?.side_effect_level, 'read');
+  assert.equal(Boolean(desktopCapture?.requires_lock), true);
+  assert.equal(desktopWindowCapture?.side_effect_level, 'read');
+  assert.equal(desktopCapabilities?.side_effect_level, 'read');
+  assert.equal(tools.some((tool) => tool.name.startsWith('desktop.locate.')), false);
+  assert.equal(tools.some((tool) => tool.name.startsWith('desktop.inspect.')), false);
 });
 
 test('voice.tts_aliyun_vc schema tolerates durationSec aliases', () => {
@@ -59,6 +82,75 @@ test('ToolExecutor rejects invalid args by schema', async () => {
   const result = await executor.execute({ name: 'add', args: { a: 'x', b: 1 } });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'VALIDATION_ERROR');
+});
+
+test('ToolExecutor desktop perception tools return JSON string payloads', async () => {
+  const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
+  const config = store.load();
+  const registry = new ToolRegistry({ config });
+  const originalGet = registry.get.bind(registry);
+  registry.get = (name) => {
+    const tool = originalGet(name);
+    if (!tool) return null;
+    if (name === 'desktop.displays.list') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ displays: [{ id: 'display:1', primary: true }] })
+      };
+    }
+    if (name === 'desktop.windows.list') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ windows: [{ source_id: 'window:42:0', title: 'Browser' }] })
+      };
+    }
+    if (name === 'desktop.perception.capabilities') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ screen_capture: true, desktop_inspect: false })
+      };
+    }
+    if (name === 'desktop.capture.desktop') {
+      return {
+        ...tool,
+        run: async () => JSON.stringify({ capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] })
+      };
+    }
+    if (name === 'desktop.capture.get') {
+      return {
+        ...tool,
+        run: async (args) => JSON.stringify({ capture_id: args.capture_id || args.captureId, path: '/tmp/cap-1.png', mime_type: 'image/png' })
+      };
+    }
+    if (name === 'desktop.capture.delete') {
+      return {
+        ...tool,
+        run: async (args) => JSON.stringify({ ok: true, deleted: true, capture_id: args.capture_id || args.captureId })
+      };
+    }
+    return tool;
+  };
+
+  const executor = new ToolExecutor(registry, { policy: config.policy, exec: config.exec });
+  const displays = await executor.execute({ name: 'desktop.displays.list', args: {} });
+  const windows = await executor.execute({ name: 'desktop.windows.list', args: {} });
+  const capabilities = await executor.execute({ name: 'desktop.perception.capabilities', args: {} });
+  const desktopCapture = await executor.execute({ name: 'desktop.capture.desktop', args: {} });
+  const desktopCaptureGet = await executor.execute({ name: 'desktop.capture.get', args: { capture_id: 'cap-1' } });
+  const deleted = await executor.execute({ name: 'desktop.capture.delete', args: { capture_id: 'cap-1' } });
+
+  assert.equal(displays.ok, true);
+  assert.deepEqual(JSON.parse(displays.result), { displays: [{ id: 'display:1', primary: true }] });
+  assert.equal(windows.ok, true);
+  assert.deepEqual(JSON.parse(windows.result), { windows: [{ source_id: 'window:42:0', title: 'Browser' }] });
+  assert.equal(capabilities.ok, true);
+  assert.deepEqual(JSON.parse(capabilities.result), { screen_capture: true, desktop_inspect: false });
+  assert.equal(desktopCapture.ok, true);
+  assert.deepEqual(JSON.parse(desktopCapture.result), { capture_id: 'cap-desktop-1', display_ids: ['display:1', 'display:2'] });
+  assert.equal(desktopCaptureGet.ok, true);
+  assert.deepEqual(JSON.parse(desktopCaptureGet.result), { capture_id: 'cap-1', path: '/tmp/cap-1.png', mime_type: 'image/png' });
+  assert.equal(deleted.ok, true);
+  assert.deepEqual(JSON.parse(deleted.result), { ok: true, deleted: true, capture_id: 'cap-1' });
 });
 
 test('ToolExecutor rejects unsupported live2d semantic args by schema', async () => {
