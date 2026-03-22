@@ -638,6 +638,8 @@
       wave.start();
     }
     const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
+    const currentSourceKind = snapshot?.sourceKind || 'breath';
+    const shouldEmitSiriWaveStateSnapshot = currentSourceKind !== siriWaveLastDebugSourceKind;
     const shouldEmitSiriWaveFrameSample = waveformCaptureConfig.enabled
       && (waveformCaptureConfig.captureEveryFrame || siriWaveFrameDebugSampleCounter % 30 === 0);
     siriWaveLastSnapshot = snapshot;
@@ -656,8 +658,11 @@
     if (shouldEmitSiriWaveFrameSample && siriWaveLastDebugState) {
       emitRendererDebug('siriwave.frame_sample', siriWaveLastDebugState);
     }
+    if (shouldEmitSiriWaveStateSnapshot && siriWaveLastDebugState) {
+      emitRendererDebug('siriwave.state_snapshot', siriWaveLastDebugState);
+    }
     siriWaveFrameDebugSampleCounter += 1;
-    siriWaveLastDebugSourceKind = snapshot?.sourceKind || 'breath';
+    siriWaveLastDebugSourceKind = currentSourceKind;
     return true;
   }
 
