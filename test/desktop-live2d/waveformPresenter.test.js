@@ -132,8 +132,48 @@ test('default config remains usable for live2d mode', () => {
   assert.equal(snapshot.mode, DEFAULT_CONFIG.mode);
   assert.equal(snapshot.waveformVisible, false);
   assert.equal(snapshot.modelVisible, true);
-  assert.equal(DEFAULT_CONFIG.colors.speech, 0x67c9ff);
-  assert.equal(DEFAULT_CONFIG.colors.music, 0xff71d4);
+  assert.equal(DEFAULT_CONFIG.colors.speech, 0xa9e8ff);
+  assert.equal(DEFAULT_CONFIG.colors.music, 0xff8bdf);
+  assert.equal(DEFAULT_CONFIG.colors.accent, 0xffe3f3);
+});
+
+test('expression name deforms waveform geometry beyond generic action scaling', () => {
+  const buildSnapshot = (name) => {
+    const presenter = createWaveformPresenter({
+      mode: 'waveform',
+      config: {
+        waveform: {
+          sampleCount: 20
+        }
+      }
+    });
+
+    presenter.ingestSpeechFrame({
+      speaking: true,
+      energy: 0.82,
+      mouthOpen: 0.72,
+      mouthForm: 0.18,
+      visemeWeights: { a: 0.75, i: 0.15, u: 0.1, e: 0, o: 0 }
+    });
+    presenter.ingestActionFrame({
+      type: 'expression',
+      name,
+      intensity: 0.8,
+      progress: 0.5
+    });
+    return presenter.tick({
+      nowMs: 1200,
+      stageWidth: 720,
+      stageHeight: 520
+    });
+  };
+
+  const smile = buildSnapshot('smile');
+  const sad = buildSnapshot('sad');
+
+  assert.equal(smile.actionScale, sad.actionScale);
+  assert.notDeepEqual(smile.geometry.topPoints, sad.geometry.topPoints);
+  assert.notDeepEqual(smile.geometry.centerLine, sad.geometry.centerLine);
 });
 
 test('silent waveform stays effectively static across ticks', () => {

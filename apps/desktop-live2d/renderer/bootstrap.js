@@ -246,8 +246,8 @@
   });
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
-      color: 0x63c8ff,
-      glow: 0x8addff,
+      color: 0xa8e9ff,
+      glow: 0xd3f4ff,
       amplitude: 1,
       speed: 1,
       frequency: 1.28,
@@ -261,8 +261,8 @@
       verticalBias: 0
     }),
     Object.freeze({
-      color: 0x7ba2ff,
-      glow: 0xa8bcff,
+      color: 0xffb5e9,
+      glow: 0xffdaf3,
       amplitude: 0.76,
       speed: 0.82,
       frequency: 0.98,
@@ -276,8 +276,8 @@
       verticalBias: -1.4
     }),
     Object.freeze({
-      color: 0xff69d7,
-      glow: 0xff98e6,
+      color: 0xff83dc,
+      glow: 0xffb9ea,
       amplitude: 0.82,
       speed: 1.14,
       frequency: 1.62,
@@ -291,8 +291,8 @@
       verticalBias: 1.6
     }),
     Object.freeze({
-      color: 0xdca2ff,
-      glow: 0xefbcff,
+      color: 0xffc7e8,
+      glow: 0xffe4f5,
       amplitude: 0.54,
       speed: 0.66,
       frequency: 1.05,

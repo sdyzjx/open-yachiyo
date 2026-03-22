@@ -40,12 +40,12 @@
       waveformAlpha: 1
     }),
     colors: Object.freeze({
-      speech: 0x67c9ff,
-      music: 0xff71d4,
-      breath: 0x95a4ff,
-      accent: 0xf8f4ff,
+      speech: 0xa9e8ff,
+      music: 0xff8bdf,
+      breath: 0xb7c5ff,
+      accent: 0xffe3f3,
       fill: 0x101424,
-      glow: 0x7cc9ff
+      glow: 0xc8efff
     })
   });
 
@@ -252,7 +252,92 @@
     return base;
   }
 
-  function buildGeometry({ stageWidth, stageHeight, bandLevels, sourceKind, energy, form, actionScale, breathPhase, config }) {
+  function resolveExpressionWaveProfile(actionFrame) {
+    const neutral = Object.freeze({
+      weight: 0,
+      heightBoost: 0,
+      centerArch: 0,
+      edgePinch: 0,
+      asymmetry: 0,
+      bandBias: 0
+    });
+    if (!actionFrame || typeof actionFrame !== 'object') {
+      return neutral;
+    }
+    const type = String(actionFrame.type || '').trim().toLowerCase();
+    const name = String(actionFrame.name || '').trim().toLowerCase();
+    if (!name || !['expression', 'emote', 'react'].includes(type)) {
+      return neutral;
+    }
+
+    const weight = clamp01(actionFrame.intensity) * (0.76 + Math.sin(clamp01(actionFrame.progress) * Math.PI) * 0.24);
+    if (weight <= 0.01) {
+      return neutral;
+    }
+
+    if (/(smile|happy|joy|laugh|grin|love|heart)/.test(name)) {
+      return {
+        weight,
+        heightBoost: 0.16,
+        centerArch: -0.055,
+        edgePinch: 0.08,
+        asymmetry: 0.01,
+        bandBias: 0.06
+      };
+    }
+    if (/(sad|cry|tear|down|sorrow|hurt)/.test(name)) {
+      return {
+        weight,
+        heightBoost: -0.08,
+        centerArch: 0.05,
+        edgePinch: 0.12,
+        asymmetry: -0.008,
+        bandBias: -0.05
+      };
+    }
+    if (/(angry|mad|annoy|rage|frown)/.test(name)) {
+      return {
+        weight,
+        heightBoost: 0.12,
+        centerArch: 0.012,
+        edgePinch: -0.04,
+        asymmetry: 0.024,
+        bandBias: 0.08
+      };
+    }
+    if (/(surprise|shock|wow|blink|startled)/.test(name)) {
+      return {
+        weight,
+        heightBoost: 0.2,
+        centerArch: -0.018,
+        edgePinch: -0.06,
+        asymmetry: 0,
+        bandBias: 0.1
+      };
+    }
+
+    return {
+      weight,
+      heightBoost: 0.08,
+      centerArch: -0.014,
+      edgePinch: 0.02,
+      asymmetry: 0.006,
+      bandBias: 0.03
+    };
+  }
+
+  function buildGeometry({
+    stageWidth,
+    stageHeight,
+    bandLevels,
+    sourceKind,
+    energy,
+    form,
+    actionScale,
+    breathPhase,
+    expressionProfile,
+    config
+  }) {
     const waveformConfig = config.waveform;
     const width = Math.max(1, Math.round(stageWidth * clamp01(waveformConfig.widthRatio)));
     const height = Math.max(1, Math.round(stageHeight * clamp01(waveformConfig.heightRatio)));
@@ -280,20 +365,37 @@
       : sourceKind === 'speech'
         ? 1.04
         : 0.84;
+    const expression = expressionProfile || resolveExpressionWaveProfile(null);
 
     for (let index = 0; index < pointCount; index += 1) {
       const t = pointCount === 1 ? 0 : index / (pointCount - 1);
       const edgeCurve = Math.pow(Math.sin(Math.PI * t), waveformConfig.pointEdgeCurve);
-      const band = clamp01(bandCurve[index] || 0);
+      const smileCurve = Math.sin(Math.PI * t);
+      const band = clamp01((bandCurve[index] || 0) + expression.bandBias * expression.weight * smileCurve);
       const wobble = sourceKind === 'breath'
         ? 0
         : Math.sin(breathPhase + t * TAU * 1.08) * (0.003 + energy * 0.008);
       const sourceLift = sourceKind === 'speech' ? form * (t - 0.5) * height * 0.07 : 0;
       const actionLift = actionScale > 1 ? Math.sin(t * Math.PI) * (actionScale - 1) * height * 0.025 : 0;
-      const halfHeight = baseHalfHeight * (0.22 + edgeCurve * 0.44 + band * 0.38) * sourceShape;
+      const expressionHeightBoost = 1 + expression.heightBoost * expression.weight * (0.35 + smileCurve * 0.65);
+      const expressionPinch = 1 - expression.edgePinch * expression.weight * (1 - edgeCurve);
+      const halfHeight = baseHalfHeight
+        * (0.22 + edgeCurve * 0.44 + band * 0.38)
+        * sourceShape
+        * expressionHeightBoost
+        * expressionPinch;
       const x = Math.round(t * width);
       const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.008;
-      const yCenter = centerY + centerLift(sourceKind, energy, form, band, t, height) + sourceLift + actionLift + centerOffset + wobble * height;
+      const expressionLift = expression.centerArch * expression.weight * Math.pow(smileCurve, 1.08) * height;
+      const expressionSkew = expression.asymmetry * expression.weight * Math.sin((t - 0.5) * TAU * 2) * height;
+      const yCenter = centerY
+        + centerLift(sourceKind, energy, form, band, t, height)
+        + sourceLift
+        + actionLift
+        + centerOffset
+        + expressionLift
+        + expressionSkew
+        + wobble * height;
       const topY = Math.round(yCenter - halfHeight);
       const bottomY = Math.round(yCenter + halfHeight);
       topPoints.push({ x, y: topY });
@@ -466,6 +568,7 @@
       );
       const bandLevels = state.smoothedBandLevels || rawBandLevels;
       const form = clamp(state.smoothedForm, -1, 1);
+      const expressionProfile = resolveExpressionWaveProfile(state.actionFrame);
       const geometry = buildGeometry({
         stageWidth: safeStageWidth,
         stageHeight: safeStageHeight,
@@ -475,6 +578,7 @@
         form,
         actionScale: state.smoothedScale,
         breathPhase: state.breathPhase,
+        expressionProfile,
         config
       });
       const mode = state.mode;
