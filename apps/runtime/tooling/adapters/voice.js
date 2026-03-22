@@ -5,6 +5,7 @@ const { loadVoicePolicy, evaluateVoicePolicy } = require('../voice/policy');
 const { InMemoryVoiceCooldownStore, InMemoryVoiceIdempotencyStore, InMemoryVoiceActiveJobStore } = require('../voice/cooldownStore');
 const { ProviderConfigStore } = require('../../config/providerConfigStore');
 const { getRuntimePaths } = require('../../skills/runtimePaths');
+const { DEFAULT_UI_CONFIG } = require('../../../desktop-live2d/shared/defaultUiConfig');
 
 // TTS provider name in providers.yaml
 const TTS_PROVIDER_KEY = process.env.TTS_PROVIDER_KEY || 'qwen3_tts';
@@ -304,6 +305,10 @@ function loadVoicePathMode() {
     const mode = String(parsed?.voice?.path || '').trim();
     if (mode === 'electron_native' || mode === 'runtime_legacy') {
       return mode;
+    }
+    const defaultMode = String(DEFAULT_UI_CONFIG?.voice?.path || '').trim();
+    if (defaultMode === 'electron_native' || defaultMode === 'runtime_legacy') {
+      return defaultMode;
     }
   } catch (_) {
     // ignore config parse errors and fallback to legacy path

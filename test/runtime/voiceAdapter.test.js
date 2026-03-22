@@ -468,6 +468,41 @@ test('voice adapter reads runtime desktop config with comments for electron_nati
   }
 });
 
+test('voice adapter falls back to desktop default mode when runtime config omits voice.path', async () => {
+  const { loadVoicePathMode } = voiceAdapters.__internal;
+  const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-home-default-'));
+  const configDir = path.join(tmpHome, 'config');
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(
+    path.join(configDir, 'desktop-live2d.json'),
+    `{
+  "presenter": {
+    "mode": "waveform"
+  }
+}
+`,
+    'utf8'
+  );
+
+  const prevMode = process.env.VOICE_PATH_MODE;
+  const prevHome = process.env.YACHIYO_HOME;
+  const prevConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+  delete process.env.VOICE_PATH_MODE;
+  process.env.YACHIYO_HOME = tmpHome;
+  delete process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+
+  try {
+    assert.equal(loadVoicePathMode(), 'electron_native');
+  } finally {
+    if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
+    else delete process.env.VOICE_PATH_MODE;
+    if (prevHome !== undefined) process.env.YACHIYO_HOME = prevHome;
+    else delete process.env.YACHIYO_HOME;
+    if (prevConfigPath !== undefined) process.env.DESKTOP_LIVE2D_CONFIG_PATH = prevConfigPath;
+    else delete process.env.DESKTOP_LIVE2D_CONFIG_PATH;
+  }
+});
+
 test.after(() => {
   if (previousVoicePathMode !== undefined) process.env.VOICE_PATH_MODE = previousVoicePathMode;
   else delete process.env.VOICE_PATH_MODE;
