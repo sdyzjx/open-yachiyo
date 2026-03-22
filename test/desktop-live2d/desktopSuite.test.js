@@ -4,6 +4,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const {
   normalizeLive2dPresetConfig,
@@ -28,6 +29,7 @@ const {
   normalizeBubbleMetricsPayload,
   normalizeActionTelemetryPayload,
   normalizeDesktopMusicRequest,
+  createMusicPlaybackController,
   createWindowDragListener,
   createWindowControlListener,
   createChatPanelVisibilityListener,
@@ -472,6 +474,51 @@ test('normalizeDesktopMusicRequest resolves workspace-relative paths and normali
     () => normalizeDesktopMusicRequest({ path: '../escape.mp3' }, tmpDir),
     (err) => err.code === -32006
   );
+});
+
+test('createMusicPlaybackController normalizes workspace file and forwards playback to renderer bridge', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-music-controller-'));
+  const musicPath = path.join(tmpDir, 'music', 'demo.mp3');
+  fs.mkdirSync(path.dirname(musicPath), { recursive: true });
+  fs.writeFileSync(musicPath, 'stub-audio', 'utf8');
+
+  const calls = [];
+  const controller = createMusicPlaybackController({
+    bridge: {
+      invoke: async (payload) => {
+        calls.push(payload);
+        return {
+          status: payload.method === 'desktop.music.play' ? 'playing' : 'paused',
+          path: payload.params?.path || musicPath,
+          trackLabel: payload.params?.trackLabel || 'Demo Track'
+        };
+      }
+    },
+    rendererTimeoutMs: 4321,
+    workspaceRoot: tmpDir
+  });
+
+  const playResult = await controller.play({
+    path: 'music/demo.mp3',
+    volume: 0.35,
+    loop: true,
+    trackLabel: 'Demo Track'
+  });
+  const pauseResult = await controller.pause();
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].method, 'desktop.music.play');
+  assert.equal(calls[0].timeoutMs, 4321);
+  assert.deepEqual(calls[0].params, {
+    path: musicPath,
+    audioUrl: pathToFileURL(musicPath).toString(),
+    volume: 0.35,
+    loop: true,
+    trackLabel: 'Demo Track'
+  });
+  assert.equal(calls[1].method, 'desktop.music.pause');
+  assert.equal(playResult.status, 'playing');
+  assert.equal(pauseResult.status, 'paused');
 });
 
 test('normalizeModelBoundsPayload validates numeric bounds payload', () => {
@@ -1253,6 +1300,43 @@ test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => 
   assert.equal(calls[0].timeoutMs, 3456);
   assert.deepEqual(calls[0].params, { name: 'ParamAngleX', value: 3 });
   assert.equal(result.ok, true);
+});
+
+test('handleDesktopRpcRequest forwards presenter runtime methods to renderer bridge', async () => {
+  const calls = [];
+  const modeResult = await handleDesktopRpcRequest({
+    request: {
+      method: 'presenter.mode.set',
+      params: { mode: 'waveform' }
+    },
+    bridge: {
+      invoke: async (payload) => {
+        calls.push(payload);
+        return { ok: true, mode: payload.params.mode };
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const stateResult = await handleDesktopRpcRequest({
+    request: {
+      method: 'presenter.state.get',
+      params: {}
+    },
+    bridge: {
+      invoke: async (payload) => {
+        calls.push(payload);
+        return { mode: 'waveform', waveformVisible: true };
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].method, 'presenter.mode.set');
+  assert.equal(calls[0].timeoutMs, 3456);
+  assert.equal(calls[1].method, 'presenter.state.get');
+  assert.deepEqual(modeResult, { ok: true, mode: 'waveform' });
+  assert.deepEqual(stateResult, { mode: 'waveform', waveformVisible: true });
 });
 
 test('handleDesktopRpcRequest dispatches desktop music tools to controller', async () => {

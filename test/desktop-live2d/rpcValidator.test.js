@@ -48,6 +48,20 @@ test('validateRpcRequest accepts tool.invoke payload', () => {
 });
 
 test('validateRpcRequest accepts desktop perception and capture payloads', () => {
+  const presenterMode = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'presenter-mode-1',
+    method: 'presenter.mode.set',
+    params: {
+      mode: 'waveform'
+    }
+  });
+  const presenterState = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'presenter-state-1',
+    method: 'presenter.state.get',
+    params: {}
+  });
   const musicPlay = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'music-play-1',
@@ -128,6 +142,8 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     }
   });
 
+  assert.equal(presenterMode.ok, true);
+  assert.equal(presenterState.ok, true);
   assert.equal(musicPlay.ok, true);
   assert.equal(musicPause.ok, true);
   assert.equal(musicResume.ok, true);

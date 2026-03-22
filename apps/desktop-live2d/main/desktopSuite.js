@@ -1668,11 +1668,7 @@ async function startDesktopSuite({
     intervalMs: config.desktopCaptureCleanupIntervalMs,
     logger
   });
-  const musicPlaybackController = createMusicPlaybackController({
-    BrowserWindow,
-    workspaceRoot: config.workspaceRoot,
-    logger
-  });
+  let musicPlaybackController = null;
 
   logger.info?.('[desktop-live2d] desktop_up_start', {
     modelDir: config.modelDir,
@@ -3262,6 +3258,12 @@ async function startDesktopSuite({
     timeoutMs: config.rendererTimeoutMs
   });
   ipcBridgeRef = bridge;
+  musicPlaybackController = createMusicPlaybackController({
+    bridge,
+    rendererTimeoutMs: config.rendererTimeoutMs,
+    workspaceRoot: config.workspaceRoot,
+    logger
+  });
 
   const rpcServer = new Live2dRpcServer({
     host: config.rpcHost,
@@ -3306,6 +3308,8 @@ async function startDesktopSuite({
       'chat.panel.hide',
       'chat.panel.append',
       'chat.panel.clear',
+      'presenter.mode.set',
+      'presenter.state.get',
       'desktop.music.play',
       'desktop.music.pause',
       'desktop.music.resume',
@@ -3650,181 +3654,12 @@ function normalizeDesktopMusicRequest(params = {}, workspaceRoot) {
   };
 }
 
-function buildMusicControllerHtml() {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src file: data: blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'" />
-    <title>desktop-music-controller</title>
-  </head>
-  <body>
-    <script>
-      (() => {
-        const audio = document.createElement('audio');
-        audio.preload = 'auto';
-        audio.crossOrigin = 'anonymous';
-        document.body.appendChild(audio);
-
-        const state = {
-          status: 'idle',
-          path: null,
-          audioUrl: null,
-          volume: 1,
-          loop: false,
-          trackLabel: null,
-          currentTime: 0,
-          duration: 0,
-          paused: true,
-          ended: false,
-          error: null,
-          updatedAt: Date.now()
-        };
-
-        function syncState() {
-          state.currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : state.currentTime;
-          state.duration = Number.isFinite(audio.duration) ? audio.duration : state.duration;
-          state.paused = audio.paused;
-          state.ended = audio.ended;
-          return { ...state };
-        }
-
-        function applyPayload(payload) {
-          const next = payload && typeof payload === 'object' ? payload : {};
-          if (next.path) {
-            state.path = String(next.path);
-          }
-          if (next.audioUrl) {
-            state.audioUrl = String(next.audioUrl);
-          }
-          if (Number.isFinite(Number(next.volume))) {
-            state.volume = Math.min(1, Math.max(0, Number(next.volume)));
-          }
-          if (typeof next.loop === 'boolean') {
-            state.loop = next.loop;
-          }
-          if (next.trackLabel) {
-            state.trackLabel = String(next.trackLabel);
-          }
-        }
-
-        audio.addEventListener('play', () => {
-          state.status = 'playing';
-          state.error = null;
-          state.updatedAt = Date.now();
-          syncState();
-        });
-        audio.addEventListener('pause', () => {
-          if (!audio.src) {
-            return;
-          }
-          state.status = audio.ended ? 'ended' : 'paused';
-          state.updatedAt = Date.now();
-          syncState();
-        });
-        audio.addEventListener('ended', () => {
-          state.status = 'ended';
-          state.updatedAt = Date.now();
-          syncState();
-        });
-        audio.addEventListener('error', () => {
-          state.status = 'error';
-          state.error = audio.error ? { code: audio.error.code, message: audio.error.message || 'audio playback error' } : { message: 'audio playback error' };
-          state.updatedAt = Date.now();
-        });
-        audio.addEventListener('timeupdate', syncState);
-        audio.addEventListener('loadedmetadata', syncState);
-
-        async function play(payload) {
-          applyPayload(payload);
-          if (!state.audioUrl) {
-            throw new Error('music audio url missing');
-          }
-          audio.loop = state.loop;
-          audio.volume = state.volume;
-          audio.src = state.audioUrl;
-          audio.currentTime = 0;
-          state.status = 'loading';
-          state.error = null;
-          state.updatedAt = Date.now();
-          try {
-            await audio.play();
-            state.status = 'playing';
-            state.updatedAt = Date.now();
-            return syncState();
-          } catch (error) {
-            state.status = 'error';
-            state.error = { message: error?.message || String(error || 'audio playback failed') };
-            state.updatedAt = Date.now();
-            throw error;
-          }
-        }
-
-        async function pause() {
-          if (!audio.src) {
-            return syncState();
-          }
-          audio.pause();
-          state.status = audio.ended ? 'ended' : 'paused';
-          state.updatedAt = Date.now();
-          return syncState();
-        }
-
-        async function resume() {
-          if (!audio.src) {
-            return syncState();
-          }
-          if (!audio.paused) {
-            return syncState();
-          }
-          try {
-            await audio.play();
-            state.status = 'playing';
-            state.updatedAt = Date.now();
-            return syncState();
-          } catch (error) {
-            state.status = 'error';
-            state.error = { message: error?.message || String(error || 'audio playback failed') };
-            state.updatedAt = Date.now();
-            throw error;
-          }
-        }
-
-        async function stop() {
-          audio.pause();
-          audio.removeAttribute('src');
-          audio.load();
-          state.status = 'stopped';
-          state.path = null;
-          state.audioUrl = null;
-          state.trackLabel = null;
-          state.currentTime = 0;
-          state.duration = 0;
-          state.paused = true;
-          state.ended = false;
-          state.error = null;
-          state.updatedAt = Date.now();
-          return syncState();
-        }
-
-        async function getState() {
-          return syncState();
-        }
-
-        window.__musicController = { play, pause, resume, stop, state: getState };
-      })();
-    </script>
-  </body>
-</html>`;
-}
-
 function createMusicPlaybackController({
-  BrowserWindow,
+  bridge,
+  rendererTimeoutMs,
   workspaceRoot,
   logger = console
 } = {}) {
-  let controllerWindow = null;
-  let disposed = false;
   let lastState = {
     status: 'idle',
     path: null,
@@ -3840,49 +3675,16 @@ function createMusicPlaybackController({
     updatedAt: Date.now()
   };
 
-  async function ensureWindow() {
-    if (disposed) {
-      throw buildRpcError(-32005, 'music playback controller disposed');
-    }
-    if (controllerWindow && !controllerWindow.isDestroyed()) {
-      return controllerWindow;
-    }
-    if (typeof BrowserWindow !== 'function') {
+  async function execute(method, payload = {}) {
+    if (!bridge || typeof bridge.invoke !== 'function') {
       throw buildRpcError(-32005, 'music playback controller unavailable');
     }
-
-    controllerWindow = new BrowserWindow({
-      show: false,
-      frame: false,
-      transparent: true,
-      hasShadow: false,
-      focusable: false,
-      skipTaskbar: true,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-        webSecurity: false,
-        backgroundThrottling: false,
-        autoplayPolicy: 'no-user-gesture-required'
-      }
-    });
-    controllerWindow.on('closed', () => {
-      controllerWindow = null;
-    });
-
-    const controllerHtml = buildMusicControllerHtml();
-    await controllerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
-    return controllerWindow;
-  }
-
-  async function execute(method, payload = {}) {
-    const win = await ensureWindow();
     try {
-      const result = await win.webContents.executeJavaScript(
-        `window.__musicController.${method}(${JSON.stringify(payload)})`,
-        true
-      );
+      const result = await bridge.invoke({
+        method,
+        params: payload,
+        timeoutMs: rendererTimeoutMs
+      });
       if (result && typeof result === 'object') {
         lastState = { ...lastState, ...result };
       }
@@ -3899,7 +3701,7 @@ function createMusicPlaybackController({
   return {
     async play(params = {}) {
       const normalized = normalizeDesktopMusicRequest(params, workspaceRoot);
-      const state = await execute('play', {
+      const state = await execute('desktop.music.play', {
         path: normalized.path,
         audioUrl: normalized.audioUrl,
         volume: normalized.volume,
@@ -3910,38 +3712,34 @@ function createMusicPlaybackController({
       return state;
     },
     async pause() {
-      const state = await execute('pause');
+      const state = await execute('desktop.music.pause');
       lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
       return state;
     },
     async resume() {
-      const state = await execute('resume');
+      const state = await execute('desktop.music.resume');
       lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
       return state;
     },
     async stop() {
-      const state = await execute('stop');
+      const state = await execute('desktop.music.stop');
       lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
       return state;
     },
     async state() {
-      if (!controllerWindow || controllerWindow.isDestroyed()) {
-        return { ...lastState };
-      }
       try {
-        const state = await execute('state');
+        const state = await execute('desktop.music.state.get');
         lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
         return state;
-      } catch (error) {
+      } catch {
         return { ...lastState };
       }
     },
     async dispose() {
-      disposed = true;
-      if (controllerWindow && !controllerWindow.isDestroyed()) {
-        controllerWindow.destroy();
-      }
-      controllerWindow = null;
+      lastState = {
+        ...lastState,
+        updatedAt: Date.now()
+      };
     }
   };
 }
@@ -4560,7 +4358,6 @@ module.exports = {
   normalizeDesktopMusicRequest,
   resolveDesktopMusicPath,
   normalizeDesktopMusicVolume,
-  buildMusicControllerHtml,
   createMusicPlaybackController,
   createWindowDragListener,
   createWindowControlListener,

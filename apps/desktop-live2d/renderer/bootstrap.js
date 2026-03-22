@@ -16,7 +16,9 @@
     lastError: null,
     layout: null,
     windowState: null,
-    resizeModeEnabled: false
+    resizeModeEnabled: false,
+    presenterMode: 'live2d',
+    musicPlayback: null
   };
 
   let pixiApp = null;
@@ -93,6 +95,19 @@
   };
   let lastWindowInteractivity = null;
   let lastPointerPosition = null;
+  let audioFrameBus = null;
+  let waveformPresenter = null;
+  let waveformLayer = null;
+  let waveformBackdropGraphic = null;
+  let waveformGlowGraphic = null;
+  let waveformFillGraphic = null;
+  let waveformStrokeGraphic = null;
+  let waveformCenterGraphic = null;
+  let waveformTickerHookBound = false;
+  let rendererMusicPlayer = null;
+  let rendererMusicEventsBound = false;
+  let activePresenterAction = null;
+  let queuedPresenterActions = new Map();
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -207,6 +222,463 @@
     eyeSmileR: 0,
     cheek: 0
   });
+
+  function normalizePresenterModeValue(mode, fallback = 'live2d') {
+    const normalizer = window.RendererAudioFrameBus?.normalizeMode
+      || window.RendererWaveformPresenter?.normalizeMode;
+    if (typeof normalizer === 'function') {
+      return normalizer(mode, fallback);
+    }
+    const normalized = String(mode || fallback).trim().toLowerCase();
+    return ['live2d', 'waveform', 'hybrid'].includes(normalized) ? normalized : fallback;
+  }
+
+  function getConfiguredPresenterMode() {
+    const configured = runtimeUiConfig?.presenter?.mode;
+    return normalizePresenterModeValue(configured, state.presenterMode || 'live2d');
+  }
+
+  function ensureAudioFrameBus() {
+    if (audioFrameBus) {
+      return audioFrameBus;
+    }
+    const factory = window.RendererAudioFrameBus?.createRendererAudioFrameBus;
+    if (typeof factory !== 'function') {
+      return null;
+    }
+    audioFrameBus = factory({
+      mode: getConfiguredPresenterMode()
+    });
+    return audioFrameBus;
+  }
+
+  function drawPolyline(graphics, points) {
+    if (!graphics || !Array.isArray(points) || points.length === 0) {
+      return;
+    }
+    graphics.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length; index += 1) {
+      graphics.lineTo(points[index].x, points[index].y);
+    }
+  }
+
+  function drawWaveformEnvelope(graphics, geometry) {
+    if (!graphics || !geometry) {
+      return;
+    }
+    const topPoints = Array.isArray(geometry.topPoints) ? geometry.topPoints : [];
+    const bottomPoints = Array.isArray(geometry.bottomPoints) ? geometry.bottomPoints : [];
+    if (topPoints.length === 0 || bottomPoints.length === 0) {
+      return;
+    }
+    drawPolyline(graphics, topPoints);
+    for (let index = bottomPoints.length - 1; index >= 0; index -= 1) {
+      graphics.lineTo(bottomPoints[index].x, bottomPoints[index].y);
+    }
+    graphics.closePath();
+  }
+
+  function ensureWaveformLayer() {
+    if (waveformLayer) {
+      return waveformLayer;
+    }
+    const PIXI = window.PIXI;
+    if (!PIXI?.Container || !PIXI?.Graphics || !pixiApp?.stage) {
+      return null;
+    }
+
+    waveformLayer = new PIXI.Container();
+    waveformLayer.visible = false;
+    waveformBackdropGraphic = new PIXI.Graphics();
+    waveformGlowGraphic = new PIXI.Graphics();
+    waveformFillGraphic = new PIXI.Graphics();
+    waveformStrokeGraphic = new PIXI.Graphics();
+    waveformCenterGraphic = new PIXI.Graphics();
+    if (PIXI.BLEND_MODES) {
+      waveformGlowGraphic.blendMode = PIXI.BLEND_MODES.ADD;
+    }
+    waveformLayer.addChild(
+      waveformBackdropGraphic,
+      waveformGlowGraphic,
+      waveformFillGraphic,
+      waveformStrokeGraphic,
+      waveformCenterGraphic
+    );
+    pixiApp.stage.addChild(waveformLayer);
+    return waveformLayer;
+  }
+
+  function ensureWaveformPresenter() {
+    if (waveformPresenter) {
+      return waveformPresenter;
+    }
+    const factory = window.RendererWaveformPresenter?.createWaveformPresenter;
+    if (typeof factory !== 'function') {
+      return null;
+    }
+    waveformPresenter = factory({
+      mode: getConfiguredPresenterMode()
+    });
+    return waveformPresenter;
+  }
+
+  function syncMusicPlaybackState(overrides = {}) {
+    const audioElement = rendererMusicPlayer?.audioElement || null;
+    const prev = state.musicPlayback && typeof state.musicPlayback === 'object'
+      ? state.musicPlayback
+      : {};
+    const nextStatus = overrides.status
+      || (audioElement
+        ? (
+            rendererMusicPlayer?.currentSrc
+              ? (audioElement.ended ? 'ended' : (audioElement.paused ? 'paused' : 'playing'))
+              : 'stopped'
+          )
+        : (prev.status || 'idle'));
+    state.musicPlayback = {
+      status: nextStatus,
+      path: overrides.path !== undefined ? overrides.path : (prev.path || null),
+      audioUrl: overrides.audioUrl !== undefined ? overrides.audioUrl : (prev.audioUrl || null),
+      volume: overrides.volume !== undefined
+        ? clamp(Number(overrides.volume) || 0, 0, 1)
+        : clamp(Number(audioElement?.volume ?? prev.volume ?? 1) || 0, 0, 1),
+      loop: overrides.loop !== undefined ? Boolean(overrides.loop) : Boolean(audioElement?.loop ?? prev.loop),
+      trackLabel: overrides.trackLabel !== undefined ? overrides.trackLabel : (prev.trackLabel || null),
+      currentTime: Number.isFinite(Number(audioElement?.currentTime))
+        ? Number(audioElement.currentTime)
+        : (Number(prev.currentTime) || 0),
+      duration: Number.isFinite(Number(audioElement?.duration))
+        ? Number(audioElement.duration)
+        : (Number(prev.duration) || 0),
+      paused: audioElement ? Boolean(audioElement.paused) : nextStatus !== 'playing',
+      ended: audioElement ? Boolean(audioElement.ended) : nextStatus === 'ended',
+      error: overrides.error !== undefined ? overrides.error : (prev.error || null),
+      updatedAt: Date.now()
+    };
+    return state.musicPlayback;
+  }
+
+  function ensureRendererMusicPlayer() {
+    if (rendererMusicPlayer) {
+      return rendererMusicPlayer;
+    }
+    const factory = window.RendererMusicPlayer?.createRendererMusicPlayer;
+    if (typeof factory !== 'function') {
+      throw createRpcError(-32005, 'RendererMusicPlayer runtime is unavailable');
+    }
+    rendererMusicPlayer = factory();
+    syncMusicPlaybackState({ status: 'idle' });
+    if (!rendererMusicEventsBound && rendererMusicPlayer.audioElement) {
+      const audioElement = rendererMusicPlayer.audioElement;
+      audioElement.addEventListener('play', () => {
+        syncMusicPlaybackState({ status: 'playing', error: null });
+      });
+      audioElement.addEventListener('pause', () => {
+        syncMusicPlaybackState({
+          status: audioElement.ended ? 'ended' : (rendererMusicPlayer.currentSrc ? 'paused' : 'stopped')
+        });
+      });
+      audioElement.addEventListener('ended', () => {
+        syncMusicPlaybackState({ status: 'ended' });
+      });
+      audioElement.addEventListener('timeupdate', () => {
+        syncMusicPlaybackState();
+      });
+      audioElement.addEventListener('loadedmetadata', () => {
+        syncMusicPlaybackState();
+      });
+      audioElement.addEventListener('error', () => {
+        const mediaError = audioElement.error;
+        syncMusicPlaybackState({
+          status: 'error',
+          error: mediaError
+            ? { code: mediaError.code, message: mediaError.message || 'audio playback error' }
+            : { message: 'audio playback error' }
+        });
+      });
+      rendererMusicEventsBound = true;
+    }
+    return rendererMusicPlayer;
+  }
+
+  function buildPresenterActionFrame(nowMs = Date.now()) {
+    if (!activePresenterAction) {
+      return null;
+    }
+    const durationSec = Math.max(0, Number(activePresenterAction.durationSec) || 0);
+    const elapsedMs = Math.max(0, nowMs - Number(activePresenterAction.startedAt || nowMs));
+    const progress = durationSec > 0
+      ? clamp(elapsedMs / Math.max(1, durationSec * 1000), 0, 1)
+      : 0;
+    return {
+      type: activePresenterAction.type || 'motion',
+      name: activePresenterAction.name || null,
+      durationSec,
+      queuePolicy: activePresenterAction.queuePolicy || null,
+      intensity: clamp(Number(activePresenterAction.intensity) || 0.42, 0, 1),
+      progress,
+      timestamp: nowMs
+    };
+  }
+
+  function renderWaveformSnapshot(snapshot) {
+    const layer = ensureWaveformLayer();
+    if (!layer) {
+      return;
+    }
+
+    const geometry = snapshot?.geometry || null;
+    const visuals = [
+      waveformBackdropGraphic,
+      waveformGlowGraphic,
+      waveformFillGraphic,
+      waveformStrokeGraphic,
+      waveformCenterGraphic
+    ];
+    for (const graphic of visuals) {
+      graphic?.clear?.();
+    }
+
+    if (!snapshot?.waveformVisible || !geometry) {
+      layer.visible = false;
+      return;
+    }
+
+    const originX = Number(geometry.originX) || 0;
+    const originY = Number(geometry.originY) || 0;
+    for (const graphic of visuals) {
+      if (graphic?.position?.set) {
+        graphic.position.set(originX, originY);
+      }
+    }
+
+    const width = Math.max(1, Number(geometry.width) || 1);
+    const height = Math.max(1, Number(geometry.height) || 1);
+    const primary = Number(snapshot.colors?.primary) || 0x80e3ff;
+    const fill = Number(snapshot.colors?.fill) || 0x112330;
+    const glow = Number(snapshot.colors?.glow) || primary;
+    const accent = Number(snapshot.colors?.accent) || 0xebfbff;
+    const energy = clamp(Number(snapshot.energy) || 0, 0, 1);
+    const waveformAlpha = clamp(Number(snapshot.waveformAlpha) || 0, 0, 1);
+
+    waveformBackdropGraphic.beginFill(fill, 0.18 * waveformAlpha);
+    waveformBackdropGraphic.drawRoundedRect(0, Math.round(height * 0.2), width, Math.max(20, Math.round(height * 0.6)), Math.round(height * 0.24));
+    waveformBackdropGraphic.endFill();
+
+    waveformGlowGraphic.lineStyle(18 + energy * 10, glow, (0.1 + energy * 0.16) * waveformAlpha, 0.5);
+    drawWaveformEnvelope(waveformGlowGraphic, geometry);
+
+    waveformFillGraphic.beginFill(fill, (0.16 + energy * 0.1) * waveformAlpha);
+    drawWaveformEnvelope(waveformFillGraphic, geometry);
+    waveformFillGraphic.endFill();
+
+    waveformStrokeGraphic.lineStyle(2.5, primary, (0.8 + energy * 0.18) * waveformAlpha, 0.5);
+    drawWaveformEnvelope(waveformStrokeGraphic, geometry);
+
+    waveformCenterGraphic.lineStyle(1.2, accent, (0.55 + energy * 0.25) * waveformAlpha, 0.5);
+    drawPolyline(waveformCenterGraphic, Array.isArray(geometry.centerLine) ? geometry.centerLine : []);
+
+    layer.visible = true;
+    layer.alpha = waveformAlpha;
+  }
+
+  function updatePresenterVisualState(snapshot) {
+    renderWaveformSnapshot(snapshot);
+
+    if (live2dModel) {
+      live2dModel.alpha = clamp(Number(snapshot?.modelAlpha) || 0, 0, 1);
+      live2dModel.visible = live2dModel.alpha > 0.01;
+      if ('interactive' in live2dModel) {
+        live2dModel.interactive = live2dModel.visible;
+      }
+      if ('eventMode' in live2dModel) {
+        live2dModel.eventMode = live2dModel.visible ? 'static' : 'none';
+      }
+    }
+  }
+
+  function updatePresenterFrame() {
+    const bus = ensureAudioFrameBus();
+    const presenter = ensureWaveformPresenter();
+    if (!bus || !presenter || !pixiApp) {
+      return;
+    }
+
+    if (rendererMusicPlayer) {
+      bus.setMusicFrame(rendererMusicPlayer.sampleFrame({
+        bandCount: 24
+      }));
+      syncMusicPlaybackState();
+    }
+
+    const actionFrame = buildPresenterActionFrame();
+    bus.setActionFrame(actionFrame);
+
+    const busSnapshot = bus.snapshot();
+    presenter.setMode(busSnapshot.mode);
+    presenter.ingestSpeechFrame(busSnapshot.speechFrame);
+    presenter.ingestMusicFrame(busSnapshot.musicFrame);
+    presenter.ingestActionFrame(busSnapshot.actionFrame);
+
+    const stageSize = getStageSize();
+    const snapshot = presenter.tick({
+      nowMs: Date.now(),
+      stageWidth: stageSize.width,
+      stageHeight: stageSize.height
+    });
+    state.presenterMode = snapshot.mode;
+    updatePresenterVisualState(snapshot);
+  }
+
+  function ensurePresenterTickerHook() {
+    if (waveformTickerHookBound || !pixiApp?.ticker) {
+      return;
+    }
+    pixiApp.ticker.add(updatePresenterFrame);
+    waveformTickerHookBound = true;
+  }
+
+  function setPresenterMode(params = {}) {
+    const requestedMode = typeof params === 'string' ? params : (params.mode || params.presenterMode);
+    const normalizedMode = normalizePresenterModeValue(requestedMode, getConfiguredPresenterMode());
+    runtimeUiConfig = {
+      ...(runtimeUiConfig || {}),
+      presenter: {
+        ...(runtimeUiConfig?.presenter || {}),
+        mode: normalizedMode
+      }
+    };
+    state.presenterMode = normalizedMode;
+    ensureAudioFrameBus()?.setMode(normalizedMode);
+    ensureWaveformPresenter()?.setMode(normalizedMode);
+    updatePresenterFrame();
+    return getPresenterState();
+  }
+
+  function getPresenterState() {
+    const snapshot = waveformPresenter?.getLastSnapshot?.() || null;
+    return {
+      mode: state.presenterMode,
+      sourceKind: snapshot?.sourceKind || 'breath',
+      waveformVisible: Boolean(snapshot?.waveformVisible),
+      modelVisible: Boolean(snapshot?.modelVisible),
+      waveformAlpha: Number(snapshot?.waveformAlpha) || 0,
+      modelAlpha: Number(snapshot?.modelAlpha) || 0,
+      music: state.musicPlayback ? { ...state.musicPlayback } : null
+    };
+  }
+
+  function setSpeechPresenterFrame(frame) {
+    ensureAudioFrameBus()?.setSpeechFrame(frame);
+  }
+
+  function clearSpeechPresenterFrame() {
+    const basePose = getDefaultMouthBasePose();
+    setSpeechPresenterFrame({
+      speaking: false,
+      energy: 0,
+      mouthOpen: basePose.mouthOpen,
+      mouthForm: basePose.mouthForm,
+      confidence: 0,
+      visemeWeights: { a: 0.2, i: 0.2, u: 0.2, e: 0.2, o: 0.2 }
+    });
+  }
+
+  function queuePresenterAction(actionMessage, actionId) {
+    const normalizedAction = actionMessage && typeof actionMessage === 'object' ? actionMessage : null;
+    if (!normalizedAction) {
+      return;
+    }
+    const action = normalizedAction.action && typeof normalizedAction.action === 'object'
+      ? normalizedAction.action
+      : normalizedAction;
+    const key = String(actionId || normalizedAction.action_id || '').trim();
+    const record = {
+      type: String(action.type || normalizedAction.action_type || 'motion').trim().toLowerCase() || 'motion',
+      name: action.name || normalizedAction.name || null,
+      durationSec: Number(normalizedAction.duration_sec || normalizedAction.durationSec || action.durationSec) || 0,
+      queuePolicy: normalizedAction.queue_policy || normalizedAction.queuePolicy || null,
+      intensity: clamp(Number(normalizedAction.intensity) || 0.42, 0, 1),
+      startedAt: Date.now()
+    };
+    if (!key) {
+      activePresenterAction = record;
+      return;
+    }
+    queuedPresenterActions.set(key, record);
+  }
+
+  function applyPresenterActionTelemetry(payload = {}) {
+    const event = String(payload.event || '').trim().toLowerCase();
+    const actionId = String(payload.action_id || payload.actionId || '').trim();
+    if (event === 'start') {
+      const queued = actionId ? queuedPresenterActions.get(actionId) : null;
+      activePresenterAction = queued
+        ? { ...queued, startedAt: Date.now() }
+        : {
+            type: String(payload.action_type || 'motion').trim().toLowerCase() || 'motion',
+            name: null,
+            durationSec: 0,
+            queuePolicy: null,
+            intensity: 0.42,
+            startedAt: Date.now()
+          };
+      return;
+    }
+    if (event === 'done' || event === 'fail') {
+      if (actionId) {
+        queuedPresenterActions.delete(actionId);
+      }
+      activePresenterAction = null;
+    }
+  }
+
+  async function playWorkspaceMusic(params = {}) {
+    const audioUrl = String(params.audioUrl || params.audio_url || '').trim();
+    if (!audioUrl) {
+      throw createRpcError(-32602, 'desktop.music.play requires audioUrl');
+    }
+    const pathValue = String(params.path || '').trim() || null;
+    const requestedVolume = Number(params.volume);
+    const volume = clamp(Number.isFinite(requestedVolume) ? requestedVolume : 1, 0, 1);
+    const loop = params.loop === true;
+    const trackLabel = String(params.trackLabel || params.track_label || '').trim()
+      || (pathValue ? pathValue.split(/[\\/]/).pop() : 'workspace-audio');
+    const player = ensureRendererMusicPlayer();
+    try {
+      await player.play({
+        src: audioUrl,
+        volume,
+        loop
+      });
+      syncMusicPlaybackState({
+        status: 'playing',
+        path: pathValue,
+        audioUrl,
+        volume,
+        loop,
+        trackLabel,
+        error: null
+      });
+      return { ...state.musicPlayback };
+    } catch (error) {
+      syncMusicPlaybackState({
+        status: 'error',
+        path: pathValue,
+        audioUrl,
+        volume,
+        loop,
+        trackLabel,
+        error: { message: error?.message || String(error || 'music playback failed') }
+      });
+      throw createRpcError(-32005, error?.message || String(error || 'music playback failed'));
+    }
+  }
+
+  function getMusicPlaybackState() {
+    syncMusicPlaybackState();
+    return state.musicPlayback ? { ...state.musicPlayback } : null;
+  }
 
   function nearlyEqual(left, right, epsilon = 1e-4) {
     if (typeof interactionApi?.nearlyEqual === 'function') {
@@ -1512,6 +1984,7 @@
   function resetLipsyncMouthState() {
     syncLipsyncStateToDefaultMouthBasePose();
     lipsyncSpeakingActive = false;
+    clearSpeechPresenterFrame();
   }
 
   function applyLipsyncValuesToModel({ source = 'unknown' } = {}) {
@@ -1734,6 +2207,7 @@
     lipsyncTargetMouthOpen = basePose.mouthOpen;
     lipsyncTargetMouthForm = basePose.mouthForm;
     lipsyncSpeakingActive = false;
+    clearSpeechPresenterFrame();
     scheduleLipsyncRelease(stopState.reason);
     emitRendererDebug('lipsync.sync_stopped', {
       request_id: stopState.request_id,
@@ -1968,6 +2442,14 @@
         lipsyncTargetMouthOpen = stabilizedMouthOpen;
         lipsyncTargetMouthForm = mouthForm;
         lipsyncSpeakingActive = speaking;
+        setSpeechPresenterFrame({
+          speaking,
+          energy: Number(frame.features?.voiceEnergy) || voiceEnergy,
+          mouthOpen: stabilizedMouthOpen,
+          mouthForm,
+          confidence: Number(frame.confidence) || 0,
+          visemeWeights: frame.weights || {}
+        });
 
         const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
         const captureEveryFrame = waveformCaptureConfig.enabled && waveformCaptureConfig.captureEveryFrame;
@@ -3264,6 +3746,7 @@
         idleAction,
         mutex: ensureActionExecutionMutex(),
         onTelemetry: (payload) => {
+          applyPresenterActionTelemetry(payload);
           bridge?.sendActionTelemetry?.(payload);
         },
         logger: console
@@ -3301,7 +3784,9 @@
           captureEveryFrame: getWaveformCaptureRuntimeConfig().captureEveryFrame,
           includeApplied: getWaveformCaptureRuntimeConfig().includeApplied
         }
-      }
+      },
+      presenter: getPresenterState(),
+      musicPlayback: getMusicPlaybackState()
     };
   }
 
@@ -3448,6 +3933,10 @@
     stageContainer.appendChild(canvas);
     pixiApp = app;
     bindWindowDragGesture(canvas);
+    ensureWaveformLayer();
+    ensureWaveformPresenter();
+    ensureAudioFrameBus();
+    ensurePresenterTickerHook();
   }
 
   function resolveLive2dConstructor() {
@@ -3471,6 +3960,9 @@
     bindModelInteraction();
 
     pixiApp.stage.addChild(live2dModel);
+    if (waveformLayer) {
+      pixiApp.stage.addChild(waveformLayer);
+    }
     const initialBounds = live2dModel.getLocalBounds?.();
     if (
       initialBounds
@@ -3951,6 +4443,47 @@
         result = appendChatMessage(params, 'assistant');
       } else if (method === 'chat.panel.clear') {
         result = clearChatMessages();
+      } else if (method === 'presenter.mode.set') {
+        result = setPresenterMode(params);
+      } else if (method === 'presenter.state.get') {
+        result = getPresenterState();
+      } else if (method === 'desktop.music.play') {
+        result = await playWorkspaceMusic(params);
+      } else if (method === 'desktop.music.pause') {
+        ensureRendererMusicPlayer().pause();
+        syncMusicPlaybackState({ status: 'paused' });
+        result = getMusicPlaybackState();
+      } else if (method === 'desktop.music.resume') {
+        try {
+          await ensureRendererMusicPlayer().resume();
+          syncMusicPlaybackState({ status: 'playing', error: null });
+          result = getMusicPlaybackState();
+        } catch (error) {
+          syncMusicPlaybackState({
+            status: 'error',
+            error: { message: error?.message || String(error || 'music resume failed') }
+          });
+          throw createRpcError(-32005, error?.message || String(error || 'music resume failed'));
+        }
+      } else if (method === 'desktop.music.stop') {
+        ensureRendererMusicPlayer().stop();
+        ensureAudioFrameBus()?.setMusicFrame({
+          playing: false,
+          energy: 0,
+          bandLevels: [],
+          spectrum: [],
+          timeDomainEnergy: 0
+        });
+        syncMusicPlaybackState({
+          status: 'stopped',
+          path: null,
+          audioUrl: null,
+          trackLabel: null,
+          error: null
+        });
+        result = getMusicPlaybackState();
+      } else if (method === 'desktop.music.state.get') {
+        result = getMusicPlaybackState();
       } else if (method === 'live2d.action.enqueue') {
         if (!actionMessageApi || typeof actionMessageApi.normalizeLive2dActionMessage !== 'function') {
           throw createRpcError(-32005, 'Live2DActionMessage runtime is unavailable');
@@ -3961,6 +4494,7 @@
         }
         const player = ensureActionQueuePlayer();
         result = player.enqueue(normalized.value);
+        queuePresenterAction(normalized.value, result?.action_id);
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
@@ -4048,6 +4582,7 @@
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);
       ensureActionQueuePlayer();
+      setPresenterMode(getConfiguredPresenterMode());
 
       bridge.onInvoke((payload) => {
         void handleInvoke(payload);
