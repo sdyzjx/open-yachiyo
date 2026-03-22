@@ -32,8 +32,8 @@ test('band builders produce stable output for speech, music, and breath sources'
   assert.equal(breathBands.length, 24);
   assert.ok(speechBands.every((value) => value >= 0 && value <= 1));
   assert.ok(musicBands.some((value) => value > 0.5));
-  assert.ok(breathBands.every((value) => value >= 0.05 && value <= 0.1));
-  assert.ok(breathBands.some((value) => value > 0.08));
+  assert.ok(breathBands.every((value) => value >= 0.03 && value <= 0.06));
+  assert.ok(breathBands.some((value) => value > 0.05));
 });
 
 test('computeActionScale raises intensity for reactive actions', () => {
@@ -132,6 +132,8 @@ test('default config remains usable for live2d mode', () => {
   assert.equal(snapshot.mode, DEFAULT_CONFIG.mode);
   assert.equal(snapshot.waveformVisible, false);
   assert.equal(snapshot.modelVisible, true);
+  assert.equal(DEFAULT_CONFIG.colors.speech, 0x67c9ff);
+  assert.equal(DEFAULT_CONFIG.colors.music, 0xff71d4);
 });
 
 test('silent waveform stays effectively static across ticks', () => {

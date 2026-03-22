@@ -7,45 +7,45 @@
     mode: 'live2d',
     sourcePriority: SOURCE_PRIORITY,
     breath: Object.freeze({
-      amplitude: 0.04,
+      amplitude: 0.028,
       periodMs: 4200,
       phaseOffset: -Math.PI / 2
     }),
     smoothing: Object.freeze({
-      energyAttack: 0.3,
-      energyRelease: 0.08,
-      bandAttack: 0.26,
-      bandRelease: 0.12,
-      formAttack: 0.22,
-      formRelease: 0.12,
+      energyAttack: 0.24,
+      energyRelease: 0.1,
+      bandAttack: 0.18,
+      bandRelease: 0.08,
+      formAttack: 0.18,
+      formRelease: 0.1,
       scaleAttack: 0.24,
       scaleRelease: 0.1
     }),
     waveform: Object.freeze({
-      sampleCount: 88,
+      sampleCount: 96,
       centerYRatio: 0.54,
-      widthRatio: 0.72,
-      heightRatio: 0.14,
-      minHalfHeight: 10,
-      maxHalfHeightRatio: 0.22,
+      widthRatio: 0.68,
+      heightRatio: 0.11,
+      minHalfHeight: 8,
+      maxHalfHeightRatio: 0.18,
       pointEdgeCurve: 2.05,
       centerCurve: 1,
-      backgroundAlpha: 0.08,
-      fillAlpha: 0.1,
-      strokeAlpha: 0.88,
-      glowAlpha: 0.12
+      backgroundAlpha: 0.04,
+      fillAlpha: 0.08,
+      strokeAlpha: 0.9,
+      glowAlpha: 0.16
     }),
     hybrid: Object.freeze({
       modelAlpha: 0.28,
       waveformAlpha: 1
     }),
     colors: Object.freeze({
-      speech: 0x87d7f7,
-      music: 0x9be6d1,
-      breath: 0x7f93b8,
-      accent: 0xf4fbff,
-      fill: 0x0f1823,
-      glow: 0x89d8ef
+      speech: 0x67c9ff,
+      music: 0xff71d4,
+      breath: 0x95a4ff,
+      accent: 0xf8f4ff,
+      fill: 0x101424,
+      glow: 0x7cc9ff
     })
   });
 
@@ -191,7 +191,7 @@
     for (let index = 0; index < count; index += 1) {
       const t = count === 1 ? 0 : index / (count - 1);
       const core = Math.pow(Math.sin(Math.PI * t), 1.45);
-      curve[index] = clamp01(0.03 + amplitude * (0.24 + core * 0.28));
+      curve[index] = clamp01(0.018 + amplitude * (0.14 + core * 0.18));
     }
     return curve;
   }
@@ -259,11 +259,9 @@
     const originX = Math.max(0, Math.round((stageWidth - width) / 2));
     const originY = Math.max(0, Math.round(stageHeight * clamp01(waveformConfig.centerYRatio) - height / 2));
     const sampleCount = waveformConfig.sampleCount;
-    const bandCurve = sourceKind === 'music'
-      ? buildMusicBands({ bandLevels, energy }, sampleCount)
-      : sourceKind === 'speech'
-        ? buildSpeechBands({ energy, mouthOpen: energy, mouthForm: form, confidence: 0.55, visemeWeights: bandLevels }, sampleCount)
-        : buildBreathBands(breathPhase, sampleCount, energy);
+    const bandCurve = Array.isArray(bandLevels) && bandLevels.length > 0
+      ? buildFrequencyCurve(bandLevels, sampleCount)
+      : buildBreathBands(breathPhase, sampleCount, energy);
 
     const centerY = height / 2;
     const baseHalfHeight = Math.max(
@@ -278,10 +276,10 @@
     const bottomPoints = [];
     const centerLine = [];
     const sourceShape = sourceKind === 'music'
-      ? 1.05
+      ? 0.96
       : sourceKind === 'speech'
-        ? 1.15
-        : 0.92;
+        ? 1.04
+        : 0.84;
 
     for (let index = 0; index < pointCount; index += 1) {
       const t = pointCount === 1 ? 0 : index / (pointCount - 1);
@@ -289,12 +287,12 @@
       const band = clamp01(bandCurve[index] || 0);
       const wobble = sourceKind === 'breath'
         ? 0
-        : Math.sin(breathPhase + t * TAU * 1.2) * (0.006 + energy * 0.012);
-      const sourceLift = sourceKind === 'speech' ? form * (t - 0.5) * height * 0.1 : 0;
-      const actionLift = actionScale > 1 ? Math.sin(t * Math.PI) * (actionScale - 1) * height * 0.04 : 0;
-      const halfHeight = baseHalfHeight * (0.3 + edgeCurve * 0.56 + band * 0.5) * sourceShape;
+        : Math.sin(breathPhase + t * TAU * 1.08) * (0.003 + energy * 0.008);
+      const sourceLift = sourceKind === 'speech' ? form * (t - 0.5) * height * 0.07 : 0;
+      const actionLift = actionScale > 1 ? Math.sin(t * Math.PI) * (actionScale - 1) * height * 0.025 : 0;
+      const halfHeight = baseHalfHeight * (0.22 + edgeCurve * 0.44 + band * 0.38) * sourceShape;
       const x = Math.round(t * width);
-      const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.015;
+      const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.008;
       const yCenter = centerY + centerLift(sourceKind, energy, form, band, t, height) + sourceLift + actionLift + centerOffset + wobble * height;
       const topY = Math.round(yCenter - halfHeight);
       const bottomY = Math.round(yCenter + halfHeight);
@@ -318,12 +316,12 @@
 
   function centerLift(sourceKind, energy, form, band, t, height) {
     if (sourceKind === 'speech') {
-      return Math.sin((t - 0.5) * Math.PI * 1.6) * form * height * 0.05;
+      return Math.sin((t - 0.5) * Math.PI * 1.5) * form * height * 0.035;
     }
     if (sourceKind === 'music') {
-      return (band - 0.5) * height * 0.03;
+      return (band - 0.5) * height * 0.012;
     }
-    return Math.sin(t * TAU * 0.7) * energy * height * 0.02;
+    return 0;
   }
 
   function computeActionScale(actionFrame, nowMs) {
