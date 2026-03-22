@@ -33,7 +33,9 @@ const { SkillRuntimeManager } = require('../runtime/skills/skillRuntimeManager')
 const { getRuntimePaths } = require('../runtime/skills/runtimePaths');
 const {
   parseJsonWithComments,
-  serializeDesktopLive2dUiConfig
+  serializeDesktopLive2dUiConfig,
+  upsertDesktopLive2dPresenterMode,
+  normalizeUiConfig
 } = require('../desktop-live2d/main/config');
 const { PersonaContextBuilder } = require('../runtime/persona/personaContextBuilder');
 const { PersonaProfileStore } = require('../runtime/persona/personaProfileStore');
@@ -922,6 +924,44 @@ app.get('/api/config/desktop-live2d/raw', (_, res) => {
     res.json({ ok: true, json: raw });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.get('/api/config/desktop-live2d/presenter', (_, res) => {
+  try {
+    const raw = fsSync.existsSync(desktopLive2dConfigPath)
+      ? fsSync.readFileSync(desktopLive2dConfigPath, 'utf8')
+      : '{}';
+    const uiConfig = normalizeUiConfig(parseJsonWithComments(raw));
+    res.json({
+      ok: true,
+      presenter: uiConfig.presenter || { mode: 'live2d' }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+app.put('/api/config/desktop-live2d/presenter', (req, res) => {
+  const mode = req.body?.mode;
+  const rawJson = req.body?.json;
+  if (mode === undefined) {
+    res.status(400).json({ ok: false, error: 'body.mode is required' });
+    return;
+  }
+
+  try {
+    const nextRaw = upsertDesktopLive2dPresenterMode(desktopLive2dConfigPath, mode, {
+      rawJson: typeof rawJson === 'string' ? rawJson : null
+    });
+    commitConfigChange('desktop-live2d.json');
+    res.json({
+      ok: true,
+      presenter: nextRaw.presenter || { mode: 'live2d' },
+      json: serializeDesktopLive2dUiConfig(nextRaw)
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || String(err) });
   }
 });
 

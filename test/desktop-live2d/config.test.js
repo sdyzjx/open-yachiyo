@@ -8,8 +8,11 @@ const {
   resolveDesktopLive2dConfig,
   upsertDesktopLive2dLayoutOverrides,
   upsertDesktopLive2dDragZoneOverrides,
+  upsertDesktopLive2dPresenterMode,
   parseJsonWithComments,
-  syncDesktopLive2dMissingDefaults
+  syncDesktopLive2dMissingDefaults,
+  serializeDesktopLive2dUiConfig,
+  normalizeUiConfig
 } = require('../../apps/desktop-live2d/main/config');
 
 test('resolveDesktopLive2dConfig applies defaults and model relative path', () => {
@@ -46,6 +49,7 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.uiConfig.debug.waveformCapture.enabled, false);
   assert.equal(config.uiConfig.debug.waveformCapture.captureEveryFrame, true);
   assert.equal(config.uiConfig.debug.waveformCapture.includeApplied, true);
+  assert.equal(config.uiConfig.presenter.mode, 'live2d');
   assert.equal(config.uiConfig.voice.path, 'electron_native');
   assert.equal(config.uiConfig.voice.transport, 'realtime');
   assert.equal(config.uiConfig.voice.outputDelayMs, 9);
@@ -223,6 +227,7 @@ test('resolveDesktopLive2dConfig loads overrides from YACHIYO_HOME/config/deskto
   assert.equal(config.uiConfig.voice.fallbackOnRealtimeError, false);
   assert.equal(config.uiConfig.voice.realtime.prebufferMs, 240);
   assert.equal(config.uiConfig.voice.realtime.idleTimeoutMs, 12000);
+  assert.equal(config.uiConfig.presenter.mode, 'live2d');
 });
 
 test('resolveDesktopLive2dConfig accepts comments in desktop-live2d.json', () => {
@@ -255,6 +260,51 @@ test('resolveDesktopLive2dConfig accepts comments in desktop-live2d.json', () =>
   assert.equal(config.uiConfig.window.width, 410);
   assert.equal(config.uiConfig.window.height, 640);
   assert.equal(config.uiConfig.chat.panel.defaultVisible, false);
+});
+
+test('normalizeUiConfig normalizes presenter mode and falls back to live2d', () => {
+  const normalized = normalizeUiConfig({
+    presenter: {
+      mode: ' waveform '
+    }
+  });
+
+  assert.equal(normalized.presenter.mode, 'waveform');
+
+  const fallback = normalizeUiConfig({
+    presenter: {
+      mode: 'unknown-mode'
+    }
+  });
+
+  assert.equal(fallback.presenter.mode, 'live2d');
+});
+
+test('upsertDesktopLive2dPresenterMode writes presenter mode and omits default mode', () => {
+  const configPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'live2d-presenter-')), 'desktop-live2d.json');
+
+  const nextRaw = upsertDesktopLive2dPresenterMode(configPath, 'waveform');
+  assert.deepEqual(nextRaw.presenter, { mode: 'waveform' });
+  const saved = parseJsonWithComments(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(saved.presenter.mode, 'waveform');
+
+  const resetRaw = upsertDesktopLive2dPresenterMode(configPath, 'live2d');
+  assert.equal(Object.prototype.hasOwnProperty.call(resetRaw, 'presenter'), false);
+  const resetSaved = parseJsonWithComments(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(Object.prototype.hasOwnProperty.call(resetSaved, 'presenter'), false);
+});
+
+test('serializeDesktopLive2dUiConfig keeps presenter section in canonical order', () => {
+  const serialized = serializeDesktopLive2dUiConfig({
+    render: { antialias: true },
+    presenter: { mode: 'hybrid' },
+    window: { width: 200 }
+  });
+
+  const parsed = parseJsonWithComments(serialized);
+  assert.equal(parsed.presenter.mode, 'hybrid');
+  assert.ok(serialized.indexOf('"window"') < serialized.indexOf('"render"'));
+  assert.ok(serialized.indexOf('"render"') < serialized.indexOf('"presenter"'));
 });
 
 test('resolveDesktopLive2dConfig writes generated rpc token back to process.env', () => {

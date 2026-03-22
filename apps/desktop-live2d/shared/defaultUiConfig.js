@@ -83,6 +83,10 @@
       maxDevicePixelRatio: 2,
       antialias: false
     }),
+    presenter: Object.freeze({
+      // Primary desktop presentation mode.
+      mode: 'live2d'
+    }),
     interaction: Object.freeze({
       dragZone: DEFAULT_DRAG_ZONE_CONFIG
     }),

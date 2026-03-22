@@ -21,6 +21,9 @@ const el = {
   status:        document.getElementById('cv2-status'),
   fileLabel:     document.getElementById('cv2-file-label'),
   readonlyBadge: document.getElementById('cv2-readonly-badge'),
+  presenterPanel: document.getElementById('cv2-presenter-panel'),
+  presenterModeSelect: document.getElementById('presenterModeSelect'),
+  presenterModeApplyBtn: document.getElementById('presenterModeApplyBtn'),
   agentMessages: document.getElementById('agentMessages'),
   agentInput:    document.getElementById('agentInput'),
   agentSendBtn:  document.getElementById('agentSendBtn'),
@@ -34,6 +37,7 @@ const el = {
 };
 
 let activeTabId = TABS[0].id;
+let presenterMode = 'live2d';
 let ws = null;
 let wsReady = false;
 let streamingEl = null;
@@ -77,6 +81,68 @@ async function fetchJson(url, opts = {}) {
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
+}
+
+function isDesktopLive2dTab(tabId = activeTabId) {
+  return tabId === 'desktop-live2d';
+}
+
+function setPresenterPanelVisible(visible) {
+  if (!el.presenterPanel) return;
+  el.presenterPanel.hidden = !visible;
+}
+
+function updatePresenterModeSelect(mode) {
+  const normalized = ['live2d', 'waveform', 'hybrid'].includes(String(mode || '').trim().toLowerCase())
+    ? String(mode).trim().toLowerCase()
+    : 'live2d';
+  presenterMode = normalized;
+  if (el.presenterModeSelect) {
+    el.presenterModeSelect.value = normalized;
+  }
+}
+
+async function loadPresenterState() {
+  if (!isDesktopLive2dTab()) {
+    setPresenterPanelVisible(false);
+    return;
+  }
+
+  setPresenterPanelVisible(true);
+  try {
+    const data = await fetchJson('/api/config/desktop-live2d/presenter');
+    updatePresenterModeSelect(data.presenter?.mode);
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+async function applyPresenterMode() {
+  if (!isDesktopLive2dTab()) {
+    return;
+  }
+
+  const mode = el.presenterModeSelect?.value || 'live2d';
+  setStatus('应用 Presenter 模式中…');
+  try {
+    const data = await fetchJson('/api/config/desktop-live2d/presenter', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode,
+        json: el.editor.value
+      })
+    });
+
+    if (typeof data.json === 'string') {
+      el.editor.value = data.json;
+    }
+    updatePresenterModeSelect(data.presenter?.mode || mode);
+    setStatus(`Presenter 模式已切换为 ${presenterMode}`);
+    loadGitLog();
+  } catch (err) {
+    setStatus(err.message, true);
+  }
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -130,6 +196,12 @@ function switchTab(id) {
     el.editor.setAttribute('aria-readonly', 'false');
   }
 
+  if (isDesktopLive2dTab(id)) {
+    setPresenterPanelVisible(true);
+  } else {
+    setPresenterPanelVisible(false);
+  }
+
   loadTab();
   loadGitLog();
 }
@@ -141,6 +213,9 @@ async function loadTab() {
     const data = await fetchJson(tab.getUrl);
     el.editor.value = data[tab.bodyKey] || '';
     setStatus('已加载');
+    if (isDesktopLive2dTab()) {
+      void loadPresenterState();
+    }
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -158,6 +233,9 @@ async function saveTab() {
     });
     setStatus('已保存 ✓');
     loadGitLog();
+    if (isDesktopLive2dTab()) {
+      void loadPresenterState();
+    }
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -399,6 +477,11 @@ function init() {
 
   el.loadBtn.addEventListener('click', loadTab);
   el.saveBtn.addEventListener('click', saveTab);
+  el.presenterModeApplyBtn?.addEventListener('click', applyPresenterMode);
+  el.presenterModeSelect?.addEventListener('change', () => {
+    updatePresenterModeSelect(el.presenterModeSelect.value);
+    setStatus(`Presenter 模式待应用: ${presenterMode}`);
+  });
   el.gitRefreshBtn.addEventListener('click', () => { gitPage = 0; loadGitLog(); });
   el.gitPrevBtn.addEventListener('click', () => { if (gitPage > 0) { gitPage--; renderGitPage(); } });
   el.gitNextBtn.addEventListener('click', () => {

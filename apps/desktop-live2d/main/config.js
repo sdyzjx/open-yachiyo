@@ -51,6 +51,14 @@ function normalizeDragZoneConfig(input = {}, defaults = DEFAULT_UI_CONFIG.intera
   };
 }
 
+function normalizePresenterMode(value, fallback = DEFAULT_UI_CONFIG.presenter.mode) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (['live2d', 'waveform', 'hybrid'].includes(mode)) {
+    return mode;
+  }
+  return fallback;
+}
+
 function resolveDesktopLive2dConfig({
   env = process.env,
   projectRoot = null,
@@ -219,6 +227,7 @@ function stripJsonComments(input) {
 function normalizeUiConfig(raw) {
   const rawVoice = isPlainObject(raw?.voice) ? raw.voice : {};
   const rawRealtimeVoice = isPlainObject(rawVoice.realtime) ? rawVoice.realtime : {};
+  const rawPresenter = isPlainObject(raw?.presenter) ? raw.presenter : {};
   const merged = {
     window: {
       ...DEFAULT_UI_CONFIG.window,
@@ -231,6 +240,10 @@ function normalizeUiConfig(raw) {
     render: {
       ...DEFAULT_UI_CONFIG.render,
       ...(raw?.render || {})
+    },
+    presenter: {
+      ...DEFAULT_UI_CONFIG.presenter,
+      ...rawPresenter
     },
     interaction: {
       ...DEFAULT_UI_CONFIG.interaction,
@@ -314,6 +327,7 @@ function normalizeUiConfig(raw) {
   merged.render.resolutionScale = toFiniteNumber(merged.render.resolutionScale, DEFAULT_UI_CONFIG.render.resolutionScale);
   merged.render.maxDevicePixelRatio = toFiniteNumber(merged.render.maxDevicePixelRatio, DEFAULT_UI_CONFIG.render.maxDevicePixelRatio);
   merged.render.antialias = Boolean(merged.render.antialias);
+  merged.presenter.mode = normalizePresenterMode(merged.presenter.mode, DEFAULT_UI_CONFIG.presenter.mode);
 
   merged.interaction.dragZone = normalizeDragZoneConfig(
     merged.interaction.dragZone,
@@ -423,6 +437,31 @@ function normalizeUiConfig(raw) {
   );
 
   return merged;
+}
+
+function upsertDesktopLive2dPresenterMode(configPath, mode, {
+  defaults = DEFAULT_UI_CONFIG.presenter,
+  rawJson = null
+} = {}) {
+  const currentRaw = typeof rawJson === 'string'
+    ? parseJsonWithComments(rawJson)
+    : (fs.existsSync(configPath)
+      ? parseJsonWithComments(fs.readFileSync(configPath, 'utf8'))
+      : {});
+  const nextRaw = isPlainObject(currentRaw) ? { ...currentRaw } : {};
+  const normalizedMode = normalizePresenterMode(mode, defaults.mode);
+
+  if (normalizedMode === defaults.mode) {
+    delete nextRaw.presenter;
+  } else {
+    const nextPresenter = isPlainObject(nextRaw.presenter) ? { ...nextRaw.presenter } : {};
+    nextPresenter.mode = normalizedMode;
+    nextRaw.presenter = nextPresenter;
+  }
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, serializeDesktopLive2dUiConfig(nextRaw), 'utf8');
+  return nextRaw;
 }
 
 function roundLayoutOverrideValue(key, value) {
@@ -588,7 +627,7 @@ function syncDesktopLive2dMissingDefaults(configPath, { defaults = DEFAULT_UI_CO
 function serializeDesktopLive2dUiConfig(raw = {}) {
   const safe = isPlainObject(raw) ? raw : {};
   const orderedKeys = [];
-  const preferredOrder = ['window', 'interaction', 'layout', 'render', 'chat', 'actionQueue'];
+  const preferredOrder = ['window', 'interaction', 'layout', 'render', 'presenter', 'chat', 'actionQueue'];
 
   for (const key of preferredOrder) {
     if (isPlainObject(safe[key])) {
@@ -608,7 +647,8 @@ function serializeDesktopLive2dUiConfig(raw = {}) {
   const comments = {
     window: 'Window overrides. Delete any field here to fall back to shared defaults.',
     interaction: 'Interaction overrides. dragZone defines the draggable hotspot as ratios of the avatar window.',
-    layout: 'Layout tuner overrides. These are the direct controls for avatar placement.'
+    layout: 'Layout tuner overrides. These are the direct controls for avatar placement.',
+    presenter: 'Presenter mode defaults. Keep this in sync with the desired desktop presentation style.'
   };
 
   const sections = orderedKeys.map((key) => {
@@ -646,6 +686,8 @@ module.exports = {
   upsertDesktopLive2dDragZoneOverrides,
   syncDesktopLive2dMissingDefaults,
   serializeDesktopLive2dUiConfig,
+  normalizePresenterMode,
+  upsertDesktopLive2dPresenterMode,
   stripJsonComments,
   toPositiveInt,
   DEFAULT_UI_CONFIG

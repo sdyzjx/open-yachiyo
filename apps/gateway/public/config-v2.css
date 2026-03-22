@@ -109,6 +109,62 @@
   overflow: hidden;
 }
 
+.cv2-presenter-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-solid) 78%, transparent);
+}
+
+.cv2-presenter-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv2-presenter-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cv2-presenter-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cv2-presenter-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.cv2-presenter-select-wrap {
+  display: inline-flex;
+}
+
+.cv2-presenter-select {
+  min-width: 124px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--text);
+  font: inherit;
+}
+
+.cv2-presenter-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
 .cv2-editor-toolbar {
   display: flex;
   align-items: center;

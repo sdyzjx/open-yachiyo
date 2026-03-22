@@ -40,6 +40,24 @@
 
       <!-- Editor pane -->
       <section class="cv2-editor-pane panel" aria-label="YAML 编辑器">
+        <section id="cv2-presenter-panel" class="cv2-presenter-panel" hidden aria-label="Presenter 模式切换">
+          <div class="cv2-presenter-copy">
+            <span class="cv2-presenter-title">Presenter 模式</span>
+            <span class="cv2-presenter-hint">切换默认前端表现层，保存到 `desktop-live2d.json`。</span>
+          </div>
+          <div class="cv2-presenter-controls">
+            <label class="cv2-presenter-select-wrap" for="presenterModeSelect">
+              <span class="sr-only">Presenter 模式</span>
+              <select id="presenterModeSelect" class="cv2-presenter-select" aria-label="选择 Presenter 模式">
+                <option value="live2d">live2d</option>
+                <option value="waveform">waveform</option>
+                <option value="hybrid">hybrid</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" id="presenterModeApplyBtn" type="button">应用模式</button>
+          </div>
+        </section>
+
         <div class="cv2-editor-toolbar">
           <span id="cv2-file-label" class="cv2-file-label" aria-live="polite"></span>
           <span id="cv2-readonly-badge" class="cv2-readonly-badge" aria-label="只读文件" hidden>只读</span>
