@@ -6,6 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const WebSocket = require('ws');
+const { WebSocketServer } = WebSocket;
 
 const { getFreePort } = require('../helpers/net');
 const { waitFor, sleep } = require('../helpers/wait');
@@ -232,6 +233,43 @@ async function startMockLlmServer(port) {
 
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   return { server, state };
+}
+
+async function startMockDesktopLive2dRpcServer(port) {
+  const state = {
+    methodsSeen: [],
+    presenterModes: []
+  };
+
+  const wss = new WebSocketServer({ host: '127.0.0.1', port });
+  wss.on('connection', (socket) => {
+    socket.on('message', (raw) => {
+      const rpc = JSON.parse(String(raw));
+      state.methodsSeen.push(rpc.method);
+      if (rpc.method === 'presenter.mode.set') {
+        state.presenterModes.push(rpc.params?.mode || null);
+        socket.send(JSON.stringify({
+          jsonrpc: '2.0',
+          id: rpc.id,
+          result: { ok: true, mode: rpc.params?.mode || null }
+        }));
+        return;
+      }
+
+      socket.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id: rpc.id,
+        result: { ok: true, method: rpc.method }
+      }));
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    wss.once('listening', resolve);
+    wss.once('error', reject);
+  });
+
+  return { wss, state };
 }
 
 async function startGateway({
@@ -891,6 +929,112 @@ test('gateway runtime voice auto reply slash/API override has higher priority th
     patchedSessionValue: false,
     expectedRuntimeValue: false
   });
+});
+
+test('gateway presenter apply saves config and best-effort syncs desktop runtime', async () => {
+  const gatewayPort = await getFreePort();
+  const desktopPort = await getFreePort();
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-presenter-'));
+  const providerConfigPath = path.join(tmpDir, 'providers.yaml');
+  const sessionStoreDir = path.join(tmpDir, 'session-store');
+  const longTermMemoryDir = path.join(tmpDir, 'long-term-memory');
+  const personaProfilePath = path.join(tmpDir, 'persona', 'profile.yaml');
+  const desktopLive2dConfigPath = path.join(tmpDir, 'desktop-live2d.json');
+  const summaryPath = path.join(tmpDir, 'desktop-live2d', 'runtime-summary.json');
+
+  fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
+  fs.writeFileSync(providerConfigPath, [
+    'active_provider: mock',
+    'providers:',
+    '  mock:',
+    '    type: openai_compatible',
+    '    display_name: Mock',
+    '    base_url: http://127.0.0.1:9',
+    '    model: mock-model',
+    '    api_key: mock-key',
+    '    timeout_ms: 2000'
+  ].join('\n'));
+  fs.writeFileSync(summaryPath, JSON.stringify({
+    rpcUrl: `ws://127.0.0.1:${desktopPort}`,
+    rpcToken: 'desktop-token'
+  }), 'utf8');
+
+  const desktop = await startMockDesktopLive2dRpcServer(desktopPort);
+  let gateway;
+
+  try {
+    gateway = await startGateway({
+      port: gatewayPort,
+      providerConfigPath,
+      sessionStoreDir,
+      longTermMemoryDir,
+      personaProfilePath,
+      extraEnv: {
+        DESKTOP_LIVE2D_CONFIG_PATH: desktopLive2dConfigPath,
+        DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH: summaryPath
+      }
+    });
+
+    const presenterGet = await fetch(`http://127.0.0.1:${gatewayPort}/api/config/desktop-live2d/presenter`).then((r) => r.json());
+    assert.equal(presenterGet.ok, true);
+    assert.equal(presenterGet.presenter.mode, 'live2d');
+    assert.equal(presenterGet.runtime.available, true);
+
+    const syncResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/config/desktop-live2d/presenter`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'waveform',
+        json: '{"presenter":{"mode":"live2d"}}'
+      })
+    }).then((r) => r.json());
+
+    assert.equal(syncResp.ok, true);
+    assert.equal(syncResp.presenter.mode, 'waveform');
+    assert.equal(syncResp.runtime.applied, true);
+    assert.equal(syncResp.runtime.available, true);
+    assert.deepEqual(desktop.state.methodsSeen, ['presenter.mode.set']);
+    assert.deepEqual(desktop.state.presenterModes, ['waveform']);
+
+    await new Promise((resolve) => {
+      try {
+        desktop.wss.close(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
+
+    const degradedResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/config/desktop-live2d/presenter`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'hybrid',
+        json: '{"presenter":{"mode":"waveform"}}'
+      })
+    }).then((r) => r.json());
+
+    assert.equal(degradedResp.ok, true);
+    assert.equal(degradedResp.presenter.mode, 'hybrid');
+    assert.equal(degradedResp.runtime.applied, false);
+    assert.equal(degradedResp.runtime.available, true);
+    assert.match(String(degradedResp.runtime.reason || ''), /connection|timeout|closed|ECONNREFUSED/i);
+  } catch (err) {
+    const logs = gateway?.getLogs?.() || '';
+    err.message = `${err.message}\n--- gateway logs ---\n${logs}`;
+    throw err;
+  } finally {
+    await stopProcess(gateway?.child);
+    if (desktop?.wss) {
+      await new Promise((resolve) => {
+        try {
+          desktop.wss.close(() => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+  }
 });
 
 test('gateway slash command /voice on updates session override and short-circuits runtime.run', async () => {

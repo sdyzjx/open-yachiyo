@@ -43,6 +43,8 @@ let wsReady = false;
 let streamingEl = null;
 let streamingText = '';
 
+const PRESENTER_MODES = new Set(['live2d', 'waveform', 'hybrid']);
+
 // git 翻页状态
 let gitPage = 0;
 let gitCommitsCache = [];
@@ -92,14 +94,28 @@ function setPresenterPanelVisible(visible) {
   el.presenterPanel.hidden = !visible;
 }
 
+function normalizePresenterMode(mode, fallback = 'live2d') {
+  const normalized = String(mode || fallback).trim().toLowerCase();
+  return PRESENTER_MODES.has(normalized) ? normalized : fallback;
+}
+
 function updatePresenterModeSelect(mode) {
-  const normalized = ['live2d', 'waveform', 'hybrid'].includes(String(mode || '').trim().toLowerCase())
-    ? String(mode).trim().toLowerCase()
-    : 'live2d';
+  const normalized = normalizePresenterMode(mode);
   presenterMode = normalized;
   if (el.presenterModeSelect) {
     el.presenterModeSelect.value = normalized;
   }
+}
+
+function formatPresenterApplyStatus(mode, runtime = {}) {
+  const normalizedMode = normalizePresenterMode(mode, presenterMode);
+  if (runtime.applied) {
+    return `Presenter 模式已切换为 ${normalizedMode}，并同步到桌面`;
+  }
+  if (!runtime || runtime.available === false || runtime.attempted === false) {
+    return `Presenter 模式已保存为 ${normalizedMode}，桌面未运行，仅更新配置`;
+  }
+  return `Presenter 模式已保存为 ${normalizedMode}，已尝试同步到桌面但未成功：${runtime.reason || '未知错误'}`;
 }
 
 async function loadPresenterState() {
@@ -112,6 +128,11 @@ async function loadPresenterState() {
   try {
     const data = await fetchJson('/api/config/desktop-live2d/presenter');
     updatePresenterModeSelect(data.presenter?.mode);
+    if (data.runtime?.available === false) {
+      setStatus('Presenter 配置已加载，桌面未运行，仅支持保存配置');
+    } else {
+      setStatus(`Presenter 配置已加载，当前模式为 ${presenterMode}`);
+    }
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -138,7 +159,7 @@ async function applyPresenterMode() {
       el.editor.value = data.json;
     }
     updatePresenterModeSelect(data.presenter?.mode || mode);
-    setStatus(`Presenter 模式已切换为 ${presenterMode}`);
+    setStatus(formatPresenterApplyStatus(presenterMode, data.runtime || {}));
     loadGitLog();
   } catch (err) {
     setStatus(err.message, true);

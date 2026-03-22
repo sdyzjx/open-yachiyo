@@ -2,7 +2,8 @@ require('dotenv').config({ path: require('node:path').resolve(__dirname, '../../
 const express = require('express');
 const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
-const { WebSocketServer } = require('ws');
+const WebSocket = require('ws');
+const { WebSocketServer } = WebSocket;
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { DebugEventStream } = require('./debugEventStream');
@@ -35,8 +36,10 @@ const {
   parseJsonWithComments,
   serializeDesktopLive2dUiConfig,
   upsertDesktopLive2dPresenterMode,
-  normalizeUiConfig
+  normalizeUiConfig,
+  normalizePresenterMode
 } = require('../desktop-live2d/main/config');
+const { DEFAULT_UI_CONFIG } = require('../desktop-live2d/shared/defaultUiConfig');
 const { PersonaContextBuilder } = require('../runtime/persona/personaContextBuilder');
 const { PersonaProfileStore } = require('../runtime/persona/personaProfileStore');
 const { PersonaConfigStore } = require('../runtime/persona/personaConfigStore');
@@ -891,6 +894,214 @@ app.put('/api/config/skills/raw', (req, res) => {
 
 // --- Config v2: voice-policy.yaml ---
 const fsSync = require('node:fs');
+const DEFAULT_DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH = process.env.DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH
+  || path.resolve(runtimePaths.dataDir, 'desktop-live2d', 'runtime-summary.json');
+const DESKTOP_LIVE2D_RUNTIME_RPC_TIMEOUT_MS = Math.max(
+  500,
+  Number(process.env.DESKTOP_LIVE2D_RUNTIME_RPC_TIMEOUT_MS) || 3000
+);
+
+function normalizeDesktopLive2dRuntimeSummary(summary = {}) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return {
+      ok: false,
+      available: false,
+      reason: 'runtime summary is invalid'
+    };
+  }
+
+  const rpcUrl = typeof summary.rpcUrl === 'string' ? summary.rpcUrl.trim() : '';
+  const rpcToken = typeof summary.rpcToken === 'string' ? summary.rpcToken.trim() : '';
+  if (!rpcUrl || !rpcToken) {
+    return {
+      ok: false,
+      available: false,
+      reason: 'runtime summary must include rpcUrl and rpcToken'
+    };
+  }
+
+  return {
+    ok: true,
+    available: true,
+    rpcUrl,
+    rpcToken
+  };
+}
+
+function readDesktopLive2dRuntimeSummary(summaryPath = DEFAULT_DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH) {
+  const filePath = path.resolve(String(summaryPath || DEFAULT_DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH));
+  if (!fsSync.existsSync(filePath)) {
+    return {
+      ok: false,
+      available: false,
+      reason: 'runtime summary not found',
+      summaryPath: filePath
+    };
+  }
+
+  try {
+    const raw = fsSync.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeDesktopLive2dRuntimeSummary(parsed);
+    return {
+      ...normalized,
+      summaryPath: filePath
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      available: false,
+      reason: err?.message || String(err || 'failed to load runtime summary'),
+      summaryPath: filePath
+    };
+  }
+}
+
+function isLocalDesktopRpcHost(hostname) {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
+}
+
+function buildDesktopLive2dRpcUrl(rpcUrl, rpcToken) {
+  const url = new URL(String(rpcUrl || ''));
+  if (!['ws:', 'wss:'].includes(url.protocol)) {
+    throw new Error('desktop rpc url must use ws or wss');
+  }
+  if (!isLocalDesktopRpcHost(url.hostname)) {
+    throw new Error('desktop rpc host must be local');
+  }
+  if (rpcToken) {
+    url.searchParams.set('token', rpcToken);
+  }
+  return url.toString();
+}
+
+function invokeDesktopLive2dRpc({
+  rpcUrl,
+  rpcToken,
+  method,
+  params = {},
+  timeoutMs = DESKTOP_LIVE2D_RUNTIME_RPC_TIMEOUT_MS
+} = {}) {
+  if (!method) {
+    return Promise.reject(new Error('desktop rpc method is required'));
+  }
+
+  const url = buildDesktopLive2dRpcUrl(rpcUrl, rpcToken);
+  const requestId = `gateway-${uuidv4()}`;
+  const payload = {
+    jsonrpc: '2.0',
+    id: requestId,
+    method,
+    params: params && typeof params === 'object' && !Array.isArray(params) ? params : {}
+  };
+
+  return new Promise((resolve, reject) => {
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err || 'desktop rpc connection failed')));
+      return;
+    }
+    let settled = false;
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      fn(value);
+    };
+
+    const timer = setTimeout(() => {
+      finish(reject, new Error(`desktop rpc timeout after ${timeoutMs}ms`));
+    }, Math.max(500, Number(timeoutMs) || DESKTOP_LIVE2D_RUNTIME_RPC_TIMEOUT_MS));
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify(payload));
+    });
+
+    ws.on('message', (raw) => {
+      let message;
+      try {
+        message = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+
+      if (message?.id !== requestId) {
+        return;
+      }
+
+      if (message.error) {
+        finish(reject, new Error(message.error.message || `desktop rpc error(${message.error.code})`));
+        return;
+      }
+
+      finish(resolve, message.result || null);
+    });
+
+    ws.on('error', (err) => {
+      finish(reject, err instanceof Error ? err : new Error(String(err || 'desktop rpc failed')));
+    });
+
+    ws.on('close', () => {
+      if (!settled) {
+        finish(reject, new Error('desktop rpc connection closed before response'));
+      }
+    });
+  });
+}
+
+async function applyDesktopLive2dPresenterMode({
+  mode,
+  runtimeSummaryPath = DEFAULT_DESKTOP_LIVE2D_RUNTIME_SUMMARY_PATH
+} = {}) {
+  const normalizedMode = normalizePresenterMode(mode, DEFAULT_UI_CONFIG.presenter.mode);
+  const runtimeSummary = readDesktopLive2dRuntimeSummary(runtimeSummaryPath);
+  if (!runtimeSummary.ok) {
+    return {
+      attempted: false,
+      applied: false,
+      available: false,
+      mode: normalizedMode,
+      reason: runtimeSummary.reason,
+      summaryPath: runtimeSummary.summaryPath
+    };
+  }
+
+  try {
+    await invokeDesktopLive2dRpc({
+      rpcUrl: runtimeSummary.rpcUrl,
+      rpcToken: runtimeSummary.rpcToken,
+      method: 'presenter.mode.set',
+      params: { mode: normalizedMode }
+    });
+
+    return {
+      attempted: true,
+      applied: true,
+      available: true,
+      mode: normalizedMode,
+      summaryPath: runtimeSummary.summaryPath
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      applied: false,
+      available: true,
+      mode: normalizedMode,
+      reason: err?.message || String(err || 'desktop presenter apply failed'),
+      summaryPath: runtimeSummary.summaryPath
+    };
+  }
+}
+
 app.get('/api/config/voice-policy/raw', (_, res) => {
   try {
     const yaml = fsSync.existsSync(voicePolicyPath) ? fsSync.readFileSync(voicePolicyPath, 'utf8') : '';
@@ -933,16 +1144,27 @@ app.get('/api/config/desktop-live2d/presenter', (_, res) => {
       ? fsSync.readFileSync(desktopLive2dConfigPath, 'utf8')
       : '{}';
     const uiConfig = normalizeUiConfig(parseJsonWithComments(raw));
+    const runtimeSummary = readDesktopLive2dRuntimeSummary();
     res.json({
       ok: true,
-      presenter: uiConfig.presenter || { mode: 'live2d' }
+      presenter: uiConfig.presenter || { mode: 'live2d' },
+      runtime: runtimeSummary.available
+        ? {
+            available: true,
+            summaryPath: runtimeSummary.summaryPath
+          }
+        : {
+            available: false,
+            reason: runtimeSummary.reason,
+            summaryPath: runtimeSummary.summaryPath
+          }
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
   }
 });
 
-app.put('/api/config/desktop-live2d/presenter', (req, res) => {
+app.put('/api/config/desktop-live2d/presenter', async (req, res) => {
   const mode = req.body?.mode;
   const rawJson = req.body?.json;
   if (mode === undefined) {
@@ -955,10 +1177,12 @@ app.put('/api/config/desktop-live2d/presenter', (req, res) => {
       rawJson: typeof rawJson === 'string' ? rawJson : null
     });
     commitConfigChange('desktop-live2d.json');
+    const runtime = await applyDesktopLive2dPresenterMode({ mode: nextRaw.presenter?.mode || mode });
     res.json({
       ok: true,
       presenter: nextRaw.presenter || { mode: 'live2d' },
-      json: serializeDesktopLive2dUiConfig(nextRaw)
+      json: serializeDesktopLive2dUiConfig(nextRaw),
+      runtime
     });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message || String(err) });
