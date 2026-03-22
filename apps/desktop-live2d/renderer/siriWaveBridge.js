@@ -10,17 +10,17 @@
 
   const DEFAULT_CURVE_DEFINITION = Object.freeze([
     Object.freeze({
-      color: '255,242,249',
+      color: '246,252,255',
       supportLine: true
     }),
     Object.freeze({
-      color: '170, 232, 255'
+      color: '160, 231, 255'
     }),
     Object.freeze({
-      color: '255, 182, 230'
+      color: '244, 251, 255'
     }),
     Object.freeze({
-      color: '255, 128, 214'
+      color: '66, 78, 92'
     })
   ]);
 

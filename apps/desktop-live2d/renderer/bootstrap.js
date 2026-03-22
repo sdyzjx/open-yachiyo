@@ -246,12 +246,12 @@
   });
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
-      color: 0x1b2036,
-      glow: 0x2a3254,
+      color: 0x27313b,
+      glow: 0x394550,
       amplitude: 0.72,
       speed: 0.72,
-      frequency: 0.78,
-      width: 1.52,
+      frequency: 1.12,
+      width: 1.2,
       phaseOffset: 0.42,
       lineWidth: 3.1,
       glowWidth: 20,
@@ -261,12 +261,12 @@
       verticalBias: 0.8
     }),
     Object.freeze({
-      color: 0xa8e9ff,
-      glow: 0xd3f4ff,
+      color: 0x9fe7ff,
+      glow: 0xdaf5ff,
       amplitude: 1,
       speed: 1,
-      frequency: 1.02,
-      width: 1.12,
+      frequency: 1.34,
+      width: 0.94,
       phaseOffset: 0,
       lineWidth: 2.8,
       glowWidth: 24,
@@ -276,12 +276,12 @@
       verticalBias: 0
     }),
     Object.freeze({
-      color: 0xffb5e9,
-      glow: 0xffdaf3,
+      color: 0xf4fbff,
+      glow: 0xffffff,
       amplitude: 0.76,
       speed: 0.82,
-      frequency: 0.84,
-      width: 1.34,
+      frequency: 1.08,
+      width: 1.06,
       phaseOffset: 1.4,
       lineWidth: 2.1,
       glowWidth: 18,
@@ -291,12 +291,12 @@
       verticalBias: -1.4
     }),
     Object.freeze({
-      color: 0xff83dc,
-      glow: 0xffb9ea,
+      color: 0xc7d4e3,
+      glow: 0xe7eef5,
       amplitude: 0.82,
       speed: 1.14,
-      frequency: 1.26,
-      width: 1.16,
+      frequency: 1.52,
+      width: 0.92,
       phaseOffset: 2.25,
       lineWidth: 2.2,
       glowWidth: 18,
@@ -306,12 +306,12 @@
       verticalBias: 1.6
     }),
     Object.freeze({
-      color: 0xffc7e8,
-      glow: 0xffe4f5,
+      color: 0x51606f,
+      glow: 0x7a8794,
       amplitude: 0.54,
       speed: 0.66,
-      frequency: 0.88,
-      width: 1.48,
+      frequency: 1.18,
+      width: 1.14,
       phaseOffset: 3.28,
       lineWidth: 1.6,
       glowWidth: 14,
@@ -623,7 +623,7 @@
         height,
         autostart: true,
         lerpSpeed: 0.08,
-        pixelDepth: 0.02,
+        pixelDepth: 0.22,
         globalCompositeOperation: 'lighter',
         curveDefinition: helper.DEFAULT_CURVE_DEFINITION,
         ranges: helper.DEFAULT_RANGES,
@@ -910,11 +910,11 @@
     waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.22), width, Math.max(24, Math.round(height * 0.56)), Math.round(height * 0.3));
     waveformHitGraphic.endFill();
     waveformBackdropGraphic.lineStyle(11 + energy * 5, shadow, (0.12 + energy * 0.04) * waveformAlpha, 0.5);
-    drawSmoothPolyline(waveformBackdropGraphic, primaryLine.linePoints);
+    drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
     waveformBackdropGraphic.lineStyle(7 + energy * 4, 0xd8d7ff, (0.05 + energy * 0.05) * waveformAlpha, 0.5);
-    drawSmoothPolyline(waveformBackdropGraphic, centerLine);
+    drawPolyline(waveformBackdropGraphic, centerLine);
     waveformBackdropGraphic.lineStyle(3 + energy * 2, accent, (0.08 + energy * 0.04) * waveformAlpha, 0.5);
-    drawSmoothPolyline(waveformBackdropGraphic, primaryLine.linePoints);
+    drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
 
     for (const { curve, line } of curveLines) {
       waveformGlowGraphic.lineStyle(
@@ -923,7 +923,7 @@
         (curve.glowAlpha + energy * 0.08) * waveformAlpha,
         0.5
       );
-      drawSmoothPolyline(waveformGlowGraphic, line.linePoints);
+      drawPolyline(waveformGlowGraphic, line.linePoints);
 
       waveformFillGraphic.lineStyle(
         Math.max(1.2, curve.lineWidth * 1.6 + energy * 0.4),
@@ -931,7 +931,7 @@
         (curve.fillAlpha + energy * 0.03) * waveformAlpha,
         0.5
       );
-      drawSmoothPolyline(waveformFillGraphic, line.linePoints);
+      drawPolyline(waveformFillGraphic, line.linePoints);
 
       waveformStrokeGraphic.lineStyle(
         curve.lineWidth + energy * 0.6,
@@ -939,11 +939,11 @@
         (curve.strokeAlpha + energy * 0.06) * waveformAlpha,
         0.5
       );
-      drawSmoothPolyline(waveformStrokeGraphic, line.linePoints);
+      drawPolyline(waveformStrokeGraphic, line.linePoints);
     }
 
     waveformCenterGraphic.lineStyle(1.1, primary, (0.12 + energy * 0.05) * waveformAlpha, 0.5);
-    drawSmoothPolyline(waveformCenterGraphic, centerLine);
+    drawPolyline(waveformCenterGraphic, centerLine);
 
     layer.visible = true;
     layer.alpha = waveformAlpha;

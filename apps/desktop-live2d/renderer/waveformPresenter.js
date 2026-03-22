@@ -22,13 +22,13 @@
       scaleRelease: 0.1
     }),
     waveform: Object.freeze({
-      sampleCount: 96,
+      sampleCount: 72,
       centerYRatio: 0.54,
       widthRatio: 0.68,
       heightRatio: 0.11,
       minHalfHeight: 8,
       maxHalfHeightRatio: 0.18,
-      pointEdgeCurve: 1.56,
+      pointEdgeCurve: 2.42,
       centerCurve: 1,
       backgroundAlpha: 0.04,
       fillAlpha: 0.08,
@@ -40,13 +40,13 @@
       waveformAlpha: 1
     }),
     colors: Object.freeze({
-      speech: 0xa9e8ff,
-      music: 0xff8bdf,
-      breath: 0xb7c5ff,
-      accent: 0xffe3f3,
-      shadow: 0x1a2036,
-      fill: 0x101424,
-      glow: 0xc8efff
+      speech: 0x9fe7ff,
+      music: 0xf4fbff,
+      breath: 0xc7d4e3,
+      accent: 0xffffff,
+      shadow: 0x27313b,
+      fill: 0x11161e,
+      glow: 0xd9f5ff
     })
   });
 
