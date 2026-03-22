@@ -246,15 +246,30 @@
   });
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
+      color: 0x1b2036,
+      glow: 0x2a3254,
+      amplitude: 0.72,
+      speed: 0.72,
+      frequency: 0.78,
+      width: 1.52,
+      phaseOffset: 0.42,
+      lineWidth: 3.1,
+      glowWidth: 20,
+      strokeAlpha: 0.2,
+      glowAlpha: 0.06,
+      fillAlpha: 0.02,
+      verticalBias: 0.8
+    }),
+    Object.freeze({
       color: 0xa8e9ff,
       glow: 0xd3f4ff,
       amplitude: 1,
       speed: 1,
-      frequency: 1.28,
-      width: 0.92,
+      frequency: 1.02,
+      width: 1.12,
       phaseOffset: 0,
-      lineWidth: 2.4,
-      glowWidth: 22,
+      lineWidth: 2.8,
+      glowWidth: 24,
       strokeAlpha: 0.9,
       glowAlpha: 0.18,
       fillAlpha: 0.03,
@@ -265,11 +280,11 @@
       glow: 0xffdaf3,
       amplitude: 0.76,
       speed: 0.82,
-      frequency: 0.98,
-      width: 1.2,
+      frequency: 0.84,
+      width: 1.34,
       phaseOffset: 1.4,
-      lineWidth: 1.8,
-      glowWidth: 16,
+      lineWidth: 2.1,
+      glowWidth: 18,
       strokeAlpha: 0.7,
       glowAlpha: 0.14,
       fillAlpha: 0.02,
@@ -280,11 +295,11 @@
       glow: 0xffb9ea,
       amplitude: 0.82,
       speed: 1.14,
-      frequency: 1.62,
-      width: 1.04,
+      frequency: 1.26,
+      width: 1.16,
       phaseOffset: 2.25,
-      lineWidth: 1.9,
-      glowWidth: 16,
+      lineWidth: 2.2,
+      glowWidth: 18,
       strokeAlpha: 0.74,
       glowAlpha: 0.16,
       fillAlpha: 0.025,
@@ -295,11 +310,11 @@
       glow: 0xffe4f5,
       amplitude: 0.54,
       speed: 0.66,
-      frequency: 1.05,
-      width: 1.34,
+      frequency: 0.88,
+      width: 1.48,
       phaseOffset: 3.28,
-      lineWidth: 1.2,
-      glowWidth: 12,
+      lineWidth: 1.6,
+      glowWidth: 14,
       strokeAlpha: 0.5,
       glowAlpha: 0.1,
       fillAlpha: 0.015,
@@ -868,6 +883,7 @@
     const height = Math.max(1, Number(geometry.height) || 1);
     const primary = Number(snapshot.colors?.primary) || 0x80e3ff;
     const accent = Number(snapshot.colors?.accent) || 0xebfbff;
+    const shadow = Number(snapshot.colors?.shadow) || 0x1a2036;
     const energy = clamp(Number(snapshot.energy) || 0, 0, 1);
     const waveformAlpha = clamp(Number(snapshot.waveformAlpha) || 0, 0, 1);
     const centerLine = Array.isArray(geometry.centerLine) ? geometry.centerLine : [];
@@ -893,6 +909,8 @@
     waveformHitGraphic.beginFill(0xffffff, 0.001);
     waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.22), width, Math.max(24, Math.round(height * 0.56)), Math.round(height * 0.3));
     waveformHitGraphic.endFill();
+    waveformBackdropGraphic.lineStyle(11 + energy * 5, shadow, (0.12 + energy * 0.04) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformBackdropGraphic, primaryLine.linePoints);
     waveformBackdropGraphic.lineStyle(7 + energy * 4, 0xd8d7ff, (0.05 + energy * 0.05) * waveformAlpha, 0.5);
     drawSmoothPolyline(waveformBackdropGraphic, centerLine);
     waveformBackdropGraphic.lineStyle(3 + energy * 2, accent, (0.08 + energy * 0.04) * waveformAlpha, 0.5);

@@ -28,7 +28,7 @@
       heightRatio: 0.11,
       minHalfHeight: 8,
       maxHalfHeightRatio: 0.18,
-      pointEdgeCurve: 2.05,
+      pointEdgeCurve: 1.56,
       centerCurve: 1,
       backgroundAlpha: 0.04,
       fillAlpha: 0.08,
@@ -44,6 +44,7 @@
       music: 0xff8bdf,
       breath: 0xb7c5ff,
       accent: 0xffe3f3,
+      shadow: 0x1a2036,
       fill: 0x101424,
       glow: 0xc8efff
     })
@@ -596,6 +597,7 @@
         breathPhase: state.breathPhase,
         colors: {
           primary: config.colors[sourceKind] || config.colors.breath,
+          shadow: config.colors.shadow,
           fill: config.colors.fill,
           glow: config.colors.glow,
           accent: config.colors.accent

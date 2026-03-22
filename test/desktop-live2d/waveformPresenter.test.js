@@ -135,6 +135,7 @@ test('default config remains usable for live2d mode', () => {
   assert.equal(DEFAULT_CONFIG.colors.speech, 0xa9e8ff);
   assert.equal(DEFAULT_CONFIG.colors.music, 0xff8bdf);
   assert.equal(DEFAULT_CONFIG.colors.accent, 0xffe3f3);
+  assert.equal(DEFAULT_CONFIG.colors.shadow, 0x1a2036);
 });
 
 test('expression name deforms waveform geometry beyond generic action scaling', () => {
