@@ -62,6 +62,28 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     method: 'presenter.state.get',
     params: {}
   });
+  const presenterDebugSet = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'presenter-debug-set-1',
+    method: 'presenter.debug.override.set',
+    params: {
+      sourceKind: 'speech',
+      energy: 0.9,
+      mouthOpen: 0.8,
+      mouthForm: 0.2,
+      action: {
+        type: 'react',
+        intensity: 0.7,
+        progress: 0.3
+      }
+    }
+  });
+  const presenterDebugClear = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'presenter-debug-clear-1',
+    method: 'presenter.debug.override.clear',
+    params: {}
+  });
   const musicPlay = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'music-play-1',
@@ -144,6 +166,8 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
 
   assert.equal(presenterMode.ok, true);
   assert.equal(presenterState.ok, true);
+  assert.equal(presenterDebugSet.ok, true);
+  assert.equal(presenterDebugClear.ok, true);
   assert.equal(musicPlay.ok, true);
   assert.equal(musicPause.ok, true);
   assert.equal(musicResume.ok, true);

@@ -106,6 +106,58 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'presenter.debug.override.set': {
+    type: 'object',
+    required: ['sourceKind'],
+    additionalProperties: false,
+    properties: {
+      enabled: { type: 'boolean' },
+      mode: {
+        type: 'string',
+        enum: ['live2d', 'waveform', 'hybrid']
+      },
+      sourceKind: {
+        type: 'string',
+        enum: ['speech', 'music', 'breath']
+      },
+      source: {
+        type: 'string',
+        enum: ['speech', 'music', 'breath']
+      },
+      energy: { type: 'number', minimum: 0, maximum: 1 },
+      mouthOpen: { type: 'number', minimum: 0, maximum: 1 },
+      mouthForm: { type: 'number', minimum: -1, maximum: 1 },
+      speaking: { type: 'boolean' },
+      playing: { type: 'boolean' },
+      sampleCount: { type: 'integer', minimum: 8, maximum: 96 },
+      bandCount: { type: 'integer', minimum: 8, maximum: 96 },
+      bandLevels: {
+        type: 'array',
+        maxItems: 96,
+        items: { type: 'number', minimum: 0, maximum: 1 }
+      },
+      spectrum: {
+        type: 'array',
+        maxItems: 96,
+        items: { type: 'number', minimum: 0, maximum: 1 }
+      },
+      action: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', minLength: 1, maxLength: 64 },
+          name: { type: 'string', minLength: 1, maxLength: 128 },
+          intensity: { type: 'number', minimum: 0, maximum: 1 },
+          progress: { type: 'number', minimum: 0, maximum: 1 },
+          durationSec: { type: 'number', minimum: 0, maximum: 120 }
+        }
+      }
+    }
+  },
+  'presenter.debug.override.clear': {
+    type: 'object',
+    additionalProperties: false
+  },
   'desktop.music.play': {
     type: 'object',
     required: ['path'],

@@ -116,6 +116,8 @@
   let presenterDebugOverride = null;
   let presenterDebugState = null;
   let presenterDebugConfiguredMode = null;
+  let presenterFrameDebugSampleCounter = 0;
+  let presenterLastDebugSourceKind = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -884,6 +886,33 @@
           override: presenterDebugOverride
         })
       : null;
+    presenterFrameDebugSampleCounter += 1;
+    const shouldEmitPresenterDebug = snapshot.sourceKind !== presenterLastDebugSourceKind
+      || presenterFrameDebugSampleCounter % 30 === 0
+      || snapshot.sourceKind !== 'breath'
+      || presenterDebugOverride;
+    if (shouldEmitPresenterDebug) {
+      emitRendererDebug('presenter.frame_sample', {
+        mode: snapshot.mode,
+        source_kind: snapshot.sourceKind,
+        waveform_visible: Boolean(snapshot.waveformVisible),
+        waveform_alpha: Number(snapshot.waveformAlpha) || 0,
+        model_visible: Boolean(snapshot.modelVisible),
+        model_alpha: Number(snapshot.modelAlpha) || 0,
+        speech_energy: Number(effectiveSnapshot?.speechFrame?.energy || 0),
+        speech_speaking: Boolean(effectiveSnapshot?.speechFrame?.speaking),
+        music_energy: Number(effectiveSnapshot?.musicFrame?.energy || 0),
+        music_playing: Boolean(effectiveSnapshot?.musicFrame?.playing),
+        action_type: effectiveSnapshot?.actionFrame?.type || null,
+        action_intensity: Number(effectiveSnapshot?.actionFrame?.intensity || 0),
+        output_energy: Number(snapshot.energy) || 0,
+        action_scale: Number(snapshot.actionScale) || 0,
+        motion_amplitude: Number(motion?.amplitude || 0),
+        motion_speed: Number(motion?.speed || 0),
+        override_enabled: Boolean(presenterDebugOverride)
+      });
+    }
+    presenterLastDebugSourceKind = snapshot.sourceKind;
     state.presenterMode = snapshot.mode;
     updatePresenterVisualState(snapshot);
   }
