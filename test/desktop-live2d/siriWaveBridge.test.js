@@ -57,9 +57,11 @@ test('resolveSiriWaveMotion gives speech a stronger visible baseline than music'
   assert.ok(speech.amplitude > music.amplitude);
   assert.ok(speech.speed > music.speed);
   assert.ok(speech.amplitude >= 0.9);
-  assert.ok(speech.speed >= 0.45);
+  assert.ok(speech.speed <= 0.34);
+  assert.ok(music.speed >= 0.1);
   assert.equal(DEFAULT_CURVE_DEFINITION.length, 4);
   assert.deepEqual(DEFAULT_RANGES.noOfCurves, [3, 5]);
+  assert.deepEqual(DEFAULT_RANGES.speed, [0.34, 0.62]);
 });
 
 test('stabilizeSiriWaveInstance seeds flat ios9 curves into motion', () => {
@@ -108,9 +110,9 @@ test('stabilizeSiriWaveInstance seeds flat ios9 curves into motion', () => {
   const curve = wave.curves[1];
   assert.equal(changed, true);
   assert.equal(curve.noOfCurves, 3);
-  assert.ok(curve.amplitudes.every((value) => value > 0.2));
+  assert.ok(curve.amplitudes.every((value) => value >= 0.32));
   assert.ok(curve.finalAmplitudes.every((value) => value >= 0.48));
-  assert.ok(curve.despawnTimeouts.every((value) => value >= 1600));
+  assert.ok(curve.despawnTimeouts.every((value) => value >= 2200));
   assert.ok(curve.verses.every((value) => Math.abs(value) >= 0.12));
-  assert.ok(curve.prevMaxY > 0);
+  assert.ok(curve.prevMaxY >= 1.2);
 });

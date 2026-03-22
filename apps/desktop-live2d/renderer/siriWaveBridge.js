@@ -26,11 +26,11 @@
 
   const DEFAULT_RANGES = Object.freeze({
     noOfCurves: Object.freeze([3, 5]),
-    amplitude: Object.freeze([0.25, 1]),
+    amplitude: Object.freeze([0.42, 1]),
     offset: Object.freeze([-2.4, 2.4]),
     width: Object.freeze([1, 2.2]),
-    speed: Object.freeze([0.6, 1.1]),
-    despawnTimeout: Object.freeze([900, 1800])
+    speed: Object.freeze([0.34, 0.62]),
+    despawnTimeout: Object.freeze([1600, 2800])
   });
 
   function ensureArrayWithLength(value, length, fillValue = 0) {
@@ -67,13 +67,13 @@
 
     let changed = false;
     const nowMs = Date.now();
-    const baseFinalAmplitude = clamp(0.34 + requestedAmplitude * 0.62, 0.38, 1);
+    const baseFinalAmplitude = clamp(0.48 + requestedAmplitude * 0.56, 0.54, 1);
     const baseLiveAmplitude = clamp(
-      baseFinalAmplitude * (0.44 + requestedSpeed * 0.34),
-      0.2,
+      baseFinalAmplitude * (0.58 + requestedSpeed * 0.18),
+      0.32,
       baseFinalAmplitude
     );
-    const basePrevMaxY = Math.max(0.8, toFiniteNumber(wave.heightMax, 0) * requestedAmplitude * 0.1);
+    const basePrevMaxY = Math.max(1.2, toFiniteNumber(wave.heightMax, 0) * requestedAmplitude * 0.18);
 
     for (const curve of wave.curves) {
       if (!curve || curve.definition?.supportLine) {
@@ -101,10 +101,10 @@
       );
       const amplitudes = ensureArrayWithLength(curve.amplitudes, count, 0);
       const finalAmplitudes = ensureArrayWithLength(curve.finalAmplitudes, count, baseFinalAmplitude);
-      const despawnTimeouts = ensureArrayWithLength(curve.despawnTimeouts, count, 1600);
+      const despawnTimeouts = ensureArrayWithLength(curve.despawnTimeouts, count, 2200);
       const offsets = ensureArrayWithLength(curve.offsets, count, 0);
-      const speeds = ensureArrayWithLength(curve.speeds, count, 0.8);
-      const widths = ensureArrayWithLength(curve.widths, count, 1.25);
+      const speeds = ensureArrayWithLength(curve.speeds, count, 0.48);
+      const widths = ensureArrayWithLength(curve.widths, count, 1.35);
       const verses = ensureArrayWithLength(curve.verses, count, 0.55);
       const phases = ensureArrayWithLength(curve.phases, count, 0);
 
@@ -122,8 +122,8 @@
 
       for (let index = 0; index < count; index += 1) {
         const seededFinalAmplitude = clamp(
-          baseFinalAmplitude * (0.84 + (index % 3) * 0.08),
-          0.34,
+          baseFinalAmplitude * (0.92 + (index % 3) * 0.06),
+          0.52,
           1
         );
         const currentFinalAmplitude = toFiniteNumber(finalAmplitudes[index], 0);
@@ -135,7 +135,7 @@
         const currentAmplitude = toFiniteNumber(amplitudes[index], 0);
         const seededAmplitude = Math.min(
           toFiniteNumber(finalAmplitudes[index], seededFinalAmplitude),
-          clamp(baseLiveAmplitude * (0.92 + (index % 2) * 0.08), 0.2, 1)
+          clamp(baseLiveAmplitude * (0.96 + (index % 2) * 0.06), 0.32, 1)
         );
         if (currentAmplitude < seededAmplitude) {
           amplitudes[index] = seededAmplitude;
@@ -143,8 +143,8 @@
         }
 
         const currentDespawnTimeout = toFiniteNumber(despawnTimeouts[index], 0);
-        if (currentDespawnTimeout < 1600) {
-          despawnTimeouts[index] = 1600 + index * 120;
+        if (currentDespawnTimeout < 2200) {
+          despawnTimeouts[index] = 2200 + index * 180;
           changed = true;
         }
 
@@ -156,13 +156,13 @@
 
         const currentSpeed = speeds[index];
         if (!Number.isFinite(Number(currentSpeed)) || Number(currentSpeed) <= 0) {
-          speeds[index] = 0.72 + index * 0.08;
+          speeds[index] = 0.38 + index * 0.05;
           changed = true;
         }
 
         const currentWidth = widths[index];
         if (!Number.isFinite(Number(currentWidth)) || Number(currentWidth) <= 0) {
-          widths[index] = 1.1 + index * 0.14;
+          widths[index] = 1.24 + index * 0.16;
           changed = true;
         }
 
@@ -233,13 +233,13 @@
 
     const shapedEnergy = Math.pow(energy, 0.72);
     const isMusic = sourceKind === 'music';
-    const baseAmplitude = isMusic ? 0.36 : 0.46;
-    const amplitudeRange = isMusic ? 0.62 : 0.78;
-    const baseSpeed = isMusic ? 0.22 : 0.28;
-    const speedRange = isMusic ? 0.24 : 0.3;
+    const baseAmplitude = isMusic ? 0.44 : 0.56;
+    const amplitudeRange = isMusic ? 0.72 : 0.82;
+    const baseSpeed = isMusic ? 0.11 : 0.14;
+    const speedRange = isMusic ? 0.1 : 0.13;
     return {
-      amplitude: clamp(baseAmplitude + shapedEnergy * amplitudeRange + actionBoost * 0.14, 0.28, 1),
-      speed: clamp(baseSpeed + shapedEnergy * speedRange + actionBoost * 0.08, 0.18, 0.64),
+      amplitude: clamp(baseAmplitude + shapedEnergy * amplitudeRange + actionBoost * 0.12, 0.4, 1),
+      speed: clamp(baseSpeed + shapedEnergy * speedRange + actionBoost * 0.04, 0.1, 0.34),
       opacity: waveformAlpha
     };
   }
