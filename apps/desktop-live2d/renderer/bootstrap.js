@@ -460,23 +460,57 @@
     const accent = Number(snapshot.colors?.accent) || 0xebfbff;
     const energy = clamp(Number(snapshot.energy) || 0, 0, 1);
     const waveformAlpha = clamp(Number(snapshot.waveformAlpha) || 0, 0, 1);
+    const housingY = Math.round(height * 0.18);
+    const housingHeight = Math.max(28, Math.round(height * 0.64));
+    const railY = Math.round(height * 0.5);
+    const inset = 10;
 
-    waveformBackdropGraphic.beginFill(fill, 0.18 * waveformAlpha);
-    waveformBackdropGraphic.drawRoundedRect(0, Math.round(height * 0.2), width, Math.max(20, Math.round(height * 0.6)), Math.round(height * 0.24));
+    waveformBackdropGraphic.beginFill(0x0a1118, 0.78 * waveformAlpha);
+    waveformBackdropGraphic.drawRoundedRect(0, housingY, width, housingHeight, Math.round(housingHeight * 0.48));
     waveformBackdropGraphic.endFill();
+    waveformBackdropGraphic.beginFill(fill, 0.42 * waveformAlpha);
+    waveformBackdropGraphic.drawRoundedRect(
+      inset,
+      housingY + 6,
+      Math.max(12, width - inset * 2),
+      Math.max(16, housingHeight - 12),
+      Math.round(housingHeight * 0.36)
+    );
+    waveformBackdropGraphic.endFill();
+    waveformBackdropGraphic.lineStyle(1, accent, 0.12 * waveformAlpha, 0.5);
+    waveformBackdropGraphic.moveTo(20, housingY + 12);
+    waveformBackdropGraphic.lineTo(width - 20, housingY + 12);
+    waveformBackdropGraphic.moveTo(20, housingY + housingHeight - 12);
+    waveformBackdropGraphic.lineTo(width - 20, housingY + housingHeight - 12);
 
-    waveformGlowGraphic.lineStyle(18 + energy * 10, glow, (0.1 + energy * 0.16) * waveformAlpha, 0.5);
+    waveformGlowGraphic.lineStyle(12 + energy * 7, glow, (0.08 + energy * 0.12) * waveformAlpha, 0.5);
     drawWaveformEnvelope(waveformGlowGraphic, geometry);
 
-    waveformFillGraphic.beginFill(fill, (0.16 + energy * 0.1) * waveformAlpha);
+    waveformFillGraphic.beginFill(primary, (0.08 + energy * 0.08) * waveformAlpha);
     drawWaveformEnvelope(waveformFillGraphic, geometry);
     waveformFillGraphic.endFill();
+    waveformFillGraphic.beginFill(0xb9eaf7, (0.03 + energy * 0.03) * waveformAlpha);
+    waveformFillGraphic.drawRoundedRect(
+      Math.round(width * 0.24),
+      Math.round(railY - 2),
+      Math.round(width * 0.52),
+      4,
+      2
+    );
+    waveformFillGraphic.endFill();
 
-    waveformStrokeGraphic.lineStyle(2.5, primary, (0.8 + energy * 0.18) * waveformAlpha, 0.5);
+    waveformStrokeGraphic.lineStyle(1.5, primary, (0.86 + energy * 0.12) * waveformAlpha, 0.5);
     drawWaveformEnvelope(waveformStrokeGraphic, geometry);
+    waveformStrokeGraphic.lineStyle(1, accent, 0.3 * waveformAlpha, 0.5);
+    waveformStrokeGraphic.moveTo(26, railY);
+    waveformStrokeGraphic.lineTo(width - 26, railY);
 
-    waveformCenterGraphic.lineStyle(1.2, accent, (0.55 + energy * 0.25) * waveformAlpha, 0.5);
+    waveformCenterGraphic.lineStyle(1.2, accent, (0.38 + energy * 0.18) * waveformAlpha, 0.5);
     drawPolyline(waveformCenterGraphic, Array.isArray(geometry.centerLine) ? geometry.centerLine : []);
+    waveformCenterGraphic.beginFill(accent, (0.16 + energy * 0.14) * waveformAlpha);
+    waveformCenterGraphic.drawCircle(18, railY, 2.5);
+    waveformCenterGraphic.drawCircle(width - 18, railY, 2.5);
+    waveformCenterGraphic.endFill();
 
     layer.visible = true;
     layer.alpha = waveformAlpha;
@@ -3367,6 +3401,23 @@
     const bubbleWidth = Math.max(120, bubbleElement.offsetWidth || 260);
     const bubbleHeight = Math.max(36, bubbleElement.offsetHeight || 84);
     const margin = 10;
+    const presenterSnapshot = waveformPresenter?.getLastSnapshot?.() || null;
+
+    if (presenterSnapshot?.waveformVisible && presenterSnapshot.geometry) {
+      const geometry = presenterSnapshot.geometry;
+      const topPoints = Array.isArray(geometry.topPoints) ? geometry.topPoints : [];
+      const localMinTop = topPoints.length > 0
+        ? Math.min(...topPoints.map((point) => Number(point.y) || 0))
+        : Math.round((Number(geometry.height) || stageSize.height) * 0.3);
+      const waveformLeft = (Number(geometry.originX) || 0);
+      const waveformTop = (Number(geometry.originY) || 0) + localMinTop;
+      const waveformCenterX = waveformLeft + (Number(geometry.width) || stageSize.width) * 0.5;
+      const nextLeft = clamp(waveformCenterX - bubbleWidth / 2, margin, stageSize.width - bubbleWidth - margin);
+      const nextTop = clamp(waveformTop - bubbleHeight - 22, margin, stageSize.height - bubbleHeight - margin);
+      bubbleLayerElement.style.left = `${Math.round(nextLeft)}px`;
+      bubbleLayerElement.style.top = `${Math.round(nextTop)}px`;
+      return;
+    }
 
     let anchorX = stageSize.width * 0.46;
     let anchorY = stageSize.height * 0.2;

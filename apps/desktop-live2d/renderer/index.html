@@ -359,32 +359,59 @@
         height: 0;
         pointer-events: none;
         -webkit-app-region: no-drag;
-        z-index: 22;
+        z-index: 24;
       }
 
       #bubble {
         opacity: 0;
-        transition: opacity 200ms ease;
+        transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
         position: absolute;
         left: 0;
         top: 0;
-        color: #ffffff;
-        background: rgba(16, 22, 36, 0.82);
-        border: 1px solid rgba(255, 255, 255, 0.28);
-        backdrop-filter: blur(6px);
-        border-radius: 16px;
-        padding: 10px 14px;
-        line-height: 1.45;
+        color: #edf6ff;
+        background:
+          linear-gradient(180deg, rgba(19, 29, 42, 0.92), rgba(12, 18, 28, 0.86));
+        border: 1px solid rgba(173, 221, 244, 0.24);
+        backdrop-filter: blur(12px);
+        border-radius: 18px;
+        padding: 12px 16px;
+        line-height: 1.55;
         font-size: 14px;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+        letter-spacing: 0.01em;
+        transform: translateY(6px) scale(0.985);
+        box-shadow:
+          0 18px 44px rgba(3, 9, 17, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          inset 0 0 0 1px rgba(110, 176, 210, 0.06);
         white-space: pre-wrap;
         word-break: break-word;
         width: max-content;
-        max-width: min(58vw, 360px);
+        max-width: min(56vw, 380px);
+      }
+
+      #bubble::before {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border-radius: 12px;
+        border: 1px solid rgba(145, 203, 232, 0.1);
+        pointer-events: none;
+      }
+
+      #bubble::after {
+        content: "";
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        top: 9px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(169, 222, 242, 0.34), transparent);
+        pointer-events: none;
       }
 
       #bubble.visible {
         opacity: 1;
+        transform: translateY(0) scale(1);
       }
 
       #chat-panel {
@@ -409,6 +436,7 @@
         -webkit-app-region: no-drag;
         will-change: opacity, transform;
         backface-visibility: hidden;
+        z-index: 23;
       }
 
       #chat-panel.visible {
