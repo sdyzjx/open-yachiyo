@@ -39,7 +39,7 @@ test('resolveSiriWaveMotion keeps breath mode visually static', () => {
   assert.equal(motion.opacity, 1);
 });
 
-test('resolveSiriWaveMotion boosts music more than speech', () => {
+test('resolveSiriWaveMotion gives speech a stronger visible baseline than music', () => {
   const speech = resolveSiriWaveMotion({
     sourceKind: 'speech',
     energy: 0.5,
@@ -53,8 +53,10 @@ test('resolveSiriWaveMotion boosts music more than speech', () => {
     waveformAlpha: 0.8
   });
 
-  assert.ok(music.amplitude > speech.amplitude);
-  assert.ok(music.speed > speech.speed);
+  assert.ok(speech.amplitude > music.amplitude);
+  assert.ok(speech.speed > music.speed);
+  assert.ok(speech.amplitude >= 0.9);
+  assert.ok(speech.speed >= 0.45);
   assert.equal(DEFAULT_CURVE_DEFINITION.length, 4);
   assert.deepEqual(DEFAULT_RANGES.noOfCurves, [3, 5]);
 });

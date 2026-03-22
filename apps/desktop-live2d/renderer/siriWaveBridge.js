@@ -76,11 +76,15 @@
       };
     }
 
-    const baseAmplitude = sourceKind === 'music' ? 0.26 : 0.18;
-    const baseSpeed = sourceKind === 'music' ? 0.16 : 0.12;
+    const shapedEnergy = Math.pow(energy, 0.72);
+    const isMusic = sourceKind === 'music';
+    const baseAmplitude = isMusic ? 0.36 : 0.46;
+    const amplitudeRange = isMusic ? 0.62 : 0.78;
+    const baseSpeed = isMusic ? 0.22 : 0.28;
+    const speedRange = isMusic ? 0.24 : 0.3;
     return {
-      amplitude: clamp(baseAmplitude + energy * 0.7 + actionBoost * 0.12, 0, 1),
-      speed: clamp(baseSpeed + energy * 0.16 + actionBoost * 0.06, 0.08, 0.38),
+      amplitude: clamp(baseAmplitude + shapedEnergy * amplitudeRange + actionBoost * 0.14, 0.28, 1),
+      speed: clamp(baseSpeed + shapedEnergy * speedRange + actionBoost * 0.08, 0.18, 0.64),
       opacity: waveformAlpha
     };
   }
