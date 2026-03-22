@@ -206,6 +206,7 @@
     presenterSnapshot = null,
     motion = null,
     layout = null,
+    siriWave = null,
     override = null
   } = {}) {
     const speechFrame = effectiveSnapshot?.speechFrame || busSnapshot?.speechFrame || null;
@@ -259,6 +260,44 @@
               top: Number(layout.top) || 0,
               width: Number(layout.width) || 0,
               height: Number(layout.height) || 0
+            }
+          : null,
+        siriWave: siriWave
+          ? {
+              available: Boolean(siriWave.available),
+              diagnosis: siriWave.diagnosis || null,
+              generation: Number(siriWave.generation) || 0,
+              recreateCount: Number(siriWave.recreateCount) || 0,
+              actual: siriWave.actual
+                ? {
+                    amplitude: Number(Number(siriWave.actual.amplitude || 0).toFixed(4)),
+                    speed: Number(Number(siriWave.actual.speed || 0).toFixed(4))
+                  }
+                : null,
+              target: siriWave.target
+                ? {
+                    amplitude: Number(Number(siriWave.target.amplitude || 0).toFixed(4)),
+                    speed: Number(Number(siriWave.target.speed || 0).toFixed(4))
+                  }
+                : null,
+              canvas: siriWave.canvas
+                ? {
+                    cssWidth: Number(Number(siriWave.canvas.cssWidth || 0).toFixed(2)),
+                    cssHeight: Number(Number(siriWave.canvas.cssHeight || 0).toFixed(2)),
+                    pixelWidth: Number(siriWave.canvas.pixelWidth) || 0,
+                    pixelHeight: Number(siriWave.canvas.pixelHeight) || 0,
+                    heightMax: Number(Number(siriWave.canvas.heightMax || 0).toFixed(2)),
+                    verticalSpanPx: Number(siriWave.canvas.sample?.verticalSpanPx) || 0,
+                    activeRows: Number(siriWave.canvas.sample?.activeRows) || 0
+                  }
+                : null,
+              curves: siriWave.curves
+                ? {
+                    clusterCount: Number(siriWave.curves.clusterCount) || 0,
+                    activeClusterCount: Number(siriWave.curves.activeClusterCount) || 0,
+                    maxPrevMaxY: Number(Number(siriWave.curves.maxPrevMaxY || 0).toFixed(2))
+                  }
+                : null
             }
           : null
       }

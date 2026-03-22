@@ -88,6 +88,36 @@ test('buildPresenterDebugState summarizes input and rendered motion for inspecti
       width: 360,
       height: 124
     },
+    siriWave: {
+      available: true,
+      diagnosis: 'canvas_nearly_flat',
+      generation: 3,
+      recreateCount: 1,
+      actual: {
+        amplitude: 0.42,
+        speed: 0.18
+      },
+      target: {
+        amplitude: 0.88,
+        speed: 0.34
+      },
+      canvas: {
+        cssWidth: 360,
+        cssHeight: 124,
+        pixelWidth: 720,
+        pixelHeight: 248,
+        heightMax: 118,
+        sample: {
+          verticalSpanPx: 2,
+          activeRows: 1
+        }
+      },
+      curves: {
+        clusterCount: 4,
+        activeClusterCount: 1,
+        maxPrevMaxY: 1.8
+      }
+    },
     override: {
       sourceKind: 'music',
       energy: 0.7
@@ -106,4 +136,7 @@ test('buildPresenterDebugState summarizes input and rendered motion for inspecti
     width: 360,
     height: 124
   });
+  assert.equal(state.output.siriWave.diagnosis, 'canvas_nearly_flat');
+  assert.equal(state.output.siriWave.canvas.verticalSpanPx, 2);
+  assert.equal(state.output.siriWave.curves.clusterCount, 4);
 });

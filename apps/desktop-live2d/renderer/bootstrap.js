@@ -109,6 +109,15 @@
   let siriWaveBound = false;
   let siriWaveInstance = null;
   let siriWaveSize = { width: 0, height: 0 };
+  let siriWaveInstanceGeneration = 0;
+  let siriWaveInstanceResetCount = 0;
+  let siriWavePendingResetDebug = null;
+  let siriWaveLastDebugState = null;
+  let siriWaveFrameDebugSampleCounter = 0;
+  let siriWaveLastDebugSourceKind = null;
+  let siriWaveLastSnapshot = null;
+  let siriWaveLastMotion = null;
+  let siriWaveLastLayout = null;
   let rendererMusicPlayer = null;
   let rendererMusicEventsBound = false;
   let activePresenterAction = null;
@@ -524,6 +533,22 @@
     }
   }
 
+  function buildSiriWaveDebugState(snapshot, motion, layout, options = {}) {
+    const helper = window.RendererSiriWaveDebugTools;
+    if (typeof helper?.buildSiriWaveDebugState !== 'function') {
+      return null;
+    }
+    return helper.buildSiriWaveDebugState({
+      wave: siriWaveInstance,
+      motion,
+      layout,
+      snapshot,
+      generation: siriWaveInstanceGeneration,
+      recreateCount: siriWaveInstanceResetCount,
+      sampleCanvas: options.sampleCanvas === true
+    });
+  }
+
   function ensureSiriWaveInstance(layout) {
     const SiriWaveCtor = getSiriWaveConstructor();
     const helper = window.RendererSiriWaveBridge;
@@ -535,7 +560,19 @@
     const height = Math.max(1, Math.round(Number(layout?.height) || 1));
     const sizeChanged = !siriWaveInstance || siriWaveSize.width !== width || siriWaveSize.height !== height;
     if (sizeChanged) {
+      const previousWidth = siriWaveSize.width;
+      const previousHeight = siriWaveSize.height;
       disposeSiriWaveInstance();
+      siriWaveInstanceGeneration += 1;
+      siriWaveInstanceResetCount += 1;
+      siriWavePendingResetDebug = {
+        generation: siriWaveInstanceGeneration,
+        recreate_count: siriWaveInstanceResetCount,
+        previous_width: previousWidth,
+        previous_height: previousHeight,
+        next_width: width,
+        next_height: height
+      };
       siriWaveInstance = new SiriWaveCtor({
         container: waveformSiriElement,
         style: 'ios9',
@@ -570,6 +607,7 @@
       if (typeof siriWaveInstance?.stop === 'function') {
         siriWaveInstance.stop();
       }
+      siriWaveLastDebugSourceKind = snapshot?.sourceKind || 'breath';
       return true;
     }
 
@@ -599,6 +637,27 @@
     if (typeof wave.start === 'function') {
       wave.start();
     }
+    const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
+    const shouldEmitSiriWaveFrameSample = waveformCaptureConfig.enabled
+      && (waveformCaptureConfig.captureEveryFrame || siriWaveFrameDebugSampleCounter % 30 === 0);
+    siriWaveLastSnapshot = snapshot;
+    siriWaveLastMotion = motion;
+    siriWaveLastLayout = layout;
+    siriWaveLastDebugState = buildSiriWaveDebugState(snapshot, motion, layout, {
+      sampleCanvas: shouldEmitSiriWaveFrameSample
+    });
+    if (siriWavePendingResetDebug) {
+      emitRendererDebug('siriwave.instance_reset', {
+        ...siriWavePendingResetDebug,
+        source_kind: snapshot?.sourceKind || 'breath'
+      });
+      siriWavePendingResetDebug = null;
+    }
+    if (shouldEmitSiriWaveFrameSample && siriWaveLastDebugState) {
+      emitRendererDebug('siriwave.frame_sample', siriWaveLastDebugState);
+    }
+    siriWaveFrameDebugSampleCounter += 1;
+    siriWaveLastDebugSourceKind = snapshot?.sourceKind || 'breath';
     return true;
   }
 
@@ -875,22 +934,15 @@
     const layout = typeof siriWaveBridge?.resolveSiriWaveLayout === 'function'
       ? siriWaveBridge.resolveSiriWaveLayout(snapshot, stageSize)
       : null;
-    presenterDebugState = typeof debugTools?.buildPresenterDebugState === 'function'
-      ? debugTools.buildPresenterDebugState({
-          configuredMode: presenterDebugConfiguredMode || getConfiguredPresenterMode(),
-          busSnapshot,
-          effectiveSnapshot,
-          presenterSnapshot: snapshot,
-          motion,
-          layout,
-          override: presenterDebugOverride
-        })
-      : null;
     presenterFrameDebugSampleCounter += 1;
-    const shouldEmitPresenterDebug = snapshot.sourceKind !== presenterLastDebugSourceKind
-      || presenterFrameDebugSampleCounter % 30 === 0
-      || snapshot.sourceKind !== 'breath'
-      || presenterDebugOverride;
+    const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
+    const shouldEmitPresenterDebug = waveformCaptureConfig.enabled
+      && (
+        snapshot.sourceKind !== presenterLastDebugSourceKind
+        || presenterFrameDebugSampleCounter % 30 === 0
+        || presenterDebugOverride
+        || waveformCaptureConfig.captureEveryFrame
+      );
     if (shouldEmitPresenterDebug) {
       emitRendererDebug('presenter.frame_sample', {
         mode: snapshot.mode,
@@ -915,6 +967,18 @@
     presenterLastDebugSourceKind = snapshot.sourceKind;
     state.presenterMode = snapshot.mode;
     updatePresenterVisualState(snapshot);
+    presenterDebugState = typeof debugTools?.buildPresenterDebugState === 'function'
+      ? debugTools.buildPresenterDebugState({
+          configuredMode: presenterDebugConfiguredMode || getConfiguredPresenterMode(),
+          busSnapshot,
+          effectiveSnapshot,
+          presenterSnapshot: snapshot,
+          motion,
+          layout,
+          siriWave: siriWaveLastDebugState,
+          override: presenterDebugOverride
+        })
+      : null;
   }
 
   function ensurePresenterTickerHook() {
@@ -966,6 +1030,47 @@
 
   function getPresenterState() {
     const snapshot = waveformPresenter?.getLastSnapshot?.() || null;
+    const siriWaveDebugState = siriWaveLastSnapshot
+      ? buildSiriWaveDebugState(siriWaveLastSnapshot, siriWaveLastMotion, siriWaveLastLayout, {
+          sampleCanvas: true
+        })
+      : siriWaveLastDebugState;
+    const debugState = presenterDebugState
+      ? {
+          ...presenterDebugState,
+          output: {
+            ...(presenterDebugState.output || {}),
+            siriWave: siriWaveDebugState
+              ? {
+                  available: Boolean(siriWaveDebugState.available),
+                  diagnosis: siriWaveDebugState.diagnosis || null,
+                  generation: Number(siriWaveDebugState.generation) || 0,
+                  recreateCount: Number(siriWaveDebugState.recreateCount) || 0,
+                  actual: siriWaveDebugState.actual || null,
+                  target: siriWaveDebugState.target || null,
+                  canvas: siriWaveDebugState.canvas
+                    ? {
+                        cssWidth: siriWaveDebugState.canvas.cssWidth,
+                        cssHeight: siriWaveDebugState.canvas.cssHeight,
+                        pixelWidth: siriWaveDebugState.canvas.pixelWidth,
+                        pixelHeight: siriWaveDebugState.canvas.pixelHeight,
+                        heightMax: siriWaveDebugState.canvas.heightMax,
+                        verticalSpanPx: Number(siriWaveDebugState.canvas.sample?.verticalSpanPx) || 0,
+                        activeRows: Number(siriWaveDebugState.canvas.sample?.activeRows) || 0
+                      }
+                    : null,
+                  curves: siriWaveDebugState.curves
+                    ? {
+                        clusterCount: siriWaveDebugState.curves.clusterCount,
+                        activeClusterCount: siriWaveDebugState.curves.activeClusterCount,
+                        maxPrevMaxY: siriWaveDebugState.curves.maxPrevMaxY
+                      }
+                    : null
+                }
+              : null
+          }
+        }
+      : null;
     return {
       mode: snapshot?.mode || state.presenterMode,
       configuredMode: state.presenterMode,
@@ -975,7 +1080,7 @@
       waveformAlpha: Number(snapshot?.waveformAlpha) || 0,
       modelAlpha: Number(snapshot?.modelAlpha) || 0,
       music: state.musicPlayback ? { ...state.musicPlayback } : null,
-      debug: presenterDebugState ? JSON.parse(JSON.stringify(presenterDebugState)) : null
+      debug: debugState ? JSON.parse(JSON.stringify(debugState)) : null
     };
   }
 
@@ -2864,9 +2969,11 @@
 
         const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
         const captureEveryFrame = waveformCaptureConfig.enabled && waveformCaptureConfig.captureEveryFrame;
+        const shouldEmitFrameSamples = waveformCaptureConfig.enabled
+          && (captureEveryFrame || frameCount % 30 === 0);
 
         // Log every 30 frames (roughly once per second at 60fps) unless full waveform capture is enabled.
-        if (captureEveryFrame || frameCount % 30 === 0) {
+        if (shouldEmitFrameSamples) {
           console.log('[lipsync] frame update', {
             frameCount,
             features: { energy: (Number(frame.features?.voiceEnergy) || voiceEnergy).toFixed(3) },
