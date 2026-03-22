@@ -50,7 +50,8 @@ const {
   isNewSessionCommand,
   computeChatWindowBounds,
   computeBubbleWindowBounds,
-  computeFittedAvatarWindowBounds
+  computeFittedAvatarWindowBounds,
+  shouldIgnoreLegacyVoicePlaybackEvent
 } = require('../../apps/desktop-live2d/main/desktopSuite');
 
 class FakeIpcMain extends EventEmitter {}
@@ -215,6 +216,28 @@ test('computeBubbleWindowBounds anchors above avatar center', () => {
   assert.equal(bounds.height, 120);
   assert.equal(bounds.x, 990);
   assert.equal(bounds.y, 290);
+});
+
+test('shouldIgnoreLegacyVoicePlaybackEvent ignores only malformed legacy payloads in electron_native mode', () => {
+  assert.equal(shouldIgnoreLegacyVoicePlaybackEvent({
+    eventName: 'voice.playback.electron',
+    voicePathMode: 'electron_native',
+    eventPayload: {}
+  }), true);
+
+  assert.equal(shouldIgnoreLegacyVoicePlaybackEvent({
+    eventName: 'voice.playback.electron',
+    voicePathMode: 'electron_native',
+    eventPayload: {
+      audio_ref: '/tmp/demo.ogg'
+    }
+  }), false);
+
+  assert.equal(shouldIgnoreLegacyVoicePlaybackEvent({
+    eventName: 'voice.playback.electron',
+    voicePathMode: 'runtime_legacy',
+    eventPayload: {}
+  }), false);
 });
 
 test('resolveWindowMetrics returns compact profile and chat default visibility', () => {

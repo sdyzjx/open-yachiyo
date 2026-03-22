@@ -1621,6 +1621,21 @@ async function processVoiceRequestedOnDesktop({
   }
 }
 
+function shouldIgnoreLegacyVoicePlaybackEvent({ eventName, voicePathMode, eventPayload } = {}) {
+  if (String(eventName || '').trim().toLowerCase() !== 'voice.playback.electron') {
+    return false;
+  }
+  if (String(voicePathMode || '').trim().toLowerCase() !== 'electron_native') {
+    return false;
+  }
+  const audioRef = typeof eventPayload?.audio_ref === 'string'
+    ? eventPayload.audio_ref.trim()
+    : typeof eventPayload?.audioRef === 'string'
+      ? eventPayload.audioRef.trim()
+      : '';
+  return audioRef.length === 0;
+}
+
 async function startDesktopSuite({
   app,
   BrowserWindow,
@@ -3016,12 +3031,17 @@ async function startDesktopSuite({
           });
         } else if (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.')) {
           const voicePathMode = String(config.uiConfig?.voice?.path || 'electron_native').trim().toLowerCase();
-          if (eventName === 'voice.playback.electron' && voicePathMode === 'electron_native') {
+          if (shouldIgnoreLegacyVoicePlaybackEvent({
+            eventName,
+            voicePathMode,
+            eventPayload: desktopEvent.data.data
+          })) {
             emitDesktopDebug(
               'chain.electron.voice.legacy_event_ignored',
               'electron main ignored legacy voice.playback.electron while electron_native path is active',
               {
-                event_name: eventName
+                event_name: eventName,
+                reason: 'missing_audio_ref'
               }
             );
             return;
@@ -4392,5 +4412,6 @@ module.exports = {
   createBubbleWindow,
   computeChatWindowBounds,
   computeBubbleWindowBounds,
-  computeFittedAvatarWindowBounds
+  computeFittedAvatarWindowBounds,
+  shouldIgnoreLegacyVoicePlaybackEvent
 };
