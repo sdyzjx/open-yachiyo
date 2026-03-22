@@ -244,6 +244,7 @@
     eyeSmileR: 0,
     cheek: 0
   });
+  const USE_SIRIWAVE_RENDERER = false;
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
       color: 0x232c34,
@@ -844,11 +845,19 @@
   }
 
   function renderWaveformSnapshot(snapshot) {
-    if (renderSiriWaveSnapshot(snapshot)) {
+    if (USE_SIRIWAVE_RENDERER && renderSiriWaveSnapshot(snapshot)) {
       if (waveformLayer) {
         waveformLayer.visible = false;
       }
       return;
+    }
+    if (waveformShellElement) {
+      waveformShellElement.classList.remove('visible');
+      waveformShellElement.style.display = 'none';
+      waveformShellElement.style.pointerEvents = 'none';
+    }
+    if (typeof siriWaveInstance?.stop === 'function') {
+      siriWaveInstance.stop();
     }
     const layer = ensureWaveformLayer();
     if (!layer) {
