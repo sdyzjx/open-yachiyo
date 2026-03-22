@@ -113,6 +113,9 @@
   let rendererMusicEventsBound = false;
   let activePresenterAction = null;
   let queuedPresenterActions = new Map();
+  let presenterDebugOverride = null;
+  let presenterDebugState = null;
+  let presenterDebugConfiguredMode = null;
 
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
@@ -847,11 +850,15 @@
     const actionFrame = buildPresenterActionFrame();
     bus.setActionFrame(actionFrame);
 
+    const debugTools = window.RendererPresenterDebugTools;
     const busSnapshot = bus.snapshot();
-    presenter.setMode(busSnapshot.mode);
-    presenter.ingestSpeechFrame(busSnapshot.speechFrame);
-    presenter.ingestMusicFrame(busSnapshot.musicFrame);
-    presenter.ingestActionFrame(busSnapshot.actionFrame);
+    const effectiveSnapshot = presenterDebugOverride && typeof debugTools?.applyPresenterDebugOverride === 'function'
+      ? debugTools.applyPresenterDebugOverride(busSnapshot, presenterDebugOverride)
+      : busSnapshot;
+    presenter.setMode(effectiveSnapshot.mode);
+    presenter.ingestSpeechFrame(effectiveSnapshot.speechFrame);
+    presenter.ingestMusicFrame(effectiveSnapshot.musicFrame);
+    presenter.ingestActionFrame(effectiveSnapshot.actionFrame);
 
     const stageSize = getStageSize();
     const snapshot = presenter.tick({
@@ -859,6 +866,24 @@
       stageWidth: stageSize.width,
       stageHeight: stageSize.height
     });
+    const siriWaveBridge = window.RendererSiriWaveBridge;
+    const motion = typeof siriWaveBridge?.resolveSiriWaveMotion === 'function'
+      ? siriWaveBridge.resolveSiriWaveMotion(snapshot)
+      : null;
+    const layout = typeof siriWaveBridge?.resolveSiriWaveLayout === 'function'
+      ? siriWaveBridge.resolveSiriWaveLayout(snapshot, stageSize)
+      : null;
+    presenterDebugState = typeof debugTools?.buildPresenterDebugState === 'function'
+      ? debugTools.buildPresenterDebugState({
+          configuredMode: presenterDebugConfiguredMode || getConfiguredPresenterMode(),
+          busSnapshot,
+          effectiveSnapshot,
+          presenterSnapshot: snapshot,
+          motion,
+          layout,
+          override: presenterDebugOverride
+        })
+      : null;
     state.presenterMode = snapshot.mode;
     updatePresenterVisualState(snapshot);
   }
@@ -888,16 +913,40 @@
     return getPresenterState();
   }
 
+  function setPresenterDebugOverrideState(params = {}) {
+    const helper = window.RendererPresenterDebugTools;
+    if (!helper || typeof helper.normalizePresenterDebugOverride !== 'function') {
+      throw createRpcError(-32005, 'RendererPresenterDebugTools runtime is unavailable');
+    }
+    if (!presenterDebugOverride) {
+      presenterDebugConfiguredMode = getConfiguredPresenterMode();
+    }
+    presenterDebugOverride = helper.normalizePresenterDebugOverride(params);
+    updatePresenterFrame();
+    return getPresenterState();
+  }
+
+  function clearPresenterDebugOverrideState() {
+    presenterDebugOverride = null;
+    presenterDebugState = null;
+    state.presenterMode = presenterDebugConfiguredMode || getConfiguredPresenterMode();
+    presenterDebugConfiguredMode = null;
+    updatePresenterFrame();
+    return getPresenterState();
+  }
+
   function getPresenterState() {
     const snapshot = waveformPresenter?.getLastSnapshot?.() || null;
     return {
-      mode: state.presenterMode,
+      mode: snapshot?.mode || state.presenterMode,
+      configuredMode: state.presenterMode,
       sourceKind: snapshot?.sourceKind || 'breath',
       waveformVisible: Boolean(snapshot?.waveformVisible),
       modelVisible: Boolean(snapshot?.modelVisible),
       waveformAlpha: Number(snapshot?.waveformAlpha) || 0,
       modelAlpha: Number(snapshot?.modelAlpha) || 0,
-      music: state.musicPlayback ? { ...state.musicPlayback } : null
+      music: state.musicPlayback ? { ...state.musicPlayback } : null,
+      debug: presenterDebugState ? JSON.parse(JSON.stringify(presenterDebugState)) : null
     };
   }
 
@@ -4783,6 +4832,10 @@
         result = setPresenterMode(params);
       } else if (method === 'presenter.state.get') {
         result = getPresenterState();
+      } else if (method === 'presenter.debug.override.set') {
+        result = setPresenterDebugOverrideState(params);
+      } else if (method === 'presenter.debug.override.clear') {
+        result = clearPresenterDebugOverrideState();
       } else if (method === 'desktop.music.play') {
         result = await playWorkspaceMusic(params);
       } else if (method === 'desktop.music.pause') {

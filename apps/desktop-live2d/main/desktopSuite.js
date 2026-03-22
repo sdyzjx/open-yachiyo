@@ -3341,6 +3341,8 @@ async function startDesktopSuite({
       'chat.panel.clear',
       'presenter.mode.set',
       'presenter.state.get',
+      'presenter.debug.override.set',
+      'presenter.debug.override.clear',
       'desktop.music.play',
       'desktop.music.pause',
       'desktop.music.resume',

@@ -1353,13 +1353,43 @@ test('handleDesktopRpcRequest forwards presenter runtime methods to renderer bri
     },
     rendererTimeoutMs: 3456
   });
+  const debugSetResult = await handleDesktopRpcRequest({
+    request: {
+      method: 'presenter.debug.override.set',
+      params: { sourceKind: 'speech', energy: 0.9 }
+    },
+    bridge: {
+      invoke: async (payload) => {
+        calls.push(payload);
+        return { ok: true, debug: { override: { sourceKind: 'speech' } } };
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const debugClearResult = await handleDesktopRpcRequest({
+    request: {
+      method: 'presenter.debug.override.clear',
+      params: {}
+    },
+    bridge: {
+      invoke: async (payload) => {
+        calls.push(payload);
+        return { ok: true, debug: null };
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
 
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4);
   assert.equal(calls[0].method, 'presenter.mode.set');
   assert.equal(calls[0].timeoutMs, 3456);
   assert.equal(calls[1].method, 'presenter.state.get');
+  assert.equal(calls[2].method, 'presenter.debug.override.set');
+  assert.equal(calls[3].method, 'presenter.debug.override.clear');
   assert.deepEqual(modeResult, { ok: true, mode: 'waveform' });
   assert.deepEqual(stateResult, { mode: 'waveform', waveformVisible: true });
+  assert.deepEqual(debugSetResult, { ok: true, debug: { override: { sourceKind: 'speech' } } });
+  assert.deepEqual(debugClearResult, { ok: true, debug: null });
 });
 
 test('handleDesktopRpcRequest dispatches desktop music tools to controller', async () => {
