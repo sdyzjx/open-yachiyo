@@ -118,6 +118,7 @@
   let siriWaveLastSnapshot = null;
   let siriWaveLastMotion = null;
   let siriWaveLastLayout = null;
+  let siriWaveDelayedSnapshotTimer = null;
   let rendererMusicPlayer = null;
   let rendererMusicEventsBound = false;
   let activePresenterAction = null;
@@ -549,6 +550,33 @@
     });
   }
 
+  function scheduleSiriWaveDelayedSnapshot(sourceKind) {
+    if (siriWaveDelayedSnapshotTimer) {
+      window.clearTimeout(siriWaveDelayedSnapshotTimer);
+      siriWaveDelayedSnapshotTimer = null;
+    }
+    if (sourceKind !== 'speech' && sourceKind !== 'music') {
+      return;
+    }
+    const expectedGeneration = siriWaveInstanceGeneration;
+    siriWaveDelayedSnapshotTimer = window.setTimeout(() => {
+      siriWaveDelayedSnapshotTimer = null;
+      if (!siriWaveLastSnapshot || siriWaveInstanceGeneration !== expectedGeneration) {
+        return;
+      }
+      const delayedState = buildSiriWaveDebugState(
+        siriWaveLastSnapshot,
+        siriWaveLastMotion,
+        siriWaveLastLayout,
+        { sampleCanvas: true }
+      );
+      if (delayedState) {
+        emitRendererDebug('siriwave.delayed_snapshot', delayedState);
+        siriWaveLastDebugState = delayedState;
+      }
+    }, 320);
+  }
+
   function ensureSiriWaveInstance(layout) {
     const SiriWaveCtor = getSiriWaveConstructor();
     const helper = window.RendererSiriWaveBridge;
@@ -601,6 +629,10 @@
     bindSiriWaveInteraction();
     const visible = Boolean(snapshot?.waveformVisible);
     if (!visible) {
+      if (siriWaveDelayedSnapshotTimer) {
+        window.clearTimeout(siriWaveDelayedSnapshotTimer);
+        siriWaveDelayedSnapshotTimer = null;
+      }
       waveformShellElement.classList.remove('visible');
       waveformShellElement.style.display = 'none';
       waveformShellElement.style.pointerEvents = 'none';
@@ -634,8 +666,20 @@
     if (typeof wave.setSpeed === 'function') {
       wave.setSpeed(motion.speed);
     }
-    if (typeof wave.start === 'function') {
+    if (!wave.run && typeof wave.start === 'function') {
       wave.start();
+    }
+    if (typeof helper.stabilizeSiriWaveInstance === 'function') {
+      const stabilized = helper.stabilizeSiriWaveInstance(wave, motion, snapshot);
+      if (stabilized) {
+        emitRendererDebug('siriwave.curves_stabilized', {
+          source_kind: snapshot?.sourceKind || 'breath',
+          requested_amplitude: Number(motion.amplitude) || 0,
+          requested_speed: Number(motion.speed) || 0,
+          generation: siriWaveInstanceGeneration,
+          recreate_count: siriWaveInstanceResetCount
+        });
+      }
     }
     const waveformCaptureConfig = getWaveformCaptureRuntimeConfig();
     const currentSourceKind = snapshot?.sourceKind || 'breath';
@@ -660,6 +704,9 @@
     }
     if (shouldEmitSiriWaveStateSnapshot && siriWaveLastDebugState) {
       emitRendererDebug('siriwave.state_snapshot', siriWaveLastDebugState);
+    }
+    if (shouldEmitSiriWaveStateSnapshot) {
+      scheduleSiriWaveDelayedSnapshot(currentSourceKind);
     }
     siriWaveFrameDebugSampleCounter += 1;
     siriWaveLastDebugSourceKind = currentSourceKind;

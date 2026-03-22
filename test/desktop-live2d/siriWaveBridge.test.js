@@ -5,7 +5,8 @@ const {
   DEFAULT_CURVE_DEFINITION,
   DEFAULT_RANGES,
   resolveSiriWaveLayout,
-  resolveSiriWaveMotion
+  resolveSiriWaveMotion,
+  stabilizeSiriWaveInstance
 } = require('../../apps/desktop-live2d/renderer/siriWaveBridge');
 
 test('resolveSiriWaveLayout expands presenter geometry into a siriwave shell', () => {
@@ -59,4 +60,57 @@ test('resolveSiriWaveMotion gives speech a stronger visible baseline than music'
   assert.ok(speech.speed >= 0.45);
   assert.equal(DEFAULT_CURVE_DEFINITION.length, 4);
   assert.deepEqual(DEFAULT_RANGES.noOfCurves, [3, 5]);
+});
+
+test('stabilizeSiriWaveInstance seeds flat ios9 curves into motion', () => {
+  const wave = {
+    heightMax: 56,
+    curves: [
+      {
+        definition: { supportLine: true }
+      },
+      {
+        definition: { color: '72, 184, 255' },
+        noOfCurves: 0,
+        amplitudes: [],
+        finalAmplitudes: [],
+        despawnTimeouts: [],
+        offsets: [],
+        speeds: [],
+        widths: [],
+        verses: [],
+        phases: [],
+        prevMaxY: 0,
+        spawnAt: 0,
+        spawn() {
+          this.noOfCurves = 3;
+          this.amplitudes = [0, 0, 0];
+          this.finalAmplitudes = [0.48, 0.52, 0.56];
+          this.despawnTimeouts = [900, 900, 900];
+          this.offsets = [0, 0, 0];
+          this.speeds = [0.72, 0.82, 0.9];
+          this.widths = [1.1, 1.2, 1.3];
+          this.verses = [0, 0.01, -0.02];
+          this.phases = [0, 0, 0];
+          this.spawnAt = Date.now();
+        }
+      }
+    ]
+  };
+
+  const changed = stabilizeSiriWaveInstance(wave, {
+    amplitude: 0.62,
+    speed: 0.34
+  }, {
+    sourceKind: 'speech'
+  });
+
+  const curve = wave.curves[1];
+  assert.equal(changed, true);
+  assert.equal(curve.noOfCurves, 3);
+  assert.ok(curve.amplitudes.every((value) => value > 0.2));
+  assert.ok(curve.finalAmplitudes.every((value) => value >= 0.48));
+  assert.ok(curve.despawnTimeouts.every((value) => value >= 1600));
+  assert.ok(curve.verses.every((value) => Math.abs(value) >= 0.12));
+  assert.ok(curve.prevMaxY > 0);
 });
