@@ -106,6 +106,9 @@
   let waveformHitGraphic = null;
   let waveformTickerHookBound = false;
   let waveformInteractionBound = false;
+  let siriWaveBound = false;
+  let siriWaveInstance = null;
+  let siriWaveSize = { width: 0, height: 0 };
   let rendererMusicPlayer = null;
   let rendererMusicEventsBound = false;
   let activePresenterAction = null;
@@ -114,6 +117,8 @@
   const stageContainer = document.getElementById('stage');
   const bubbleLayerElement = document.getElementById('bubble-layer');
   const bubbleElement = document.getElementById('bubble');
+  const waveformShellElement = document.getElementById('waveform-shell');
+  const waveformSiriElement = document.getElementById('waveform-siri');
   const chatPanelElement = document.getElementById('chat-panel');
   const chatPanelMessagesElement = document.getElementById('chat-panel-messages');
   const chatInputElement = document.getElementById('chat-input');
@@ -486,6 +491,112 @@
     waveformInteractionBound = true;
   }
 
+  function getSiriWaveConstructor() {
+    return window.SiriWave?.default || window.SiriWave || null;
+  }
+
+  function bindSiriWaveInteraction() {
+    if (siriWaveBound || !waveformShellElement) {
+      return;
+    }
+    waveformShellElement.addEventListener('click', () => {
+      if (state.presenterMode === 'live2d') {
+        return;
+      }
+      handleAvatarPrimaryTap();
+    });
+    siriWaveBound = true;
+  }
+
+  function disposeSiriWaveInstance() {
+    if (typeof siriWaveInstance?.dispose === 'function') {
+      siriWaveInstance.dispose();
+    }
+    siriWaveInstance = null;
+    siriWaveSize = { width: 0, height: 0 };
+    if (waveformSiriElement) {
+      waveformSiriElement.textContent = '';
+    }
+  }
+
+  function ensureSiriWaveInstance(layout) {
+    const SiriWaveCtor = getSiriWaveConstructor();
+    const helper = window.RendererSiriWaveBridge;
+    if (!SiriWaveCtor || !waveformSiriElement || !helper) {
+      return null;
+    }
+
+    const width = Math.max(1, Math.round(Number(layout?.width) || 1));
+    const height = Math.max(1, Math.round(Number(layout?.height) || 1));
+    const sizeChanged = !siriWaveInstance || siriWaveSize.width !== width || siriWaveSize.height !== height;
+    if (sizeChanged) {
+      disposeSiriWaveInstance();
+      siriWaveInstance = new SiriWaveCtor({
+        container: waveformSiriElement,
+        style: 'ios9',
+        width,
+        height,
+        autostart: true,
+        lerpSpeed: 0.08,
+        pixelDepth: 0.02,
+        globalCompositeOperation: 'lighter',
+        curveDefinition: helper.DEFAULT_CURVE_DEFINITION,
+        ranges: helper.DEFAULT_RANGES,
+        speed: 0.12,
+        amplitude: 0
+      });
+      siriWaveSize = { width, height };
+    }
+    return siriWaveInstance;
+  }
+
+  function renderSiriWaveSnapshot(snapshot) {
+    const helper = window.RendererSiriWaveBridge;
+    if (!helper || !waveformShellElement || !waveformSiriElement) {
+      return false;
+    }
+
+    bindSiriWaveInteraction();
+    const visible = Boolean(snapshot?.waveformVisible);
+    if (!visible) {
+      waveformShellElement.classList.remove('visible');
+      waveformShellElement.style.display = 'none';
+      waveformShellElement.style.pointerEvents = 'none';
+      if (typeof siriWaveInstance?.stop === 'function') {
+        siriWaveInstance.stop();
+      }
+      return true;
+    }
+
+    const stageSize = getStageSize();
+    const layout = helper.resolveSiriWaveLayout(snapshot, stageSize);
+    const motion = helper.resolveSiriWaveMotion(snapshot);
+    const wave = ensureSiriWaveInstance(layout);
+    if (!wave) {
+      return false;
+    }
+
+    waveformShellElement.style.left = `${layout.left}px`;
+    waveformShellElement.style.top = `${layout.top}px`;
+    waveformShellElement.style.width = `${layout.width}px`;
+    waveformShellElement.style.height = `${layout.height}px`;
+    waveformShellElement.style.display = 'block';
+    waveformShellElement.style.pointerEvents = 'auto';
+    waveformShellElement.style.opacity = `${motion.opacity}`;
+    waveformShellElement.classList.add('visible');
+
+    if (typeof wave.setAmplitude === 'function') {
+      wave.setAmplitude(motion.amplitude);
+    }
+    if (typeof wave.setSpeed === 'function') {
+      wave.setSpeed(motion.speed);
+    }
+    if (typeof wave.start === 'function') {
+      wave.start();
+    }
+    return true;
+  }
+
   function ensureWaveformPresenter() {
     if (waveformPresenter) {
       return waveformPresenter;
@@ -600,6 +711,12 @@
   }
 
   function renderWaveformSnapshot(snapshot) {
+    if (renderSiriWaveSnapshot(snapshot)) {
+      if (waveformLayer) {
+        waveformLayer.visible = false;
+      }
+      return;
+    }
     const layer = ensureWaveformLayer();
     if (!layer) {
       return;

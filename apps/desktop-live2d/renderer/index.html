@@ -362,6 +362,34 @@
         z-index: 24;
       }
 
+      #waveform-shell {
+        position: fixed;
+        left: 0;
+        top: 0;
+        display: none;
+        pointer-events: none;
+        -webkit-app-region: no-drag;
+        z-index: 12;
+        opacity: 0;
+        transition: opacity 140ms ease;
+      }
+
+      #waveform-shell.visible {
+        display: block;
+        pointer-events: auto;
+        opacity: 1;
+      }
+
+      #waveform-siri {
+        width: 100%;
+        height: 100%;
+      }
+
+      #waveform-siri canvas {
+        width: 100%;
+        height: 100%;
+      }
+
       #bubble {
         opacity: 0;
         transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -658,6 +686,9 @@
         <button id="chat-send" type="button">Send</button>
       </div>
     </div>
+    <div id="waveform-shell">
+      <div id="waveform-siri"></div>
+    </div>
     <div id="bubble-layer">
       <div id="bubble"></div>
     </div>
@@ -665,6 +696,7 @@
     <script src="../../../node_modules/pixi.js/dist/browser/pixi.min.js"></script>
     <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
     <script src="../../../node_modules/pixi-live2d-display/dist/cubism4.min.js"></script>
+    <script src="../../../node_modules/siriwave/dist/siriwave.umd.min.js"></script>
     <script src="../shared/defaultUiConfig.js"></script>
     <script src="./layout.js"></script>
     <script src="./interaction.js"></script>
@@ -678,6 +710,7 @@
     <script src="./lipsyncMouthTransition.js"></script>
     <script src="./audioFrameBus.js"></script>
     <script src="./waveformPresenter.js"></script>
+    <script src="./siriWaveBridge.js"></script>
     <script src="./musicPlayer.js"></script>
     <script src="./realtimeVoicePlayer.js"></script>
     <script src="./bootstrap.js"></script>
