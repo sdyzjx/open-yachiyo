@@ -132,10 +132,10 @@ test('default config remains usable for live2d mode', () => {
   assert.equal(snapshot.mode, DEFAULT_CONFIG.mode);
   assert.equal(snapshot.waveformVisible, false);
   assert.equal(snapshot.modelVisible, true);
-  assert.equal(DEFAULT_CONFIG.colors.speech, 0x92e9ff);
+  assert.equal(DEFAULT_CONFIG.colors.speech, 0x9fe7ff);
   assert.equal(DEFAULT_CONFIG.colors.music, 0xf4fbff);
-  assert.equal(DEFAULT_CONFIG.colors.accent, 0xfbfeff);
-  assert.equal(DEFAULT_CONFIG.colors.shadow, 0x232c34);
+  assert.equal(DEFAULT_CONFIG.colors.accent, 0xffffff);
+  assert.equal(DEFAULT_CONFIG.colors.shadow, 0x27313b);
 });
 
 test('expression name deforms waveform geometry beyond generic action scaling', () => {

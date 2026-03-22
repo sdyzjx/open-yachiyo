@@ -14,13 +14,13 @@
       supportLine: true
     }),
     Object.freeze({
-      color: '146, 233, 255'
+      color: '160, 231, 255'
     }),
     Object.freeze({
       color: '244, 251, 255'
     }),
     Object.freeze({
-      color: '56, 67, 79'
+      color: '66, 78, 92'
     })
   ]);
 

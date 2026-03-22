@@ -22,31 +22,31 @@
       scaleRelease: 0.1
     }),
     waveform: Object.freeze({
-      sampleCount: 60,
+      sampleCount: 72,
       centerYRatio: 0.54,
       widthRatio: 0.68,
       heightRatio: 0.11,
       minHalfHeight: 8,
       maxHalfHeightRatio: 0.18,
-      pointEdgeCurve: 3.4,
+      pointEdgeCurve: 2.42,
       centerCurve: 1,
-      backgroundAlpha: 0.015,
-      fillAlpha: 0.015,
-      strokeAlpha: 1,
-      glowAlpha: 0.045
+      backgroundAlpha: 0.04,
+      fillAlpha: 0.08,
+      strokeAlpha: 0.9,
+      glowAlpha: 0.16
     }),
     hybrid: Object.freeze({
       modelAlpha: 0.28,
       waveformAlpha: 1
     }),
     colors: Object.freeze({
-      speech: 0x92e9ff,
+      speech: 0x9fe7ff,
       music: 0xf4fbff,
-      breath: 0xd0d9e2,
-      accent: 0xfbfeff,
-      shadow: 0x232c34,
-      fill: 0x0d1117,
-      glow: 0xc7f2ff
+      breath: 0xc7d4e3,
+      accent: 0xffffff,
+      shadow: 0x27313b,
+      fill: 0x11161e,
+      glow: 0xd9f5ff
     })
   });
 
@@ -104,11 +104,6 @@
 
   function clamp01(value) {
     return clamp(toFiniteNumber(value, 0), 0, 1);
-  }
-
-  function quantizeValue(value, step) {
-    const safeStep = Math.max(1, toFiniteNumber(step, 1));
-    return Math.round(toFiniteNumber(value, 0) / safeStep) * safeStep;
   }
 
   function normalizePhase(value) {
@@ -372,17 +367,12 @@
         ? 1.04
         : 0.84;
     const expression = expressionProfile || resolveExpressionWaveProfile(null);
-    const xQuantum = Math.max(6, Math.round(width / Math.max(10, pointCount * 0.68)));
-    const yQuantum = Math.max(4, Math.round(height * 0.055));
 
     for (let index = 0; index < pointCount; index += 1) {
       const t = pointCount === 1 ? 0 : index / (pointCount - 1);
       const edgeCurve = Math.pow(Math.sin(Math.PI * t), waveformConfig.pointEdgeCurve);
       const smileCurve = Math.sin(Math.PI * t);
-      const band = quantizeValue(
-        clamp01((bandCurve[index] || 0) + expression.bandBias * expression.weight * smileCurve),
-        0.11
-      );
+      const band = clamp01((bandCurve[index] || 0) + expression.bandBias * expression.weight * smileCurve);
       const wobble = sourceKind === 'breath'
         ? 0
         : Math.sin(breathPhase + t * TAU * 1.08) * (0.003 + energy * 0.008);
@@ -395,21 +385,20 @@
         * sourceShape
         * expressionHeightBoost
         * expressionPinch;
-      const x = quantizeValue(Math.round(t * width), xQuantum);
+      const x = Math.round(t * width);
       const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.008;
       const expressionLift = expression.centerArch * expression.weight * Math.pow(smileCurve, 1.08) * height;
       const expressionSkew = expression.asymmetry * expression.weight * Math.sin((t - 0.5) * TAU * 2) * height;
-      const yCenter = quantizeValue(centerY
+      const yCenter = centerY
         + centerLift(sourceKind, energy, form, band, t, height)
         + sourceLift
         + actionLift
         + centerOffset
         + expressionLift
         + expressionSkew
-        + wobble * height, yQuantum);
-      const snappedHalfHeight = quantizeValue(halfHeight, yQuantum);
-      const topY = Math.round(yCenter - snappedHalfHeight);
-      const bottomY = Math.round(yCenter + snappedHalfHeight);
+        + wobble * height;
+      const topY = Math.round(yCenter - halfHeight);
+      const bottomY = Math.round(yCenter + halfHeight);
       topPoints.push({ x, y: topY });
       bottomPoints.push({ x, y: bottomY });
       centerLine.push({ x, y: Math.round(yCenter) });

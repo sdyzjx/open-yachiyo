@@ -244,81 +244,80 @@
     eyeSmileR: 0,
     cheek: 0
   });
-  const USE_SIRIWAVE_RENDERER = false;
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
-      color: 0x232c34,
-      glow: 0x2d3741,
+      color: 0x27313b,
+      glow: 0x394550,
       amplitude: 0.72,
       speed: 0.72,
-      frequency: 1.34,
-      width: 0.96,
+      frequency: 1.12,
+      width: 1.2,
       phaseOffset: 0.42,
-      lineWidth: 2.2,
-      glowWidth: 8,
-      strokeAlpha: 0.24,
-      glowAlpha: 0.018,
-      fillAlpha: 0.11,
+      lineWidth: 3.1,
+      glowWidth: 20,
+      strokeAlpha: 0.2,
+      glowAlpha: 0.06,
+      fillAlpha: 0.02,
       verticalBias: 0.8
     }),
     Object.freeze({
-      color: 0x92e9ff,
-      glow: 0xcdf4ff,
+      color: 0x9fe7ff,
+      glow: 0xdaf5ff,
       amplitude: 1,
       speed: 1,
-      frequency: 1.7,
-      width: 0.74,
+      frequency: 1.34,
+      width: 0.94,
       phaseOffset: 0,
-      lineWidth: 1.8,
-      glowWidth: 9,
-      strokeAlpha: 0.86,
-      glowAlpha: 0.028,
-      fillAlpha: 0.16,
+      lineWidth: 2.8,
+      glowWidth: 24,
+      strokeAlpha: 0.9,
+      glowAlpha: 0.18,
+      fillAlpha: 0.03,
       verticalBias: 0
     }),
     Object.freeze({
-      color: 0xf7fdff,
+      color: 0xf4fbff,
       glow: 0xffffff,
       amplitude: 0.76,
       speed: 0.82,
-      frequency: 1.42,
-      width: 0.82,
+      frequency: 1.08,
+      width: 1.06,
       phaseOffset: 1.4,
-      lineWidth: 1.5,
-      glowWidth: 7,
-      strokeAlpha: 0.72,
-      glowAlpha: 0.018,
-      fillAlpha: 0.095,
+      lineWidth: 2.1,
+      glowWidth: 18,
+      strokeAlpha: 0.7,
+      glowAlpha: 0.14,
+      fillAlpha: 0.02,
       verticalBias: -1.4
     }),
     Object.freeze({
-      color: 0xd2dce6,
-      glow: 0xe8eef5,
+      color: 0xc7d4e3,
+      glow: 0xe7eef5,
       amplitude: 0.82,
       speed: 1.14,
-      frequency: 1.88,
-      width: 0.72,
+      frequency: 1.52,
+      width: 0.92,
       phaseOffset: 2.25,
-      lineWidth: 1.6,
-      glowWidth: 7,
-      strokeAlpha: 0.66,
-      glowAlpha: 0.02,
-      fillAlpha: 0.08,
+      lineWidth: 2.2,
+      glowWidth: 18,
+      strokeAlpha: 0.74,
+      glowAlpha: 0.16,
+      fillAlpha: 0.025,
       verticalBias: 1.6
     }),
     Object.freeze({
-      color: 0x4b5a69,
-      glow: 0x6d7b89,
+      color: 0x51606f,
+      glow: 0x7a8794,
       amplitude: 0.54,
       speed: 0.66,
-      frequency: 1.46,
-      width: 0.86,
+      frequency: 1.18,
+      width: 1.14,
       phaseOffset: 3.28,
-      lineWidth: 1.2,
-      glowWidth: 5,
-      strokeAlpha: 0.34,
-      glowAlpha: 0.012,
-      fillAlpha: 0.055,
+      lineWidth: 1.6,
+      glowWidth: 14,
+      strokeAlpha: 0.5,
+      glowAlpha: 0.1,
+      fillAlpha: 0.015,
       verticalBias: 0.7
     })
   ]);
@@ -398,7 +397,7 @@
     if (topPoints.length === 0 || bottomPoints.length === 0) {
       return;
     }
-    drawPolyline(graphics, topPoints);
+    drawSmoothPolyline(graphics, topPoints);
     for (let index = bottomPoints.length - 1; index >= 0; index -= 1) {
       const point = bottomPoints[index];
       graphics.lineTo(point.x, point.y);
@@ -421,8 +420,6 @@
     const levels = Array.isArray(bandLevels) ? bandLevels : [];
     const linePoints = [];
     let peakOffset = 0;
-    const xQuantum = Math.max(6, Math.round((points[points.length - 1]?.x || 0) / Math.max(8, points.length * 0.55)));
-    const yQuantum = 4;
     for (let index = 0; index < points.length; index += 1) {
       const point = points[index];
       const t = points.length === 1 ? 0 : index / (points.length - 1);
@@ -437,91 +434,16 @@
         + Math.cos(x * ((curve?.frequency || 1) * 0.65) - phase * (curve?.speed || 1) * 0.22 + (curve?.phaseOffset || 0) * 0.8) * 0.15
       );
       const amplitude = (8 + energy * 34) * (curve?.amplitude || 1) * bandEnergy * attenuation;
-      const offset = Math.round((harmonics * amplitude + (curve?.verticalBias || 0)) / yQuantum) * yQuantum;
+      const offset = harmonics * amplitude + (curve?.verticalBias || 0);
       peakOffset = Math.max(peakOffset, Math.abs(offset));
       linePoints.push({
-        x: Math.round(point.x / xQuantum) * xQuantum,
-        y: Math.round((point.y + offset) / yQuantum) * yQuantum
+        x: point.x,
+        y: point.y + offset
       });
     }
     return {
       linePoints,
       peakOffset
-    };
-  }
-
-  function buildAngularWaveformEnvelope({ centerLine, topPoints, bottomPoints, bandLevels, energy, phase = 0, curve } = {}) {
-    const centers = Array.isArray(centerLine) ? centerLine : [];
-    const tops = Array.isArray(topPoints) ? topPoints : [];
-    const bottoms = Array.isArray(bottomPoints) ? bottomPoints : [];
-    if (centers.length === 0 || tops.length === 0 || bottoms.length === 0) {
-      return {
-        topPoints: [],
-        bottomPoints: [],
-        ridgePoints: []
-      };
-    }
-    const levels = Array.isArray(bandLevels) ? bandLevels : [];
-    const envelopeTop = [];
-    const envelopeBottom = [];
-    const ridgePoints = [];
-    const spanWidth = Math.max(1, (centers[centers.length - 1]?.x || 0) - (centers[0]?.x || 0));
-    const xQuantum = Math.max(6, Math.round(spanWidth / Math.max(10, centers.length * 0.62)));
-    const yQuantum = 4;
-
-    for (let index = 0; index < centers.length; index += 1) {
-      const center = centers[index];
-      const topBase = tops[index] || center;
-      const bottomBase = bottoms[index] || center;
-      const t = centers.length === 1 ? 0 : index / (centers.length - 1);
-      const band = clamp(Number(levels[index]) || 0, 0, 1);
-      const edgeEnvelope = Math.pow(Math.sin(Math.PI * t), 0.84);
-      const baseHalfHeight = Math.max(2, Math.abs((bottomBase.y - topBase.y) * 0.5));
-      const harmonic = Math.sin(
-        (t * 2 - 1) * Math.PI * (curve?.frequency || 1)
-        - phase * (curve?.speed || 1) * 1.55
-        + (curve?.phaseOffset || 0)
-      );
-      const harmonicAccent = Math.sin(
-        (t * 2 - 1) * Math.PI * ((curve?.frequency || 1) * 0.6)
-        + phase * (curve?.speed || 1) * 0.45
-        + (curve?.phaseOffset || 0) * 0.8
-      );
-      const ridge = Math.sign(harmonic || 1) * Math.pow(Math.abs(harmonic), 0.72);
-      const angularBias = index % 2 === 0
-        ? 1 + edgeEnvelope * 0.34
-        : 1 - edgeEnvelope * 0.22;
-      const bandLift = 0.68 + band * 0.56 + energy * 0.24;
-      const halfHeight = Math.max(
-        yQuantum,
-        Math.round(
-          baseHalfHeight
-          * (curve?.amplitude || 1)
-          * (curve?.width || 1)
-          * bandLift
-          * angularBias
-        / yQuantum
-        ) * yQuantum
-      );
-      const xShift = Math.round(((ridge * 10 + harmonicAccent * 4) * (curve?.width || 1)) / xQuantum) * xQuantum;
-      const yShift = Math.round((((curve?.verticalBias || 0) + ridge * 3.2 + harmonicAccent * 1.8)) / yQuantum) * yQuantum;
-      const ridgeX = Math.round((center.x + xShift) / xQuantum) * xQuantum;
-      const ridgeY = Math.round((center.y + yShift) / yQuantum) * yQuantum;
-      ridgePoints.push({ x: ridgeX, y: ridgeY });
-      envelopeTop.push({
-        x: ridgeX,
-        y: ridgeY - halfHeight
-      });
-      envelopeBottom.push({
-        x: ridgeX,
-        y: ridgeY + halfHeight
-      });
-    }
-
-    return {
-      topPoints: envelopeTop,
-      bottomPoints: envelopeBottom,
-      ridgePoints
     };
   }
 
@@ -701,7 +623,7 @@
         height,
         autostart: true,
         lerpSpeed: 0.08,
-        pixelDepth: 0.38,
+        pixelDepth: 0.22,
         globalCompositeOperation: 'lighter',
         curveDefinition: helper.DEFAULT_CURVE_DEFINITION,
         ranges: helper.DEFAULT_RANGES,
@@ -920,19 +842,11 @@
   }
 
   function renderWaveformSnapshot(snapshot) {
-    if (USE_SIRIWAVE_RENDERER && renderSiriWaveSnapshot(snapshot)) {
+    if (renderSiriWaveSnapshot(snapshot)) {
       if (waveformLayer) {
         waveformLayer.visible = false;
       }
       return;
-    }
-    if (waveformShellElement) {
-      waveformShellElement.classList.remove('visible');
-      waveformShellElement.style.display = 'none';
-      waveformShellElement.style.pointerEvents = 'none';
-    }
-    if (typeof siriWaveInstance?.stop === 'function') {
-      siriWaveInstance.stop();
     }
     const layer = ensureWaveformLayer();
     if (!layer) {
@@ -973,66 +887,63 @@
     const energy = clamp(Number(snapshot.energy) || 0, 0, 1);
     const waveformAlpha = clamp(Number(snapshot.waveformAlpha) || 0, 0, 1);
     const centerLine = Array.isArray(geometry.centerLine) ? geometry.centerLine : [];
-    const topPoints = Array.isArray(geometry.topPoints) ? geometry.topPoints : [];
-    const bottomPoints = Array.isArray(geometry.bottomPoints) ? geometry.bottomPoints : [];
     const bandLevels = Array.isArray(geometry.bandLevels) ? geometry.bandLevels : [];
     const phase = snapshot.sourceKind === 'breath'
       ? 0
       : Number(snapshot.breathPhase) || 0;
-    const curveEnvelopes = SIRIWAVE_CURVE_DEFINITIONS.map((curve) => ({
+    const curveLines = SIRIWAVE_CURVE_DEFINITIONS.map((curve) => ({
       curve,
-      envelope: buildAngularWaveformEnvelope({
+      line: buildSiriWaveLine({
         centerLine,
-        topPoints,
-        bottomPoints,
         bandLevels,
         energy,
         phase,
         curve
       })
     }));
-    const primaryEnvelope = curveEnvelopes[1]?.envelope || curveEnvelopes[0]?.envelope || {
-      topPoints: [],
-      bottomPoints: [],
-      ridgePoints: []
+    const primaryLine = curveLines[0]?.line || {
+      linePoints: [],
+      peakOffset: 0
     };
 
     waveformHitGraphic.beginFill(0xffffff, 0.001);
-    waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.18), width, Math.max(28, Math.round(height * 0.64)), Math.round(height * 0.24));
+    waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.22), width, Math.max(24, Math.round(height * 0.56)), Math.round(height * 0.3));
     waveformHitGraphic.endFill();
-    waveformBackdropGraphic.beginFill(shadow, (0.18 + energy * 0.05) * waveformAlpha);
-    drawWaveformEnvelope(waveformBackdropGraphic, primaryEnvelope);
-    waveformBackdropGraphic.endFill();
-    waveformBackdropGraphic.lineStyle(1.2 + energy * 0.22, 0x52606f, (0.22 + energy * 0.04) * waveformAlpha, 0.5);
-    drawWaveformEnvelope(waveformBackdropGraphic, primaryEnvelope);
+    waveformBackdropGraphic.lineStyle(11 + energy * 5, shadow, (0.12 + energy * 0.04) * waveformAlpha, 0.5);
+    drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
+    waveformBackdropGraphic.lineStyle(7 + energy * 4, 0xd8d7ff, (0.05 + energy * 0.05) * waveformAlpha, 0.5);
+    drawPolyline(waveformBackdropGraphic, centerLine);
+    waveformBackdropGraphic.lineStyle(3 + energy * 2, accent, (0.08 + energy * 0.04) * waveformAlpha, 0.5);
+    drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
 
-    for (const { curve, envelope } of curveEnvelopes) {
+    for (const { curve, line } of curveLines) {
       waveformGlowGraphic.lineStyle(
-        curve.glowWidth + energy * 4,
+        curve.glowWidth + energy * 12,
         curve.glow,
-        (curve.glowAlpha + energy * 0.018) * waveformAlpha,
+        (curve.glowAlpha + energy * 0.08) * waveformAlpha,
         0.5
       );
-      drawWaveformEnvelope(waveformGlowGraphic, envelope);
+      drawPolyline(waveformGlowGraphic, line.linePoints);
 
-      waveformFillGraphic.beginFill(
-        curve.color,
-        (curve.fillAlpha + energy * 0.024) * waveformAlpha
+      waveformFillGraphic.lineStyle(
+        Math.max(1.2, curve.lineWidth * 1.6 + energy * 0.4),
+        curve.glow,
+        (curve.fillAlpha + energy * 0.03) * waveformAlpha,
+        0.5
       );
-      drawWaveformEnvelope(waveformFillGraphic, envelope);
-      waveformFillGraphic.endFill();
+      drawPolyline(waveformFillGraphic, line.linePoints);
 
       waveformStrokeGraphic.lineStyle(
-        curve.lineWidth + energy * 0.16,
+        curve.lineWidth + energy * 0.6,
         curve.color,
-        (curve.strokeAlpha + energy * 0.04) * waveformAlpha,
+        (curve.strokeAlpha + energy * 0.06) * waveformAlpha,
         0.5
       );
-      drawWaveformEnvelope(waveformStrokeGraphic, envelope);
+      drawPolyline(waveformStrokeGraphic, line.linePoints);
     }
 
-    waveformCenterGraphic.lineStyle(1, accent, (0.12 + energy * 0.05) * waveformAlpha, 0.5);
-    drawPolyline(waveformCenterGraphic, primaryEnvelope.ridgePoints);
+    waveformCenterGraphic.lineStyle(1.1, primary, (0.12 + energy * 0.05) * waveformAlpha, 0.5);
+    drawPolyline(waveformCenterGraphic, centerLine);
 
     layer.visible = true;
     layer.alpha = waveformAlpha;
