@@ -79,6 +79,23 @@
       curve.sin = function angularSin(x, phase) {
         return triangleWave(x - phase);
       };
+      curve.yRelativePos = function angularYRelativePos(i) {
+        let peak = 0;
+        const count = Math.max(1, toFiniteNumber(this.noOfCurves, 0));
+        for (let ci = 0; ci < count; ci += 1) {
+          const t = count === 1 ? 0 : 4 * (-1 + (ci / (count - 1)) * 2);
+          const offset = toFiniteNumber(this.offsets?.[ci], 0);
+          const width = Math.max(0.001, toFiniteNumber(this.widths?.[ci], 1));
+          const amplitude = Math.max(0, toFiniteNumber(this.amplitudes?.[ci], 0));
+          const verse = toFiniteNumber(this.verses?.[ci], 1);
+          const phase = toFiniteNumber(this.phases?.[ci], 0);
+          const x = i * (1 / width) - (t + offset);
+          const carrier = Math.pow(Math.abs(triangleWave(verse * x - phase)), 1.65);
+          const contribution = amplitude * carrier * this.globalAttFn(x);
+          peak = Math.max(peak, contribution);
+        }
+        return peak;
+      };
       changed = true;
     }
     return changed;
