@@ -3015,6 +3015,17 @@ async function startDesktopSuite({
             logger
           });
         } else if (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.')) {
+          const voicePathMode = String(config.uiConfig?.voice?.path || 'electron_native').trim().toLowerCase();
+          if (eventName === 'voice.playback.electron' && voicePathMode === 'electron_native') {
+            emitDesktopDebug(
+              'chain.electron.voice.legacy_event_ignored',
+              'electron main ignored legacy voice.playback.electron while electron_native path is active',
+              {
+                event_name: eventName
+              }
+            );
+            return;
+          }
           activeBridge?.invoke({
             method: 'server_event_forward',
             params: {

@@ -4837,7 +4837,12 @@
         if (name === 'voice.playback.electron') {
           const audioUrl = normalizeLegacyVoiceAudioUrl(data?.audio_ref || data?.audioRef || '');
           if (!audioUrl) {
-            throw createRpcError(-32602, 'voice.playback.electron requires audio_ref');
+            console.warn('[Renderer] Ignored legacy voice.playback.electron without audio_ref', data);
+            emitRendererDebug('voice_legacy.ignored_missing_audio_ref', {
+              has_audio_ref: false
+            });
+            result = { ok: true, ignored: true, reason: 'missing_audio_ref', name };
+            return result;
           }
           void playVoiceFromRemote({
             requestId: `legacy-${Date.now()}`,
