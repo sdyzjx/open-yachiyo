@@ -106,6 +106,11 @@
     return clamp(toFiniteNumber(value, 0), 0, 1);
   }
 
+  function quantizeValue(value, step) {
+    const safeStep = Math.max(1, toFiniteNumber(step, 1));
+    return Math.round(toFiniteNumber(value, 0) / safeStep) * safeStep;
+  }
+
   function normalizePhase(value) {
     const safeValue = toFiniteNumber(value, 0);
     const wrapped = safeValue % TAU;
@@ -367,12 +372,17 @@
         ? 1.04
         : 0.84;
     const expression = expressionProfile || resolveExpressionWaveProfile(null);
+    const xQuantum = Math.max(6, Math.round(width / Math.max(10, pointCount * 0.68)));
+    const yQuantum = Math.max(4, Math.round(height * 0.055));
 
     for (let index = 0; index < pointCount; index += 1) {
       const t = pointCount === 1 ? 0 : index / (pointCount - 1);
       const edgeCurve = Math.pow(Math.sin(Math.PI * t), waveformConfig.pointEdgeCurve);
       const smileCurve = Math.sin(Math.PI * t);
-      const band = clamp01((bandCurve[index] || 0) + expression.bandBias * expression.weight * smileCurve);
+      const band = quantizeValue(
+        clamp01((bandCurve[index] || 0) + expression.bandBias * expression.weight * smileCurve),
+        0.11
+      );
       const wobble = sourceKind === 'breath'
         ? 0
         : Math.sin(breathPhase + t * TAU * 1.08) * (0.003 + energy * 0.008);
@@ -385,20 +395,21 @@
         * sourceShape
         * expressionHeightBoost
         * expressionPinch;
-      const x = Math.round(t * width);
+      const x = quantizeValue(Math.round(t * width), xQuantum);
       const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.008;
       const expressionLift = expression.centerArch * expression.weight * Math.pow(smileCurve, 1.08) * height;
       const expressionSkew = expression.asymmetry * expression.weight * Math.sin((t - 0.5) * TAU * 2) * height;
-      const yCenter = centerY
+      const yCenter = quantizeValue(centerY
         + centerLift(sourceKind, energy, form, band, t, height)
         + sourceLift
         + actionLift
         + centerOffset
         + expressionLift
         + expressionSkew
-        + wobble * height;
-      const topY = Math.round(yCenter - halfHeight);
-      const bottomY = Math.round(yCenter + halfHeight);
+        + wobble * height, yQuantum);
+      const snappedHalfHeight = quantizeValue(halfHeight, yQuantum);
+      const topY = Math.round(yCenter - snappedHalfHeight);
+      const bottomY = Math.round(yCenter + snappedHalfHeight);
       topPoints.push({ x, y: topY });
       bottomPoints.push({ x, y: bottomY });
       centerLine.push({ x, y: Math.round(yCenter) });

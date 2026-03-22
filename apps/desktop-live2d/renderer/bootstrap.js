@@ -420,6 +420,8 @@
     const levels = Array.isArray(bandLevels) ? bandLevels : [];
     const linePoints = [];
     let peakOffset = 0;
+    const xQuantum = Math.max(6, Math.round((points[points.length - 1]?.x || 0) / Math.max(8, points.length * 0.55)));
+    const yQuantum = 4;
     for (let index = 0; index < points.length; index += 1) {
       const point = points[index];
       const t = points.length === 1 ? 0 : index / (points.length - 1);
@@ -434,11 +436,11 @@
         + Math.cos(x * ((curve?.frequency || 1) * 0.65) - phase * (curve?.speed || 1) * 0.22 + (curve?.phaseOffset || 0) * 0.8) * 0.15
       );
       const amplitude = (8 + energy * 34) * (curve?.amplitude || 1) * bandEnergy * attenuation;
-      const offset = harmonics * amplitude + (curve?.verticalBias || 0);
+      const offset = Math.round((harmonics * amplitude + (curve?.verticalBias || 0)) / yQuantum) * yQuantum;
       peakOffset = Math.max(peakOffset, Math.abs(offset));
       linePoints.push({
-        x: point.x,
-        y: point.y + offset
+        x: Math.round(point.x / xQuantum) * xQuantum,
+        y: Math.round((point.y + offset) / yQuantum) * yQuantum
       });
     }
     return {
