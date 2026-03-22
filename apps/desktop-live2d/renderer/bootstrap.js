@@ -246,78 +246,78 @@
   });
   const SIRIWAVE_CURVE_DEFINITIONS = Object.freeze([
     Object.freeze({
-      color: 0x27313b,
-      glow: 0x394550,
+      color: 0x232c34,
+      glow: 0x2d3741,
       amplitude: 0.72,
       speed: 0.72,
-      frequency: 1.12,
-      width: 1.2,
+      frequency: 1.34,
+      width: 0.96,
       phaseOffset: 0.42,
-      lineWidth: 3.1,
-      glowWidth: 20,
-      strokeAlpha: 0.2,
-      glowAlpha: 0.06,
-      fillAlpha: 0.02,
+      lineWidth: 2.2,
+      glowWidth: 8,
+      strokeAlpha: 0.28,
+      glowAlpha: 0.018,
+      fillAlpha: 0.004,
       verticalBias: 0.8
     }),
     Object.freeze({
-      color: 0x9fe7ff,
-      glow: 0xdaf5ff,
+      color: 0x92e9ff,
+      glow: 0xcdf4ff,
       amplitude: 1,
       speed: 1,
-      frequency: 1.34,
-      width: 0.94,
+      frequency: 1.7,
+      width: 0.74,
       phaseOffset: 0,
-      lineWidth: 2.8,
-      glowWidth: 24,
-      strokeAlpha: 0.9,
-      glowAlpha: 0.18,
-      fillAlpha: 0.03,
+      lineWidth: 1.8,
+      glowWidth: 9,
+      strokeAlpha: 1,
+      glowAlpha: 0.03,
+      fillAlpha: 0.005,
       verticalBias: 0
     }),
     Object.freeze({
-      color: 0xf4fbff,
+      color: 0xf7fdff,
       glow: 0xffffff,
       amplitude: 0.76,
       speed: 0.82,
-      frequency: 1.08,
-      width: 1.06,
+      frequency: 1.42,
+      width: 0.82,
       phaseOffset: 1.4,
-      lineWidth: 2.1,
-      glowWidth: 18,
-      strokeAlpha: 0.7,
-      glowAlpha: 0.14,
-      fillAlpha: 0.02,
+      lineWidth: 1.5,
+      glowWidth: 7,
+      strokeAlpha: 0.78,
+      glowAlpha: 0.022,
+      fillAlpha: 0.004,
       verticalBias: -1.4
     }),
     Object.freeze({
-      color: 0xc7d4e3,
-      glow: 0xe7eef5,
+      color: 0xd2dce6,
+      glow: 0xe8eef5,
       amplitude: 0.82,
       speed: 1.14,
-      frequency: 1.52,
-      width: 0.92,
+      frequency: 1.88,
+      width: 0.72,
       phaseOffset: 2.25,
-      lineWidth: 2.2,
-      glowWidth: 18,
-      strokeAlpha: 0.74,
-      glowAlpha: 0.16,
-      fillAlpha: 0.025,
+      lineWidth: 1.6,
+      glowWidth: 7,
+      strokeAlpha: 0.82,
+      glowAlpha: 0.024,
+      fillAlpha: 0.004,
       verticalBias: 1.6
     }),
     Object.freeze({
-      color: 0x51606f,
-      glow: 0x7a8794,
+      color: 0x4b5a69,
+      glow: 0x6d7b89,
       amplitude: 0.54,
       speed: 0.66,
-      frequency: 1.18,
-      width: 1.14,
+      frequency: 1.46,
+      width: 0.86,
       phaseOffset: 3.28,
-      lineWidth: 1.6,
-      glowWidth: 14,
-      strokeAlpha: 0.5,
-      glowAlpha: 0.1,
-      fillAlpha: 0.015,
+      lineWidth: 1.2,
+      glowWidth: 5,
+      strokeAlpha: 0.46,
+      glowAlpha: 0.015,
+      fillAlpha: 0.003,
       verticalBias: 0.7
     })
   ]);
@@ -623,7 +623,7 @@
         height,
         autostart: true,
         lerpSpeed: 0.08,
-        pixelDepth: 0.22,
+        pixelDepth: 0.38,
         globalCompositeOperation: 'lighter',
         curveDefinition: helper.DEFAULT_CURVE_DEFINITION,
         ranges: helper.DEFAULT_RANGES,
@@ -909,40 +909,40 @@
     waveformHitGraphic.beginFill(0xffffff, 0.001);
     waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.22), width, Math.max(24, Math.round(height * 0.56)), Math.round(height * 0.3));
     waveformHitGraphic.endFill();
-    waveformBackdropGraphic.lineStyle(11 + energy * 5, shadow, (0.12 + energy * 0.04) * waveformAlpha, 0.5);
+    waveformBackdropGraphic.lineStyle(8 + energy * 3, shadow, (0.16 + energy * 0.03) * waveformAlpha, 0.5);
     drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
-    waveformBackdropGraphic.lineStyle(7 + energy * 4, 0xd8d7ff, (0.05 + energy * 0.05) * waveformAlpha, 0.5);
+    waveformBackdropGraphic.lineStyle(2 + energy * 1.2, 0x9aa7b7, (0.06 + energy * 0.03) * waveformAlpha, 0.5);
     drawPolyline(waveformBackdropGraphic, centerLine);
-    waveformBackdropGraphic.lineStyle(3 + energy * 2, accent, (0.08 + energy * 0.04) * waveformAlpha, 0.5);
+    waveformBackdropGraphic.lineStyle(1.4 + energy * 0.9, accent, (0.18 + energy * 0.04) * waveformAlpha, 0.5);
     drawPolyline(waveformBackdropGraphic, primaryLine.linePoints);
 
     for (const { curve, line } of curveLines) {
       waveformGlowGraphic.lineStyle(
-        curve.glowWidth + energy * 12,
+        curve.glowWidth + energy * 5,
         curve.glow,
-        (curve.glowAlpha + energy * 0.08) * waveformAlpha,
+        (curve.glowAlpha + energy * 0.02) * waveformAlpha,
         0.5
       );
       drawPolyline(waveformGlowGraphic, line.linePoints);
 
       waveformFillGraphic.lineStyle(
-        Math.max(1.2, curve.lineWidth * 1.6 + energy * 0.4),
+        Math.max(0.8, curve.lineWidth * 1.05 + energy * 0.12),
         curve.glow,
-        (curve.fillAlpha + energy * 0.03) * waveformAlpha,
+        (curve.fillAlpha + energy * 0.006) * waveformAlpha,
         0.5
       );
       drawPolyline(waveformFillGraphic, line.linePoints);
 
       waveformStrokeGraphic.lineStyle(
-        curve.lineWidth + energy * 0.6,
+        curve.lineWidth + energy * 0.18,
         curve.color,
-        (curve.strokeAlpha + energy * 0.06) * waveformAlpha,
+        (curve.strokeAlpha + energy * 0.02) * waveformAlpha,
         0.5
       );
       drawPolyline(waveformStrokeGraphic, line.linePoints);
     }
 
-    waveformCenterGraphic.lineStyle(1.1, primary, (0.12 + energy * 0.05) * waveformAlpha, 0.5);
+    waveformCenterGraphic.lineStyle(0.9, primary, (0.1 + energy * 0.03) * waveformAlpha, 0.5);
     drawPolyline(waveformCenterGraphic, centerLine);
 
     layer.visible = true;
