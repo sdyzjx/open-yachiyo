@@ -111,6 +111,57 @@ const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
     }
   },
   {
+    name: 'desktop_music_play',
+    method: 'desktop.music.play',
+    description: 'Play one music file from the workspace on the desktop music controller.',
+    input_schema: {
+      type: 'object',
+      required: ['path'],
+      properties: {
+        path: { type: 'string' },
+        volume: { type: 'number' },
+        loop: { type: 'boolean' },
+        trackLabel: { type: 'string' }
+      }
+    }
+  },
+  {
+    name: 'desktop_music_pause',
+    method: 'desktop.music.pause',
+    description: 'Pause the desktop music controller.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_resume',
+    method: 'desktop.music.resume',
+    description: 'Resume the desktop music controller.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_stop',
+    method: 'desktop.music.stop',
+    description: 'Stop the desktop music controller and clear its current track.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_state',
+    method: 'desktop.music.state.get',
+    description: 'Read the current state of the desktop music controller.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
     name: 'desktop_model_set_param',
     method: 'model.param.set',
     description: 'Set one Live2D parameter value.',
@@ -168,6 +219,57 @@ const DESKTOP_TOOL_DEFINITIONS = Object.freeze([
       properties: {
         name: { type: 'string' }
       }
+    }
+  },
+  {
+    name: 'desktop_music_play',
+    method: 'desktop.music.play',
+    description: 'Play one music track inside the current workspace.',
+    input_schema: {
+      type: 'object',
+      required: ['path'],
+      properties: {
+        path: { type: 'string' },
+        volume: { type: 'number' },
+        loop: { type: 'boolean' },
+        trackLabel: { type: 'string' }
+      }
+    }
+  },
+  {
+    name: 'desktop_music_pause',
+    method: 'desktop.music.pause',
+    description: 'Pause the current workspace music track.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_resume',
+    method: 'desktop.music.resume',
+    description: 'Resume the current workspace music track.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_stop',
+    method: 'desktop.music.stop',
+    description: 'Stop the current workspace music track.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'desktop_music_state',
+    method: 'desktop.music.state.get',
+    description: 'Inspect the current workspace music playback state.',
+    input_schema: {
+      type: 'object',
+      properties: {}
     }
   }
 ]);

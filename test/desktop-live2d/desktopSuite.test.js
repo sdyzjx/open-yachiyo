@@ -27,6 +27,7 @@ const {
   normalizeModelBoundsPayload,
   normalizeBubbleMetricsPayload,
   normalizeActionTelemetryPayload,
+  normalizeDesktopMusicRequest,
   createWindowDragListener,
   createWindowControlListener,
   createChatPanelVisibilityListener,
@@ -446,6 +447,31 @@ test('normalizeWindowInteractivityPayload validates boolean interactive payload'
   assert.deepEqual(normalizeWindowInteractivityPayload({ interactive: false }), { interactive: false });
   assert.equal(normalizeWindowInteractivityPayload({ interactive: 'true' }), null);
   assert.equal(normalizeWindowInteractivityPayload(null), null);
+});
+
+test('normalizeDesktopMusicRequest resolves workspace-relative paths and normalizes metadata', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-music-'));
+  const musicPath = path.join(tmpDir, 'music', 'demo.mp3');
+  fs.mkdirSync(path.dirname(musicPath), { recursive: true });
+  fs.writeFileSync(musicPath, 'stub-audio', 'utf8');
+
+  const normalized = normalizeDesktopMusicRequest({
+    path: 'music/demo.mp3',
+    volume: 0.45,
+    loop: true,
+    trackLabel: 'Demo Track'
+  }, tmpDir);
+
+  assert.equal(normalized.path, musicPath);
+  assert.equal(normalized.audioUrl.startsWith('file:'), true);
+  assert.equal(normalized.volume, 0.45);
+  assert.equal(normalized.loop, true);
+  assert.equal(normalized.trackLabel, 'Demo Track');
+
+  assert.throws(
+    () => normalizeDesktopMusicRequest({ path: '../escape.mp3' }, tmpDir),
+    (err) => err.code === -32006
+  );
 });
 
 test('normalizeModelBoundsPayload validates numeric bounds payload', () => {
@@ -1227,6 +1253,143 @@ test('handleDesktopRpcRequest maps tool.invoke to renderer method', async () => 
   assert.equal(calls[0].timeoutMs, 3456);
   assert.deepEqual(calls[0].params, { name: 'ParamAngleX', value: 3 });
   assert.equal(result.ok, true);
+});
+
+test('handleDesktopRpcRequest dispatches desktop music tools to controller', async () => {
+  const calls = [];
+  const musicController = {
+    async play(params) {
+      calls.push({ method: 'play', params });
+      return { status: 'playing', trackLabel: params.trackLabel };
+    },
+    async pause(params) {
+      calls.push({ method: 'pause', params });
+      return { status: 'paused' };
+    },
+    async resume(params) {
+      calls.push({ method: 'resume', params });
+      return { status: 'playing' };
+    },
+    async stop(params) {
+      calls.push({ method: 'stop', params });
+      return { status: 'stopped' };
+    },
+    async state(params) {
+      calls.push({ method: 'state', params });
+      return { status: 'playing', trackLabel: 'Demo Track' };
+    }
+  };
+
+  const playResult = await handleDesktopRpcRequest({
+    request: {
+      method: 'desktop.music.play',
+      params: {
+        path: '/tmp/music/demo.mp3',
+        volume: 0.5,
+        loop: false,
+        trackLabel: 'Demo Track'
+      }
+    },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const pauseResult = await handleDesktopRpcRequest({
+    request: { method: 'desktop.music.pause', params: {} },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const resumeResult = await handleDesktopRpcRequest({
+    request: { method: 'desktop.music.resume', params: {} },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const stopResult = await handleDesktopRpcRequest({
+    request: { method: 'desktop.music.stop', params: {} },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+  const stateResult = await handleDesktopRpcRequest({
+    request: { method: 'desktop.music.state.get', params: {} },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.deepEqual(calls.map((call) => call.method), ['play', 'pause', 'resume', 'stop', 'state']);
+  assert.deepEqual(calls[0].params, {
+    path: '/tmp/music/demo.mp3',
+    volume: 0.5,
+    loop: false,
+    trackLabel: 'Demo Track'
+  });
+  assert.deepEqual(playResult, { status: 'playing', trackLabel: 'Demo Track' });
+  assert.deepEqual(pauseResult, { status: 'paused' });
+  assert.deepEqual(resumeResult, { status: 'playing' });
+  assert.deepEqual(stopResult, { status: 'stopped' });
+  assert.deepEqual(stateResult, { status: 'playing', trackLabel: 'Demo Track' });
+});
+
+test('handleDesktopRpcRequest routes tool.invoke music tools through the controller', async () => {
+  const calls = [];
+  const musicController = {
+    async play(params) {
+      calls.push(params);
+      return { status: 'playing' };
+    }
+  };
+
+  const result = await handleDesktopRpcRequest({
+    request: {
+      method: 'tool.invoke',
+      params: {
+        name: 'desktop_music_play',
+        arguments: {
+          path: '/tmp/music/route.mp3',
+          trackLabel: 'Route Track'
+        }
+      }
+    },
+    musicController,
+    bridge: {
+      invoke: async () => {
+        throw new Error('renderer bridge should not be called');
+      }
+    },
+    rendererTimeoutMs: 3456
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
+    path: '/tmp/music/route.mp3',
+    trackLabel: 'Route Track'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.tool, 'desktop_music_play');
+  assert.deepEqual(result.result, { status: 'playing' });
 });
 
 test('handleDesktopRpcRequest resolves local desktop capture tool without touching renderer bridge', async () => {

@@ -4,6 +4,7 @@ const shellAdapters = require('./adapters/shell');
 const memoryAdapters = require('./adapters/memory');
 const voiceAdapters = require('./adapters/voice');
 const asrAdapters = require('./adapters/asr');
+const musicAdapters = require('./adapters/music');
 const live2dAdapters = require('./adapters/live2d');
 const desktopPerceptionAdapters = require('./adapters/desktopPerception');
 const desktopVisionAdapters = require('./adapters/desktopVision');
@@ -16,6 +17,7 @@ const ADAPTERS = {
   ...memoryAdapters,
   ...voiceAdapters,
   ...asrAdapters,
+  ...musicAdapters,
   ...live2dAdapters,
   ...desktopPerceptionAdapters,
   ...desktopVisionAdapters

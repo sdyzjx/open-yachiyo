@@ -91,6 +91,50 @@ const METHOD_SCHEMAS = Object.freeze({
     type: 'object',
     additionalProperties: false
   },
+  'presenter.mode.set': {
+    type: 'object',
+    required: ['mode'],
+    additionalProperties: false,
+    properties: {
+      mode: {
+        type: 'string',
+        enum: ['live2d', 'waveform', 'hybrid']
+      }
+    }
+  },
+  'presenter.state.get': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.music.play': {
+    type: 'object',
+    required: ['path'],
+    additionalProperties: false,
+    properties: {
+      path: { type: 'string', minLength: 1, maxLength: 1024 },
+      audio_url: { type: 'string', minLength: 1, maxLength: 2048 },
+      volume: { type: 'number', minimum: 0, maximum: 1 },
+      loop: { type: 'boolean' },
+      trackLabel: { type: 'string', minLength: 1, maxLength: 256 },
+      track_label: { type: 'string', minLength: 1, maxLength: 256 }
+    }
+  },
+  'desktop.music.pause': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.music.resume': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.music.stop': {
+    type: 'object',
+    additionalProperties: false
+  },
+  'desktop.music.state.get': {
+    type: 'object',
+    additionalProperties: false
+  },
   'desktop.perception.capabilities': {
     type: 'object',
     additionalProperties: false

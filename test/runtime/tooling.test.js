@@ -33,6 +33,11 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
+  assert.ok(cfg.tools.some((t) => t.name === 'workspace.music.play'));
+  assert.ok(cfg.tools.some((t) => t.name === 'workspace.music.pause'));
+  assert.ok(cfg.tools.some((t) => t.name === 'workspace.music.resume'));
+  assert.ok(cfg.tools.some((t) => t.name === 'workspace.music.stop'));
+  assert.ok(cfg.tools.some((t) => t.name === 'workspace.music.state'));
   assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.locate.')), false);
   assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.inspect.')), false);
 });
@@ -50,6 +55,8 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   const desktopCapture = tools.find((tool) => tool.name === 'desktop.capture.screen');
   const desktopWindowCapture = tools.find((tool) => tool.name === 'desktop.capture.window');
   const desktopCapabilities = tools.find((tool) => tool.name === 'desktop.perception.capabilities');
+  const workspaceMusicPlay = tools.find((tool) => tool.name === 'workspace.music.play');
+  const workspaceMusicState = tools.find((tool) => tool.name === 'workspace.music.state');
 
   assert.equal(getTime?.side_effect_level, 'none');
   assert.equal(Boolean(live2dGesture?.requires_lock), true);
@@ -60,6 +67,9 @@ test('ToolRegistry keeps scheduling metadata from config', () => {
   assert.equal(Boolean(desktopCapture?.requires_lock), true);
   assert.equal(desktopWindowCapture?.side_effect_level, 'read');
   assert.equal(desktopCapabilities?.side_effect_level, 'read');
+  assert.equal(workspaceMusicPlay?.side_effect_level, 'write');
+  assert.equal(Boolean(workspaceMusicPlay?.requires_lock), true);
+  assert.equal(workspaceMusicState?.side_effect_level, 'read');
   assert.equal(tools.some((tool) => tool.name.startsWith('desktop.locate.')), false);
   assert.equal(tools.some((tool) => tool.name.startsWith('desktop.inspect.')), false);
 });

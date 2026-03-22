@@ -14,6 +14,11 @@ policy:
     - voice.tts_aliyun_vc
     - voice.asr_aliyun
     - voice.stats
+    - workspace.music.play
+    - workspace.music.pause
+    - workspace.music.resume
+    - workspace.music.stop
+    - workspace.music.state
     - live2d.param.set
     - live2d.param.batch_set
     - live2d.motion.play
@@ -219,6 +224,65 @@ tools:
     type: local
     adapter: voice.stats
     description: Return in-memory voice pipeline metrics snapshot.
+    side_effect_level: read
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: workspace.music.play
+    type: local
+    adapter: music.play
+    description: Play one audio file that lives inside the current workspace.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties:
+        path: { type: string, minLength: 1, maxLength: 1024 }
+        volume: { type: number, minimum: 0, maximum: 1 }
+        loop: { type: boolean }
+        trackLabel: { type: string, minLength: 1, maxLength: 256 }
+      required: [path]
+      additionalProperties: false
+
+  - name: workspace.music.pause
+    type: local
+    adapter: music.pause
+    description: Pause the current workspace music playback.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: workspace.music.resume
+    type: local
+    adapter: music.resume
+    description: Resume the current workspace music playback.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: workspace.music.stop
+    type: local
+    adapter: music.stop
+    description: Stop the current workspace music playback and clear the active track.
+    side_effect_level: write
+    requires_lock: true
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+
+  - name: workspace.music.state
+    type: local
+    adapter: music.state.get
+    description: Inspect the current workspace music playback state.
     side_effect_level: read
     input_schema:
       type: object

@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { pathToFileURL, fileURLToPath } = require('node:url');
 const YAML = require('yaml');
 
 const {
@@ -20,6 +21,7 @@ const { createDesktopCaptureStore } = require('./desktopCaptureStore');
 const { createDesktopCaptureService } = require('./desktopCaptureService');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
 const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
+const { buildRpcError } = require('./rpcValidator');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -1666,6 +1668,11 @@ async function startDesktopSuite({
     intervalMs: config.desktopCaptureCleanupIntervalMs,
     logger
   });
+  const musicPlaybackController = createMusicPlaybackController({
+    BrowserWindow,
+    workspaceRoot: config.workspaceRoot,
+    logger
+  });
 
   logger.info?.('[desktop-live2d] desktop_up_start', {
     modelDir: config.modelDir,
@@ -3271,7 +3278,8 @@ async function startDesktopSuite({
       avatarWindow,
       perceptionService,
       captureStore,
-      captureService
+      captureService,
+      musicController: musicPlaybackController
     }),
     logger
   });
@@ -3298,6 +3306,11 @@ async function startDesktopSuite({
       'chat.panel.hide',
       'chat.panel.append',
       'chat.panel.clear',
+      'desktop.music.play',
+      'desktop.music.pause',
+      'desktop.music.resume',
+      'desktop.music.stop',
+      'desktop.music.state.get',
       'desktop.perception.displays.list',
       'desktop.perception.windows.list',
       'desktop.capture.screen',
@@ -3332,6 +3345,7 @@ async function startDesktopSuite({
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
     mouthWaveformRecorder.dispose();
     captureCleanupController.stop();
+    await musicPlaybackController.dispose();
 
     if (rpcServerRef) {
       await rpcServerRef.stop();
@@ -3561,6 +3575,377 @@ function createCaptureCleanupController({
   };
 }
 
+const MUSIC_ALLOWED_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.webm']);
+
+function normalizeDesktopMusicVolume(value, fallback = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(1, Math.max(0, parsed));
+}
+
+function resolveDesktopMusicWorkspaceRoot(workspaceRoot) {
+  const root = String(workspaceRoot || '').trim();
+  if (!root) {
+    throw buildRpcError(-32602, 'workspace root is required for music playback');
+  }
+  return path.resolve(root);
+}
+
+function resolveDesktopMusicPath(rawPath, workspaceRoot) {
+  const input = String(rawPath || '').trim();
+  if (!input) {
+    throw buildRpcError(-32602, 'music path is required');
+  }
+
+  const resolvedWorkspaceRoot = resolveDesktopMusicWorkspaceRoot(workspaceRoot);
+  let absolutePath;
+  if (/^file:\/\//i.test(input)) {
+    absolutePath = path.resolve(fileURLToPath(new URL(input)));
+  } else if (path.isAbsolute(input)) {
+    absolutePath = path.resolve(input);
+  } else {
+    absolutePath = path.resolve(resolvedWorkspaceRoot, input);
+  }
+
+  const normalizedRoot = resolvedWorkspaceRoot.endsWith(path.sep)
+    ? resolvedWorkspaceRoot
+    : `${resolvedWorkspaceRoot}${path.sep}`;
+  if (absolutePath !== resolvedWorkspaceRoot && !absolutePath.startsWith(normalizedRoot)) {
+    throw buildRpcError(-32006, 'music path escapes workspace');
+  }
+
+  const ext = path.extname(absolutePath).toLowerCase();
+  if (!MUSIC_ALLOWED_EXTENSIONS.has(ext)) {
+    throw buildRpcError(-32602, `unsupported music file extension: ${ext || '<empty>'}`);
+  }
+
+  if (!fs.existsSync(absolutePath)) {
+    throw buildRpcError(-32602, `music file not found: ${input}`);
+  }
+
+  const stats = fs.statSync(absolutePath);
+  if (!stats.isFile()) {
+    throw buildRpcError(-32602, `music path is not a file: ${input}`);
+  }
+
+  return absolutePath;
+}
+
+function normalizeDesktopMusicRequest(params = {}, workspaceRoot) {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
+    throw buildRpcError(-32602, 'music params must be an object');
+  }
+
+  const absolutePath = resolveDesktopMusicPath(params.path, workspaceRoot);
+  const trackLabel = String(params.trackLabel || params.track_label || path.basename(absolutePath)).trim()
+    || path.basename(absolutePath);
+  return {
+    path: absolutePath,
+    audioUrl: pathToFileURL(absolutePath).toString(),
+    volume: normalizeDesktopMusicVolume(params.volume, 1),
+    loop: params.loop === true,
+    trackLabel
+  };
+}
+
+function buildMusicControllerHtml() {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src file: data: blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'" />
+    <title>desktop-music-controller</title>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const audio = document.createElement('audio');
+        audio.preload = 'auto';
+        audio.crossOrigin = 'anonymous';
+        document.body.appendChild(audio);
+
+        const state = {
+          status: 'idle',
+          path: null,
+          audioUrl: null,
+          volume: 1,
+          loop: false,
+          trackLabel: null,
+          currentTime: 0,
+          duration: 0,
+          paused: true,
+          ended: false,
+          error: null,
+          updatedAt: Date.now()
+        };
+
+        function syncState() {
+          state.currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : state.currentTime;
+          state.duration = Number.isFinite(audio.duration) ? audio.duration : state.duration;
+          state.paused = audio.paused;
+          state.ended = audio.ended;
+          return { ...state };
+        }
+
+        function applyPayload(payload) {
+          const next = payload && typeof payload === 'object' ? payload : {};
+          if (next.path) {
+            state.path = String(next.path);
+          }
+          if (next.audioUrl) {
+            state.audioUrl = String(next.audioUrl);
+          }
+          if (Number.isFinite(Number(next.volume))) {
+            state.volume = Math.min(1, Math.max(0, Number(next.volume)));
+          }
+          if (typeof next.loop === 'boolean') {
+            state.loop = next.loop;
+          }
+          if (next.trackLabel) {
+            state.trackLabel = String(next.trackLabel);
+          }
+        }
+
+        audio.addEventListener('play', () => {
+          state.status = 'playing';
+          state.error = null;
+          state.updatedAt = Date.now();
+          syncState();
+        });
+        audio.addEventListener('pause', () => {
+          if (!audio.src) {
+            return;
+          }
+          state.status = audio.ended ? 'ended' : 'paused';
+          state.updatedAt = Date.now();
+          syncState();
+        });
+        audio.addEventListener('ended', () => {
+          state.status = 'ended';
+          state.updatedAt = Date.now();
+          syncState();
+        });
+        audio.addEventListener('error', () => {
+          state.status = 'error';
+          state.error = audio.error ? { code: audio.error.code, message: audio.error.message || 'audio playback error' } : { message: 'audio playback error' };
+          state.updatedAt = Date.now();
+        });
+        audio.addEventListener('timeupdate', syncState);
+        audio.addEventListener('loadedmetadata', syncState);
+
+        async function play(payload) {
+          applyPayload(payload);
+          if (!state.audioUrl) {
+            throw new Error('music audio url missing');
+          }
+          audio.loop = state.loop;
+          audio.volume = state.volume;
+          audio.src = state.audioUrl;
+          audio.currentTime = 0;
+          state.status = 'loading';
+          state.error = null;
+          state.updatedAt = Date.now();
+          try {
+            await audio.play();
+            state.status = 'playing';
+            state.updatedAt = Date.now();
+            return syncState();
+          } catch (error) {
+            state.status = 'error';
+            state.error = { message: error?.message || String(error || 'audio playback failed') };
+            state.updatedAt = Date.now();
+            throw error;
+          }
+        }
+
+        async function pause() {
+          if (!audio.src) {
+            return syncState();
+          }
+          audio.pause();
+          state.status = audio.ended ? 'ended' : 'paused';
+          state.updatedAt = Date.now();
+          return syncState();
+        }
+
+        async function resume() {
+          if (!audio.src) {
+            return syncState();
+          }
+          if (!audio.paused) {
+            return syncState();
+          }
+          try {
+            await audio.play();
+            state.status = 'playing';
+            state.updatedAt = Date.now();
+            return syncState();
+          } catch (error) {
+            state.status = 'error';
+            state.error = { message: error?.message || String(error || 'audio playback failed') };
+            state.updatedAt = Date.now();
+            throw error;
+          }
+        }
+
+        async function stop() {
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
+          state.status = 'stopped';
+          state.path = null;
+          state.audioUrl = null;
+          state.trackLabel = null;
+          state.currentTime = 0;
+          state.duration = 0;
+          state.paused = true;
+          state.ended = false;
+          state.error = null;
+          state.updatedAt = Date.now();
+          return syncState();
+        }
+
+        async function getState() {
+          return syncState();
+        }
+
+        window.__musicController = { play, pause, resume, stop, state: getState };
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
+function createMusicPlaybackController({
+  BrowserWindow,
+  workspaceRoot,
+  logger = console
+} = {}) {
+  let controllerWindow = null;
+  let disposed = false;
+  let lastState = {
+    status: 'idle',
+    path: null,
+    audioUrl: null,
+    volume: 1,
+    loop: false,
+    trackLabel: null,
+    currentTime: 0,
+    duration: 0,
+    paused: true,
+    ended: false,
+    error: null,
+    updatedAt: Date.now()
+  };
+
+  async function ensureWindow() {
+    if (disposed) {
+      throw buildRpcError(-32005, 'music playback controller disposed');
+    }
+    if (controllerWindow && !controllerWindow.isDestroyed()) {
+      return controllerWindow;
+    }
+    if (typeof BrowserWindow !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+
+    controllerWindow = new BrowserWindow({
+      show: false,
+      frame: false,
+      transparent: true,
+      hasShadow: false,
+      focusable: false,
+      skipTaskbar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: false,
+        backgroundThrottling: false,
+        autoplayPolicy: 'no-user-gesture-required'
+      }
+    });
+    controllerWindow.on('closed', () => {
+      controllerWindow = null;
+    });
+
+    const controllerHtml = buildMusicControllerHtml();
+    await controllerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
+    return controllerWindow;
+  }
+
+  async function execute(method, payload = {}) {
+    const win = await ensureWindow();
+    try {
+      const result = await win.webContents.executeJavaScript(
+        `window.__musicController.${method}(${JSON.stringify(payload)})`,
+        true
+      );
+      if (result && typeof result === 'object') {
+        lastState = { ...lastState, ...result };
+      }
+      return result;
+    } catch (error) {
+      logger.error?.('[desktop-live2d] music playback controller error', {
+        method,
+        error: error?.message || String(error || 'unknown error')
+      });
+      throw buildRpcError(-32005, error?.message || String(error || 'music playback failed'));
+    }
+  }
+
+  return {
+    async play(params = {}) {
+      const normalized = normalizeDesktopMusicRequest(params, workspaceRoot);
+      const state = await execute('play', {
+        path: normalized.path,
+        audioUrl: normalized.audioUrl,
+        volume: normalized.volume,
+        loop: normalized.loop,
+        trackLabel: normalized.trackLabel
+      });
+      lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
+      return state;
+    },
+    async pause() {
+      const state = await execute('pause');
+      lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
+      return state;
+    },
+    async resume() {
+      const state = await execute('resume');
+      lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
+      return state;
+    },
+    async stop() {
+      const state = await execute('stop');
+      lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
+      return state;
+    },
+    async state() {
+      if (!controllerWindow || controllerWindow.isDestroyed()) {
+        return { ...lastState };
+      }
+      try {
+        const state = await execute('state');
+        lastState = state && typeof state === 'object' ? { ...lastState, ...state } : lastState;
+        return state;
+      } catch (error) {
+        return { ...lastState };
+      }
+    },
+    async dispose() {
+      disposed = true;
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.destroy();
+      }
+      controllerWindow = null;
+    }
+  };
+}
+
 async function handleDesktopRpcRequest({
   request,
   bridge,
@@ -3572,7 +3957,8 @@ async function handleDesktopRpcRequest({
   avatarWindow = null,
   perceptionService = null,
   captureStore = null,
-  captureService = null
+  captureService = null,
+  musicController = null
 }) {
   console.log(`[Desktop RPC] Received method: ${request.method}`, request.params);
 
@@ -3660,6 +4046,41 @@ async function handleDesktopRpcRequest({
     return captureStore.deleteCaptureRecord(captureId);
   }
 
+  if (request.method === 'desktop.music.play') {
+    if (!musicController || typeof musicController.play !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+    return musicController.play(request.params || {});
+  }
+
+  if (request.method === 'desktop.music.pause') {
+    if (!musicController || typeof musicController.pause !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+    return musicController.pause(request.params || {});
+  }
+
+  if (request.method === 'desktop.music.resume') {
+    if (!musicController || typeof musicController.resume !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+    return musicController.resume(request.params || {});
+  }
+
+  if (request.method === 'desktop.music.stop') {
+    if (!musicController || typeof musicController.stop !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+    return musicController.stop(request.params || {});
+  }
+
+  if (request.method === 'desktop.music.state.get') {
+    if (!musicController || typeof musicController.state !== 'function') {
+      throw buildRpcError(-32005, 'music playback controller unavailable');
+    }
+    return musicController.state(request.params || {});
+  }
+
   if (request.method === 'tool.list') {
     return {
       tools: listDesktopTools()
@@ -3686,7 +4107,8 @@ async function handleDesktopRpcRequest({
         avatarWindow,
         perceptionService,
         captureStore,
-        captureService
+        captureService,
+        musicController
       });
       return {
         ok: true,
@@ -4135,6 +4557,11 @@ module.exports = {
   normalizeActionTelemetryPayload,
   normalizeWindowResizePayload,
   normalizeWindowInteractivityPayload,
+  normalizeDesktopMusicRequest,
+  resolveDesktopMusicPath,
+  normalizeDesktopMusicVolume,
+  buildMusicControllerHtml,
+  createMusicPlaybackController,
   createWindowDragListener,
   createWindowControlListener,
   createChatPanelVisibilityListener,

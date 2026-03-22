@@ -9,13 +9,18 @@ const {
 test('listDesktopTools returns non-empty tool definitions', () => {
   const tools = listDesktopTools();
   assert.ok(Array.isArray(tools));
-  assert.ok(tools.length >= 10);
+  assert.ok(tools.length >= 15);
   assert.ok(tools.some((item) => item.name === 'desktop_model_set_param'));
   assert.ok(tools.some((item) => item.name === 'desktop_perception_capabilities'));
   assert.ok(tools.some((item) => item.name === 'desktop_capture_desktop'));
   assert.ok(tools.some((item) => item.name === 'desktop_capture_screen'));
   assert.ok(tools.some((item) => item.name === 'desktop_windows_list'));
   assert.ok(tools.some((item) => item.name === 'desktop_capture_window'));
+  assert.ok(tools.some((item) => item.name === 'desktop_music_play'));
+  assert.ok(tools.some((item) => item.name === 'desktop_music_pause'));
+  assert.ok(tools.some((item) => item.name === 'desktop_music_resume'));
+  assert.ok(tools.some((item) => item.name === 'desktop_music_stop'));
+  assert.ok(tools.some((item) => item.name === 'desktop_music_state'));
 });
 
 test('resolveToolInvoke maps tool name to rpc method and args', () => {
@@ -67,6 +72,40 @@ test('resolveToolInvoke maps desktop perception capabilities tool', () => {
 
   assert.equal(resolved.method, 'desktop.perception.capabilities');
   assert.deepEqual(resolved.params, {});
+});
+
+test('resolveToolInvoke maps desktop music tools', () => {
+  const play = resolveToolInvoke({
+    name: 'desktop_music_play',
+    args: { path: 'music/demo.mp3', volume: 0.5, loop: true, trackLabel: 'Demo' }
+  });
+
+  const pause = resolveToolInvoke({
+    name: 'desktop_music_pause',
+    args: {}
+  });
+
+  const resume = resolveToolInvoke({
+    name: 'desktop_music_resume',
+    args: {}
+  });
+
+  const stop = resolveToolInvoke({
+    name: 'desktop_music_stop',
+    args: {}
+  });
+
+  const state = resolveToolInvoke({
+    name: 'desktop_music_state',
+    args: {}
+  });
+
+  assert.equal(play.method, 'desktop.music.play');
+  assert.deepEqual(play.params, { path: 'music/demo.mp3', volume: 0.5, loop: true, trackLabel: 'Demo' });
+  assert.equal(pause.method, 'desktop.music.pause');
+  assert.equal(resume.method, 'desktop.music.resume');
+  assert.equal(stop.method, 'desktop.music.stop');
+  assert.equal(state.method, 'desktop.music.state.get');
 });
 
 test('resolveToolInvoke rejects non-whitelisted tools', () => {

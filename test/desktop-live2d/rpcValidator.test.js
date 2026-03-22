@@ -48,6 +48,41 @@ test('validateRpcRequest accepts tool.invoke payload', () => {
 });
 
 test('validateRpcRequest accepts desktop perception and capture payloads', () => {
+  const musicPlay = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'music-play-1',
+    method: 'desktop.music.play',
+    params: {
+      path: 'music/demo.mp3',
+      volume: 0.5,
+      loop: true,
+      trackLabel: 'Demo Track'
+    }
+  });
+  const musicPause = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'music-pause-1',
+    method: 'desktop.music.pause',
+    params: {}
+  });
+  const musicResume = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'music-resume-1',
+    method: 'desktop.music.resume',
+    params: {}
+  });
+  const musicStop = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'music-stop-1',
+    method: 'desktop.music.stop',
+    params: {}
+  });
+  const musicState = validateRpcRequest({
+    jsonrpc: '2.0',
+    id: 'music-state-1',
+    method: 'desktop.music.state.get',
+    params: {}
+  });
   const capabilities = validateRpcRequest({
     jsonrpc: '2.0',
     id: 'capability-1',
@@ -93,6 +128,11 @@ test('validateRpcRequest accepts desktop perception and capture payloads', () =>
     }
   });
 
+  assert.equal(musicPlay.ok, true);
+  assert.equal(musicPause.ok, true);
+  assert.equal(musicResume.ok, true);
+  assert.equal(musicStop.ok, true);
+  assert.equal(musicState.ok, true);
   assert.equal(capabilities.ok, true);
   assert.equal(displaysList.ok, true);
   assert.equal(windowsList.ok, true);
