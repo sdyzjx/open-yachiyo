@@ -65,6 +65,12 @@
     return unit * 4 - 4;
   }
 
+  function shapeAngularCarrier(value) {
+    const magnitude = Math.abs(toFiniteNumber(value, 0));
+    const gated = Math.max(0, (magnitude - 0.09) / 0.91);
+    return Math.pow(gated, 2.4);
+  }
+
   function applyAngularWaveShape(wave) {
     if (!wave || !Array.isArray(wave.curves)) {
       return false;
@@ -85,12 +91,12 @@
         for (let ci = 0; ci < count; ci += 1) {
           const t = count === 1 ? 0 : 4 * (-1 + (ci / (count - 1)) * 2);
           const offset = toFiniteNumber(this.offsets?.[ci], 0);
-          const width = Math.max(0.001, toFiniteNumber(this.widths?.[ci], 1));
+          const width = Math.max(0.001, toFiniteNumber(this.widths?.[ci], 1) * 0.88);
           const amplitude = Math.max(0, toFiniteNumber(this.amplitudes?.[ci], 0));
           const verse = toFiniteNumber(this.verses?.[ci], 1);
           const phase = toFiniteNumber(this.phases?.[ci], 0);
           const x = i * (1 / width) - (t + offset);
-          const carrier = Math.pow(Math.abs(triangleWave(verse * x - phase)), 1.65);
+          const carrier = shapeAngularCarrier(triangleWave(verse * x - phase));
           const contribution = amplitude * carrier * this.globalAttFn(x);
           peak = Math.max(peak, contribution);
         }
