@@ -49,6 +49,41 @@
     return index % 2 === 0 ? 0.55 : -0.55;
   }
 
+  function wrapUnit(value) {
+    const wrapped = value % 1;
+    return wrapped < 0 ? wrapped + 1 : wrapped;
+  }
+
+  function triangleWave(value) {
+    const unit = wrapUnit(toFiniteNumber(value, 0) / (Math.PI * 2));
+    if (unit < 0.25) {
+      return unit * 4;
+    }
+    if (unit < 0.75) {
+      return 2 - unit * 4;
+    }
+    return unit * 4 - 4;
+  }
+
+  function applyAngularWaveShape(wave) {
+    if (!wave || !Array.isArray(wave.curves)) {
+      return false;
+    }
+
+    let changed = false;
+    for (const curve of wave.curves) {
+      if (!curve || curve.definition?.supportLine || curve.__yachiyoAngularShape === true) {
+        continue;
+      }
+      curve.__yachiyoAngularShape = true;
+      curve.sin = function angularSin(x, phase) {
+        return triangleWave(x - phase);
+      };
+      changed = true;
+    }
+    return changed;
+  }
+
   function stabilizeSiriWaveInstance(wave, motion, snapshot) {
     if (!wave || !motion || !Array.isArray(wave.curves)) {
       return false;
@@ -247,6 +282,7 @@
   const api = {
     DEFAULT_CURVE_DEFINITION,
     DEFAULT_RANGES,
+    applyAngularWaveShape,
     resolveSiriWaveLayout,
     resolveSiriWaveMotion,
     stabilizeSiriWaveInstance

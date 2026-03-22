@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   DEFAULT_CURVE_DEFINITION,
   DEFAULT_RANGES,
+  applyAngularWaveShape,
   resolveSiriWaveLayout,
   resolveSiriWaveMotion,
   stabilizeSiriWaveInstance
@@ -115,4 +116,28 @@ test('stabilizeSiriWaveInstance seeds flat ios9 curves into motion', () => {
   assert.ok(curve.despawnTimeouts.every((value) => value >= 2200));
   assert.ok(curve.verses.every((value) => Math.abs(value) >= 0.12));
   assert.ok(curve.prevMaxY >= 1.2);
+});
+
+test('applyAngularWaveShape replaces smooth sine lobes with triangle peaks', () => {
+  const wave = {
+    curves: [
+      { definition: { supportLine: true } },
+      {
+        definition: { color: '160, 231, 255' },
+        sin(x, phase) {
+          return Math.sin(x - phase);
+        }
+      }
+    ]
+  };
+
+  const changed = applyAngularWaveShape(wave);
+  const curve = wave.curves[1];
+
+  assert.equal(changed, true);
+  assert.equal(curve.__yachiyoAngularShape, true);
+  assert.equal(curve.sin(0, 0), 0);
+  assert.ok(Math.abs(curve.sin(Math.PI / 2, 0) - 1) < 1e-9);
+  assert.ok(Math.abs(curve.sin(Math.PI, 0)) < 1e-9);
+  assert.ok(Math.abs(curve.sin((Math.PI * 3) / 2, 0) + 1) < 1e-9);
 });

@@ -665,6 +665,9 @@
     if (!wave) {
       return false;
     }
+    if (typeof helper.applyAngularWaveShape === 'function') {
+      helper.applyAngularWaveShape(wave);
+    }
 
     waveformShellElement.style.left = `${layout.left}px`;
     waveformShellElement.style.top = `${layout.top}px`;
