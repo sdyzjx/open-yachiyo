@@ -32,7 +32,8 @@ test('band builders produce stable output for speech, music, and breath sources'
   assert.equal(breathBands.length, 24);
   assert.ok(speechBands.every((value) => value >= 0 && value <= 1));
   assert.ok(musicBands.some((value) => value > 0.5));
-  assert.ok(breathBands.some((value) => value > 0.1));
+  assert.ok(breathBands.every((value) => value >= 0.05 && value <= 0.1));
+  assert.ok(breathBands.some((value) => value > 0.08));
 });
 
 test('computeActionScale raises intensity for reactive actions', () => {
@@ -131,4 +132,94 @@ test('default config remains usable for live2d mode', () => {
   assert.equal(snapshot.mode, DEFAULT_CONFIG.mode);
   assert.equal(snapshot.waveformVisible, false);
   assert.equal(snapshot.modelVisible, true);
+});
+
+test('silent waveform stays effectively static across ticks', () => {
+  const presenter = createWaveformPresenter({
+    mode: 'waveform'
+  });
+
+  const first = presenter.tick({
+    nowMs: 1000,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+  const second = presenter.tick({
+    nowMs: 1600,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+
+  assert.equal(first.sourceKind, 'breath');
+  assert.equal(second.sourceKind, 'breath');
+  assert.deepEqual(second.geometry.bandLevels, first.geometry.bandLevels);
+  assert.deepEqual(second.geometry.topPoints, first.geometry.topPoints);
+  assert.ok(second.energy < 0.01);
+});
+
+test('waveform presenter phase advances continuously without compounded jumps', () => {
+  const presenter = createWaveformPresenter({
+    mode: 'waveform'
+  });
+
+  presenter.ingestMusicFrame({
+    playing: true,
+    energy: 0.7,
+    bandLevels: [0.2, 0.8, 0.4, 0.9]
+  });
+
+  const first = presenter.tick({
+    nowMs: 1000,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+  const second = presenter.tick({
+    nowMs: 1016,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+
+  const delta = second.breathPhase - first.breathPhase;
+  assert.ok(delta > 0);
+  assert.ok(delta < 0.05);
+});
+
+test('waveform presenter smooths abrupt band changes between ticks', () => {
+  const presenter = createWaveformPresenter({
+    mode: 'waveform',
+    config: {
+      waveform: {
+        sampleCount: 16
+      }
+    }
+  });
+
+  presenter.ingestMusicFrame({
+    playing: true,
+    energy: 1,
+    bandLevels: [1, 1, 1, 1]
+  });
+  const hot = presenter.tick({
+    nowMs: 1000,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+
+  presenter.ingestMusicFrame({
+    playing: true,
+    energy: 0,
+    bandLevels: [0, 0, 0, 0]
+  });
+  const cooled = presenter.tick({
+    nowMs: 1040,
+    stageWidth: 640,
+    stageHeight: 480
+  });
+
+  assert.ok(hot.geometry.bandLevels.some((value) => value > 0.6));
+  assert.ok(cooled.geometry.bandLevels.some((value) => value > 0.08));
+  assert.notDeepEqual(cooled.geometry.topPoints, hot.geometry.topPoints);
+  assert.ok(
+    cooled.geometry.topPoints.some((point, index) => point.y !== hot.geometry.topPoints[index]?.y)
+  );
 });

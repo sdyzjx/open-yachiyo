@@ -103,7 +103,9 @@
   let waveformFillGraphic = null;
   let waveformStrokeGraphic = null;
   let waveformCenterGraphic = null;
+  let waveformHitGraphic = null;
   let waveformTickerHookBound = false;
+  let waveformInteractionBound = false;
   let rendererMusicPlayer = null;
   let rendererMusicEventsBound = false;
   let activePresenterAction = null;
@@ -262,6 +264,33 @@
     }
   }
 
+  function drawSmoothPolyline(graphics, points, closePath = false) {
+    if (!graphics || !Array.isArray(points) || points.length === 0) {
+      return;
+    }
+    if (points.length < 3) {
+      drawPolyline(graphics, points);
+      if (closePath) {
+        graphics.closePath();
+      }
+      return;
+    }
+    graphics.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const current = points[index];
+      const next = points[index + 1];
+      const midX = (current.x + next.x) / 2;
+      const midY = (current.y + next.y) / 2;
+      graphics.quadraticCurveTo(current.x, current.y, midX, midY);
+    }
+    const penultimate = points[points.length - 2];
+    const last = points[points.length - 1];
+    graphics.quadraticCurveTo(penultimate.x, penultimate.y, last.x, last.y);
+    if (closePath) {
+      graphics.closePath();
+    }
+  }
+
   function drawWaveformEnvelope(graphics, geometry) {
     if (!graphics || !geometry) {
       return;
@@ -271,11 +300,31 @@
     if (topPoints.length === 0 || bottomPoints.length === 0) {
       return;
     }
-    drawPolyline(graphics, topPoints);
+    drawSmoothPolyline(graphics, topPoints);
     for (let index = bottomPoints.length - 1; index >= 0; index -= 1) {
-      graphics.lineTo(bottomPoints[index].x, bottomPoints[index].y);
+      const point = bottomPoints[index];
+      graphics.lineTo(point.x, point.y);
     }
     graphics.closePath();
+  }
+
+  function buildSiriLinePoints({ centerLine, bandLevels, amplitudeBase, amplitudeScale, phase = 0, frequency = 1.2, bias = 0 } = {}) {
+    const points = Array.isArray(centerLine) ? centerLine : [];
+    if (points.length === 0) {
+      return [];
+    }
+    const levels = Array.isArray(bandLevels) ? bandLevels : [];
+    return points.map((point, index) => {
+      const t = points.length === 1 ? 0 : index / (points.length - 1);
+      const envelope = 0.22 + Math.pow(Math.sin(Math.PI * t), 0.92) * 0.78;
+      const band = clamp(Number(levels[index]) || 0, 0, 1);
+      const amplitude = (amplitudeBase + band * amplitudeScale) * envelope;
+      const offset = Math.sin(phase + t * Math.PI * 2 * frequency) * amplitude + bias;
+      return {
+        x: point.x,
+        y: point.y + offset
+      };
+    });
   }
 
   function ensureWaveformLayer() {
@@ -294,10 +343,12 @@
     waveformFillGraphic = new PIXI.Graphics();
     waveformStrokeGraphic = new PIXI.Graphics();
     waveformCenterGraphic = new PIXI.Graphics();
+    waveformHitGraphic = new PIXI.Graphics();
     if (PIXI.BLEND_MODES) {
       waveformGlowGraphic.blendMode = PIXI.BLEND_MODES.ADD;
     }
     waveformLayer.addChild(
+      waveformHitGraphic,
       waveformBackdropGraphic,
       waveformGlowGraphic,
       waveformFillGraphic,
@@ -305,7 +356,46 @@
       waveformCenterGraphic
     );
     pixiApp.stage.addChild(waveformLayer);
+    bindWaveformInteraction();
     return waveformLayer;
+  }
+
+  function handleAvatarPrimaryTap() {
+    if (state.resizeModeEnabled) {
+      return;
+    }
+    const now = Date.now();
+    if (now < suppressModelTapUntil) {
+      return;
+    }
+    if (typeof modelTapToggleGate?.tryEnter === 'function' && !modelTapToggleGate.tryEnter()) {
+      return;
+    }
+    if (!chatPanelEnabled) {
+      bridge?.sendChatPanelToggle?.({ source: 'avatar-window' });
+      return;
+    }
+    toggleChatPanelVisible();
+  }
+
+  function bindWaveformInteraction() {
+    if (waveformInteractionBound || !waveformHitGraphic || typeof waveformHitGraphic.on !== 'function') {
+      return;
+    }
+    if ('eventMode' in waveformHitGraphic) {
+      waveformHitGraphic.eventMode = 'static';
+    }
+    if ('interactive' in waveformHitGraphic) {
+      waveformHitGraphic.interactive = true;
+    }
+    waveformHitGraphic.cursor = 'pointer';
+    waveformHitGraphic.on('pointertap', () => {
+      if (state.presenterMode === 'live2d') {
+        return;
+      }
+      handleAvatarPrimaryTap();
+    });
+    waveformInteractionBound = true;
   }
 
   function ensureWaveformPresenter() {
@@ -429,6 +519,7 @@
 
     const geometry = snapshot?.geometry || null;
     const visuals = [
+      waveformHitGraphic,
       waveformBackdropGraphic,
       waveformGlowGraphic,
       waveformFillGraphic,
@@ -455,62 +546,109 @@
     const width = Math.max(1, Number(geometry.width) || 1);
     const height = Math.max(1, Number(geometry.height) || 1);
     const primary = Number(snapshot.colors?.primary) || 0x80e3ff;
-    const fill = Number(snapshot.colors?.fill) || 0x112330;
     const glow = Number(snapshot.colors?.glow) || primary;
     const accent = Number(snapshot.colors?.accent) || 0xebfbff;
     const energy = clamp(Number(snapshot.energy) || 0, 0, 1);
     const waveformAlpha = clamp(Number(snapshot.waveformAlpha) || 0, 0, 1);
-    const housingY = Math.round(height * 0.18);
-    const housingHeight = Math.max(28, Math.round(height * 0.64));
-    const railY = Math.round(height * 0.5);
-    const inset = 10;
+    const centerLine = Array.isArray(geometry.centerLine) ? geometry.centerLine : [];
+    const bandLevels = Array.isArray(geometry.bandLevels) ? geometry.bandLevels : [];
+    const phase = snapshot.sourceKind === 'breath'
+      ? 0
+      : Number(snapshot.breathPhase) || 0;
+    const amplitudeBase = Math.max(2.4, height * 0.05);
+    const amplitudeScale = Math.max(6, height * (0.07 + energy * 0.12));
+    const ribbonTop = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase: amplitudeBase * 0.4,
+      amplitudeScale: amplitudeScale * 0.72,
+      phase: phase * 0.55,
+      frequency: 0.95
+    });
+    const ribbonBottom = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase: amplitudeBase * 0.4,
+      amplitudeScale: -amplitudeScale * 0.72,
+      phase: phase * 0.55,
+      frequency: 0.95
+    });
+    const cyanLine = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase,
+      amplitudeScale,
+      phase,
+      frequency: 1.12
+    });
+    const blueLine = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase: amplitudeBase * 0.72,
+      amplitudeScale: amplitudeScale * 0.78,
+      phase: phase + 1.2,
+      frequency: 1.46,
+      bias: -1.5
+    });
+    const magentaLine = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase: amplitudeBase * 0.66,
+      amplitudeScale: amplitudeScale * 0.74,
+      phase: phase + 2.45,
+      frequency: 1.7,
+      bias: 1.8
+    });
+    const violetLine = buildSiriLinePoints({
+      centerLine,
+      bandLevels,
+      amplitudeBase: amplitudeBase * 0.52,
+      amplitudeScale: amplitudeScale * 0.58,
+      phase: phase + 3.1,
+      frequency: 1.02,
+      bias: 0.4
+    });
 
-    waveformBackdropGraphic.beginFill(0x0a1118, 0.78 * waveformAlpha);
-    waveformBackdropGraphic.drawRoundedRect(0, housingY, width, housingHeight, Math.round(housingHeight * 0.48));
+    waveformHitGraphic.beginFill(0xffffff, 0.001);
+    waveformHitGraphic.drawRoundedRect(0, Math.round(height * 0.22), width, Math.max(24, Math.round(height * 0.56)), Math.round(height * 0.3));
+    waveformHitGraphic.endFill();
+    waveformBackdropGraphic.beginFill(0x09111a, (0.08 + energy * 0.05) * waveformAlpha);
+    drawSmoothPolyline(waveformBackdropGraphic, ribbonTop);
+    for (let index = ribbonBottom.length - 1; index >= 0; index -= 1) {
+      const point = ribbonBottom[index];
+      waveformBackdropGraphic.lineTo(point.x, point.y);
+    }
+    waveformBackdropGraphic.closePath();
     waveformBackdropGraphic.endFill();
-    waveformBackdropGraphic.beginFill(fill, 0.42 * waveformAlpha);
-    waveformBackdropGraphic.drawRoundedRect(
-      inset,
-      housingY + 6,
-      Math.max(12, width - inset * 2),
-      Math.max(16, housingHeight - 12),
-      Math.round(housingHeight * 0.36)
-    );
-    waveformBackdropGraphic.endFill();
-    waveformBackdropGraphic.lineStyle(1, accent, 0.12 * waveformAlpha, 0.5);
-    waveformBackdropGraphic.moveTo(20, housingY + 12);
-    waveformBackdropGraphic.lineTo(width - 20, housingY + 12);
-    waveformBackdropGraphic.moveTo(20, housingY + housingHeight - 12);
-    waveformBackdropGraphic.lineTo(width - 20, housingY + housingHeight - 12);
 
-    waveformGlowGraphic.lineStyle(12 + energy * 7, glow, (0.08 + energy * 0.12) * waveformAlpha, 0.5);
-    drawWaveformEnvelope(waveformGlowGraphic, geometry);
+    waveformGlowGraphic.lineStyle(18 + energy * 10, glow, (0.1 + energy * 0.14) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformGlowGraphic, cyanLine);
+    waveformGlowGraphic.lineStyle(14 + energy * 8, 0x6ea6ff, (0.08 + energy * 0.1) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformGlowGraphic, blueLine);
+    waveformGlowGraphic.lineStyle(14 + energy * 8, 0xd685ff, (0.07 + energy * 0.1) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformGlowGraphic, magentaLine);
 
-    waveformFillGraphic.beginFill(primary, (0.08 + energy * 0.08) * waveformAlpha);
-    drawWaveformEnvelope(waveformFillGraphic, geometry);
-    waveformFillGraphic.endFill();
-    waveformFillGraphic.beginFill(0xb9eaf7, (0.03 + energy * 0.03) * waveformAlpha);
-    waveformFillGraphic.drawRoundedRect(
-      Math.round(width * 0.24),
-      Math.round(railY - 2),
-      Math.round(width * 0.52),
-      4,
-      2
-    );
+    waveformFillGraphic.lineStyle(0, 0, 0);
+    waveformFillGraphic.beginFill(primary, (0.07 + energy * 0.07) * waveformAlpha);
+    drawSmoothPolyline(waveformFillGraphic, ribbonTop);
+    for (let index = ribbonBottom.length - 1; index >= 0; index -= 1) {
+      const point = ribbonBottom[index];
+      waveformFillGraphic.lineTo(point.x, point.y);
+    }
+    waveformFillGraphic.closePath();
     waveformFillGraphic.endFill();
 
-    waveformStrokeGraphic.lineStyle(1.5, primary, (0.86 + energy * 0.12) * waveformAlpha, 0.5);
-    drawWaveformEnvelope(waveformStrokeGraphic, geometry);
-    waveformStrokeGraphic.lineStyle(1, accent, 0.3 * waveformAlpha, 0.5);
-    waveformStrokeGraphic.moveTo(26, railY);
-    waveformStrokeGraphic.lineTo(width - 26, railY);
+    waveformStrokeGraphic.lineStyle(2.1, 0x8fe8ff, (0.78 + energy * 0.1) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformStrokeGraphic, cyanLine);
+    waveformStrokeGraphic.lineStyle(1.8, 0x76a7ff, (0.72 + energy * 0.1) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformStrokeGraphic, blueLine);
+    waveformStrokeGraphic.lineStyle(1.8, 0xe08dff, (0.66 + energy * 0.08) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformStrokeGraphic, magentaLine);
+    waveformStrokeGraphic.lineStyle(1.4, 0xffffff, (0.18 + energy * 0.08) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformStrokeGraphic, violetLine);
 
-    waveformCenterGraphic.lineStyle(1.2, accent, (0.38 + energy * 0.18) * waveformAlpha, 0.5);
-    drawPolyline(waveformCenterGraphic, Array.isArray(geometry.centerLine) ? geometry.centerLine : []);
-    waveformCenterGraphic.beginFill(accent, (0.16 + energy * 0.14) * waveformAlpha);
-    waveformCenterGraphic.drawCircle(18, railY, 2.5);
-    waveformCenterGraphic.drawCircle(width - 18, railY, 2.5);
-    waveformCenterGraphic.endFill();
+    waveformCenterGraphic.lineStyle(1.05, accent, (0.16 + energy * 0.08) * waveformAlpha, 0.5);
+    drawSmoothPolyline(waveformCenterGraphic, centerLine);
 
     layer.visible = true;
     layer.alpha = waveformAlpha;
@@ -4053,21 +4191,7 @@
       live2dModel.interactive = true;
     }
     live2dModel.on('pointertap', () => {
-      if (state.resizeModeEnabled) {
-        return;
-      }
-      const now = Date.now();
-      if (now < suppressModelTapUntil) {
-        return;
-      }
-      if (typeof modelTapToggleGate?.tryEnter === 'function' && !modelTapToggleGate.tryEnter()) {
-        return;
-      }
-      if (!chatPanelEnabled) {
-        bridge?.sendChatPanelToggle?.({ source: 'avatar-window' });
-        return;
-      }
-      toggleChatPanelVisible();
+      handleAvatarPrimaryTap();
     });
   }
 

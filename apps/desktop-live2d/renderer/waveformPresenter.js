@@ -7,29 +7,33 @@
     mode: 'live2d',
     sourcePriority: SOURCE_PRIORITY,
     breath: Object.freeze({
-      amplitude: 0.12,
+      amplitude: 0.04,
       periodMs: 4200,
       phaseOffset: -Math.PI / 2
     }),
     smoothing: Object.freeze({
       energyAttack: 0.3,
       energyRelease: 0.08,
+      bandAttack: 0.26,
+      bandRelease: 0.12,
+      formAttack: 0.22,
+      formRelease: 0.12,
       scaleAttack: 0.24,
       scaleRelease: 0.1
     }),
     waveform: Object.freeze({
-      sampleCount: 72,
+      sampleCount: 88,
       centerYRatio: 0.54,
-      widthRatio: 0.74,
-      heightRatio: 0.16,
-      minHalfHeight: 16,
-      maxHalfHeightRatio: 0.3,
-      pointEdgeCurve: 1.8,
+      widthRatio: 0.72,
+      heightRatio: 0.14,
+      minHalfHeight: 10,
+      maxHalfHeightRatio: 0.22,
+      pointEdgeCurve: 2.05,
       centerCurve: 1,
       backgroundAlpha: 0.08,
-      fillAlpha: 0.18,
-      strokeAlpha: 0.92,
-      glowAlpha: 0.09
+      fillAlpha: 0.1,
+      strokeAlpha: 0.88,
+      glowAlpha: 0.12
     }),
     hybrid: Object.freeze({
       modelAlpha: 0.28,
@@ -99,6 +103,12 @@
 
   function clamp01(value) {
     return clamp(toFiniteNumber(value, 0), 0, 1);
+  }
+
+  function normalizePhase(value) {
+    const safeValue = toFiniteNumber(value, 0);
+    const wrapped = safeValue % TAU;
+    return wrapped < 0 ? wrapped + TAU : wrapped;
   }
 
   function smoothValue(current, target, attack, release) {
@@ -181,10 +191,21 @@
     for (let index = 0; index < count; index += 1) {
       const t = count === 1 ? 0 : index / (count - 1);
       const core = Math.pow(Math.sin(Math.PI * t), 1.45);
-      const micro = Math.sin(breathPhase * 0.6 + t * TAU * 1.7) * 0.06;
-      curve[index] = clamp01(0.12 + amplitude * (0.4 + core * 0.7) + micro);
+      curve[index] = clamp01(0.03 + amplitude * (0.24 + core * 0.28));
     }
     return curve;
+  }
+
+  function smoothCurve(currentCurve, targetCurve, attack, release) {
+    const safeTarget = Array.isArray(targetCurve) ? targetCurve : [];
+    if (!Array.isArray(currentCurve) || currentCurve.length !== safeTarget.length) {
+      return [...safeTarget];
+    }
+    const nextCurve = new Array(safeTarget.length);
+    for (let index = 0; index < safeTarget.length; index += 1) {
+      nextCurve[index] = smoothValue(currentCurve[index], safeTarget[index], attack, release);
+    }
+    return nextCurve;
   }
 
   function selectActiveSource(state, config) {
@@ -266,10 +287,12 @@
       const t = pointCount === 1 ? 0 : index / (pointCount - 1);
       const edgeCurve = Math.pow(Math.sin(Math.PI * t), waveformConfig.pointEdgeCurve);
       const band = clamp01(bandCurve[index] || 0);
-      const wobble = Math.sin(breathPhase + t * TAU * 1.5) * (0.025 + energy * 0.04);
+      const wobble = sourceKind === 'breath'
+        ? 0
+        : Math.sin(breathPhase + t * TAU * 1.2) * (0.006 + energy * 0.012);
       const sourceLift = sourceKind === 'speech' ? form * (t - 0.5) * height * 0.1 : 0;
       const actionLift = actionScale > 1 ? Math.sin(t * Math.PI) * (actionScale - 1) * height * 0.04 : 0;
-      const halfHeight = baseHalfHeight * (0.42 + edgeCurve * 0.68 + band * 0.7) * sourceShape;
+      const halfHeight = baseHalfHeight * (0.3 + edgeCurve * 0.56 + band * 0.5) * sourceShape;
       const x = Math.round(t * width);
       const centerOffset = Math.sin((t - 0.5) * Math.PI * 2) * height * 0.015;
       const yCenter = centerY + centerLift(sourceKind, energy, form, band, t, height) + sourceLift + actionLift + centerOffset + wobble * height;
@@ -332,6 +355,8 @@
       breathPhase: 0,
       lastTickMs: null,
       smoothedEnergy: 0,
+      smoothedForm: 0,
+      smoothedBandLevels: null,
       smoothedScale: 1,
       lastSnapshot: null
     };
@@ -364,6 +389,7 @@
         actionFrame: state.actionFrame ? { ...state.actionFrame } : null,
         breathPhase: state.breathPhase,
         smoothedEnergy: state.smoothedEnergy,
+        smoothedForm: state.smoothedForm,
         smoothedScale: state.smoothedScale
       };
     }
@@ -372,9 +398,10 @@
       const safeNowMs = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
       const safeStageWidth = Math.max(1, Math.round(toFiniteNumber(stageWidth, 640)));
       const safeStageHeight = Math.max(1, Math.round(toFiniteNumber(stageHeight, 640)));
-      const deltaMs = state.lastTickMs === null ? 0 : Math.max(0, safeNowMs - state.lastTickMs);
       state.lastTickMs = safeNowMs;
-      state.breathPhase = (state.breathPhase + (deltaMs / Math.max(1, config.breath.periodMs)) * TAU + config.breath.phaseOffset) % TAU;
+      state.breathPhase = normalizePhase(
+        (safeNowMs / Math.max(1, config.breath.periodMs)) * TAU + config.breath.phaseOffset
+      );
 
       const sourceKind = selectActiveSource(state, config);
       const activeFrame = sourceKind === 'speech'
@@ -386,7 +413,7 @@
         ? clamp01(activeFrame?.energy ?? activeFrame?.voiceEnergy ?? 0)
         : sourceKind === 'music'
           ? clamp01(activeFrame?.energy ?? 0)
-          : clamp01(config.breath.amplitude);
+          : 0;
       const targetScale = computeActionScale(state.actionFrame, safeNowMs);
       state.smoothedEnergy = smoothValue(
         state.smoothedEnergy,
@@ -399,6 +426,17 @@
         targetScale,
         config.smoothing.scaleAttack,
         config.smoothing.scaleRelease
+      );
+      const targetForm = clamp(
+        sourceKind === 'speech' ? toFiniteNumber(state.speechFrame?.mouthForm, 0) : 0,
+        -1,
+        1
+      );
+      state.smoothedForm = smoothValue(
+        state.smoothedForm,
+        targetForm,
+        config.smoothing.formAttack,
+        config.smoothing.formRelease
       );
 
       const speechWeights = state.speechFrame?.visemeWeights || null;
@@ -421,12 +459,15 @@
       const breathBandLevels = sourceKind === 'breath'
         ? buildBreathBands(state.breathPhase, config.waveform.sampleCount, state.smoothedEnergy)
         : null;
-      const bandLevels = speechBandLevels || musicBandLevels || breathBandLevels || buildBreathBands(state.breathPhase, config.waveform.sampleCount, state.smoothedEnergy);
-      const form = clamp(
-        sourceKind === 'speech' ? toFiniteNumber(state.speechFrame?.mouthForm, 0) : 0,
-        -1,
-        1
+      const rawBandLevels = speechBandLevels || musicBandLevels || breathBandLevels || buildBreathBands(state.breathPhase, config.waveform.sampleCount, 0);
+      state.smoothedBandLevels = smoothCurve(
+        state.smoothedBandLevels,
+        rawBandLevels,
+        config.smoothing.bandAttack,
+        config.smoothing.bandRelease
       );
+      const bandLevels = state.smoothedBandLevels || rawBandLevels;
+      const form = clamp(state.smoothedForm, -1, 1);
       const geometry = buildGeometry({
         stageWidth: safeStageWidth,
         stageHeight: safeStageHeight,
