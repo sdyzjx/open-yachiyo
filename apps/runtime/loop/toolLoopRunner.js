@@ -234,6 +234,12 @@ function isToolResultRetryable(toolResult = {}) {
   return true;
 }
 
+function shouldDegradeVoiceToolError(toolName, toolResult = {}) {
+  if (!isVoiceAutoReplyToolName(toolName)) return false;
+  const code = String(toolResult?.code || '').trim().toUpperCase();
+  return code === 'TTS_RATE_LIMITED' || code === 'TTS_POLICY_REJECTED';
+}
+
 function normalizeToolCalls(decision) {
   const calls = Array.isArray(decision.tools) && decision.tools.length > 0
     ? decision.tools
@@ -1033,6 +1039,49 @@ class ToolLoopRunner {
             });
 
             if (!toolResult.ok) {
+              if (shouldDegradeVoiceToolError(effectiveCall.name, toolResult)) {
+                const degradedPayload = {
+                  status: 'skipped',
+                  code: String(toolResult.code || 'VOICE_SKIPPED'),
+                  message: 'Voice auto-reply skipped for this turn; continue with text response.',
+                  reason: toolResult.error || 'voice tool unavailable'
+                };
+                const degradedContent = JSON.stringify(degradedPayload);
+
+                ctx.messages.push({
+                  role: 'tool',
+                  tool_call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  content: degradedContent
+                });
+                ctx.observations.push({
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  result: degradedContent,
+                  degraded: true,
+                  code: toolResult.code || 'VOICE_SKIPPED'
+                });
+                if (!ctx.turnRequirements.voice_tts_satisfied && isVoiceAutoReplyToolName(effectiveCall.name)) {
+                  ctx.turnRequirements.voice_tts_satisfied = true;
+                }
+                emit('tool.result', {
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  result: degradedContent,
+                  degraded: true,
+                  code: toolResult.code || 'VOICE_SKIPPED'
+                });
+                emit('tool.error', {
+                  call_id: effectiveCall.call_id,
+                  error: toolResult.error,
+                  name: effectiveCall.name,
+                  code: toolResult.code,
+                  non_fatal: true,
+                  degraded_to_text_only: true
+                });
+                continue;
+              }
+
               if (toolResult.code === 'APPROVAL_REQUIRED') {
                 const approvalPayload = {
                   ok: false,
