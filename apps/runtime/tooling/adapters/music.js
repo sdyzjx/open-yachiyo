@@ -60,6 +60,24 @@ function resolveWorkspaceRoot(context = {}) {
   return path.resolve(root);
 }
 
+function resolveFallbackMusicRoots(workspaceRoot, context = {}) {
+  const roots = [];
+  const pushUniqueRoot = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return;
+    const absolute = path.resolve(normalized);
+    if (!roots.includes(absolute)) {
+      roots.push(absolute);
+    }
+  };
+
+  pushUniqueRoot(workspaceRoot);
+  pushUniqueRoot(context.projectRoot);
+  pushUniqueRoot(context.project_root);
+  pushUniqueRoot(process.cwd());
+  return roots;
+}
+
 function ensureRelativeMusicInput(input) {
   const value = String(input || '').trim();
   if (!value) {
@@ -71,44 +89,70 @@ function ensureRelativeMusicInput(input) {
   return value;
 }
 
-function resolveMusicPath(rawPath, workspaceRoot) {
+function resolveMusicPath(rawPath, workspaceRoot, context = {}) {
   const input = String(rawPath || '').trim();
   if (!input) {
     throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'music path is required');
   }
 
   const resolvedWorkspaceRoot = path.resolve(workspaceRoot || process.cwd());
-  let absolutePath;
-  if (/^file:\/\//i.test(input)) {
-    absolutePath = path.resolve(fileURLToPath(new URL(input)));
-  } else if (path.isAbsolute(input)) {
-    absolutePath = path.resolve(input);
-  } else {
-    absolutePath = path.resolve(resolvedWorkspaceRoot, input);
+  const fallbackRoots = resolveFallbackMusicRoots(resolvedWorkspaceRoot, context);
+
+  if (/^file:\/\//i.test(input) || path.isAbsolute(input)) {
+    const absolutePath = /^file:\/\//i.test(input)
+      ? path.resolve(fileURLToPath(new URL(input)))
+      : path.resolve(input);
+    const allowed = fallbackRoots.some((root) => {
+      const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+      return absolutePath === root || absolutePath.startsWith(normalizedRoot);
+    });
+    if (!allowed) {
+      throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'music path escapes workspace');
+    }
+    const ext = path.extname(absolutePath).toLowerCase();
+    if (!ALLOWED_MUSIC_EXTENSIONS.has(ext)) {
+      throw new ToolingError(ErrorCode.VALIDATION_ERROR, `unsupported music file extension: ${ext || '<empty>'}`);
+    }
+    if (!fs.existsSync(absolutePath)) {
+      throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music file not found: ${input}`);
+    }
+    const stats = fs.statSync(absolutePath);
+    if (!stats.isFile()) {
+      throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music path is not a file: ${input}`);
+    }
+    return absolutePath;
   }
 
-  const normalizedRoot = resolvedWorkspaceRoot.endsWith(path.sep)
-    ? resolvedWorkspaceRoot
-    : `${resolvedWorkspaceRoot}${path.sep}`;
-  if (absolutePath !== resolvedWorkspaceRoot && !absolutePath.startsWith(normalizedRoot)) {
-    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'music path escapes workspace');
-  }
-
-  const ext = path.extname(absolutePath).toLowerCase();
+  const ext = path.extname(input).toLowerCase();
   if (!ALLOWED_MUSIC_EXTENSIONS.has(ext)) {
     throw new ToolingError(ErrorCode.VALIDATION_ERROR, `unsupported music file extension: ${ext || '<empty>'}`);
   }
 
-  if (!fs.existsSync(absolutePath)) {
-    throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music file not found: ${input}`);
+  const normalizedRelativeInput = path.normalize(input);
+  if (
+    normalizedRelativeInput === '..'
+    || normalizedRelativeInput.startsWith(`..${path.sep}`)
+  ) {
+    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'music path escapes workspace');
   }
 
-  const stats = fs.statSync(absolutePath);
-  if (!stats.isFile()) {
-    throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music path is not a file: ${input}`);
+  for (const root of fallbackRoots) {
+    const absolutePath = path.resolve(root, input);
+    const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+    if (absolutePath !== root && !absolutePath.startsWith(normalizedRoot)) {
+      continue;
+    }
+    if (!fs.existsSync(absolutePath)) {
+      continue;
+    }
+    const stats = fs.statSync(absolutePath);
+    if (!stats.isFile()) {
+      throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music path is not a file: ${input}`);
+    }
+    return absolutePath;
   }
 
-  return absolutePath;
+  throw new ToolingError(ErrorCode.VALIDATION_ERROR, `music file not found: ${input}`);
 }
 
 function normalizeMusicPlayArgs(args = {}, context = {}) {
@@ -120,7 +164,7 @@ function normalizeMusicPlayArgs(args = {}, context = {}) {
     ?? args.audio_path
     ?? args.audioRef
     ?? args.audio_ref);
-  const absolutePath = resolveMusicPath(rawPath, workspaceRoot);
+  const absolutePath = resolveMusicPath(rawPath, workspaceRoot, context);
 
   return {
     workspaceRoot,
@@ -311,6 +355,7 @@ module.exports = {
     normalizeVolume,
     ensureRelativeMusicInput,
     resolveMusicPath,
+    resolveFallbackMusicRoots,
     resolveWorkspaceRoot,
     sanitizeRpcParams
   }

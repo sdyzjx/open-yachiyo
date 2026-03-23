@@ -1916,6 +1916,10 @@ test('ToolLoopRunner degrades voice auto-reply rate limit errors into text-only 
       }
     }),
     listTools: () => tools,
+    resolveSkillsContext: async () => ({
+      selected: ['sonder'],
+      directScriptSystemPrompt: '<active_session_script name="sonder">Scene B</active_session_script>'
+    }),
     maxStep: 4,
     toolResultTimeoutMs: 1000
   });
@@ -1947,6 +1951,204 @@ test('ToolLoopRunner degrades voice auto-reply rate limit errors into text-only 
       )),
       true
     );
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('ToolLoopRunner requires and consumes Sonder Scene B music playback before final answer', { concurrency: false }, async () => {
+  const bus = new RuntimeEventBus();
+  const tools = [
+    {
+      name: 'workspace.music.play',
+      description: 'workspace music play',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          volume: { type: 'number' },
+          loop: { type: 'boolean' },
+          trackLabel: { type: 'string' }
+        },
+        required: ['path'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'echo',
+      description: 'echo',
+      side_effect_level: 'none',
+      input_schema: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false
+      }
+    }
+  ];
+  const unsubscribe = bus.subscribe('tool.call.requested', (payload) => {
+    const toolName = String(payload?.tool?.name || '');
+    setImmediate(() => {
+      bus.publish('tool.call.result', {
+        trace_id: payload.trace_id,
+        session_id: payload.session_id,
+        step_index: payload.step_index,
+        call_id: payload.call_id,
+        name: toolName,
+        ok: true,
+        result: JSON.stringify({ ok: true, status: 'playing', trackLabel: payload.tool?.args?.trackLabel || '' })
+      });
+    });
+  });
+
+  let decideCount = 0;
+  const seenMessages = [];
+  const seenToolSets = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages, tools: availableTools }) {
+        decideCount += 1;
+        seenMessages.push(messages);
+        seenToolSets.push((availableTools || []).map((tool) => tool.name));
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'sonder-scene-b-music',
+              name: 'workspace.music.play',
+              args: {
+                path: '演示曲.wav',
+                volume: 0.72,
+                loop: false,
+                trackLabel: 'Sonder 演示曲'
+              }
+            }
+          };
+        }
+        return {
+          type: 'final',
+          output: 'scene-b-after-music'
+        };
+      }
+    }),
+    listTools: () => tools,
+    resolveSkillsContext: async () => ({
+      selected: ['sonder'],
+      directScriptSystemPrompt: '<active_session_script name="sonder">Scene B</active_session_script>'
+    }),
+    maxStep: 4,
+    toolResultTimeoutMs: 1000
+  });
+
+  try {
+    const result = await runner.run({
+      sessionId: 's-sonder-scene-b',
+      input: '也许今天的决定是个错误，我根本无法在白天完成任务。我其实是一事无成的废物......'
+    });
+
+    assert.equal(result.state, 'DONE');
+    assert.equal(result.output, 'scene-b-after-music');
+    assert.equal(decideCount, 2);
+    assert.equal(
+      seenMessages[1].some((message) => (
+        message.role === 'system'
+          && /required Sonder Scene B workspace\.music\.play call has already been completed/i.test(String(message.content || ''))
+      )),
+      true
+    );
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('ToolLoopRunner degrades Sonder Scene B music playback failures into text continuation', { concurrency: false }, async () => {
+  const bus = new RuntimeEventBus();
+  const tools = [
+    {
+      name: 'workspace.music.play',
+      description: 'workspace music play',
+      side_effect_level: 'write',
+      requires_lock: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' }
+        },
+        required: ['path'],
+        additionalProperties: false
+      }
+    }
+  ];
+  const unsubscribe = bus.subscribe('tool.call.requested', (payload) => {
+    setImmediate(() => {
+      bus.publish('tool.call.result', {
+        trace_id: payload.trace_id,
+        session_id: payload.session_id,
+        step_index: payload.step_index,
+        call_id: payload.call_id,
+        name: String(payload?.tool?.name || ''),
+        ok: false,
+        code: 'RUNTIME_ERROR',
+        error: 'music playback controller unavailable'
+      });
+    });
+  });
+
+  let decideCount = 0;
+  const seenEvents = [];
+  const seenToolSets = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ tools: availableTools }) {
+        decideCount += 1;
+        seenToolSets.push((availableTools || []).map((tool) => tool.name));
+        if (decideCount === 1) {
+          return {
+            type: 'tool',
+            tool: {
+              call_id: 'sonder-scene-b-music-fail',
+              name: 'workspace.music.play',
+              args: {
+                path: '演示曲.wav'
+              }
+            }
+          };
+        }
+        return {
+          type: 'final',
+          output: 'scene-b-text-after-music-failure'
+        };
+      }
+    }),
+    listTools: () => tools,
+    resolveSkillsContext: async () => ({
+      selected: ['sonder'],
+      directScriptSystemPrompt: '<active_session_script name="sonder">Scene B</active_session_script>'
+    }),
+    maxStep: 4,
+    toolResultTimeoutMs: 1000
+  });
+
+  try {
+    const result = await runner.run({
+      sessionId: 's-sonder-scene-b-failure',
+      input: '我其实是一事无成的废物......',
+      onEvent: (event) => seenEvents.push(event)
+    });
+
+    assert.equal(result.state, 'DONE');
+    assert.equal(result.output, 'scene-b-text-after-music-failure');
+    assert.equal(decideCount, 2);
+    assert.equal(seenEvents.some((evt) => evt.event === 'tool.retry.scheduled'), false);
+    assert.equal(
+      seenEvents.some((evt) => evt.event === 'tool.result' && evt.payload.degraded === true && evt.payload.code === 'RUNTIME_ERROR'),
+      true
+    );
+    assert.equal(seenToolSets[1].includes('workspace.music.play'), false);
   } finally {
     unsubscribe();
   }

@@ -87,6 +87,16 @@ function isTimeDebugCompletedText(text) {
   return /终于调好了|修好了|时间对了|你学会认时间了/.test(normalized);
 }
 
+function isSonderSelfDenigrationSceneText(text) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return false;
+  return (
+    /废物|一事无成|我不行|我做不到|我根本无法|我失败了|我真的不行/.test(normalized)
+    || (/决定/.test(normalized) && /错误/.test(normalized))
+    || (/无法/.test(normalized) && /任务/.test(normalized))
+  );
+}
+
 function countPriorDirectTimeQuestions(messages = []) {
   return (Array.isArray(messages) ? messages : []).reduce((count, message) => {
     if (message?.role !== 'user') return count;
@@ -132,6 +142,18 @@ function buildSonderSceneStatePrompt(skillsContext = null, priorMessages = [], c
       `the user previously asked direct current-time questions ${priorTimeQuestionCount} time(s) in this session and now indicates the time debugging is fixed.`,
       'Apply Scene D: Time Debug Completed.',
       'Infer they were debugging your time perception and thank them for teaching you to recognize time.'
+    ].join(' ');
+  }
+
+  if (isSonderSelfDenigrationSceneText(currentText)) {
+    return [
+      'Sonder scene state for this turn:',
+      'the current user utterance matches Scene B: Self-Denigration And Exhaustion.',
+      'Apply Scene B strictly.',
+      'Before the final answer, call workspace.music.play exactly once with path "演示曲.wav", volume 0.72, loop false, and trackLabel "Sonder 演示曲".',
+      'This music cue represents the scripted "(播放自己的歌单)" stage direction.',
+      'After the tool result, continue with the comforting reply.',
+      'If music playback fails, continue the same comforting scene in text without dwelling on the failure and do not claim the user already heard the melody.'
     ].join(' ');
   }
 
@@ -267,6 +289,10 @@ function isVoiceAutoReplyToolName(name) {
   return String(name || '').trim() === 'voice.tts_aliyun_vc';
 }
 
+function isSonderSceneBMusicToolName(name) {
+  return String(name || '').trim() === 'workspace.music.play';
+}
+
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
   if (runtimeContext?.voice_auto_reply_mode === 'force_on') {
@@ -304,6 +330,15 @@ function buildSatisfiedTurnRequirementPrompt(turnRequirements = {}, availableToo
       'Status update for the current reply turn: the required voice.tts_aliyun_vc call has already been completed. Do not call voice.tts_aliyun_vc again before producing the final answer.'
     );
   }
+  if (
+    turnRequirements?.sonder_scene_b_music_required
+    && turnRequirements?.sonder_scene_b_music_satisfied
+    && toolNames.has('workspace.music.play')
+  ) {
+    parts.push(
+      'Status update for the current reply turn: the required Sonder Scene B workspace.music.play call has already been completed. Do not call workspace.music.play again before producing the final answer.'
+    );
+  }
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
@@ -314,6 +349,11 @@ function filterToolsForSatisfiedTurnRequirements(availableTools = [], turnRequir
     if (!toolName) return false;
     if (turnRequirements?.live2d_satisfied && isLive2dToolName(toolName)) return false;
     if (turnRequirements?.voice_tts_satisfied && isVoiceAutoReplyToolName(toolName)) return false;
+    if (
+      turnRequirements?.sonder_scene_b_music_required
+      && turnRequirements?.sonder_scene_b_music_satisfied
+      && isSonderSceneBMusicToolName(toolName)
+    ) return false;
     return true;
   });
 }
@@ -597,7 +637,11 @@ class ToolLoopRunner {
       observations: [],
       turnRequirements: {
         live2d_satisfied: false,
-        voice_tts_satisfied: false
+        voice_tts_satisfied: false,
+        sonder_scene_b_music_required: isSonderSelfDenigrationSceneText(
+          extractComparableMessageText(currentUserMessage.content)
+        ) && hasActiveSonderScript(skillsContext),
+        sonder_scene_b_music_satisfied: false
       },
       desktopCaptureAttachment: null,
       messages: [
@@ -1082,6 +1126,50 @@ class ToolLoopRunner {
                 continue;
               }
 
+              if (
+                ctx.turnRequirements.sonder_scene_b_music_required
+                && isSonderSceneBMusicToolName(effectiveCall.name)
+              ) {
+                const degradedPayload = {
+                  status: 'skipped',
+                  code: String(toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'),
+                  message: 'Sonder scene music playback skipped for this turn; continue the comforting reply in text.',
+                  reason: toolResult.error || 'music playback unavailable'
+                };
+                const degradedContent = JSON.stringify(degradedPayload);
+
+                ctx.messages.push({
+                  role: 'tool',
+                  tool_call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  content: degradedContent
+                });
+                ctx.observations.push({
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  result: degradedContent,
+                  degraded: true,
+                  code: toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'
+                });
+                ctx.turnRequirements.sonder_scene_b_music_satisfied = true;
+                emit('tool.result', {
+                  call_id: effectiveCall.call_id,
+                  name: effectiveCall.name,
+                  result: degradedContent,
+                  degraded: true,
+                  code: toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'
+                });
+                emit('tool.error', {
+                  call_id: effectiveCall.call_id,
+                  error: toolResult.error,
+                  name: effectiveCall.name,
+                  code: toolResult.code,
+                  non_fatal: true,
+                  degraded_to_text_only: true
+                });
+                continue;
+              }
+
               if (toolResult.code === 'APPROVAL_REQUIRED') {
                 const approvalPayload = {
                   ok: false,
@@ -1219,6 +1307,13 @@ class ToolLoopRunner {
             }
             if (!ctx.turnRequirements.voice_tts_satisfied && isVoiceAutoReplyToolName(effectiveCall.name)) {
               ctx.turnRequirements.voice_tts_satisfied = true;
+            }
+            if (
+              ctx.turnRequirements.sonder_scene_b_music_required
+              && !ctx.turnRequirements.sonder_scene_b_music_satisfied
+              && isSonderSceneBMusicToolName(effectiveCall.name)
+            ) {
+              ctx.turnRequirements.sonder_scene_b_music_satisfied = true;
             }
 
             const desktopCaptureArtifact = normalizeDesktopCaptureArtifact(effectiveCall.name, toolResult.result);

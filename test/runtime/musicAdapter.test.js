@@ -74,3 +74,46 @@ test('music adapter rejects paths that escape the workspace or use unsupported e
     (err) => err.code === 'VALIDATION_ERROR'
   );
 });
+
+test('music adapter falls back to project root for relative bundled audio when session workspace lacks the file', async () => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'music-adapter-session-'));
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'music-adapter-project-'));
+  const cwdBefore = process.cwd();
+  const bundledPath = path.join(projectDir, '演示曲.wav');
+  await fs.writeFile(bundledPath, 'stub-audio', 'utf8');
+  process.chdir(projectDir);
+
+  const calls = [];
+  const adapters = __internal.createMusicAdapters({
+    invokeRpc: async ({ method, params }) => {
+      calls.push({ method, params });
+      return { ok: true, method };
+    }
+  });
+
+  try {
+    const realBundledPath = await fs.realpath(bundledPath);
+    const playResult = await adapters['desktop.music.play']({
+      path: '演示曲.wav',
+      volume: 0.72,
+      loop: false,
+      trackLabel: 'Sonder 演示曲'
+    }, {
+      workspaceRoot: workspaceDir,
+      trace_id: 'trace-bundled'
+    });
+
+    assert.equal(playResult, JSON.stringify({ ok: true, method: 'desktop.music.play' }));
+    assert.deepEqual(calls[0], {
+      method: 'desktop.music.play',
+      params: {
+        path: realBundledPath,
+        volume: 0.72,
+        loop: false,
+        trackLabel: 'Sonder 演示曲'
+      }
+    });
+  } finally {
+    process.chdir(cwdBefore);
+  }
+});
