@@ -34,6 +34,7 @@ const DEFAULT_SKILLS_CONFIG_CONTENT = {
   defaults: {
     sessionSkills: {
       enabled: false,
+      disablePersonaInjection: false,
       names: []
     }
   },
@@ -114,6 +115,7 @@ function normalizeSkillsConfig(config) {
     defaults: {
       sessionSkills: {
         enabled: config.defaults?.sessionSkills?.enabled === true,
+        disablePersonaInjection: config.defaults?.sessionSkills?.disablePersonaInjection === true,
         names: (config.defaults?.sessionSkills?.names || []).map((v) => String(v).trim()).filter(Boolean)
       }
     },

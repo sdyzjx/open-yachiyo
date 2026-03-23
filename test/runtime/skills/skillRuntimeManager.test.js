@@ -192,23 +192,24 @@ test('SkillRuntimeManager always includes configured default session skills', ()
     const manager = new SkillRuntimeManager({
       workspaceDir: workspace,
       configStore: {
-        load() {
-          return {
-            home: { envKey: 'YACHIYO_HOME', defaultPath: '~/yachiyo' },
-            load: { workspace: false, global: true, extraDirs: [] },
-            limits: { maxCandidatesPerRoot: 100, maxSkillsLoadedPerSource: 50, maxSkillsInPrompt: 5, maxSkillsPromptChars: 5000, maxSkillFileBytes: 262144 },
-            trigger: { scoreThreshold: 90, maxSelectedPerTurn: 1, cooldownMs: 0, rules: {} },
-            defaults: { sessionSkills: { enabled: true, names: ['sonder'] } },
-            entries: {},
-            tools: { exec: { enabled: true } }
-          };
-        }
+            load() {
+              return {
+                home: { envKey: 'YACHIYO_HOME', defaultPath: '~/yachiyo' },
+                load: { workspace: false, global: true, extraDirs: [] },
+                limits: { maxCandidatesPerRoot: 100, maxSkillsLoadedPerSource: 50, maxSkillsInPrompt: 5, maxSkillsPromptChars: 5000, maxSkillFileBytes: 262144 },
+                trigger: { scoreThreshold: 90, maxSelectedPerTurn: 1, cooldownMs: 0, rules: {} },
+                defaults: { sessionSkills: { enabled: true, disablePersonaInjection: true, names: ['sonder'] } },
+                entries: {},
+                tools: { exec: { enabled: true } }
+              };
+            }
       }
     });
 
     const ctx = manager.buildTurnContext({ sessionId: 's-default', input: '今天天气怎么样' });
     assert.equal(ctx.selected.includes('sonder'), true);
     assert.equal(ctx.defaultSelected.includes('sonder'), true);
+    assert.equal(ctx.suppressPersonaContext, true);
     assert.match(ctx.prompt, /sonder/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;

@@ -425,21 +425,21 @@ class ToolLoopRunner {
     const currentUserMessage = buildCurrentUserMessage(input, inputImages);
     const normalizedInputImages = normalizeInputImages(inputImages);
 
-    let personaContext = null;
-    if (typeof this.resolvePersonaContext === 'function') {
-      try {
-        personaContext = await this.resolvePersonaContext({ sessionId, input });
-      } catch {
-        personaContext = null;
-      }
-    }
-
     let skillsContext = null;
     if (typeof this.resolveSkillsContext === 'function') {
       try {
         skillsContext = await this.resolveSkillsContext({ sessionId, input });
       } catch {
         skillsContext = null;
+      }
+    }
+
+    let personaContext = null;
+    if (skillsContext?.suppressPersonaContext !== true && typeof this.resolvePersonaContext === 'function') {
+      try {
+        personaContext = await this.resolvePersonaContext({ sessionId, input });
+      } catch {
+        personaContext = null;
       }
     }
 

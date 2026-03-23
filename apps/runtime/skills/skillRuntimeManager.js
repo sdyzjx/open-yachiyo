@@ -145,6 +145,10 @@ class SkillRuntimeManager {
       prompt: promptResult.prompt,
       selected: promptResult.selected.map((s) => s.name),
       defaultSelected: defaultSessionSkills.map((s) => s.name),
+      suppressPersonaContext: (
+        config?.defaults?.sessionSkills?.disablePersonaInjection === true
+        && defaultSessionSkills.length > 0
+      ),
       dropped: discoveryMode ? dropped : [...dropped, ...selectedResult.dropped],
       clippedBy: promptResult.clippedBy,
       input

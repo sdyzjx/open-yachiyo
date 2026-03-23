@@ -1280,6 +1280,43 @@ test('ToolLoopRunner injects persona system prompt when resolver is provided', a
   dispatcher.stop();
 });
 
+test('ToolLoopRunner skips persona prompt when skills context suppresses persona injection', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-suppress-persona' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: '<available_skills>\\n  <skill><name>sonder</name></skill>\\n</available_skills>',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    resolvePersonaContext: async () => ({ prompt: 'Persona Core: yachiyo', mode: 'hybrid' }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({ sessionId: 's5b', input: 'hello' });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-suppress-persona');
+  assert.equal(seenMessages.some((msg) => String(msg?.content || '').includes('Persona Core: yachiyo')), false);
+  assert.equal(seenMessages.some((msg) => String(msg?.content || '').includes('<available_skills>')), true);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects persona tool hint on persona-modification keywords', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

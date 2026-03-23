@@ -23,7 +23,7 @@ test('SkillConfigStore loads and normalizes config/skills.yaml', () => {
   assert.ok(cfg.trigger && typeof cfg.trigger === 'object');
   assert.ok(cfg.trigger.rules && typeof cfg.trigger.rules === 'object');
   assert.ok(cfg.defaults && typeof cfg.defaults === 'object');
-  assert.deepEqual(cfg.defaults.sessionSkills, { enabled: false, names: [] });
+  assert.deepEqual(cfg.defaults.sessionSkills, { enabled: false, disablePersonaInjection: false, names: [] });
 });
 
 test('normalizeSkillsConfig throws on invalid root', () => {
@@ -61,6 +61,7 @@ test('SkillConfigStore supports custom file path', () => {
       'defaults:',
       '  sessionSkills:',
       '    enabled: true',
+      '    disablePersonaInjection: true',
       '    names: [sonder]',
       'entries: {}'
     ].join('\n'),
@@ -74,5 +75,6 @@ test('SkillConfigStore supports custom file path', () => {
   assert.equal(cfg.trigger.maxSelectedPerTurn, 1);
   assert.deepEqual(cfg.trigger.rules['apple-events-music'].keywords, ['music', 'playlist', '播放']);
   assert.equal(cfg.defaults.sessionSkills.enabled, true);
+  assert.equal(cfg.defaults.sessionSkills.disablePersonaInjection, true);
   assert.deepEqual(cfg.defaults.sessionSkills.names, ['sonder']);
 });
