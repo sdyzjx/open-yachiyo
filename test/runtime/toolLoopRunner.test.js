@@ -1392,6 +1392,56 @@ test('ToolLoopRunner strips prior assistant example for repeated identical user 
   dispatcher.stop();
 });
 
+test('ToolLoopRunner strips all assistant history in strict script mode', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-strict-script' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: '<available_skills>\\n  <skill><name>sonder</name></skill>\\n</available_skills>',
+      activeSystemPrompt: 'Active default session skill scripts for this turn: sonder.',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      strictScriptMode: true,
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-strict-script',
+    input: '继续说',
+    seedMessages: [
+      { role: 'user', content: '第一句' },
+      { role: 'assistant', content: '旧助手回复一' },
+      { role: 'user', content: '第二句' },
+      { role: 'assistant', content: '旧助手回复二' }
+    ]
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-strict-script');
+  assert.equal(seenMessages.some((msg) => msg.role === 'assistant' && String(msg.content).includes('旧助手回复一')), false);
+  assert.equal(seenMessages.some((msg) => msg.role === 'assistant' && String(msg.content).includes('旧助手回复二')), false);
+  assert.equal(seenMessages.some((msg) => msg.role === 'user' && String(msg.content).includes('第一句')), true);
+  assert.equal(seenMessages.some((msg) => msg.role === 'user' && String(msg.content).includes('第二句')), true);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects persona tool hint on persona-modification keywords', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

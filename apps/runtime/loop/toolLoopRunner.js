@@ -98,6 +98,10 @@ function stripRepeatedTurnExamples(messages = [], currentInput = '') {
   return result;
 }
 
+function stripAssistantHistory(messages = []) {
+  return (Array.isArray(messages) ? messages : []).filter((message) => message?.role !== 'assistant');
+}
+
 function serializePromptContentForLog(content) {
   if (typeof content === 'string') {
     return content;
@@ -463,7 +467,6 @@ class ToolLoopRunner {
       ))
       : [];
     const currentUserMessage = buildCurrentUserMessage(input, inputImages);
-    const dedupedPriorMessages = stripRepeatedTurnExamples(priorMessages, currentUserMessage.content);
     const normalizedInputImages = normalizeInputImages(inputImages);
 
     let skillsContext = null;
@@ -494,6 +497,11 @@ class ToolLoopRunner {
     const activeSkillSystemPrompt = skillsContext?.activeSystemPrompt && String(skillsContext.activeSystemPrompt).trim()
       ? String(skillsContext.activeSystemPrompt)
       : null;
+    const strictScriptMode = skillsContext?.strictScriptMode === true;
+    const normalizedPriorMessages = stripRepeatedTurnExamples(priorMessages, currentUserMessage.content);
+    const effectivePriorMessages = strictScriptMode
+      ? stripAssistantHistory(normalizedPriorMessages)
+      : normalizedPriorMessages;
 
     const personaToolHint = shouldHintPersonaTool(input)
       ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.'
@@ -536,7 +544,7 @@ class ToolLoopRunner {
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...(desktopCapturePrompt ? [{ role: 'system', content: desktopCapturePrompt }] : []),
-        ...dedupedPriorMessages,
+        ...effectivePriorMessages,
         currentUserMessage
       ]
     };
@@ -591,7 +599,7 @@ class ToolLoopRunner {
       input,
       input_images: normalizedInputImages.length,
       max_step: this.maxStep,
-      context_messages: dedupedPriorMessages.length,
+      context_messages: effectivePriorMessages.length,
       persona_mode: personaContext?.mode || null,
       skills_selected: skillsContext?.selected?.length || 0,
       skills_clipped_by: skillsContext?.clippedBy || null,

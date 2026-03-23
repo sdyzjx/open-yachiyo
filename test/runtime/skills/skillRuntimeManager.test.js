@@ -219,6 +219,7 @@ test('SkillRuntimeManager always includes configured default session skills', ()
     const ctx = manager.buildTurnContext({ sessionId: 's-default', input: '今天天气怎么样' });
     assert.equal(ctx.selected.includes('sonder'), true);
     assert.equal(ctx.defaultSelected.includes('sonder'), true);
+    assert.equal(ctx.strictScriptMode, true);
     assert.equal(ctx.suppressPersonaContext, true);
     assert.match(ctx.activeSystemPrompt, /binding instructions/);
     assert.match(ctx.prompt, /sonder/);

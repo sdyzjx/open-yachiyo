@@ -164,7 +164,9 @@ class SkillRuntimeManager {
           ? [
             `Active default session skill scripts for this turn: ${defaultSessionSkills.map((skill) => skill.name).join(', ')}.`,
             'Treat those scripts as binding instructions for reply style and behavior.',
+            'Follow the active scripts strictly.',
             'Do not let prior assistant wording override the active scripts.',
+            'When script behavior conflicts with prior assistant style, prefer the active scripts.',
             'When the current user utterance matches a prior utterance, do not copy the prior assistant reply verbatim; generate a fresh reply under the active script.',
             'If spoken TTS content is produced for the same turn, it may be phrased slightly differently but its meaning must remain exactly equivalent to the written reply.'
           ].join(' ')
@@ -172,6 +174,7 @@ class SkillRuntimeManager {
       ),
       selected: promptResult.selected.map((s) => s.name),
       defaultSelected: defaultSessionSkills.map((s) => s.name),
+      strictScriptMode: defaultSessionSkills.length > 0,
       suppressPersonaContext: (
         config?.defaults?.sessionSkills?.disablePersonaInjection === true
         && defaultSessionSkills.length > 0
