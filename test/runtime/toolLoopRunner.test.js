@@ -1392,6 +1392,113 @@ test('ToolLoopRunner injects direct session script prompt when provided', async 
   dispatcher.stop();
 });
 
+test('ToolLoopRunner injects Sonder repeated-time scene state prompt with ordinal count', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-sonder-time-count' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: null,
+      activeSystemPrompt: 'Active default session skill scripts for this turn: sonder.',
+      directScriptSystemPrompt: 'Active session script injection is enabled.\n<active_session_script name="sonder">\n# Sonder\nScene C.\n</active_session_script>',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      strictScriptMode: true,
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-sonder-time-count',
+    input: '现在几点了',
+    seedMessages: [
+      { role: 'user', content: '现在几点了' },
+      { role: 'user', content: '现在几点了' }
+    ]
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-sonder-time-count');
+  assert.equal(
+    seenMessages.some((msg) => msg.role === 'system' && /3rd direct current-time question/i.test(String(msg.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((msg) => msg.role === 'system' && /apply scene c/i.test(String(msg.content || ''))),
+    true
+  );
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner injects Sonder time-debug-completed scene state prompt', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-sonder-time-debug' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: null,
+      activeSystemPrompt: 'Active default session skill scripts for this turn: sonder.',
+      directScriptSystemPrompt: 'Active session script injection is enabled.\n<active_session_script name="sonder">\n# Sonder\nScene D.\n</active_session_script>',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      strictScriptMode: true,
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-sonder-time-debug',
+    input: '终于调好了',
+    seedMessages: [
+      { role: 'user', content: '现在几点了' },
+      { role: 'user', content: '现在几点了' },
+      { role: 'user', content: '现在几点了' }
+    ]
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-sonder-time-debug');
+  assert.equal(
+    seenMessages.some((msg) => msg.role === 'system' && /apply scene d/i.test(String(msg.content || ''))),
+    true
+  );
+  assert.equal(
+    seenMessages.some((msg) => msg.role === 'system' && /previously asked direct current-time questions 3 time\(s\)/i.test(String(msg.content || ''))),
+    true
+  );
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner strips prior assistant example for repeated identical user input', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

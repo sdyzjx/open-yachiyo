@@ -1,9 +1,9 @@
 const SESSION_PERMISSION_LEVELS = Object.freeze(['low', 'medium', 'high']);
 const DEFAULT_SESSION_PERMISSION_LEVEL = 'high';
 const DEFAULT_SESSION_WORKSPACE_MODE = 'session';
-const DEFAULT_VOICE_AUTO_REPLY_ENABLED = false;
+const DEFAULT_VOICE_AUTO_REPLY_ENABLED = true;
 const SESSION_VOICE_AUTO_REPLY_MODES = Object.freeze(['policy', 'force_on', 'force_off']);
-const DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE = 'policy';
+const DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE = 'force_on';
 
 function normalizeWorkspaceSettings(workspace = {}) {
   const rootDir = typeof workspace.root_dir === 'string' && workspace.root_dir.trim()

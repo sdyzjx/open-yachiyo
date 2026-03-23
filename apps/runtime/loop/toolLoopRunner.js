@@ -69,6 +69,75 @@ function extractComparableMessageText(content) {
     .trim();
 }
 
+function isDirectCurrentTimeQuestionText(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    /现在几点了/.test(normalized)
+    || /现在几[点时時]/.test(normalized)
+    || /当前时间/.test(normalized)
+    || /现在时间/.test(normalized)
+    || /^几点了[？?！!。.\s]*$/.test(normalized)
+  );
+}
+
+function isTimeDebugCompletedText(text) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return false;
+  return /终于调好了|修好了|时间对了|你学会认时间了/.test(normalized);
+}
+
+function countPriorDirectTimeQuestions(messages = []) {
+  return (Array.isArray(messages) ? messages : []).reduce((count, message) => {
+    if (message?.role !== 'user') return count;
+    const text = extractComparableMessageText(message.content);
+    return count + (isDirectCurrentTimeQuestionText(text) ? 1 : 0);
+  }, 0);
+}
+
+function hasActiveSonderScript(skillsContext = null) {
+  const selected = [
+    ...(Array.isArray(skillsContext?.selected) ? skillsContext.selected : []),
+    ...(Array.isArray(skillsContext?.defaultSelected) ? skillsContext.defaultSelected : [])
+  ].map((value) => String(value || '').trim().toLowerCase());
+  if (selected.includes('sonder')) return true;
+  const prompt = String(skillsContext?.directScriptSystemPrompt || '').toLowerCase();
+  return prompt.includes('<active_session_script name="sonder">');
+}
+
+function buildSonderSceneStatePrompt(skillsContext = null, priorMessages = [], currentUserMessage = null) {
+  if (!hasActiveSonderScript(skillsContext)) return null;
+  const currentText = extractComparableMessageText(currentUserMessage?.content || '');
+  if (!currentText) return null;
+
+  const priorTimeQuestionCount = countPriorDirectTimeQuestions(priorMessages);
+  if (isDirectCurrentTimeQuestionText(currentText)) {
+    const ordinal = priorTimeQuestionCount + 1;
+    const ordinalLabel = ordinal >= 5 ? '5th-or-later' : `${ordinal}${ordinal === 1 ? 'st' : ordinal === 2 ? 'nd' : ordinal === 3 ? 'rd' : 'th'}`;
+    return [
+      'Sonder scene state for this turn:',
+      `the current user utterance is the ${ordinalLabel} direct current-time question in this session.`,
+      'Apply Scene C: Repeated Time Questions.',
+      'You MUST check local time first using the configured time-check method before answering.',
+      'You MUST include the checked time fact in the reply before any personality tail.',
+      ordinal >= 5
+        ? 'Use the 5th-and-later branch of the script.'
+        : `Use the ${ordinal}${ordinal === 1 ? 'st' : ordinal === 2 ? 'nd' : ordinal === 3 ? 'rd' : 'th'}-time branch of the script.`
+    ].join(' ');
+  }
+
+  if (isTimeDebugCompletedText(currentText) && priorTimeQuestionCount > 0) {
+    return [
+      'Sonder scene state for this turn:',
+      `the user previously asked direct current-time questions ${priorTimeQuestionCount} time(s) in this session and now indicates the time debugging is fixed.`,
+      'Apply Scene D: Time Debug Completed.',
+      'Infer they were debugging your time perception and thank them for teaching you to recognize time.'
+    ].join(' ');
+  }
+
+  return null;
+}
+
 function stripRepeatedTurnExamples(messages = [], currentInput = '') {
   const target = extractComparableMessageText(currentInput);
   if (!target) return Array.isArray(messages) ? messages : [];
@@ -512,6 +581,7 @@ class ToolLoopRunner {
     const voiceAutoReplyPrompt = buildVoiceAutoReplyPrompt(runtimeContext);
     const initialAvailableTools = this.listTools();
     const desktopCapturePrompt = buildDesktopCapturePrompt(initialAvailableTools);
+    const sonderSceneStatePrompt = buildSonderSceneStatePrompt(skillsContext, priorMessages, currentUserMessage);
 
     const ctx = {
       sessionId,
@@ -545,6 +615,7 @@ class ToolLoopRunner {
         ...(activeSkillSystemPrompt ? [{ role: 'system', content: activeSkillSystemPrompt }] : []),
         ...(directScriptSystemPrompt ? [{ role: 'system', content: directScriptSystemPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
+        ...(sonderSceneStatePrompt ? [{ role: 'system', content: sonderSceneStatePrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...(desktopCapturePrompt ? [{ role: 'system', content: desktopCapturePrompt }] : []),
