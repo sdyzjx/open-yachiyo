@@ -71,6 +71,70 @@
     return Math.pow(gated, 2.4);
   }
 
+  function resolveActionWaveModulation(actionFrame) {
+    if (!actionFrame || typeof actionFrame !== 'object') {
+      return {
+        amplitude: 0,
+        speed: 0
+      };
+    }
+
+    const type = String(actionFrame.type || '').trim().toLowerCase();
+    const name = String(actionFrame.name || '').trim().toLowerCase();
+    const intensity = clamp(toFiniteNumber(actionFrame.intensity, 0), 0, 1);
+    const progress = clamp(toFiniteNumber(actionFrame.progress, 0), 0, 1);
+    if (intensity <= 0.01 || progress <= 0) {
+      return {
+        amplitude: 0,
+        speed: 0
+      };
+    }
+
+    const pulse = Math.sin(progress * Math.PI);
+    let frequency = 1.4;
+    let amplitudeBias = 0.04;
+    let amplitudeOsc = 0.03;
+    let speedBias = 0.012;
+    let speedOsc = 0.01;
+
+    if (/(smile|happy|joy|laugh|grin|love|heart)/.test(name)) {
+      frequency = 1.8;
+      amplitudeBias = 0.08;
+      amplitudeOsc = 0.05;
+      speedBias = 0.026;
+      speedOsc = 0.014;
+    } else if (/(sad|cry|tear|down|sorrow|hurt)/.test(name)) {
+      frequency = 1.1;
+      amplitudeBias = -0.02;
+      amplitudeOsc = 0.032;
+      speedBias = -0.015;
+      speedOsc = 0.008;
+    } else if (/(angry|mad|annoy|rage|frown)/.test(name)) {
+      frequency = 2.6;
+      amplitudeBias = 0.1;
+      amplitudeOsc = 0.075;
+      speedBias = 0.05;
+      speedOsc = 0.03;
+    } else if (/(surprise|shock|wow|blink|startled)/.test(name)) {
+      frequency = 2.9;
+      amplitudeBias = 0.12;
+      amplitudeOsc = 0.09;
+      speedBias = 0.06;
+      speedOsc = 0.034;
+    } else if (!['expression', 'emote', 'react'].includes(type)) {
+      return {
+        amplitude: 0,
+        speed: 0
+      };
+    }
+
+    const oscillator = Math.sin(progress * Math.PI * 2 * frequency);
+    return {
+      amplitude: intensity * (amplitudeBias * pulse + amplitudeOsc * oscillator),
+      speed: intensity * (speedBias * pulse + speedOsc * oscillator)
+    };
+  }
+
   function applyAngularWaveShape(wave) {
     if (!wave || !Array.isArray(wave.curves)) {
       return false;
@@ -280,12 +344,15 @@
     const actionScale = clamp(toFiniteNumber(snapshot?.actionScale, 1), 1, 1.8);
     const actionBoost = clamp((actionScale - 1) / 0.8, 0, 1);
     const waveformAlpha = clamp(toFiniteNumber(snapshot?.waveformAlpha, 0), 0, 1);
+    const breathPhase = toFiniteNumber(snapshot?.breathPhase, 0);
+    const actionMotion = resolveActionWaveModulation(snapshot?.actionFrame);
 
     if (sourceKind === 'breath') {
+      const breathPulse = (Math.sin(breathPhase) + 1) / 2;
       return {
-        amplitude: 0,
-        speed: 0,
-        opacity: waveformAlpha
+        amplitude: clamp(0.035 + breathPulse * 0.05 + actionMotion.amplitude * 0.4, 0.02, 0.12),
+        speed: clamp(0.018 + breathPulse * 0.018 + actionMotion.speed * 0.2, 0.012, 0.06),
+        opacity: clamp(waveformAlpha * 0.94, 0, 1)
       };
     }
 
@@ -296,8 +363,8 @@
     const baseSpeed = isMusic ? 0.11 : 0.14;
     const speedRange = isMusic ? 0.1 : 0.13;
     return {
-      amplitude: clamp(baseAmplitude + shapedEnergy * amplitudeRange + actionBoost * 0.12, 0.4, 1),
-      speed: clamp(baseSpeed + shapedEnergy * speedRange + actionBoost * 0.04, 0.1, 0.34),
+      amplitude: clamp(baseAmplitude + shapedEnergy * amplitudeRange + actionBoost * 0.12 + actionMotion.amplitude, 0.4, 1),
+      speed: clamp(baseSpeed + shapedEnergy * speedRange + actionBoost * 0.04 + actionMotion.speed, 0.08, 0.36),
       opacity: waveformAlpha
     };
   }

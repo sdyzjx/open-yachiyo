@@ -595,6 +595,14 @@
         energy: state.smoothedEnergy,
         actionScale: state.smoothedScale,
         breathPhase: state.breathPhase,
+        actionFrame: state.actionFrame
+          ? {
+            type: state.actionFrame.type || null,
+            name: state.actionFrame.name || null,
+            intensity: clamp01(state.actionFrame.intensity),
+            progress: clamp01(state.actionFrame.progress)
+          }
+          : null,
         colors: {
           primary: config.colors[sourceKind] || config.colors.breath,
           shadow: config.colors.shadow,

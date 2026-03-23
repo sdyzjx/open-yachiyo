@@ -29,16 +29,17 @@ test('resolveSiriWaveLayout expands presenter geometry into a siriwave shell', (
   assert.ok(layout.top < 200);
 });
 
-test('resolveSiriWaveMotion keeps breath mode visually static', () => {
+test('resolveSiriWaveMotion adds subtle breathing motion during breath mode', () => {
   const motion = resolveSiriWaveMotion({
     sourceKind: 'breath',
     energy: 0,
+    breathPhase: Math.PI / 2,
     waveformAlpha: 1
   });
 
-  assert.equal(motion.amplitude, 0);
-  assert.equal(motion.speed, 0);
-  assert.equal(motion.opacity, 1);
+  assert.ok(motion.amplitude > 0.03);
+  assert.ok(motion.speed > 0.01);
+  assert.ok(motion.opacity < 1);
 });
 
 test('resolveSiriWaveMotion gives speech a stronger visible baseline than music', () => {
@@ -63,6 +64,34 @@ test('resolveSiriWaveMotion gives speech a stronger visible baseline than music'
   assert.equal(DEFAULT_CURVE_DEFINITION.length, 4);
   assert.deepEqual(DEFAULT_RANGES.noOfCurves, [3, 5]);
   assert.deepEqual(DEFAULT_RANGES.speed, [0.34, 0.62]);
+});
+
+test('resolveSiriWaveMotion modulates waveform with expressive action frames', () => {
+  const neutral = resolveSiriWaveMotion({
+    sourceKind: 'speech',
+    energy: 0.32,
+    actionScale: 1.05,
+    waveformAlpha: 1,
+    actionFrame: null
+  });
+  const expressive = resolveSiriWaveMotion({
+    sourceKind: 'speech',
+    energy: 0.32,
+    actionScale: 1.05,
+    waveformAlpha: 1,
+    actionFrame: {
+      type: 'expression',
+      name: 'angry',
+      intensity: 0.88,
+      progress: 0.28
+    }
+  });
+
+  assert.ok(
+    expressive.amplitude !== neutral.amplitude
+    || expressive.speed !== neutral.speed
+  );
+  assert.ok(expressive.speed !== neutral.speed);
 });
 
 test('stabilizeSiriWaveInstance seeds flat ios9 curves into motion', () => {
