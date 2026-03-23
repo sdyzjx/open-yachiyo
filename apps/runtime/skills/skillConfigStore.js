@@ -31,6 +31,12 @@ const DEFAULT_SKILLS_CONFIG_CONTENT = {
     cooldownMs: 15000,
     rules: {}
   },
+  defaults: {
+    sessionSkills: {
+      enabled: false,
+      names: []
+    }
+  },
   entries: {}
 };
 
@@ -66,6 +72,11 @@ function validateSkillsConfig(config) {
 
   const trigger = config.trigger || {};
   if (!isObject(trigger)) throw new Error('trigger must be an object');
+  const defaults = config.defaults || {};
+  if (!isObject(defaults)) throw new Error('defaults must be an object');
+  const sessionSkills = defaults.sessionSkills || {};
+  if (!isObject(sessionSkills)) throw new Error('defaults.sessionSkills must be an object');
+  if (!Array.isArray(sessionSkills.names || [])) throw new Error('defaults.sessionSkills.names must be an array');
 
   if (!isObject(config.entries || {})) throw new Error('entries must be an object');
 }
@@ -99,6 +110,12 @@ function normalizeSkillsConfig(config) {
       scoreThreshold: asNumber(config.trigger.scoreThreshold, 20),
       cooldownMs: Math.max(0, asNumber(config.trigger.cooldownMs, 15000)),
       rules: isObject(config.trigger.rules) ? config.trigger.rules : {}
+    },
+    defaults: {
+      sessionSkills: {
+        enabled: config.defaults?.sessionSkills?.enabled === true,
+        names: (config.defaults?.sessionSkills?.names || []).map((v) => String(v).trim()).filter(Boolean)
+      }
     },
     entries: config.entries || {}
   };

@@ -49,6 +49,36 @@ function isSkillDiscoveryQuery(input) {
   return /(?:\bskills?\b|available\s+skills?|你有什么技能|有哪些技能|有什么技能|你会什么|能力列表|可用技能)/i.test(text);
 }
 
+function resolveDefaultSessionSkills(skills, config) {
+  const names = config?.defaults?.sessionSkills?.names || [];
+  if (config?.defaults?.sessionSkills?.enabled !== true || !Array.isArray(names) || names.length === 0) {
+    return [];
+  }
+
+  const byName = new Map((skills || []).map((skill) => [String(skill.name || '').toLowerCase(), skill]));
+  const selected = [];
+  const seen = new Set();
+  for (const name of names) {
+    const normalized = String(name || '').toLowerCase();
+    const skill = byName.get(normalized);
+    if (!skill || seen.has(skill.name)) continue;
+    seen.add(skill.name);
+    selected.push(skill);
+  }
+  return selected;
+}
+
+function mergeSkillSelections(primary, secondary) {
+  const merged = [];
+  const seen = new Set();
+  for (const skill of [...(primary || []), ...(secondary || [])]) {
+    if (!skill || seen.has(skill.name)) continue;
+    seen.add(skill.name);
+    merged.push(skill);
+  }
+  return merged;
+}
+
 class SkillRuntimeManager {
   constructor({ workspaceDir, configStore, selector, snapshotStore, telemetry } = {}) {
     this.workspaceDir = workspaceDir || process.cwd();
@@ -94,6 +124,7 @@ class SkillRuntimeManager {
     const { accepted, dropped } = filterEligibleSkills({ skills: loaded, config });
     const explicitSkills = extractExplicitSkillsFromInput(input, accepted);
     const discoveryMode = isSkillDiscoveryQuery(input);
+    const defaultSessionSkills = resolveDefaultSessionSkills(accepted, config);
     const selectedResult = this.selector.select({
       skills: accepted,
       input,
@@ -106,13 +137,14 @@ class SkillRuntimeManager {
     });
 
     const promptResult = clipSkillsForPrompt(
-      discoveryMode ? accepted : selectedResult.selected,
+      discoveryMode ? accepted : mergeSkillSelections(defaultSessionSkills, selectedResult.selected),
       config.limits || {}
     );
 
     const context = {
       prompt: promptResult.prompt,
       selected: promptResult.selected.map((s) => s.name),
+      defaultSelected: defaultSessionSkills.map((s) => s.name),
       dropped: discoveryMode ? dropped : [...dropped, ...selectedResult.dropped],
       clippedBy: promptResult.clippedBy,
       input
@@ -123,6 +155,7 @@ class SkillRuntimeManager {
       event: 'skills.turn',
       sessionId,
       selected: context.selected,
+      defaultSelected: context.defaultSelected,
       droppedCount: context.dropped.length,
       clippedBy: context.clippedBy
     });

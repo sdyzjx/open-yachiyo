@@ -174,3 +174,44 @@ test('SkillRuntimeManager selects apple-events-music for 播放音乐 with skill
     else process.env.YACHIYO_HOME = old;
   }
 });
+
+test('SkillRuntimeManager always includes configured default session skills', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-rt-default-session-'));
+  const workspace = path.join(tmp, 'ws');
+  const yhome = path.join(tmp, 'yachiyo');
+  const gskills = path.join(yhome, 'skills');
+  fs.mkdirSync(gskills, { recursive: true });
+
+  writeSkill(gskills, 'sonder', 'tender companion voice');
+  writeSkill(gskills, 'weather', 'get weather report');
+
+  const old = process.env.YACHIYO_HOME;
+  process.env.YACHIYO_HOME = yhome;
+
+  try {
+    const manager = new SkillRuntimeManager({
+      workspaceDir: workspace,
+      configStore: {
+        load() {
+          return {
+            home: { envKey: 'YACHIYO_HOME', defaultPath: '~/yachiyo' },
+            load: { workspace: false, global: true, extraDirs: [] },
+            limits: { maxCandidatesPerRoot: 100, maxSkillsLoadedPerSource: 50, maxSkillsInPrompt: 5, maxSkillsPromptChars: 5000, maxSkillFileBytes: 262144 },
+            trigger: { scoreThreshold: 90, maxSelectedPerTurn: 1, cooldownMs: 0, rules: {} },
+            defaults: { sessionSkills: { enabled: true, names: ['sonder'] } },
+            entries: {},
+            tools: { exec: { enabled: true } }
+          };
+        }
+      }
+    });
+
+    const ctx = manager.buildTurnContext({ sessionId: 's-default', input: '今天天气怎么样' });
+    assert.equal(ctx.selected.includes('sonder'), true);
+    assert.equal(ctx.defaultSelected.includes('sonder'), true);
+    assert.match(ctx.prompt, /sonder/);
+  } finally {
+    if (old === undefined) delete process.env.YACHIYO_HOME;
+    else process.env.YACHIYO_HOME = old;
+  }
+});
