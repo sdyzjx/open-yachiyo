@@ -118,8 +118,8 @@ function buildSonderSceneStatePrompt(skillsContext = null, priorMessages = [], c
       'Sonder scene state for this turn:',
       `the current user utterance is the ${ordinalLabel} direct current-time question in this session.`,
       'Apply Scene C: Repeated Time Questions.',
-      'You MUST check local time first using the configured time-check method before answering.',
-      'You MUST include the checked time fact in the reply before any personality tail.',
+      'Follow the scripted progression exactly for this ordinal turn.',
+      'Do not normalize the reply into a factual real-time answer unless the script branch for this ordinal explicitly does so.',
       ordinal >= 5
         ? 'Use the 5th-and-later branch of the script.'
         : `Use the ${ordinal}${ordinal === 1 ? 'st' : ordinal === 2 ? 'nd' : ordinal === 3 ? 'rd' : 'th'}-time branch of the script.`

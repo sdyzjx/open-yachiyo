@@ -1441,6 +1441,10 @@ test('ToolLoopRunner injects Sonder repeated-time scene state prompt with ordina
     seenMessages.some((msg) => msg.role === 'system' && /apply scene c/i.test(String(msg.content || ''))),
     true
   );
+  assert.equal(
+    seenMessages.some((msg) => msg.role === 'system' && /follow the scripted progression exactly/i.test(String(msg.content || ''))),
+    true
+  );
 
   dispatcher.stop();
 });
