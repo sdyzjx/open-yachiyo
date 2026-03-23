@@ -1317,6 +1317,81 @@ test('ToolLoopRunner skips persona prompt when skills context suppresses persona
   dispatcher.stop();
 });
 
+test('ToolLoopRunner injects active skill system prompt when provided', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-active-skill-prompt' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: '<available_skills>\\n  <skill><name>sonder</name></skill>\\n</available_skills>',
+      activeSystemPrompt: 'Active default session skill scripts for this turn: sonder.',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({ sessionId: 's-active-skill', input: 'hello' });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-active-skill-prompt');
+  assert.equal(seenMessages.some((msg) => String(msg?.content || '').includes('Active default session skill scripts')), true);
+
+  dispatcher.stop();
+});
+
+test('ToolLoopRunner strips prior assistant example for repeated identical user input', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-dedup-repeat' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({
+    sessionId: 's-dedup-repeat',
+    input: '你好，Sonder',
+    seedMessages: [
+      { role: 'user', content: '你好，Sonder' },
+      { role: 'assistant', content: '旧回复，不该被拿来复读' },
+      { role: 'user', content: '别的输入' },
+      { role: 'assistant', content: '别的回复' }
+    ]
+  });
+
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-dedup-repeat');
+  assert.equal(seenMessages.some((msg) => msg.role === 'assistant' && String(msg.content).includes('旧回复，不该被拿来复读')), false);
+  assert.equal(seenMessages.some((msg) => msg.role === 'assistant' && String(msg.content).includes('别的回复')), true);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner injects persona tool hint on persona-modification keywords', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

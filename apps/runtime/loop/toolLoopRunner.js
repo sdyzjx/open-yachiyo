@@ -58,6 +58,46 @@ function buildCurrentUserMessage(input, inputImages = []) {
   return { role: 'user', content };
 }
 
+function extractComparableMessageText(content) {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((part) => part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function stripRepeatedTurnExamples(messages = [], currentInput = '') {
+  const target = extractComparableMessageText(currentInput);
+  if (!target) return Array.isArray(messages) ? messages : [];
+
+  const normalizedTarget = target.toLowerCase();
+  const result = [];
+  let skipAssistantForMatchedUser = false;
+
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (!message || typeof message !== 'object') continue;
+
+    if (message.role === 'user') {
+      const messageText = extractComparableMessageText(message.content).toLowerCase();
+      skipAssistantForMatchedUser = messageText === normalizedTarget;
+      if (skipAssistantForMatchedUser) continue;
+      result.push(message);
+      continue;
+    }
+
+    if (skipAssistantForMatchedUser && message.role === 'assistant') {
+      continue;
+    }
+
+    result.push(message);
+  }
+
+  return result;
+}
+
 function serializePromptContentForLog(content) {
   if (typeof content === 'string') {
     return content;
@@ -423,6 +463,7 @@ class ToolLoopRunner {
       ))
       : [];
     const currentUserMessage = buildCurrentUserMessage(input, inputImages);
+    const dedupedPriorMessages = stripRepeatedTurnExamples(priorMessages, currentUserMessage.content);
     const normalizedInputImages = normalizeInputImages(inputImages);
 
     let skillsContext = null;
@@ -449,6 +490,9 @@ class ToolLoopRunner {
 
     const skillsPrompt = skillsContext?.prompt && String(skillsContext.prompt).trim()
       ? String(skillsContext.prompt)
+      : null;
+    const activeSkillSystemPrompt = skillsContext?.activeSystemPrompt && String(skillsContext.activeSystemPrompt).trim()
+      ? String(skillsContext.activeSystemPrompt)
       : null;
 
     const personaToolHint = shouldHintPersonaTool(input)
@@ -487,11 +531,12 @@ class ToolLoopRunner {
           ].join(' ')
         },
         ...(personaPrompt ? [{ role: 'system', content: personaPrompt }] : []),
+        ...(activeSkillSystemPrompt ? [{ role: 'system', content: activeSkillSystemPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...(desktopCapturePrompt ? [{ role: 'system', content: desktopCapturePrompt }] : []),
-        ...priorMessages,
+        ...dedupedPriorMessages,
         currentUserMessage
       ]
     };
@@ -546,7 +591,7 @@ class ToolLoopRunner {
       input,
       input_images: normalizedInputImages.length,
       max_step: this.maxStep,
-      context_messages: priorMessages.length,
+      context_messages: dedupedPriorMessages.length,
       persona_mode: personaContext?.mode || null,
       skills_selected: skillsContext?.selected?.length || 0,
       skills_clipped_by: skillsContext?.clippedBy || null,

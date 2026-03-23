@@ -220,6 +220,7 @@ test('SkillRuntimeManager always includes configured default session skills', ()
     assert.equal(ctx.selected.includes('sonder'), true);
     assert.equal(ctx.defaultSelected.includes('sonder'), true);
     assert.equal(ctx.suppressPersonaContext, true);
+    assert.match(ctx.activeSystemPrompt, /binding instructions/);
     assert.match(ctx.prompt, /sonder/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;
