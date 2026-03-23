@@ -1353,6 +1353,45 @@ test('ToolLoopRunner injects active skill system prompt when provided', async ()
   dispatcher.stop();
 });
 
+test('ToolLoopRunner injects direct session script prompt when provided', async () => {
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor(localTools);
+  const dispatcher = new ToolCallDispatcher({ bus, executor });
+  dispatcher.start();
+
+  let seenMessages = [];
+  const runner = new ToolLoopRunner({
+    bus,
+    getReasoner: () => ({
+      async decide({ messages }) {
+        seenMessages = messages;
+        return { type: 'final', output: 'ok-direct-script' };
+      }
+    }),
+    listTools: () => executor.listTools(),
+    resolveSkillsContext: async () => ({
+      prompt: null,
+      activeSystemPrompt: 'Active default session skill scripts for this turn: sonder.',
+      directScriptSystemPrompt: 'Active session script injection is enabled.\n<active_session_script name="sonder">\n# Sonder\nDirect script body.\n</active_session_script>',
+      selected: ['sonder'],
+      defaultSelected: ['sonder'],
+      strictScriptMode: true,
+      suppressPersonaContext: true,
+      clippedBy: null
+    }),
+    maxStep: 1,
+    toolResultTimeoutMs: 500
+  });
+
+  const result = await runner.run({ sessionId: 's-direct-script', input: 'hello' });
+  assert.equal(result.state, 'DONE');
+  assert.equal(result.output, 'ok-direct-script');
+  assert.equal(seenMessages.some((msg) => String(msg?.content || '').includes('<active_session_script name="sonder">')), true);
+  assert.equal(seenMessages.some((msg) => String(msg?.content || '').includes('Direct script body.')), true);
+
+  dispatcher.stop();
+});
+
 test('ToolLoopRunner strips prior assistant example for repeated identical user input', async () => {
   const bus = new RuntimeEventBus();
   const executor = new ToolExecutor(localTools);

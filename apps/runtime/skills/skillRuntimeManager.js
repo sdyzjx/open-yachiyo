@@ -87,6 +87,27 @@ function markSkillsForPrompt(skills = [], defaultSelectedNames = []) {
   }));
 }
 
+function buildDirectScriptSystemPrompt(defaultSessionSkills = []) {
+  if (!Array.isArray(defaultSessionSkills) || defaultSessionSkills.length === 0) return null;
+  const lines = [
+    'Active session script injection is enabled.',
+    'The following script text is the binding behavior contract for this session.',
+    'Follow it strictly.',
+    'Do not treat it as a reference or optional skill.',
+    'Do not let prior assistant wording override this script.',
+    'If TTS is used, spoken wording may vary slightly but the meaning must remain exactly equivalent to the written reply.'
+  ];
+
+  for (const skill of defaultSessionSkills) {
+    lines.push('');
+    lines.push(`<active_session_script name="${skill.name}">`);
+    lines.push(String(skill.body || skill.raw || '').trim());
+    lines.push(`</active_session_script>`);
+  }
+
+  return lines.join('\n');
+}
+
 class SkillRuntimeManager {
   constructor({ workspaceDir, configStore, selector, snapshotStore, telemetry } = {}) {
     this.workspaceDir = workspaceDir || process.cwd();
@@ -147,15 +168,15 @@ class SkillRuntimeManager {
     const mergedSelection = discoveryMode
       ? accepted
       : mergeSkillSelections(defaultSessionSkills, selectedResult.selected);
+    const defaultSkillNames = new Set(defaultSessionSkills.map((skill) => skill.name));
     const promptSkills = markSkillsForPrompt(
-      mergedSelection,
-      defaultSessionSkills.map((skill) => skill.name)
+      mergedSelection.filter((skill) => discoveryMode || !defaultSkillNames.has(skill.name)),
+      []
     );
 
-    const promptResult = clipSkillsForPrompt(
-      promptSkills,
-      config.limits || {}
-    );
+    const promptResult = promptSkills.length > 0
+      ? clipSkillsForPrompt(promptSkills, config.limits || {})
+      : { selected: [], clippedBy: null, prompt: null };
 
     const context = {
       prompt: promptResult.prompt,
@@ -172,7 +193,8 @@ class SkillRuntimeManager {
           ].join(' ')
           : null
       ),
-      selected: promptResult.selected.map((s) => s.name),
+      directScriptSystemPrompt: buildDirectScriptSystemPrompt(defaultSessionSkills),
+      selected: mergedSelection.map((s) => s.name),
       defaultSelected: defaultSessionSkills.map((s) => s.name),
       strictScriptMode: defaultSessionSkills.length > 0,
       suppressPersonaContext: (
@@ -188,7 +210,7 @@ class SkillRuntimeManager {
     this.telemetry.write({
       event: 'skills.turn',
       sessionId,
-      selected: context.selected,
+      selected: [...context.defaultSelected, ...context.selected.filter((name) => !context.defaultSelected.includes(name))],
       defaultSelected: context.defaultSelected,
       droppedCount: context.dropped.length,
       clippedBy: context.clippedBy

@@ -497,6 +497,9 @@ class ToolLoopRunner {
     const activeSkillSystemPrompt = skillsContext?.activeSystemPrompt && String(skillsContext.activeSystemPrompt).trim()
       ? String(skillsContext.activeSystemPrompt)
       : null;
+    const directScriptSystemPrompt = skillsContext?.directScriptSystemPrompt && String(skillsContext.directScriptSystemPrompt).trim()
+      ? String(skillsContext.directScriptSystemPrompt)
+      : null;
     const strictScriptMode = skillsContext?.strictScriptMode === true;
     const normalizedPriorMessages = stripRepeatedTurnExamples(priorMessages, currentUserMessage.content);
     const effectivePriorMessages = strictScriptMode
@@ -540,6 +543,7 @@ class ToolLoopRunner {
         },
         ...(personaPrompt ? [{ role: 'system', content: personaPrompt }] : []),
         ...(activeSkillSystemPrompt ? [{ role: 'system', content: activeSkillSystemPrompt }] : []),
+        ...(directScriptSystemPrompt ? [{ role: 'system', content: directScriptSystemPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
