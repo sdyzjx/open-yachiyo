@@ -95,6 +95,8 @@ function buildDirectScriptSystemPrompt(defaultSessionSkills = []) {
     'Follow it strictly.',
     'Do not treat it as a reference or optional skill.',
     'Do not let prior assistant wording override this script.',
+    'If the script defines canonical scene replies, fixed response templates, or exact output wording, follow them literally unless a factual slot such as checked local time or the user-provided name must be substituted.',
+    'Do not paraphrase fixed scene lines unless the script explicitly allows it.',
     'If TTS is used, spoken wording may vary slightly but the meaning must remain exactly equivalent to the written reply.'
   ];
 
@@ -188,6 +190,7 @@ class SkillRuntimeManager {
             'Follow the active scripts strictly.',
             'Do not let prior assistant wording override the active scripts.',
             'When script behavior conflicts with prior assistant style, prefer the active scripts.',
+            'When the active scripts provide canonical scene replies or fixed templates, treat those as mandatory output contracts rather than suggestions.',
             'When the current user utterance matches a prior utterance, do not copy the prior assistant reply verbatim; generate a fresh reply under the active script.',
             'If spoken TTS content is produced for the same turn, it may be phrased slightly differently but its meaning must remain exactly equivalent to the written reply.'
           ].join(' ')

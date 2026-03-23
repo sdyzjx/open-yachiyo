@@ -222,6 +222,7 @@ test('SkillRuntimeManager always includes configured default session skills', ()
     assert.equal(ctx.strictScriptMode, true);
     assert.equal(ctx.suppressPersonaContext, true);
     assert.match(ctx.activeSystemPrompt, /binding instructions/);
+    assert.match(ctx.activeSystemPrompt, /canonical scene replies or fixed templates/);
     assert.match(ctx.directScriptSystemPrompt, /<active_session_script name="sonder">/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;
@@ -262,6 +263,7 @@ test('SkillRuntimeManager injects full script for configured default session ski
     const ctx = manager.buildTurnContext({ sessionId: 's-script', input: '你好' });
     assert.equal(ctx.prompt, null);
     assert.match(ctx.directScriptSystemPrompt, /Follow this exact script\./);
+    assert.match(ctx.directScriptSystemPrompt, /fixed response templates/);
     assert.match(ctx.directScriptSystemPrompt, /<active_session_script name="sonder">/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;
