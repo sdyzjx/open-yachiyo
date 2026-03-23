@@ -3,6 +3,22 @@ const path = require('path');
 const { getRuntimePaths } = require('./runtimePaths');
 const { parseFrontmatter } = require('./frontmatter');
 
+function extractSkillBody(raw) {
+  if (typeof raw !== 'string' || !raw.startsWith('---')) return raw || '';
+  const lines = raw.split(/\r?\n/);
+  if (lines[0].trim() !== '---') return raw;
+
+  let end = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '---') {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return raw;
+  return lines.slice(end + 1).join('\n').trim();
+}
+
 function listSkillDirs(rootDir, maxCandidates = 300) {
   if (!rootDir || !fs.existsSync(rootDir)) return [];
   const entries = fs.readdirSync(rootDir, { withFileTypes: true });
@@ -37,6 +53,8 @@ function readSkillFromDir(dirPath, source, maxSkillFileBytes = 262144) {
     description,
     keywords,
     aliases,
+    raw,
+    body: extractSkillBody(raw),
     source,
     filePath: skillPath,
     baseDir: dirPath,
@@ -95,6 +113,7 @@ function loadSkills({ workspaceDir, config }) {
 
 module.exports = {
   parseFrontmatter,
+  extractSkillBody,
   listSkillDirs,
   readSkillFromDir,
   resolveSkillRoots,

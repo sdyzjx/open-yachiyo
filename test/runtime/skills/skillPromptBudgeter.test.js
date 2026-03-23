@@ -16,6 +16,16 @@ test('formatSkillsForPrompt renders xml-like block', () => {
   assert.match(text, /<name>a<\/name>/);
 });
 
+test('formatSkillsForPrompt includes script body for injectScript skills', () => {
+  const text = formatSkillsForPrompt([{
+    ...mk('sonder'),
+    injectScript: true,
+    body: '# Sonder\n\nStrict script body'
+  }]);
+  assert.match(text, /<script><!\[CDATA\[/);
+  assert.match(text, /Strict script body/);
+});
+
 test('clipSkillsForPrompt clips by count', () => {
   const skills = [mk('a'), mk('b'), mk('c')];
   const out = clipSkillsForPrompt(skills, { maxSkillsInPrompt: 2, maxSkillsPromptChars: 99999 });

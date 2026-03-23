@@ -40,6 +40,8 @@ test('loadSkills loads from workspace and yachiyo roots', () => {
     const names = skills.map((s) => s.name);
     assert.ok(names.includes('global_skill'));
     assert.ok(names.includes('workspace_skill'));
+    const globalSkill = skills.find((s) => s.name === 'global_skill');
+    assert.match(globalSkill.body, /# global_skill/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;
     else process.env.YACHIYO_HOME = old;

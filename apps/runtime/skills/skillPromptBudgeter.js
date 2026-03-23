@@ -1,3 +1,7 @@
+function escapeCdata(text) {
+  return String(text || '').replaceAll(']]>', ']]]]><![CDATA[>');
+}
+
 function formatSkillsForPrompt(skills) {
   const lines = ['<available_skills>'];
   for (const skill of skills || []) {
@@ -5,6 +9,9 @@ function formatSkillsForPrompt(skills) {
     lines.push(`    <name>${skill.name}</name>`);
     lines.push(`    <description>${skill.description || ''}</description>`);
     lines.push(`    <location>${skill.filePath}</location>`);
+    if (skill.injectScript === true) {
+      lines.push(`    <script><![CDATA[${escapeCdata(skill.body || skill.raw || '')}]]></script>`);
+    }
     lines.push(`  </skill>`);
   }
   lines.push('</available_skills>');

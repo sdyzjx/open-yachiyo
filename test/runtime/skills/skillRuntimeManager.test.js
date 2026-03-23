@@ -16,6 +16,16 @@ function writeSkill(root, name, desc, extra = '') {
   );
 }
 
+function writeSkillWithBody(root, name, desc, body, extra = '') {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: ${desc}\n${extra}---\n\n${body}\n`,
+    'utf8'
+  );
+}
+
 test('SkillRuntimeManager builds selected prompt context', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-rt-'));
   const workspace = path.join(tmp, 'ws');
@@ -211,6 +221,45 @@ test('SkillRuntimeManager always includes configured default session skills', ()
     assert.equal(ctx.defaultSelected.includes('sonder'), true);
     assert.equal(ctx.suppressPersonaContext, true);
     assert.match(ctx.prompt, /sonder/);
+  } finally {
+    if (old === undefined) delete process.env.YACHIYO_HOME;
+    else process.env.YACHIYO_HOME = old;
+  }
+});
+
+test('SkillRuntimeManager injects full script for configured default session skills', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-rt-default-script-'));
+  const workspace = path.join(tmp, 'ws');
+  const yhome = path.join(tmp, 'yachiyo');
+  const gskills = path.join(yhome, 'skills');
+  fs.mkdirSync(gskills, { recursive: true });
+
+  writeSkillWithBody(gskills, 'sonder', 'tender companion voice', '# Sonder\n\nFollow this exact script.');
+
+  const old = process.env.YACHIYO_HOME;
+  process.env.YACHIYO_HOME = yhome;
+
+  try {
+    const manager = new SkillRuntimeManager({
+      workspaceDir: workspace,
+      configStore: {
+        load() {
+          return {
+            home: { envKey: 'YACHIYO_HOME', defaultPath: '~/yachiyo' },
+            load: { workspace: false, global: true, extraDirs: [] },
+            limits: { maxCandidatesPerRoot: 100, maxSkillsLoadedPerSource: 50, maxSkillsInPrompt: 5, maxSkillsPromptChars: 5000, maxSkillFileBytes: 262144 },
+            trigger: { scoreThreshold: 90, maxSelectedPerTurn: 1, cooldownMs: 0, rules: {} },
+            defaults: { sessionSkills: { enabled: true, disablePersonaInjection: true, names: ['sonder'] } },
+            entries: {},
+            tools: { exec: { enabled: true } }
+          };
+        }
+      }
+    });
+
+    const ctx = manager.buildTurnContext({ sessionId: 's-script', input: '你好' });
+    assert.match(ctx.prompt, /Follow this exact script\./);
+    assert.match(ctx.prompt, /<script><!\[CDATA\[/);
   } finally {
     if (old === undefined) delete process.env.YACHIYO_HOME;
     else process.env.YACHIYO_HOME = old;

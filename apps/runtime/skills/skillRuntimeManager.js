@@ -79,6 +79,14 @@ function mergeSkillSelections(primary, secondary) {
   return merged;
 }
 
+function markSkillsForPrompt(skills = [], defaultSelectedNames = []) {
+  const defaultSet = new Set((defaultSelectedNames || []).map((name) => String(name || '').trim()));
+  return (skills || []).map((skill) => ({
+    ...skill,
+    injectScript: defaultSet.has(String(skill?.name || '').trim())
+  }));
+}
+
 class SkillRuntimeManager {
   constructor({ workspaceDir, configStore, selector, snapshotStore, telemetry } = {}) {
     this.workspaceDir = workspaceDir || process.cwd();
@@ -136,8 +144,16 @@ class SkillRuntimeManager {
       }
     });
 
+    const mergedSelection = discoveryMode
+      ? accepted
+      : mergeSkillSelections(defaultSessionSkills, selectedResult.selected);
+    const promptSkills = markSkillsForPrompt(
+      mergedSelection,
+      defaultSessionSkills.map((skill) => skill.name)
+    );
+
     const promptResult = clipSkillsForPrompt(
-      discoveryMode ? accepted : mergeSkillSelections(defaultSessionSkills, selectedResult.selected),
+      promptSkills,
       config.limits || {}
     );
 
