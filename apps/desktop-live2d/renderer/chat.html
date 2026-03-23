@@ -15,6 +15,8 @@
         font-family: "SF Pro Text", "PingFang SC", sans-serif;
         background: transparent;
         color: #f4f8ff;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
       }
 
       #chat-panel {
@@ -32,9 +34,9 @@
 
       #chat-panel-header {
         flex: 0 0 auto;
-        padding: 8px 10px;
+        padding: 9px 12px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        font-size: 12px;
+        font-size: 13px;
         letter-spacing: 0.03em;
         color: #b7c6e9;
         display: flex;
@@ -45,7 +47,8 @@
       }
 
       #chat-panel-header-title {
-        font-size: 12px;
+        font-size: 15px;
+        font-weight: 600;
         letter-spacing: 0.03em;
       }
 
@@ -59,10 +62,11 @@
       .chat-panel-action {
         border: 1px solid rgba(255, 255, 255, 0.24);
         border-radius: 8px;
-        padding: 2px 7px;
+        padding: 3px 8px;
         background: rgba(255, 255, 255, 0.1);
         color: #e8f0ff;
-        font-size: 11px;
+        font-size: 12px;
+        font-weight: 600;
         cursor: pointer;
       }
 
@@ -73,17 +77,19 @@
       #chat-panel-messages {
         flex: 1 1 auto;
         overflow: auto;
-        padding: 10px;
+        padding: 12px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
       }
 
       .chat-message {
         border-radius: 10px;
-        padding: 7px 9px;
-        font-size: 12px;
-        line-height: 1.45;
+        padding: 10px 12px;
+        font-size: 15px;
+        line-height: 1.62;
+        font-weight: 500;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.14);
         white-space: pre-wrap;
         word-break: break-word;
         background: rgba(255, 255, 255, 0.16);
@@ -126,7 +132,7 @@
 
       .chat-image-meta {
         padding: 6px 7px;
-        font-size: 10px;
+        font-size: 11px;
         line-height: 1.4;
         white-space: nowrap;
         overflow: hidden;
@@ -144,7 +150,7 @@
         color: #edf4ff;
         padding: 4px 7px;
         text-align: left;
-        font-size: 11px;
+        font-size: 12px;
         line-height: 1.3;
         cursor: pointer;
       }
@@ -155,7 +161,7 @@
       }
 
       #chat-panel.compact .chat-message {
-        font-size: 11px;
+        font-size: 13px;
       }
 
       .chat-message.user {
@@ -176,7 +182,7 @@
 
       #chat-panel-composer {
         flex: 0 0 auto;
-        padding: 8px;
+        padding: 10px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
         display: flex;
         flex-direction: column;
@@ -194,8 +200,9 @@
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.16);
         color: #eff4ff;
-        padding: 6px 8px;
-        font-size: 12px;
+        padding: 8px 10px;
+        font-size: 15px;
+        font-weight: 500;
         outline: none;
       }
 
@@ -205,8 +212,9 @@
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.22);
         color: #f3f8ff;
-        padding: 0 10px;
-        font-size: 12px;
+        padding: 0 12px;
+        font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
       }
 
@@ -256,14 +264,14 @@
       }
 
       .chat-upload-name {
-        font-size: 11px;
+        font-size: 12px;
         white-space: nowrap;
         text-overflow: ellipsis;
         overflow: hidden;
       }
 
       .chat-upload-size {
-        font-size: 10px;
+        font-size: 11px;
         color: rgba(255, 255, 255, 0.75);
       }
 
@@ -273,7 +281,7 @@
         padding: 2px 6px;
         background: rgba(255, 255, 255, 0.08);
         color: #f3f8ff;
-        font-size: 10px;
+        font-size: 11px;
         cursor: pointer;
       }
 
@@ -292,12 +300,12 @@
         font-weight: 600;
       }
 
-      .chat-message h1 { font-size: 16px; }
-      .chat-message h2 { font-size: 15px; }
-      .chat-message h3 { font-size: 14px; }
+      .chat-message h1 { font-size: 20px; }
+      .chat-message h2 { font-size: 18px; }
+      .chat-message h3 { font-size: 16px; }
       .chat-message h4,
       .chat-message h5,
-      .chat-message h6 { font-size: 13px; }
+      .chat-message h6 { font-size: 15px; }
 
       .chat-message p {
         margin: 4px 0;
@@ -308,7 +316,7 @@
         padding: 2px 4px;
         border-radius: 3px;
         font-family: 'Monaco', 'Menlo', monospace;
-        font-size: 11px;
+        font-size: 13px;
       }
 
       .chat-message pre {
@@ -328,7 +336,7 @@
         border-collapse: collapse;
         width: 100%;
         margin: 6px 0;
-        font-size: 11px;
+        font-size: 13px;
       }
 
       .chat-message th,
@@ -377,7 +385,7 @@
         padding: 6px 8px;
         margin: 4px 0;
         border-radius: 4px;
-        font-size: 11px;
+        font-size: 13px;
       }
 
       .chat-message .tool-call-name {
@@ -388,7 +396,7 @@
       .chat-message .tool-call-args {
         margin-top: 4px;
         font-family: 'Monaco', 'Menlo', monospace;
-        font-size: 10px;
+        font-size: 12px;
         opacity: 0.9;
       }
 
