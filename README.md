@@ -140,20 +140,19 @@ Docs:
 
 ## Why not OpenClaw?
 
-OpenClaw excels as a highly flexible, multi-channel gateway and orchestration layer.
-`open-yachiyo` optimizes along a different axis: **strict runtime controllability and deterministic state management**.
+OpenClaw is strong as a multi-channel gateway/orchestration layer.
+`open-yachiyo` optimizes a different axis: **runtime controllability**.
 
-| Dimension | OpenClaw (The Orchestrator) | open-yachiyo (The Runtime Engine) |
+| Dimension | OpenClaw (typical strength) | open-yachiyo focus |
 |---|---|---|
-| Core architecture | Prompt-oriented routing and integration hub | Event-driven asynchronous state machine |
-| Execution model | Linear orchestration flow | Bounded ReAct loop with precision step control |
-| Tool I/O path | Synchronous tool flow (blocking by step) | EventBus-decoupled flow with early dispatch |
-| State management | Looser conversational context | Strict session isolation + explicit durable memory (SOP) |
-| Product posture | One gateway for many chat platforms | High-performance native desktop agent engine |
+| Primary goal | Multi-channel gateway + orchestration | Deterministic runtime core + desktop agent |
+| Execution model | Flexible orchestration | Bounded ReAct cycle with explicit step control |
+| Tool path | Highly extensible | EventBus-decoupled + runtime-auditable |
+| Session behavior | General-purpose | Strong session isolation + explicit memory tools |
+| Product posture | Gateway platform | Native runtime engine |
 
-**Bottom line:**
-- Choose OpenClaw when your priority is rapid multi-channel integration with flexible prompt orchestration.
-- Choose open-yachiyo when your target is a complex, client-heavy desktop agent requiring strict recovery boundaries, auditable lifecycle, and deterministic runtime behavior.
+If you need “one gateway for many chat channels”, OpenClaw is great.
+If you need “strictly controllable agent runtime”, this project targets that directly.
 
 ---
 
