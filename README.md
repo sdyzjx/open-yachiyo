@@ -151,8 +151,8 @@ OpenClaw is strong as a multi-channel gateway/orchestration layer.
 | Session behavior | General-purpose | Strong session isolation + explicit memory tools |
 | Product posture | Gateway platform | Native runtime engine |
 
-If you need “one gateway for many chat channels”, OpenClaw is great.
-If you need “strictly controllable agent runtime”, this project targets that directly.
+If your goal is to rapidly expand boundaries and route LLM capabilities like a power strip across many chat platforms and third-party APIs, choose OpenClaw.
+If your goal is to build a complex, client-heavy desktop agent (such as a Live2D assistant), where the LLM must safely drive local asynchronous tasks with strict recovery boundaries, auditable lifecycle, and deterministic behavior, choose open-yachiyo.
 
 ---
 
