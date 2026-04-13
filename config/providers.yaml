@@ -17,10 +17,14 @@ providers:
     timeout_ms: 20000
   qwen3_tts:
     type: tts_dashscope
-    tts_model: qwen3-tts-vc-2026-01-22
-    tts_voice: qwen-tts-vc-yachiyo-voice-20260224022238839-5679
+    tts_model: qwen3-tts-instruct-flash
+    tts_voice: Cherry
+    tts_instructions: 请用更慢的语速、更冷淡的语气、更平直的句调朗读，压低情绪起伏，减少温柔感和陪伴感，像疏离、克制、低温度的冷静播报，不要显得亲近。
+    tts_optimize_instructions: true
     # Optional realtime defaults for desktop-live2d realtime transport.
-    tts_realtime_model: qwen3-tts-vc-realtime-2026-01-15
+    tts_realtime_model: qwen3-tts-instruct-flash-realtime
     tts_realtime_voice: Cherry
+    tts_realtime_instructions: 请用更慢的语速、更冷淡的语气、更平直的句调朗读，压低情绪起伏，减少温柔感和陪伴感，像疏离、克制、低温度的冷静播报，不要显得亲近。
+    tts_realtime_optimize_instructions: true
     base_url: https://dashscope.aliyuncs.com/api/v1
     api_key_env: DASHSCOPE_API_KEY

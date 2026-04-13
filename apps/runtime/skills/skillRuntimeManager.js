@@ -97,7 +97,10 @@ function buildDirectScriptSystemPrompt(defaultSessionSkills = []) {
     'Do not let prior assistant wording override this script.',
     'If the script defines canonical scene replies, fixed response templates, or exact output wording, follow them literally unless a factual slot such as checked local time or the user-provided name must be substituted.',
     'Do not paraphrase fixed scene lines unless the script explicitly allows it.',
-    'If TTS is used, spoken wording may vary slightly but the meaning must remain exactly equivalent to the written reply.'
+    'If both TTS and written text are produced, prefer the script wording for the spoken TTS reply.',
+    'Keep the written reply aligned with the spoken script branch.',
+    'Do not add extra interpretation, atmosphere, or scene material that is absent from the script.',
+    'Only allow very small wording differences between written text and spoken TTS when needed for readability, while preserving the same meaning and scene conclusion.'
   ];
 
   for (const skill of defaultSessionSkills) {
@@ -192,7 +195,10 @@ class SkillRuntimeManager {
             'When script behavior conflicts with prior assistant style, prefer the active scripts.',
             'When the active scripts provide canonical scene replies or fixed templates, treat those as mandatory output contracts rather than suggestions.',
             'When the current user utterance matches a prior utterance, do not copy the prior assistant reply verbatim; generate a fresh reply under the active script.',
-            'If spoken TTS content is produced for the same turn, it may be phrased slightly differently but its meaning must remain exactly equivalent to the written reply.'
+            'If spoken TTS content is produced for the same turn, prefer the active script wording for the spoken reply.',
+            'Keep the written reply aligned with the spoken script branch.',
+            'Do not add extra interpretation, atmosphere, or scene material that is absent from the active script.',
+            'Only allow very small wording differences between written text and spoken TTS when needed for readability, while preserving the same meaning and scene conclusion.'
           ].join(' ')
           : null
       ),

@@ -101,7 +101,9 @@ class QwenTtsRealtimeClient {
       apiKey,
       wsBaseUrl,
       defaultRealtimeModel,
-      defaultVoice
+      defaultVoice,
+      defaultInstructions: String(provider.tts_realtime_instructions || provider.tts_instructions || '').trim(),
+      defaultOptimizeInstructions: provider.tts_realtime_optimize_instructions === true || provider.tts_optimize_instructions === true
     };
   }
 
@@ -109,6 +111,8 @@ class QwenTtsRealtimeClient {
     text,
     model,
     voice,
+    instructions,
+    optimizeInstructions,
     timeoutMs = 20000,
     maxChunks = 256,
     onEvent = null
@@ -123,6 +127,8 @@ class QwenTtsRealtimeClient {
     const cfg = this.loadProviderConfig();
     const finalModel = String(model || cfg.defaultRealtimeModel);
     const finalVoice = String(voice || cfg.defaultVoice);
+    const finalInstructions = String(instructions || cfg.defaultInstructions || '').trim();
+    const finalOptimizeInstructions = optimizeInstructions === true || cfg.defaultOptimizeInstructions === true;
     if (!finalVoice) {
       const err = new Error('realtime tts voice is required');
       err.code = 'TTS_CONFIG_MISSING';
@@ -193,7 +199,13 @@ class QwenTtsRealtimeClient {
           session: {
             voice: finalVoice,
             format: 'pcm',
-            sample_rate: 24000
+            sample_rate: 24000,
+            ...(finalInstructions
+              ? {
+                instructions: finalInstructions,
+                optimize_instructions: finalOptimizeInstructions
+              }
+              : {})
           }
         };
         const appendTextMessage = {

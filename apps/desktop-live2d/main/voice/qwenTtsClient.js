@@ -51,11 +51,21 @@ class QwenTtsClient {
       baseUrl: normalizeBaseUrl(provider.base_url),
       defaultModel: String(provider.tts_model || 'qwen3-tts-vc-2026-01-22'),
       defaultVoice: String(provider.tts_voice || ''),
+      defaultInstructions: String(provider.tts_instructions || '').trim(),
+      defaultOptimizeInstructions: provider.tts_optimize_instructions === true,
       provider
     };
   }
 
-  async synthesizeNonStreaming({ text, model, voice, languageType = 'Chinese', timeoutMs = 30000 } = {}) {
+  async synthesizeNonStreaming({
+    text,
+    model,
+    voice,
+    languageType = 'Chinese',
+    timeoutMs = 30000,
+    instructions = '',
+    optimizeInstructions = false
+  } = {}) {
     const content = String(text || '').trim();
     if (!content) {
       const err = new Error('text is required');
@@ -66,26 +76,33 @@ class QwenTtsClient {
     const cfg = this.loadProviderConfig();
     const finalModel = String(model || cfg.defaultModel);
     const finalVoice = String(voice || cfg.defaultVoice);
+    const finalInstructions = String(instructions || cfg.defaultInstructions || '').trim();
+    const finalOptimizeInstructions = optimizeInstructions === true || cfg.defaultOptimizeInstructions === true;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const endpoint = `${cfg.baseUrl}/services/aigc/multimodal-generation/generation`;
+      const requestBody = {
+        model: finalModel,
+        input: {
+          text: content,
+          voice: finalVoice,
+          language_type: languageType
+        }
+      };
+      if (finalInstructions) {
+        requestBody.instructions = finalInstructions;
+        requestBody.optimize_instructions = finalOptimizeInstructions;
+      }
       const response = await this.fetchImpl(endpoint, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${cfg.apiKey}`,
           'content-type': 'application/json'
         },
-        body: JSON.stringify({
-          model: finalModel,
-          input: {
-            text: content,
-            voice: finalVoice,
-            language_type: languageType
-          }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
 

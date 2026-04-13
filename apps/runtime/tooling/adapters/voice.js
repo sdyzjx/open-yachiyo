@@ -57,12 +57,18 @@ function execFileAsync(cmd, args, options = {}) {
   });
 }
 
-async function callDashscopeTts({ text, model, voiceId, voiceTag, timeoutMs = 60_000 }) {
+async function callDashscopeTts({ text, model, voiceId, voiceTag, timeoutMs = 60_000, instructions = '', optimizeInstructions = false }) {
   // 优先从 providers.yaml 的 tts_dashscope provider 读配置，env 作为 fallback
   const providerCfg = loadTtsProviderConfig();
 
   const defaultModel = (providerCfg && providerCfg.tts_model) || 'qwen3-tts-vc-2026-01-22';
   const defaultVoice = (providerCfg && providerCfg.tts_voice) || '';
+  const defaultInstructions = typeof instructions === 'string' && instructions.trim()
+    ? instructions.trim()
+    : String((providerCfg && providerCfg.tts_instructions) || '').trim();
+  const defaultOptimizeInstructions = typeof optimizeInstructions === 'boolean'
+    ? optimizeInstructions
+    : Boolean((providerCfg && providerCfg.tts_optimize_instructions) || false);
 
   const cliOverride = process.env.VOICE_REPLY_CLI;
 
@@ -88,7 +94,14 @@ async function callDashscopeTts({ text, model, voiceId, voiceTag, timeoutMs = 60
 
     const scriptPath = path.resolve(process.cwd(), 'scripts/qwen_voice_reply.py');
     cmd = 'python3';
-    cmdArgs = [scriptPath, '--voice-tag', voiceTag, '--model', defaultModel, '--voice', defaultVoice, '--emit-manifest', text];
+    cmdArgs = [scriptPath, '--voice-tag', voiceTag, '--model', defaultModel, '--voice', defaultVoice];
+    if (defaultInstructions) {
+      cmdArgs.push('--instructions', defaultInstructions);
+      if (defaultOptimizeInstructions) {
+        cmdArgs.push('--optimize-instructions');
+      }
+    }
+    cmdArgs.push('--emit-manifest', text);
     execEnv = { ...process.env, DASHSCOPE_API_KEY: apiKey, DASHSCOPE_BASE_URL: baseUrl };
   }
 
@@ -435,6 +448,8 @@ async function ttsAliyunVc(args = {}, context = {}) {
           model: args.model,   // undefined 时 callDashscopeTts 内部会用 providerCfg.tts_model
           voiceId: args.voiceId, // 同上，undefined 时用 providerCfg.tts_voice
           voiceTag,
+          instructions: typeof args.instructions === 'string' ? args.instructions : '',
+          optimizeInstructions: typeof args.optimizeInstructions === 'boolean' ? args.optimizeInstructions : undefined,
           timeoutMs,
           signal: controller.signal
         });

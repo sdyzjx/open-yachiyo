@@ -95,9 +95,9 @@ test('music adapter falls back to project root for relative bundled audio when s
     const realBundledPath = await fs.realpath(bundledPath);
     const playResult = await adapters['desktop.music.play']({
       path: '演示曲.wav',
-      volume: 0.72,
+      volume: 0.25,
       loop: false,
-      trackLabel: 'Sonder 演示曲'
+      trackLabel: 'Bundled Demo Track'
     }, {
       workspaceRoot: workspaceDir,
       trace_id: 'trace-bundled'
@@ -108,9 +108,9 @@ test('music adapter falls back to project root for relative bundled audio when s
       method: 'desktop.music.play',
       params: {
         path: realBundledPath,
-        volume: 0.72,
+        volume: 0.25,
         loop: false,
-        trackLabel: 'Sonder 演示曲'
+        trackLabel: 'Bundled Demo Track'
       }
     });
   } finally {

@@ -83,7 +83,16 @@ def normalize_tts_input_text(text: str, voice_tag: str) -> str:
     return normalized
 
 
-def synthesize_to_audio_file(text: str, model: str, voice: str, api_key: str, out_audio: Path, voice_tag: str) -> None:
+def synthesize_to_audio_file(
+    text: str,
+    model: str,
+    voice: str,
+    api_key: str,
+    out_audio: Path,
+    voice_tag: str,
+    instructions: str = "",
+    optimize_instructions: bool = False,
+) -> None:
     dashscope = ensure_dashscope()
     language_type, default_instruction = VOICE_TAG_MAP[voice_tag]
 
@@ -96,9 +105,10 @@ def synthesize_to_audio_file(text: str, model: str, voice: str, api_key: str, ou
         "language_type": language_type,
     }
 
+    effective_instructions = instructions.strip() if instructions else ""
     if "instruct" in model:
-        payload["instructions"] = default_instruction
-        payload["optimize_instructions"] = True
+        payload["instructions"] = effective_instructions or default_instruction
+        payload["optimize_instructions"] = bool(optimize_instructions or effective_instructions)
 
     resp = dashscope.MultiModalConversation.call(**payload)
 
@@ -145,6 +155,9 @@ def main() -> None:
                    help="Required voice language tag: jp|zh|en")
     p.add_argument("--voice", default=DEFAULT_VOICE)
     p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--instructions", default="", help="Optional instruction prompt for instruct TTS models")
+    p.add_argument("--optimize-instructions", action="store_true",
+                   help="Enable instruction optimization for instruct TTS models")
     p.add_argument("--out", default="", help="Optional output ogg path")
     p.add_argument("--emit-manifest", action="store_true",
                    help="Emit JSON manifest: {audio_path, tts_input_text, voice_tag, model, voice}")
@@ -165,7 +178,16 @@ def main() -> None:
         else:
             out_ogg = Path(tempfile.gettempdir()) / f"yachiyo-voice-{next(tempfile._get_candidate_names())}.ogg"
 
-        synthesize_to_audio_file(normalized_text, args.model, args.voice, api_key, tmp_audio, args.voice_tag)
+        synthesize_to_audio_file(
+            normalized_text,
+            args.model,
+            args.voice,
+            api_key,
+            tmp_audio,
+            args.voice_tag,
+            instructions=args.instructions,
+            optimize_instructions=args.optimize_instructions,
+        )
         to_telegram_voice(tmp_audio, out_ogg)
 
     if args.emit_manifest:
@@ -175,6 +197,7 @@ def main() -> None:
             "voice_tag": args.voice_tag,
             "model": args.model,
             "voice": args.voice,
+            "instructions": args.instructions,
         }
         print(json.dumps(manifest, ensure_ascii=False))
     else:

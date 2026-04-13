@@ -115,6 +115,19 @@ function hasActiveSonderScript(skillsContext = null) {
   return prompt.includes('<active_session_script name="sonder">');
 }
 
+function buildSonderVoiceTextContractPrompt(skillsContext = null) {
+  if (!hasActiveSonderScript(skillsContext)) return null;
+  return [
+    'Sonder voice/text contract for this turn:',
+    'if both voice.tts_aliyun_vc and a written final answer are produced, treat the spoken reply as the primary script performance.',
+    'For the spoken TTS text, follow the matching Sonder scene script, preferred reply pattern, or fixed branch wording as literally as possible, allowing only required slot substitutions such as the user name.',
+    'Keep the written final answer aligned with the spoken script branch and scene conclusion.',
+    'Do not add extra interpretation, atmosphere, or scene material that is absent from the script.',
+    'Only allow very small wording differences between the written answer and spoken TTS when needed for readability.',
+    'Prefer the written answer to stay as close as possible to the spoken script wording.'
+  ].join(' ');
+}
+
 function buildSonderSceneStatePrompt(skillsContext = null, priorMessages = [], currentUserMessage = null) {
   if (!hasActiveSonderScript(skillsContext)) return null;
   const currentText = extractComparableMessageText(currentUserMessage?.content || '');
@@ -150,10 +163,7 @@ function buildSonderSceneStatePrompt(skillsContext = null, priorMessages = [], c
       'Sonder scene state for this turn:',
       'the current user utterance matches Scene B: Self-Denigration And Exhaustion.',
       'Apply Scene B strictly.',
-      'Before the final answer, call workspace.music.play exactly once with path "演示曲.wav", volume 0.72, loop false, and trackLabel "Sonder 演示曲".',
-      'This music cue represents the scripted "(播放自己的歌单)" stage direction.',
-      'After the tool result, continue with the comforting reply.',
-      'If music playback fails, continue the same comforting scene in text without dwelling on the failure and do not claim the user already heard the melody.'
+      'Do not add any music playback tool call for this scene.'
     ].join(' ');
   }
 
@@ -289,10 +299,6 @@ function isVoiceAutoReplyToolName(name) {
   return String(name || '').trim() === 'voice.tts_aliyun_vc';
 }
 
-function isSonderSceneBMusicToolName(name) {
-  return String(name || '').trim() === 'workspace.music.play';
-}
-
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
   if (runtimeContext?.voice_auto_reply_mode === 'force_on') {
@@ -330,15 +336,6 @@ function buildSatisfiedTurnRequirementPrompt(turnRequirements = {}, availableToo
       'Status update for the current reply turn: the required voice.tts_aliyun_vc call has already been completed. Do not call voice.tts_aliyun_vc again before producing the final answer.'
     );
   }
-  if (
-    turnRequirements?.sonder_scene_b_music_required
-    && turnRequirements?.sonder_scene_b_music_satisfied
-    && toolNames.has('workspace.music.play')
-  ) {
-    parts.push(
-      'Status update for the current reply turn: the required Sonder Scene B workspace.music.play call has already been completed. Do not call workspace.music.play again before producing the final answer.'
-    );
-  }
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
@@ -349,11 +346,6 @@ function filterToolsForSatisfiedTurnRequirements(availableTools = [], turnRequir
     if (!toolName) return false;
     if (turnRequirements?.live2d_satisfied && isLive2dToolName(toolName)) return false;
     if (turnRequirements?.voice_tts_satisfied && isVoiceAutoReplyToolName(toolName)) return false;
-    if (
-      turnRequirements?.sonder_scene_b_music_required
-      && turnRequirements?.sonder_scene_b_music_satisfied
-      && isSonderSceneBMusicToolName(toolName)
-    ) return false;
     return true;
   });
 }
@@ -628,6 +620,7 @@ class ToolLoopRunner {
     const initialAvailableTools = this.listTools();
     const desktopCapturePrompt = buildDesktopCapturePrompt(initialAvailableTools);
     const sonderSceneStatePrompt = buildSonderSceneStatePrompt(skillsContext, priorMessages, currentUserMessage);
+    const sonderVoiceTextContractPrompt = buildSonderVoiceTextContractPrompt(skillsContext);
 
     const ctx = {
       sessionId,
@@ -637,11 +630,7 @@ class ToolLoopRunner {
       observations: [],
       turnRequirements: {
         live2d_satisfied: false,
-        voice_tts_satisfied: false,
-        sonder_scene_b_music_required: isSonderSelfDenigrationSceneText(
-          extractComparableMessageText(currentUserMessage.content)
-        ) && hasActiveSonderScript(skillsContext),
-        sonder_scene_b_music_satisfied: false
+        voice_tts_satisfied: false
       },
       desktopCaptureAttachment: null,
       messages: [
@@ -666,6 +655,7 @@ class ToolLoopRunner {
         ...(directScriptSystemPrompt ? [{ role: 'system', content: directScriptSystemPrompt }] : []),
         ...(skillsPrompt ? [{ role: 'system', content: skillsPrompt }] : []),
         ...(sonderSceneStatePrompt ? [{ role: 'system', content: sonderSceneStatePrompt }] : []),
+        ...(sonderVoiceTextContractPrompt ? [{ role: 'system', content: sonderVoiceTextContractPrompt }] : []),
         ...(personaToolHint ? [{ role: 'system', content: personaToolHint }] : []),
         ...(voiceAutoReplyPrompt ? [{ role: 'system', content: voiceAutoReplyPrompt }] : []),
         ...(desktopCapturePrompt ? [{ role: 'system', content: desktopCapturePrompt }] : []),
@@ -1126,50 +1116,6 @@ class ToolLoopRunner {
                 continue;
               }
 
-              if (
-                ctx.turnRequirements.sonder_scene_b_music_required
-                && isSonderSceneBMusicToolName(effectiveCall.name)
-              ) {
-                const degradedPayload = {
-                  status: 'skipped',
-                  code: String(toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'),
-                  message: 'Sonder scene music playback skipped for this turn; continue the comforting reply in text.',
-                  reason: toolResult.error || 'music playback unavailable'
-                };
-                const degradedContent = JSON.stringify(degradedPayload);
-
-                ctx.messages.push({
-                  role: 'tool',
-                  tool_call_id: effectiveCall.call_id,
-                  name: effectiveCall.name,
-                  content: degradedContent
-                });
-                ctx.observations.push({
-                  call_id: effectiveCall.call_id,
-                  name: effectiveCall.name,
-                  result: degradedContent,
-                  degraded: true,
-                  code: toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'
-                });
-                ctx.turnRequirements.sonder_scene_b_music_satisfied = true;
-                emit('tool.result', {
-                  call_id: effectiveCall.call_id,
-                  name: effectiveCall.name,
-                  result: degradedContent,
-                  degraded: true,
-                  code: toolResult.code || 'MUSIC_PLAYBACK_SKIPPED'
-                });
-                emit('tool.error', {
-                  call_id: effectiveCall.call_id,
-                  error: toolResult.error,
-                  name: effectiveCall.name,
-                  code: toolResult.code,
-                  non_fatal: true,
-                  degraded_to_text_only: true
-                });
-                continue;
-              }
-
               if (toolResult.code === 'APPROVAL_REQUIRED') {
                 const approvalPayload = {
                   ok: false,
@@ -1307,13 +1253,6 @@ class ToolLoopRunner {
             }
             if (!ctx.turnRequirements.voice_tts_satisfied && isVoiceAutoReplyToolName(effectiveCall.name)) {
               ctx.turnRequirements.voice_tts_satisfied = true;
-            }
-            if (
-              ctx.turnRequirements.sonder_scene_b_music_required
-              && !ctx.turnRequirements.sonder_scene_b_music_satisfied
-              && isSonderSceneBMusicToolName(effectiveCall.name)
-            ) {
-              ctx.turnRequirements.sonder_scene_b_music_satisfied = true;
             }
 
             const desktopCaptureArtifact = normalizeDesktopCaptureArtifact(effectiveCall.name, toolResult.result);

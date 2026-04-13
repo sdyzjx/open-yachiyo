@@ -54,9 +54,12 @@ function setupProviderConfig() {
       '    api_key_env: DASHSCOPE_API_KEY',
       '  qwen3_tts:',
       '    type: tts_dashscope',
-      '    tts_model: qwen3-tts-vc-2026-01-22',
-      '    tts_voice: qwen-tts-vc-yachiyo',
-      '    realtime_model: qwen-tts-realtime',
+      '    tts_model: qwen3-tts-instruct-flash',
+      '    tts_voice: Cherry',
+      '    tts_realtime_model: qwen3-tts-instruct-flash-realtime',
+      '    tts_realtime_voice: Cherry',
+      '    tts_realtime_instructions: speak slower and flatter',
+      '    tts_realtime_optimize_instructions: true',
       '    base_url: https://dashscope.aliyuncs.com/api/v1',
       '    api_key_env: DASHSCOPE_API_KEY'
     ].join('\n'),
@@ -121,6 +124,9 @@ test('qwen realtime tts client streams events and returns stats', async () => {
       'input_text_buffer.append',
       'input_text_buffer.commit'
     ]);
+    const sessionUpdate = JSON.parse(outboundRaw[0]);
+    assert.equal(sessionUpdate.session.instructions, 'speak slower and flatter');
+    assert.equal(sessionUpdate.session.optimize_instructions, true);
   } finally {
     if (prevConfigPath !== undefined) process.env.PROVIDER_CONFIG_PATH = prevConfigPath;
     else delete process.env.PROVIDER_CONFIG_PATH;

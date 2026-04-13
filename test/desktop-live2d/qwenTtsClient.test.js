@@ -21,8 +21,10 @@ function setupProviderConfig() {
       '    api_key_env: DASHSCOPE_API_KEY',
       '  qwen3_tts:',
       '    type: tts_dashscope',
-      '    tts_model: qwen3-tts-vc-2026-01-22',
-      '    tts_voice: qwen-tts-vc-yachiyo',
+      '    tts_model: qwen3-tts-instruct-flash',
+      '    tts_voice: Cherry',
+      '    tts_instructions: speak slower and flatter',
+      '    tts_optimize_instructions: true',
       '    base_url: https://dashscope.aliyuncs.com/api/v1',
       '    api_key_env: DASHSCOPE_API_KEY'
     ].join('\n'),
@@ -61,10 +63,13 @@ test('qwen tts client synthesizes non-streaming and returns audio url', async ()
   try {
     const result = await client.synthesizeNonStreaming({ text: '你好，月读。' });
     assert.equal(result.audioUrl, 'https://example.com/audio.ogg');
-    assert.equal(result.model, 'qwen3-tts-vc-2026-01-22');
-    assert.equal(result.voice, 'qwen-tts-vc-yachiyo');
+    assert.equal(result.model, 'qwen3-tts-instruct-flash');
+    assert.equal(result.voice, 'Cherry');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url.includes('/services/aigc/multimodal-generation/generation'), true);
+    const requestBody = JSON.parse(String(calls[0].options.body || '{}'));
+    assert.equal(requestBody.instructions, 'speak slower and flatter');
+    assert.equal(requestBody.optimize_instructions, true);
   } finally {
     if (prevConfigPath !== undefined) process.env.PROVIDER_CONFIG_PATH = prevConfigPath;
     else delete process.env.PROVIDER_CONFIG_PATH;
