@@ -1,0 +1,29 @@
+{
+  "write_flash_args": [
+    "--flash_mode",
+    "dio",
+    "--flash_size",
+    "16MB",
+    "--flash_freq",
+    "80m"
+  ],
+  "flash_settings": {
+    "flash_mode": "dio",
+    "flash_size": "16MB",
+    "flash_freq": "80m"
+  },
+  "flash_files": {
+    "0x0": "bootloader.bin",
+    "0x8000": "partition-table.bin",
+    "0x10000": "openlive2d-atri-v2.bin"
+  },
+  "merged_image": {
+    "offset": "0x0",
+    "file": "openlive2d-atri-v2-complete.bin"
+  },
+  "extra_esptool_args": {
+    "after": "hard_reset",
+    "before": "default_reset",
+    "chip": "esp32s3"
+  }
+}
