@@ -307,3 +307,13 @@
 | 步骤 | 发起模型加载；在 Promise 完成前销毁 stage；随后让旧模型返回 |
 | 期望结果 | 旧模型不加入新 Pixi app，不覆盖新 stage 状态；旧模型立即 destroy；旧 Promise 只清理自身且以可识别 stale 错误结束 |
 | 自动化 | `test/android-web/stageLifecycle.test.js`（TC-AWB-030） |
+
+## TC-AWB-031 口型结束中性复位
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit / manual-device |
+| 前置条件 | 模型已加载；可播放本地参考 WAV；能读取 Cubism 口型参数 |
+| 步骤 | 1) 静音 Idle 15 秒并切换 Greet/Error motion；2) 播放本地参考音频并观察口型；3) 等待播放结束；4) 设置一次 `ParamMouthForm` overlay；5) 再播放一段音频 |
+| 期望结果 | 静音及 motion 切换时不自发持续张嘴，连续真实模型更新后 `ParamMouthOpenY`/`ParamMouthForm` 均为 MOC 默认值；播放中嘴形随音频自然变化且优先于 overlay；结束后迅速回到中性；显式 overlay 优先于静音中性层 |
+| 自动化 | `test/android-web/lipsync.test.js`、`test/android-web/stageLifecycle.test.js`（TC-AWB-031）；真机三状态为 manual |

@@ -20,7 +20,7 @@
       this.visible = true;
       this.pose = { x: 0, y: 0, scale: 1 };
       this.overlays = new Map();     // param -> { target, weight, goal }
-      this.mouth = { active: false, open: 0, form: 0 };
+      this.mouth = { active: false, open: 0, form: 0, defaults: null };
       this.contextLost = false;
       this.hookDetach = null;
       this.performanceProfile = performanceProfile;
@@ -80,6 +80,7 @@
       model.visible = false;
       app.stage.addChild(model);
       this.model = model;
+      this.mouth.defaults = null;
       this.quality = quality;
       this.modelName = name || '';
       this.content = this.measureContent();
@@ -154,6 +155,16 @@
     applyOverrides() {
       const core = this.model && this.model.internalModel.coreModel;
       if (!core) return;
+      if (!this.mouth.active) {
+        if (!this.mouth.defaults) {
+          this.mouth.defaults = ['ParamMouthOpenY', 'ParamMouthForm'].map((name) => {
+            const index = core.getParameterIndex(name);
+            return { index, value: core.getParameterDefaultValue(index) };
+          });
+        }
+        for (const parameter of this.mouth.defaults) core.setParameterValueByIndex(parameter.index, parameter.value);
+      }
+      // Explicit action/RPC overlays take precedence over the idle neutral layer.
       for (const [name, o] of this.overlays) {
         o.weight += (o.goal - o.weight) * 0.22;
         if (o.goal === 0 && o.weight < 0.01) { this.overlays.delete(name); continue; }
@@ -161,6 +172,7 @@
         core.setParameterValueById(name, cur + (o.target - cur) * o.weight);
       }
       if (this.mouth.active) {
+        // Active speech is the final mouth layer and takes precedence over parameter overlays.
         core.setParameterValueById('ParamMouthOpenY', this.mouth.open);
         core.setParameterValueById('ParamMouthForm', this.mouth.form);
       }
@@ -274,6 +286,7 @@
       this.app = null; this.model = null; this.canvas = null; this.contextLost = false;
       this.coreBridge = null; this.rendererOptimization = null;
       this.overlays.clear();
+      this.mouth.defaults = null;
     }
   }
 
