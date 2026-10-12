@@ -10,6 +10,7 @@ const read = (name) => fs.readFileSync(path.join(PUBLIC, name), 'utf8');
 test('TC-CFG-006 config-v2 page uses the shared night theme and has four pages', () => {
   const html = read('config-v2.html');
   assert.match(html, /href="\/theme\/yachiyo-theme\.css"/);
+  assert.match(html, /rel="icon" href="data:,"/);
   for (const page of ['overview', 'models', 'voice', 'advanced']) {
     assert.match(html, new RegExp(`data-page="${page}"`));
   }

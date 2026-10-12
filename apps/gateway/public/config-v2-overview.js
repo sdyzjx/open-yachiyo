@@ -46,7 +46,7 @@
       const asr = voice.providers.find((item) => item.key === voice.active_asr);
       root.replaceChildren(
         h('header', { class: 'cv-page-head cv-overview-head' },
-          h('div', {}, h('span', { class: 'cv-eyebrow', text: 'YACHIYO CONTROL ROOM' }), h('h1', { text: '晚上好' }),
+          h('div', {}, h('span', { class: 'cv-eyebrow', text: '月读夜景 · 配置中心' }), h('h1', { text: '配置概览' }),
             h('p', { class: 'cv-hint', text: '这里是八千代当前使用的模型、声音与连接状态。' })),
           h('span', { class: 'cv-moon', 'aria-hidden': 'true', text: '◐' })),
         h('div', { class: 'cv-tiles' },
