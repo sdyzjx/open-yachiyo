@@ -37,10 +37,21 @@
 <script>
   var out = document.getElementById('out');
   function log(s) { out.textContent = s + '\n' + out.textContent; }
-  function N(m) { try { var a = Array.prototype.slice.call(arguments, 1); window.YachiyoNative[m].apply(window.YachiyoNative, a); } catch (e) { log('ERR ' + m + ' ' + e); } }
-  function call(m) { try { log(m + ' -> ' + window.YachiyoNative[m]()); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  // C2.0: first script on the page takes the one-time token and keeps it in a closure.
+  var bridgeToken = window.__YachiyoBridge ? window.__YachiyoBridge.handshake() : '';
+  function inv(m, args) { return window.__YachiyoBridge.invoke(bridgeToken, m, JSON.stringify(args || [])); }
+  function N(m) { try { var r = inv(m, Array.prototype.slice.call(arguments, 1)); if (r) log(m + ' => ' + r); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  function call(m) { try { log(m + ' -> ' + inv(m, [])); } catch (e) { log('ERR ' + m + ' ' + e); } }
   window.__yachiyoNative = { dispatch: function (msg) { log('EVT ' + JSON.stringify(msg).slice(0, 300)); } };
-  log('mode=' + location.search + ' bridge=' + (typeof window.YachiyoNative));
+  log('mode=' + location.search + ' token=' + (bridgeToken ? 'ok' : 'EMPTY'));
+  // Isolation probe: a sandboxed iframe (like a plugin) must not get a working bridge.
+  {
+    window.addEventListener('message', function (e) { log('IFRAME PROBE: ' + JSON.stringify(e.data)); N('log', 'info', 'IFRAME_PROBE ' + JSON.stringify(e.data)); });
+    var f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts');
+    f.srcdoc = '<script>var r={bridge:typeof window.__YachiyoBridge};try{var b=window.__YachiyoBridge;r.handshake=b.handshake();r.invokeGuess=b.invoke("",\"getConfig\",\"[]\");r.invokeBad=b.invoke("0000",\"getConfig\",\"[]\");}catch(x){r.err=String(x)}parent.postMessage(r,"*")<\/script>';
+    document.body.appendChild(f);
+  }
 </script>
 </body>
 </html>

@@ -9,7 +9,6 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
-import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import com.yachiyo.companion.BuildConfig
 import com.yachiyo.companion.CompanionApp
@@ -93,15 +92,58 @@ class YachiyoNativeBridge(
         main.postDelayed(backTimeout, 300)
     }
 
+    /** Name-based dispatch for BridgeGate.invoke (C2.0); returns null for unknown methods. */
+    fun call(method: String, a: JSONArray): String? {
+        fun s(i: Int) = a.optString(i, "")
+        return when (method) {
+            "getConfig" -> getConfig()
+            "setConfig" -> setConfig(s(0))
+            "getDeviceInfo" -> getDeviceInfo()
+            "hubState" -> hubState()
+            "hubConnect" -> { hubConnect(); "" }
+            "hubDisconnect" -> { hubDisconnect(); "" }
+            "hubPublish" -> { hubPublish(s(0), s(1)); "" }
+            "hubSubscribe" -> { hubSubscribe(s(0)); "" }
+            "hubUnsubscribe" -> { hubUnsubscribe(s(0)); "" }
+            "hubRpc" -> { hubRpc(s(0), s(1), s(2), s(3)); "" }
+            "hubRpcRespond" -> { hubRpcRespond(s(0), s(1), s(2)); "" }
+            "hubRegister" -> { hubRegister(s(0)); "" }
+            "hubUnregister" -> { hubUnregister(s(0)); "" }
+            "micStart" -> { micStart(s(0)); "" }
+            "micStop" -> { micStop(s(0)); "" }
+            "pickBackground" -> { pickBackground(); "" }
+            "pickPluginPackage" -> { pickPluginPackage(); "" }
+            "listPlugins" -> listPlugins()
+            "uninstallPlugin" -> { uninstallPlugin(s(0)); "" }
+            "setPluginEnabled" -> { setPluginEnabled(s(0), a.optBoolean(1, true)); "" }
+            "pluginStorageGet" -> pluginStorageGet(s(0), s(1))
+            "pluginStorageSet" -> { pluginStorageSet(s(0), s(1), s(2)); "" }
+            "openHomeSettings" -> { openHomeSettings(); "" }
+            "listLaunchableApps" -> listLaunchableApps()
+            "launchApp" -> { launchApp(s(0)); "" }
+            "setLockscreenEnabled" -> { setLockscreenEnabled(a.optBoolean(0, false)); "" }
+            "setOrientation" -> { setOrientation(s(0)); "" }
+            "openSettings" -> { openSettings(); "" }
+            "closeSettings" -> { closeSettings(); "" }
+            "vibrate" -> { vibrate(a.optLong(0, 100)); "" }
+            "log" -> { log(s(0), s(1)); "" }
+            "consumeBack" -> { consumeBack(); "" }
+            "dismissKeyguard" -> { dismissKeyguard(); "" }
+            else -> null
+        }
+    }
+
+    val gate = BridgeGate(::call)
+
     // ---- config / info ---------------------------------------------------------------------
 
-    @JavascriptInterface fun getConfig(): String = app.config.get().toString()
+    fun getConfig(): String = app.config.get().toString()
 
-    @JavascriptInterface fun setConfig(patchJson: String): String = try {
+    fun setConfig(patchJson: String): String = try {
         app.config.set(patchJson); "ok"
     } catch (e: Exception) { errorJson(e.message ?: "error") }
 
-    @JavascriptInterface fun getDeviceInfo(): String {
+    fun getDeviceInfo(): String {
         val am = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val mi = ActivityManager.MemoryInfo().also(am::getMemoryInfo)
         return JSONObject()
@@ -118,23 +160,23 @@ class YachiyoNativeBridge(
 
     // ---- hub ---------------------------------------------------------------------------------
 
-    @JavascriptInterface fun hubState(): String = hub.snapshotJson().toString()
-    @JavascriptInterface fun hubConnect() { hub.connect() }
-    @JavascriptInterface fun hubDisconnect() { hub.disconnect() }
+    fun hubState(): String = hub.snapshotJson().toString()
+    fun hubConnect() { hub.connect() }
+    fun hubDisconnect() { hub.disconnect() }
 
-    @JavascriptInterface fun hubPublish(topic: String, dataJson: String) {
+    fun hubPublish(topic: String, dataJson: String) {
         if (lockscreen && topic.startsWith("plugin.")) return
         val data = parseObject(dataJson) ?: JSONObject()
         hub.publish(topic, data)
     }
 
-    @JavascriptInterface fun hubSubscribe(patternsJson: String) {
+    fun hubSubscribe(patternsJson: String) {
         hub.subscribe(parseStrings(patternsJson).filterNot { lockscreen && it.startsWith("plugin.") })
     }
 
-    @JavascriptInterface fun hubUnsubscribe(patternsJson: String) { hub.unsubscribe(parseStrings(patternsJson)) }
+    fun hubUnsubscribe(patternsJson: String) { hub.unsubscribe(parseStrings(patternsJson)) }
 
-    @JavascriptInterface fun hubRpc(callId: String, method: String, paramsJson: String, target: String) {
+    fun hubRpc(callId: String, method: String, paramsJson: String, target: String) {
         if (lockscreen && method.startsWith("plugin.")) {
             dispatcher.post("hub.rpc.result", JSONObject().put("call_id", callId)
                 .put("error", HubClient.errorJson(RpcCodes.PERMISSION_DENIED, "plugins disabled in lockscreen mode")))
@@ -147,13 +189,13 @@ class YachiyoNativeBridge(
         }
     }
 
-    @JavascriptInterface fun hubRpcRespond(reqId: String, resultJson: String, errorJson: String) {
+    fun hubRpcRespond(reqId: String, resultJson: String, errorJson: String) {
         val err = if (errorJson.isNotEmpty()) parseObject(errorJson) else null
         if (err != null) hub.respond(reqId, null, err)
         else hub.respond(reqId, if (resultJson.isEmpty()) JSONObject.NULL else parseValue(resultJson), null)
     }
 
-    @JavascriptInterface fun hubRegister(methodsJson: String) {
+    fun hubRegister(methodsJson: String) {
         val arr = try { JSONArray(methodsJson) } catch (_: Exception) { return }
         if (lockscreen) {
             val filtered = JSONArray()
@@ -165,18 +207,18 @@ class YachiyoNativeBridge(
         } else hub.register(arr)
     }
 
-    @JavascriptInterface fun hubUnregister(namesJson: String) { hub.unregister(parseStrings(namesJson)) }
+    fun hubUnregister(namesJson: String) { hub.unregister(parseStrings(namesJson)) }
 
     // ---- back / UI / misc ---------------------------------------------------------------------
 
-    @JavascriptInterface fun consumeBack() {
+    fun consumeBack() {
         backPending = false
         main.removeCallbacks(backTimeout)
     }
 
-    @JavascriptInterface fun vibrate(ms: Long) = NativeDevice.vibrate(app, ms)
+    fun vibrate(ms: Long) = NativeDevice.vibrate(app, ms)
 
-    @JavascriptInterface fun log(level: String, msg: String) {
+    fun log(level: String, msg: String) {
         when (level.lowercase()) {
             "error" -> Log.e(TAG_WEB, msg)
             "warn" -> Log.w(TAG_WEB, msg)
@@ -186,33 +228,33 @@ class YachiyoNativeBridge(
     }
 
     /** Extra (not in C2.1): lets the lockscreen UI offer an explicit unlock gesture. */
-    @JavascriptInterface fun dismissKeyguard() {
+    fun dismissKeyguard() {
         if (host is com.yachiyo.companion.LockscreenActivity) main.post { host.dismissKeyguardAndFinish() }
     }
 
-    @JavascriptInterface fun openSettings() {
+    fun openSettings() {
         if (lockscreen) return
         main.post { host.openSettingsScreen() }
     }
 
-    @JavascriptInterface fun closeSettings() { main.post { host.closeSettingsScreen() } }
+    fun closeSettings() { main.post { host.closeSettingsScreen() } }
 
     // ---- features implemented in later tasks (stubs keep the C2.1 surface complete) -----------
 
-    @JavascriptInterface fun micStart(optionsJson: String) { host.features.micStart(this, optionsJson) }
-    @JavascriptInterface fun micStop(reason: String) { host.features.micStop(reason) }
-    @JavascriptInterface fun pickBackground() { host.features.pickBackground(this) }
-    @JavascriptInterface fun pickPluginPackage() { host.features.pickPluginPackage(this) }
-    @JavascriptInterface fun listPlugins(): String = host.features.listPlugins(lockscreen)
-    @JavascriptInterface fun uninstallPlugin(id: String) { host.features.uninstallPlugin(this, id) }
-    @JavascriptInterface fun setPluginEnabled(id: String, enabled: Boolean) { host.features.setPluginEnabled(this, id, enabled) }
-    @JavascriptInterface fun pluginStorageGet(pluginId: String, key: String): String = host.features.pluginStorageGet(lockscreen, pluginId, key)
-    @JavascriptInterface fun pluginStorageSet(pluginId: String, key: String, valueJson: String) { host.features.pluginStorageSet(lockscreen, pluginId, key, valueJson) }
-    @JavascriptInterface fun openHomeSettings() { main.post { host.openHomeSettings() } }
-    @JavascriptInterface fun listLaunchableApps(): String = host.features.listLaunchableApps(lockscreen)
-    @JavascriptInterface fun launchApp(pkg: String) { if (!lockscreen) main.post { host.launchApp(pkg) } }
-    @JavascriptInterface fun setLockscreenEnabled(enabled: Boolean) { host.features.setLockscreenEnabled(enabled) }
-    @JavascriptInterface fun setOrientation(mode: String) { main.post { host.applyOrientation(mode, persist = true) } }
+    fun micStart(optionsJson: String) { host.features.micStart(this, optionsJson) }
+    fun micStop(reason: String) { host.features.micStop(reason) }
+    fun pickBackground() { host.features.pickBackground(this) }
+    fun pickPluginPackage() { host.features.pickPluginPackage(this) }
+    fun listPlugins(): String = host.features.listPlugins(lockscreen)
+    fun uninstallPlugin(id: String) { host.features.uninstallPlugin(this, id) }
+    fun setPluginEnabled(id: String, enabled: Boolean) { host.features.setPluginEnabled(this, id, enabled) }
+    fun pluginStorageGet(pluginId: String, key: String): String = host.features.pluginStorageGet(lockscreen, pluginId, key)
+    fun pluginStorageSet(pluginId: String, key: String, valueJson: String) { host.features.pluginStorageSet(lockscreen, pluginId, key, valueJson) }
+    fun openHomeSettings() { main.post { host.openHomeSettings() } }
+    fun listLaunchableApps(): String = host.features.listLaunchableApps(lockscreen)
+    fun launchApp(pkg: String) { if (!lockscreen) main.post { host.launchApp(pkg) } }
+    fun setLockscreenEnabled(enabled: Boolean) { host.features.setLockscreenEnabled(enabled) }
+    fun setOrientation(mode: String) { main.post { host.applyOrientation(mode, persist = true) } }
 
     companion object {
         const val TAG_WEB = "YachiyoWeb"

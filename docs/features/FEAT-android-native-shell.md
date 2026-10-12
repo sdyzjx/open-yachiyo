@@ -50,7 +50,11 @@ flowchart LR
 `HubClient` 实现 C1.2 信封（`v/type/id/topic/data/from/ts`）、`hello`（含 `device_id`、`mode`、`capabilities`、`screen`）、`sub/unsub/pub`、`rpc.req/res`（8 s 超时 → `-32003`，未连接 → `-32010`）、`rpc.register`。入站 `rpc.req` 先查本地处理器（`device.*`），否则转交 Web 层（`hub.rpc.request`），无监听者则返回 `-32601`。
 `hubRpc` 的结果 `result` 为任意 JSON，经 `hub.rpc.result {call_id, result|error}` 返回。
 
-### 3.2 JS Bridge（契约 C2.1 / C2.2）
+### 3.2 JS Bridge（契约 C2.0 / C2.1 / C2.2）
+
+**注入与令牌门（C2.0）**：`addJavascriptInterface` 会把对象注入所有 frame（含沙箱插件 iframe），因此原生只注入 `window.__YachiyoBridge`（`BridgeGate`），仅两个 `@JavascriptInterface` 方法：`handshake()` 每次主文档加载后**只有第一次**返回 32 字节随机 hex token，之后返回 `""` 并记录告警；`invoke(token, method, argsJson)` 常量时间比较 token，不匹配返回 `{"error":{"code":-32006,"message":"bridge token invalid"}}`，未知方法 `-32601`，参数非数组 `-32602`，处理器异常 `-32603`，否则按名称调用下述 C2.1 方法（`argsJson` 为参数数组）。C2.1 的各方法本身不带 `@JavascriptInterface`，不可被直接调用。令牌在**主文档请求**（`shouldInterceptRequest` 的 `isForMainFrame`）时重置——不能依赖 `onPageStarted`，它异步到达，可能晚于页面首个脚本（真机实测）。宿主页第一个脚本调用 `handshake()` 并把 token 留在闭包里，再由 `nativeShim.js` 构造 `window.YachiyoNative`（见 C2.0）；插件 iframe 是 opaque origin，拿不到闭包，真机验证其 `handshake()` 返回空、`invoke` 被拒。WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（页面源 https，网关 http），导航仍限制在资源域名。内置 fallback 页已改用 handshake/invoke，并内置沙箱 iframe 探针（结果写入 logcat `IFRAME_PROBE`）。
+
+以下为经 `invoke` 暴露的 C2.1 方法集：
 
 C2.1 全部方法均已实现（`getConfig/setConfig/getDeviceInfo/hub*/mic*/pick*/listPlugins/uninstallPlugin/setPluginEnabled/pluginStorage*/openHomeSettings/listLaunchableApps/launchApp/setLockscreenEnabled/setOrientation/openSettings/closeSettings/vibrate/log/consumeBack`），C2.2 全部事件均已实现（`hub.state/hub.event/hub.rpc.request/hub.rpc.result/mic.state/mic.level/config.changed/plugins.changed/picker.result/lifecycle/back`）。实现细节与约定：
 
@@ -81,6 +85,7 @@ C2.1 全部方法均已实现（`getConfig/setConfig/getDeviceInfo/hub*/mic*/pic
 
 ### 3.5 插件（契约 C3）
 
+- 推送安全：仅处理 `from` 为 `gateway`/`runtime` 的 `plugin.install`（其他设备/插件转发的忽略并记录）；`sha256` 必填；相对 `url` 以配置的服务器补全，绝对 `url` 的 scheme+host+port 必须与配置的服务器一致，否则回 `plugin.install_failed {reason:"foreign_url"}`，bearer 令牌绝不发往其他主机。
 - 安装来源：SAF 选择器（`pickPluginPackage`）、网关推送（`plugin.install {plugin_id, version, url, sha256, size}`：携带 `Authorization: Bearer <server.token>` 下载、校验 sha256、安装，回执 `plugin.installed {plugin_id, version}` / `plugin.install_failed {plugin_id, error}`；相对 `url` 以 `http://<host>:<port>` 补全）。
 - 安全：拒绝 zip 路径穿越（`..`、绝对路径、反斜杠、规范化后越界）；解压总量 ≤64 MB、条目 ≤2000；manifest 严格校验（id `[a-z0-9._-]{3,64}`，`type: app|widget`，`entry/icon` 为包内相对路径，`sdk` ≤1，权限格式白名单）；manifest 规范化（补默认值、widget 网格值钳制到 1..12）后写回。
 - 位置：`files/plugins/<id>/`（代码）、`files/plugin-meta/<id>.json`（`installed_at`、`enabled`）、`files/plugin-kv/<id>.json`（插件 KV，上限 1 MB）；同 id 重装覆盖代码、保留 KV 与启用状态；卸载全部删除。
@@ -126,4 +131,4 @@ SharedPreferences `yachiyo`，键 `config`（JSON，缺省值与契约 C2.3 一�
 
 ## 6. 测试用例
 
-JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md`：TC-AND-001 … TC-AND-035。
+JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md`：TC-AND-001 … TC-AND-043。

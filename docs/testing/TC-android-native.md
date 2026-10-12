@@ -6,7 +6,7 @@
 > 更新: 2026-10-12
 > 关联: docs/features/FEAT-android-native-shell.md, docs/features/FEAT-android-launcher-lockscreen.md, docs/plans/PLAN-android-ws4-android-native.md
 
-执行：自动用例 `cd apps/android && ./gradlew :app:testDebugUnitTest`；真机用例见 `docs/guides/ANDROID_BUILD_GUIDE.md`（多传输时用 `adb -s <serial>`）。ID 范围 `TC-AND-001` … `TC-AND-035`。
+执行：自动用例 `cd apps/android && ./gradlew :app:testDebugUnitTest`；真机用例见 `docs/guides/ANDROID_BUILD_GUIDE.md`（多传输时用 `adb -s <serial>`）。ID 范围 `TC-AND-001` … `TC-AND-043`。
 
 ## 用例
 
@@ -185,7 +185,7 @@
 | ID | TC-AND-015 |
 | 标题 | Bridge 真机事件与调用 |
 | 类型 | manual-device |
-| 前置条件 | fallback 页 |
+| 前置条件 | fallback 页（经 handshake/invoke 调用） |
 | 步骤 | 点击 deviceInfo/getConfig/hubState/vibrate/connect/disconnect |
 | 期望结果 | 返回 JSON 正确（model=MI 6、sdk=35）；手机振动；页面日志出现 hub.state/config.changed/lifecycle 事件 |
 | 自动化 | manual |
@@ -429,3 +429,99 @@
 | 步骤 | `PackageNames.isValid/fromIconPath` |
 | 期望结果 | 合法包名通过；`nodots`、`../x.y`、含 `/` 被拒；图标路径需 .png |
 | 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/launcher/PackageNamesTest.kt` |
+
+### TC-AND-036 handshake 仅首次返回令牌
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-036 |
+| 标题 | handshake 仅首次返回令牌 |
+| 类型 | unit |
+| 前置条件 | — |
+| 步骤 | 连续调用 handshake() |
+| 期望结果 | 首次返回 64 位 hex；之后返回空串并告警 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/bridge/BridgeGateTest.kt` — `handshakeOnlyFirstCallReturnsToken` |
+
+### TC-AND-037 页面重载重置令牌并使旧令牌失效
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-037 |
+| 标题 | 页面重载重置令牌并使旧令牌失效 |
+| 类型 | unit |
+| 前置条件 | — |
+| 步骤 | handshake → reset → 用旧令牌 invoke → 再 handshake |
+| 期望结果 | 旧令牌 -32006；新令牌不同且可用 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/bridge/BridgeGateTest.kt` — `resetIssuesFreshTokenAndInvalidatesOld` |
+
+### TC-AND-038 令牌不匹配/未握手被拒
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-038 |
+| 标题 | 令牌不匹配/未握手被拒 |
+| 类型 | unit |
+| 前置条件 | — |
+| 步骤 | 握手前、错误令牌、空令牌调用 invoke |
+| 期望结果 | 均返回 -32006 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/bridge/BridgeGateTest.kt` — `mismatchAndNoHandshakeRejected` |
+
+### TC-AND-039 按名称分派与错误码
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-039 |
+| 标题 | 按名称分派与错误码 |
+| 类型 | unit |
+| 前置条件 | — |
+| 步骤 | invoke 已知方法、未知方法、非法参数、处理器抛异常 |
+| 期望结果 | 结果透传；-32601；-32602；-32603 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/bridge/BridgeGateTest.kt` — `dispatchByNameWithArgsAndErrors` |
+
+### TC-AND-040 沙箱 iframe 无法获得可用令牌（真机）
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-040 |
+| 标题 | 沙箱 iframe 无法获得可用令牌（真机） |
+| 类型 | manual-device |
+| 前置条件 | fallback 页（内置沙箱 iframe 探针） |
+| 步骤 | 安装并启动 App；`adb logcat | grep -E 'BridgeGate|IFRAME_PROBE'`；点击 deviceInfo/hubState |
+| 期望结果 | 宿主页按钮正常（token=ok）；logcat 出现 `handshake called again; refused`；`IFRAME_PROBE` 中 handshake 为空串，invoke 返回 -32006 |
+| 自动化 | manual（MI 6 已验证） |
+
+### TC-AND-041 仅信任 gateway/runtime 发出的 plugin.install
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-041 |
+| 标题 | 仅信任 gateway/runtime 发出的 plugin.install |
+| 类型 | unit |
+| 前置条件 | — |
+| 步骤 | PushPolicy.trustedSender 传 gateway/runtime/设备 id/空串/插件名 |
+| 期望结果 | 仅 gateway、runtime 为真；其他事件被忽略并记录 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/plugins/PushPolicyTest.kt` — `onlyGatewayOrRuntimeTrusted` |
+
+### TC-AND-042 推送 URL 外部主机被拒（不泄露令牌）
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-042 |
+| 标题 | 推送 URL 外部主机被拒（不泄露令牌） |
+| 类型 | unit |
+| 前置条件 | 配置服务器 10.0.0.5:3000 |
+| 步骤 | resolveUrl 传相对路径、同源绝对 URL、其他主机/端口/协议、`//evil.com`、子域欺骗、userinfo 欺骗 |
+| 期望结果 | 相对与同源通过；其余全部 PluginException(`foreign_url`)，对应回执 `plugin.install_failed{reason:"foreign_url"}` |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/plugins/PushPolicyTest.kt` — `relativeResolvesAgainstServer`、`sameServerAbsoluteAccepted`、`foreignAbsoluteRejected` |
+
+### TC-AND-043 推送缺少 sha256 被拒
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-043 |
+| 标题 | 推送缺少 sha256 被拒 |
+| 类型 | manual-device |
+| 前置条件 | 假 Hub |
+| 步骤 | 发送不带 sha256 的 plugin.install |
+| 期望结果 | Hub 收到 plugin.install_failed（error `sha256 required`），不发起下载 |
+| 自动化 | manual |

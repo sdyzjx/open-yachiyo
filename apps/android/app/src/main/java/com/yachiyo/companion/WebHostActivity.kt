@@ -61,7 +61,7 @@ abstract class WebHostActivity : Activity() {
                 mediaPlaybackRequiresUserGesture = false
                 allowFileAccess = false
                 allowContentAccess = false
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 cacheMode = WebSettings.LOAD_DEFAULT
                 setSupportZoom(false)
                 builtInZoomControls = false
@@ -78,7 +78,7 @@ abstract class WebHostActivity : Activity() {
         setContentView(webView)
         applyImmersive()
         bridge = YachiyoNativeBridge(this, webView)
-        webView.addJavascriptInterface(bridge, "YachiyoNative")
+        webView.addJavascriptInterface(bridge.gate, "__YachiyoBridge")
         bridge.attach()
         registerReceiver(screenState, android.content.IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
@@ -195,8 +195,12 @@ abstract class WebHostActivity : Activity() {
     }
 
     private inner class HostClient : WebViewClient() {
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-            assetLoader.shouldInterceptRequest(request.url)
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // C2.0: reset the handshake when the main document is requested, i.e. BEFORE its scripts
+            // can run (onPageStarted is delivered asynchronously and may arrive after them).
+            if (request.isForMainFrame) bridge.gate.reset()
+            return assetLoader.shouldInterceptRequest(request.url)
+        }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             pageFinished = false
