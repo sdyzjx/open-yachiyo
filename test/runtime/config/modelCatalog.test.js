@@ -114,3 +114,34 @@ providers:
   assert.equal(local.api, 'openai-completions');
   assert.equal(local.api_key, null);
 });
+
+test('TC-LLM-036 catalog maps ChatGPT plan models to Responses without storing credentials', () => {
+  const store = storeWith(`
+active_model: chatgpt/gpt-test
+providers:
+  chatgpt:
+    type: openai_chatgpt_plan
+    base_url: https://api.openai.com/v1
+    models:
+      - { id: gpt-test, name: GPT Test }
+`);
+  const refresh = async () => 'rotated-oauth-token';
+  const catalog = loadModelCatalog({ store, chatgptAccessToken: 'runtime-oauth-token', chatgptRefreshAccessToken: refresh });
+  const model = catalog.active;
+  assert.equal(model.api, 'openai-responses');
+  assert.equal(model.base_url, 'https://api.openai.com/v1');
+  assert.equal(model.api_key, 'runtime-oauth-token');
+  assert.equal(model.chatgpt_plan, true);
+  assert.equal(model.refresh_access_token, refresh);
+  assert.doesNotMatch(JSON.stringify(store.loadNormalized()), /runtime-oauth-token|rotated-oauth-token/);
+  const unsafe = storeWith(`
+active_model: chatgpt/gpt-test
+providers:
+  chatgpt:
+    type: openai_chatgpt_plan
+    base_url: https://example.invalid
+    api_key: must-not-survive
+    model: gpt-test
+`);
+  assert.throws(() => unsafe.load(), /must use https:\/\/api\.openai\.com\/v1/);
+});

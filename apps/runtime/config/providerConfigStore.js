@@ -21,7 +21,7 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-const CHAT_TYPES = ['openai_compatible', 'anthropic', 'google'];
+const CHAT_TYPES = ['openai_compatible', 'openai_chatgpt_plan', 'anthropic', 'google'];
 const ASR_TYPES = ['asr_openai_compatible', 'asr_dashscope'];
 const TTS_TYPES = ['tts_dashscope', 'tts_openai_compatible'];
 const TTS_FORMATS = ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'];
@@ -59,6 +59,14 @@ function normalizeProvider(raw) {
   // eslint-disable-next-line global-require
   const preset = nonEmptyString(raw.preset) ? require('./providerPresets').getPreset(raw.preset) : null;
   const provider = { ...raw };
+  if (provider.type === 'openai_chatgpt_plan') {
+    provider.base_url = 'https://api.openai.com/v1';
+    provider.requires_api_key = false;
+    delete provider.api_key;
+    delete provider.api_key_env;
+    delete provider.headers;
+    delete provider.extra_body;
+  }
   if (preset) {
     if (provider.type === undefined) provider.type = preset.type;
     if (provider.base_url === undefined && preset.base_url) provider.base_url = preset.base_url;
@@ -116,7 +124,8 @@ function normalizeProviderConfig(config) {
 }
 
 function apiKeyOptional(provider) {
-  return provider.requires_api_key === false || provider.auth === 'none' || provider.preset === 'ollama';
+  return provider.type === 'openai_chatgpt_plan'
+    || provider.requires_api_key === false || provider.auth === 'none' || provider.preset === 'ollama';
 }
 
 function validateVoiceSection(voice, providers) {
@@ -142,6 +151,19 @@ function validateConfig(config) {
 
   if (!isObject(config.providers) || Object.keys(config.providers).length === 0) {
     throw new Error('providers must be a non-empty map');
+  }
+
+  for (const [name, provider] of Object.entries(config.providers)) {
+    if (isObject(provider) && provider.type === 'openai_chatgpt_plan') {
+      if (provider.base_url !== undefined && provider.base_url !== 'https://api.openai.com/v1') {
+        throw new Error(`provider ${name} must use https://api.openai.com/v1`);
+      }
+      for (const field of ['api_key', 'api_key_env', 'headers', 'extra_body']) {
+        if (Object.prototype.hasOwnProperty.call(provider, field)) {
+          throw new Error(`provider ${name} cannot define ${field}`);
+        }
+      }
+    }
   }
 
   const hasActiveModel = nonEmptyString(config.active_model);
@@ -180,6 +202,10 @@ function validateConfig(config) {
           throw new Error(`provider ${name} models[].id must be a non-empty string`);
         }
       }
+    }
+
+    if (type === 'openai_chatgpt_plan' && provider.base_url !== 'https://api.openai.com/v1') {
+      throw new Error(`provider ${name} must use https://api.openai.com/v1`);
     }
 
     if (ASR_TYPES.includes(type) && !nonEmptyString(provider.model)) {

@@ -22,7 +22,7 @@
 
 `GET /api/device/pairing` 仅 socket 来源为 localhost 可读；`GET /api/device/devices` 返回 `{devices, avatar_host}`。HTTP 远程请求使用 Bearer 或 query token，不信任代理头。网关所有 `/api/*`、`/debug/*` 管理入口以及 runtime `/ws` 对 loopback 保持免 token，局域网连接统一要求 Device Hub pairing token；`/ws/device` 始终要求 token。
 
-Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源访问 `/api/device/*` 和 `/api/config/models*`。网关只对该精确源返回 CORS，支持带 `Authorization` 的 OPTIONS 预检，不向其他源开放。
+Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源访问 `/api/device/*`。网关只对该精确源返回 CORS，支持带 `Authorization` 的 OPTIONS 预检，不向其他源开放。模型与 ChatGPT 账户配置由电脑端独占，`/api/config/models*` 与 `/api/chatgpt/*` 不开放 Android CORS。
 
 旧版 `GET /api/config/providers/config` 与 `/raw` 会清空内联 API key、鉴权 header 等敏感值；结构化响应用 `has_api_key` 表示凭据是否存在。把脱敏结果原样写回时，服务端恢复原凭据；显式提交新值才替换。清除密钥使用 v2 provider API 的 `clear_api_key`。
 

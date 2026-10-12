@@ -1,7 +1,7 @@
 # ChatGPT 订阅用量接入施工计划
 
 > 类型: plan
-> 状态: active
+> 状态: done
 > 负责人: codex-chatgpt-plan
 > 更新: 2026-10-13
 > 关联: docs/plans/PLAN-android-companion-contracts.md / apps/runtime/agent-pi/ / apps/gateway/
@@ -24,7 +24,7 @@
 2. 实现受保护的凭据存储、PKCE/OIDC、refresh/revoke 与短期 callback listener。
 3. 将账户模型目录并入 Model Catalog，并接入 pi-ai `openai-responses`。
 4. 增加安全 gateway routes、离线 mock 测试、功能文档与测试用例。
-5. 运行 `npm run test:ci`，由独立 agent 审查后提交交付记录。
+5. 运行 `npm run test:ci` 并交付独立 agent 审查。
 
 ## 非目标
 
@@ -34,4 +34,9 @@
 
 ## 交付记录
 
-待完成后补充。
+- 完成受保护的多 profile credential store、PKCE/OIDC、动态 client、refresh/revoke 与短期 loopback callback listener。
+- 完成 ChatGPT 模型目录、统一 selection、pi `openai-responses`、namespace 工具和禁止计费 fallback。
+- 完成 loopback-only gateway、安全错误、Android CORS 收窄与 TC-LLM-029 ~ 039。
+- 功能提交：本提交（最终哈希见交付消息）。
+- 未完成：桌面 Continue with ChatGPT UI 与真实账户 OAuth / Responses 手工验收，留给后续 UI/验收工作流。
+- 已知限制：官方尚未在公开 npm registry 发布 `@siwc/local` / `@siwc/core`，因此按官方协议用 Node 标准库实现。

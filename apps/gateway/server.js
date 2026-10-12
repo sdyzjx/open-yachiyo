@@ -17,6 +17,8 @@ const { RuntimeRpcWorker } = require('../runtime/rpc/runtimeRpcWorker');
 const { RpcErrorCode, createRpcError } = require('../runtime/rpc/jsonRpc');
 const { ProviderConfigStore } = require('../runtime/config/providerConfigStore');
 const { LlmProviderManager } = require('../runtime/config/llmProviderManager');
+const { ChatGPTCredentialStore } = require('../runtime/auth/chatgpt/credentialStore');
+const { ChatGPTAuthService } = require('../runtime/auth/chatgpt/service');
 const { ToolConfigManager } = require('../runtime/config/toolConfigManager');
 const { FileSessionStore } = require('../runtime/session/fileSessionStore');
 const { buildRecentContextMessages } = require('../runtime/session/contextBuilder');
@@ -97,7 +99,14 @@ const executor = new ToolExecutor(toolRuntime.registry, { policy: toolRuntime.po
 const providerStore = new ProviderConfigStore();
 const llmManager = new LlmProviderManager({ store: providerStore });
 const sessionStore = new FileSessionStore();
+const chatgptCredentialStore = new ChatGPTCredentialStore();
+const chatgptAuthService = new ChatGPTAuthService({
+  store: chatgptCredentialStore,
+  providerStore,
+  onConfigChange: commitConfigChange
+});
 app.use(require('./routes/modelConfig').createModelConfigRouter({ llmManager, sessionStore, commitConfigChange }));
+app.use(require('./routes/chatgptAuth').createChatGPTAuthRouter({ service: chatgptAuthService }));
 const longTermMemoryStore = getDefaultLongTermMemoryStore();
 const workspaceManager = getDefaultSessionWorkspaceManager();
 const skillRuntimeManager = new SkillRuntimeManager({ workspaceDir: process.cwd() });
@@ -273,9 +282,25 @@ async function persistSessionInputImages(sessionId, inputImages = [], workspaceR
 const { createGatewayRunner } = require('../runtime/agent-pi/gatewayAssembly');
 const { loadModelCatalog } = require('../runtime/config/modelCatalog');
 const { getDeviceHub } = require('./deviceHub');
+async function loadRuntimeModelCatalog({ modelRef } = {}) {
+  const catalog = loadModelCatalog({ store: providerStore });
+  const selected = modelRef ? catalog.resolve(modelRef) : catalog.active;
+  const chain = [selected, ...catalog.fallbackChain()].filter(Boolean);
+  if (!chain.some((model) => model.chatgpt_plan)) return catalog;
+  const accessToken = await chatgptAuthService.getAccessToken();
+  return loadModelCatalog({
+    store: providerStore,
+    chatgptAccessToken: accessToken,
+    chatgptRefreshAccessToken: async () => {
+      const profile = chatgptCredentialStore.getActiveProfile();
+      if (!profile) throw new Error('ChatGPT is not connected');
+      return chatgptAuthService.refreshAccessToken(profile.id);
+    }
+  });
+}
 const runner = createGatewayRunner({
   bus, executor, sessionStore, personaContextBuilder, skillConfigStore,
-  modelCatalog: () => loadModelCatalog({ store: providerStore }),
+  modelCatalog: loadRuntimeModelCatalog,
   deviceHub: getDeviceHub,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
@@ -1089,6 +1114,7 @@ function shutdownGateway() {
     dispatcher.stop();
     skillRuntimeManager.stop();
     debugEventStream.dispose();
+    chatgptAuthService.close();
     deviceHub.close();
     for (const client of wss.clients) client.terminate();
     wss.close();

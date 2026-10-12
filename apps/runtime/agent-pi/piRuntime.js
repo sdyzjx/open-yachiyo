@@ -49,9 +49,10 @@ async function createPiRuntime(deps) {
           }
           const images = imageParts(args.inputImages || []);
           if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
-          catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog() : deps.modelCatalog;
           const settings = await deps.sessionStore?.getSessionSettings(sessionId);
-          const chain = selectModels(catalog, args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref);
+          const selectedModelRef = args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref;
+          catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog({ modelRef: selectedModelRef }) : deps.modelCatalog;
+          const chain = selectModels(catalog, selectedModelRef);
           const models = await createModelRuntime(catalog);
           const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
           const context = () => ({ ...runtimeContext, trace_id: events.traceId, session_id: sessionId, step_index: events.step,
@@ -128,7 +129,8 @@ async function createPiRuntime(deps) {
               result = events.finish(contentText(last.content));
               break;
             } catch (error) {
-              if (index + 1 >= chain.length || events.hasOutput || events.hasTools || args.signal?.aborted || !isRetryableModelError(error)) throw error;
+              if (chain[index].chatgpt_plan || index + 1 >= chain.length || events.hasOutput || events.hasTools
+                || args.signal?.aborted || !isRetryableModelError(error)) throw error;
               session.dispose();
               session = null;
               if (startLeaf) opened.manager.branch(startLeaf); else opened.manager.resetLeaf();

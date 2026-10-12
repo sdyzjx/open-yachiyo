@@ -7,11 +7,12 @@ function loadPi() {
       import('@earendil-works/pi-ai'),
       import('@earendil-works/pi-agent-core'),
       import('@earendil-works/pi-ai/api/openai-completions'),
+      import('@earendil-works/pi-ai/api/openai-responses'),
       import('@earendil-works/pi-ai/api/anthropic-messages'),
       import('@earendil-works/pi-ai/api/google-generative-ai')
-    ]).then(([sdk, ai, core, openai, anthropic, google]) => ({
+    ]).then(([sdk, ai, core, openai, responses, anthropic, google]) => ({
       sdk, ai, core,
-      apis: { 'openai-completions': openai, 'anthropic-messages': anthropic, 'google-generative-ai': google }
+      apis: { 'openai-completions': openai, 'openai-responses': responses, 'anthropic-messages': anthropic, 'google-generative-ai': google }
     })).catch((error) => {
       pending = undefined;
       throw error;

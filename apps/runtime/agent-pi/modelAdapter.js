@@ -1,5 +1,10 @@
 const { loadPi } = require('./loadPi');
-const APIS = new Set(['openai-completions', 'anthropic-messages', 'google-generative-ai']);
+const APIS = new Set(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']);
+const CHATGPT_UNSUPPORTED_FIELDS = [
+  'background', 'conversation', 'max_output_tokens', 'max_tool_calls', 'metadata', 'moderation',
+  'multi_agent', 'prompt', 'prompt_cache_retention', 'safety_identifier', 'temperature',
+  'top_logprobs', 'top_p', 'truncation', 'user', 'previous_response_id'
+];
 
 function toPiModel(descriptor) {
   if (!descriptor || !APIS.has(descriptor.api)) throw new Error('Unsupported or missing model API');
@@ -74,15 +79,57 @@ function reasoningFetch(fetchImpl, field) {
   };
 }
 
+function sanitizeChatGPTPlanPayload(payload) {
+  const next = { ...payload };
+  for (const field of CHATGPT_UNSUPPORTED_FIELDS) delete next[field];
+  next.store = false;
+  next.stream = true;
+  if (Array.isArray(next.input)) {
+    next.input = next.input.map((item) => item?.role === 'system' ? { ...item, role: 'developer' } : item);
+  }
+  if (Array.isArray(next.tools) && next.tools.length) {
+    const functions = next.tools.filter((tool) => tool?.type === 'function' || tool?.type === 'custom');
+    if (functions.length !== next.tools.length) {
+      throw new Error('ChatGPT plan requests only support local function/custom tools');
+    }
+    next.tools = [{
+      type: 'namespace', name: 'yachiyo',
+      description: 'Local tools executed by the Yachiyo pi agent runtime.',
+      tools: functions
+    }];
+  }
+  return next;
+}
+
+function refreshOnceOnUnauthorized(fetchImpl, refreshAccessToken) {
+  return async (input, init) => {
+    const request = new Request(input, init);
+    const retry = request.clone();
+    const response = await fetchImpl(request);
+    if (response.status !== 401) return response;
+    await response.body?.cancel?.();
+    const headers = new Headers(retry.headers);
+    headers.set('authorization', `Bearer ${await refreshAccessToken()}`);
+    return fetchImpl(new Request(retry, { headers }));
+  };
+}
+
 function requestOptions(descriptor, options = {}) {
   const reasoningField = descriptor.compat?.reasoning_content_field;
+  let requestFetch = options.fetch || globalThis.fetch;
+  if (descriptor.api === 'openai-completions' && reasoningField && reasoningField !== 'reasoning_content') {
+    requestFetch = reasoningFetch(requestFetch, reasoningField);
+  }
+  if (descriptor.chatgpt_plan && typeof descriptor.refresh_access_token === 'function') {
+    requestFetch = refreshOnceOnUnauthorized(requestFetch, descriptor.refresh_access_token);
+  }
   return {
     ...options,
-    ...(descriptor.api === 'openai-completions' && reasoningField && reasoningField !== 'reasoning_content'
-      ? { fetch: reasoningFetch(options.fetch || globalThis.fetch, reasoningField) } : {}),
+    ...(requestFetch !== globalThis.fetch || options.fetch ? { fetch: requestFetch } : {}),
     timeoutMs: descriptor.timeout_ms || 60000,
-    maxRetries: descriptor.max_retries ?? 0,
-    ...(descriptor.temperature !== null && descriptor.temperature !== undefined ? { temperature: descriptor.temperature } : {}),
+    maxRetries: descriptor.chatgpt_plan ? 0 : (descriptor.max_retries ?? 0),
+    ...(!descriptor.chatgpt_plan && descriptor.temperature !== null && descriptor.temperature !== undefined
+      ? { temperature: descriptor.temperature } : {}),
     headers: { ...descriptor.headers, ...options.headers },
     onPayload: async (payload, model) => {
       const next = { ...payload, ...descriptor.extra_body };
@@ -109,7 +156,8 @@ function requestOptions(descriptor, options = {}) {
           return copy;
         });
       }
-      return (await options.onPayload?.(next, model)) ?? next;
+      const transformed = (await options.onPayload?.(next, model)) ?? next;
+      return descriptor.chatgpt_plan ? sanitizeChatGPTPlanPayload(transformed) : transformed;
     }
   };
 }
@@ -142,9 +190,13 @@ async function createModelRuntime(catalog) {
 }
 
 function isRetryableModelError(error) {
+  if (/subscription_sharing_|chatpass_v2_|ChatGPT plan usage|ChatGPT is not connected/i.test(String(error?.message || error))) return false;
   const status = Number(error?.status || error?.statusCode);
   if (status) return status === 429 || status >= 500;
   return /\b429\b|\b5\d\d\b|network|fetch failed|connection|ECONN|ETIMEDOUT|timed? out|timeout|socket/i.test(String(error?.message || error));
 }
 
-module.exports = { toPiModel, selectModels, requestOptions, createModelRuntime, isRetryableModelError };
+module.exports = {
+  CHATGPT_UNSUPPORTED_FIELDS, toPiModel, selectModels, requestOptions, createModelRuntime,
+  isRetryableModelError, sanitizeChatGPTPlanPayload, refreshOnceOnUnauthorized
+};

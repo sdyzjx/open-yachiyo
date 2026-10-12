@@ -192,7 +192,7 @@ Android 的 `addJavascriptInterface` 会把对象注入到页面**所有 frame**
 
 Web 前端 `js/nativeShim.js` 必须是宿主页**第一个执行的脚本**（在任何 iframe 创建之前）：调用 `handshake()` 取得 token 并保存在闭包中，然后定义 `window.YachiyoNative`，其 C2.1 方法都转发到 `invoke(token, name, JSON.stringify(args))`。token 不得写入全局变量、不得通过 postMessage 发给插件。插件 iframe 是 opaque origin，无法读取宿主闭包，因此即使能看到 `__YachiyoBridge` 也无法调用。
 
-其他：WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（宿主源为 `https://appassets…`，网关为局域网 `http://`）；导航仍限制在 `appassets.androidplatform.net`。网关对 `/api/device/*`、`/api/config/models*` 返回 CORS 头允许源 `https://appassets.androidplatform.net`。
+其他：WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（宿主源为 `https://appassets…`，网关为局域网 `http://`）；导航仍限制在 `appassets.androidplatform.net`。网关只对 `/api/device/*` 返回 CORS 头允许源 `https://appassets.androidplatform.net`；电脑端独占的模型与账户 API 不开放 Android CORS。
 
 WS4 实现细节（统筹确认）：`dispatch` 参数为对象 `{type, data}`（Web 端同时兼容字符串）；页面定义 `__yachiyoNative` 之前的消息进入 `window.__yachiyoQueue` 数组，前端定义后须清空处理；`plugins.changed` 的 data 为插件数组；`setConfig` 为深合并（数组整体替换）；新增 `dismissKeyguard()`（仅锁屏模式）；配置页由独立 `SettingsActivity` 加载 `/web/settings.html`。
 
@@ -449,9 +449,10 @@ Yachiyo 保持 pi Agent 核心，仅把 OpenAI 的公开 Responses API 作为一
 - `providers.yaml` 只保存 `chatgpt` 的模型目录与统一模型选择；OAuth access / refresh / ID token 存在 Yachiyo 自己的受保护数据目录，不写入 provider 配置。
 - 模型目录使用所选账户的 bearer token 请求 `GET https://api.openai.com/v1/models`，读取顶层 `models[]`，仅保留 `visibility: "list"`，显示 `display_name`，推理时传 `slug`；ref 为 `chatgpt/<slug>`。切换账户后必须刷新目录。
 - 模型选择唯一写入口仍是 `PUT /api/config/models/selection`。`GET /api/config/models` 聚合缓存的 ChatGPT 模型；不得新增第二套模型选择状态。
+- 模型配置与 ChatGPT 账户管理仅属于电脑端，所有 `/api/config/models*` 与 `/api/chatgpt/*` 路由只接受 loopback 请求。Android 不显示模型或账户入口，不接收 profile 邮箱、模型目录或 OAuth 状态；手机只通过 WebSocket 提交输入并使用电脑端已选模型。
 - ChatGPT provider 不接受 `api_key`、自定义 `base_url`、自定义请求 headers 或静默计费回退。订阅额度、权限或路由失败必须终止该次推理并透传可诊断错误。
 
-ChatGPT 连接 API 使用现有 `{ok,data}` / `{ok:false,error}` 信封和 `/api` 鉴权；其中开始授权、取消和退出还必须来自 loopback：
+ChatGPT 连接 API 使用现有 `{ok,data}` / `{ok:false,error}` 信封和 `/api` 鉴权，且全部只接受 loopback：
 
 | 方法 | 路径 | 请求 / 响应 |
 |---|---|---|
@@ -459,11 +460,13 @@ ChatGPT 连接 API 使用现有 `{ok,data}` / `{ok:false,error}` 信封和 `/api
 | POST | `/api/chatgpt/auth/start` | `{profile_id?}` → `{authorization_url,attempt_id}`；URL origin 必须为 `https://auth.openai.com`，由 Electron main 用系统浏览器打开 |
 | POST | `/api/chatgpt/auth/cancel` | `{attempt_id}`；只取消匹配的短期 attempt 并关闭 listener |
 | POST | `/api/chatgpt/signout` | `{profile_id?}`；先尝试撤销 refresh token，再清除本地 token |
-| POST | `/api/chatgpt/models/refresh` | `{profile_id?}` → `{models:[{slug,display_name}]}`；写回同一 Model Catalog 缓存 |
+| POST | `/api/chatgpt/models/refresh` | `{profile_id?}` → `{models:[{slug,display_name}]}`；成功后激活该 profile 并写回同一 Model Catalog 缓存 |
 
 OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的 state、nonce、verifier，回调固定为 `http://127.0.0.1:<随机端口>/auth/callback`；首次使用 `dynamic_agent_client` 与稳定 `ext_agent_host_id` 动态注册，复登使用已签发的 `client_id`。交换后必须用 OpenAI JWKS 验证 ID token 的签名、issuer、audience、expiry、nonce 与 subject，并检查 `chatgpt.tokens.use.direct` scope。attempt 必须超时、可取消、互相隔离，完成后关闭 listener。
 
 凭据根目录从 `YACHIYO_HOME` / runtime paths 解析，host ID 与各 registration 分开保存；Unix 文件权限为 `0600`，目录为 `0700`，更新采用原子替换。access / refresh / ID token 不得返回 renderer、Android、日志或 provider API。access token 临近到期时串行 refresh，并将旋转后的 token 集合原子写回。
+
+模型目录或 Responses 请求返回 `401` 时最多强制 refresh 并重试一次；第二次失败直接终止。`429`、订阅用量、权限和策略错误不得重试或 fallback。对外错误不得包含上游请求的 Authorization、token 或任意原始错误 body。
 
 ---
 

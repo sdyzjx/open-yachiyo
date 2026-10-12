@@ -130,6 +130,7 @@ function createModelConfigRouter({
     const input = req.body;
     if (!PROVIDER_KEY_RE.test(key)) return fail(res, 400, new Error('invalid provider key'));
     if (!isObject(input)) return fail(res, 400, new Error('body must be an object'));
+    if (key === 'chatgpt') return fail(res, 400, new Error('chatgpt provider is managed by the ChatGPT connection'));
     try {
       const config = JSON.parse(JSON.stringify(store.load()));
       const previous = isObject(config.providers[key]) ? config.providers[key] : {};
@@ -146,6 +147,7 @@ function createModelConfigRouter({
 
   router.delete('/api/config/models/providers/:key', (req, res) => {
     const key = req.params.key;
+    if (key === 'chatgpt') return fail(res, 400, new Error('chatgpt provider is managed by the ChatGPT connection'));
     try {
       const config = JSON.parse(JSON.stringify(store.load()));
       if (!config.providers[key]) return fail(res, 404, new Error(`provider not found: ${key}`));
@@ -265,6 +267,7 @@ function createModelConfigRouter({
     }
     if (!target.api) return fail(res, 400, new Error('target is not a chat model'));
     if (!target.id) return fail(res, 400, new Error('model id is required'));
+    if (target.chatgpt_plan) return fail(res, 400, new Error('ChatGPT plan models are tested through normal pi inference'));
 
     const timeoutMs = clampTimeout(body.timeout_ms, Math.min(target.timeout_ms || DEFAULT_TEST_TIMEOUT_MS, DEFAULT_TEST_TIMEOUT_MS));
     let url;
@@ -323,6 +326,7 @@ function createModelConfigRouter({
       return fail(res, 400, err);
     }
     if (!target.api) return fail(res, 400, new Error('provider is not a chat provider'));
+    if (target.chatgpt_plan) return fail(res, 400, new Error('Use /api/chatgpt/models/refresh for the ChatGPT model catalog'));
 
     const timeoutMs = clampTimeout(body.timeout_ms, DEFAULT_TEST_TIMEOUT_MS);
     let url;
@@ -364,6 +368,7 @@ function createModelConfigRouter({
   router.put('/api/sessions/:sessionId/settings', (req, res, next) => {
     const settings = req.body?.settings;
     if (!isObject(settings) || !Object.prototype.hasOwnProperty.call(settings, 'model_ref')) return next();
+    if (!isLocal(req)) return fail(res, 403, new Error('Model settings are only available on this computer'));
     const ref = settings.model_ref;
     if (ref === null || ref === '') return next();
     if (typeof ref !== 'string') return fail(res, 400, new Error('settings.model_ref must be a string or null'));

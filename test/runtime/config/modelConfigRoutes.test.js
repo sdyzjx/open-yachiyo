@@ -31,10 +31,10 @@ async function setup(yamlText, routerOpts = {}) {
   // stand-in for the existing settings handler
   app.put('/api/sessions/:id/settings', (req, res) => res.json({ ok: true, reached: true }));
   const { server, base } = await listen(app);
-  const call = async (method, url, body) => {
+  const call = async (method, url, body, headers = {}) => {
     const r = await fetch(`${base}${url}`, {
       method,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...headers },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     return { status: r.status, json: await r.json() };
@@ -266,4 +266,16 @@ test('POST /api/config/models/test never sends stored credentials to a foreign b
     t.server.close();
     attacker.close();
   }
+});
+
+test('TC-LLM-039 model catalog and model_ref settings are computer-local', async () => {
+  const t = await setup(BASE_YAML);
+  try {
+    t.server.prependListener('request', (req) => Object.defineProperty(req.socket, 'remoteAddress', {
+      configurable: true, value: '192.0.2.10'
+    }));
+    assert.equal((await t.call('GET', '/api/config/models', undefined, { 'x-forwarded-for': '127.0.0.1' })).status, 403);
+    assert.equal((await t.call('PUT', '/api/config/models/selection', { active_model: 'ds/deepseek-chat' })).status, 403);
+    assert.equal((await t.call('PUT', '/api/sessions/s1/settings', { settings: { model_ref: 'ds/deepseek-chat' } })).status, 403);
+  } finally { t.server.close(); }
 });

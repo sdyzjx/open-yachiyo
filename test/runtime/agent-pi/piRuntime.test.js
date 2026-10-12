@@ -73,6 +73,12 @@ test('TC-PI-019 never fall back after tools or on authentication failures', asyn
   const auth = await fixture(t, () => ({ status: 401 }));
   assert.equal((await auth.runtime.run({ sessionId: 's', input: 'auth fail' })).state, 'ERROR');
   assert.equal(auth.requests.length, 1);
+
+  const plan = await fixture(t, () => ({ status: 503, error: 'subscription_sharing_usage_limit_exceeded' }));
+  plan.deps.modelCatalog.active.chatgpt_plan = true;
+  const planResult = await plan.runtime.run({ sessionId: 'plan', input: 'plan limit' });
+  assert.equal(planResult.state, 'ERROR');
+  assert.equal(plan.requests.length, 1);
 });
 
 test('TC-PI-020 endless tools stop at configured step limit', async (t) => {

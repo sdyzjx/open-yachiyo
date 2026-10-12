@@ -5,6 +5,7 @@ const { ProviderConfigStore, normalizeProviderConfig } = require('./providerConf
 
 const CHAT_TYPES = new Map([
   ['openai_compatible', 'openai-completions'],
+  ['openai_chatgpt_plan', 'openai-responses'],
   ['anthropic', 'anthropic-messages'],
   ['google', 'google-generative-ai']
 ]);
@@ -17,7 +18,10 @@ function resolveApiKey(provider) {
   return null;
 }
 
-function toDescriptor(providerKey, provider, model = {}) {
+function toDescriptor(providerKey, provider, model = {}, {
+  chatgptAccessToken = null,
+  chatgptRefreshAccessToken = null
+} = {}) {
   const id = String(model.id || provider.model || '');
   return {
     ref: `${providerKey}/${id}`,
@@ -26,7 +30,7 @@ function toDescriptor(providerKey, provider, model = {}) {
     name: model.name || id,
     api: CHAT_TYPES.get(provider.type),
     base_url: String(provider.base_url || '').replace(/\/$/, ''),
-    api_key: resolveApiKey(provider),
+    api_key: provider.type === 'openai_chatgpt_plan' ? chatgptAccessToken : resolveApiKey(provider),
     api_key_env: provider.api_key_env || null,
     headers: { ...(provider.headers || {}), ...(model.headers || {}) },
     timeout_ms: Number(provider.timeout_ms) || 20000,
@@ -37,6 +41,8 @@ function toDescriptor(providerKey, provider, model = {}) {
     input: Array.isArray(model.input) ? model.input : ['text'],
     compat: { ...(provider.compat || {}), ...(model.compat || {}) },
     extra_body: { ...(provider.extra_body || {}), ...(model.extra_body || {}) },
+    chatgpt_plan: provider.type === 'openai_chatgpt_plan',
+    refresh_access_token: provider.type === 'openai_chatgpt_plan' ? chatgptRefreshAccessToken : null,
     temperature: model.temperature !== undefined
       ? Number(model.temperature)
       : (provider.temperature !== undefined ? Number(provider.temperature) : null)
@@ -67,7 +73,11 @@ function resolveVoiceProvider(config, types, candidateKeys) {
   return findByType(config, types);
 }
 
-function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
+function loadModelCatalog({
+  store = new ProviderConfigStore(),
+  chatgptAccessToken = null,
+  chatgptRefreshAccessToken = null
+} = {}) {
   const config = normalizeProviderConfig(store.load());
   const models = [];
   for (const [key, provider] of Object.entries(config.providers || {})) {
@@ -75,7 +85,9 @@ function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
     const list = Array.isArray(provider.models) && provider.models.length > 0
       ? provider.models
       : [{ id: provider.model }];
-    for (const model of list) models.push(toDescriptor(key, provider, model));
+    for (const model of list) models.push(toDescriptor(key, provider, model, {
+      chatgptAccessToken, chatgptRefreshAccessToken
+    }));
   }
 
   const byRef = new Map(models.map((m) => [m.ref, m]));

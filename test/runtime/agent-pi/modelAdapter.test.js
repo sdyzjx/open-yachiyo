@@ -60,3 +60,55 @@ test('TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history re
   assert.equal(payload.messages[0].private_reason, 'thinking');
   assert.equal(payload.messages[0].reasoning_content, undefined);
 });
+
+test('TC-LLM-035 Responses payload enforces plan constraints and namespaces local tools', async () => {
+  const chatgpt = {
+    ...descriptor,
+    ref: 'chatgpt/gpt-test', provider: 'chatgpt', id: 'gpt-test', api: 'openai-responses',
+    base_url: 'https://api.openai.com/v1', api_key: 'oauth-token', chatgpt_plan: true,
+    extra_body: { temperature: 0.8, previous_response_id: 'forbidden', metadata: { x: 1 } }
+  };
+  const model = toPiModel(chatgpt);
+  assert.equal(model.api, 'openai-responses');
+  const payload = await requestOptions(chatgpt, { onPayload: async (value) => ({
+    ...value, temperature: 2, previous_response_id: 'reintroduced'
+  }) }).onPayload({
+    model: 'gpt-test', store: true, stream: false, max_output_tokens: 50,
+    input: [{ type: 'message', role: 'system', content: [] }],
+    tools: [{ type: 'function', name: 'read_file', description: 'read', parameters: { type: 'object' } }]
+  }, model);
+  assert.equal(payload.store, false);
+  assert.equal(payload.stream, true);
+  assert.equal(payload.max_output_tokens, undefined);
+  assert.equal(payload.previous_response_id, undefined);
+  assert.equal(payload.metadata, undefined);
+  assert.equal(payload.input[0].role, 'developer');
+  assert.equal(payload.tools[0].type, 'namespace');
+  assert.equal(payload.tools[0].name, 'yachiyo');
+  assert.equal(payload.tools[0].tools[0].name, 'read_file');
+  assert.equal(isRetryableModelError(new Error('subscription_sharing_usage_limit_exceeded')), false);
+});
+
+test('TC-LLM-035 Responses retries one 401 with a rotated token and does not retry usage limits', async () => {
+  const requests = [];
+  let refreshes = 0;
+  const chatgpt = {
+    ...descriptor,
+    api: 'openai-responses', chatgpt_plan: true, max_retries: 9, temperature: 1,
+    refresh_access_token: async () => { refreshes += 1; return 'rotated-token'; }
+  };
+  const options = requestOptions(chatgpt, { fetch: async (request) => {
+    requests.push(request);
+    return new Response('', { status: requests.length === 1 ? 401 : 429 });
+  } });
+  assert.equal(options.maxRetries, 0);
+  assert.equal('temperature' in options, false);
+  const response = await options.fetch('https://api.openai.com/v1/responses', {
+    method: 'POST', headers: { authorization: 'Bearer old-token', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-test', input: [] })
+  });
+  assert.equal(response.status, 429);
+  assert.equal(requests.length, 2);
+  assert.equal(refreshes, 1);
+  assert.equal(requests[1].headers.get('authorization'), 'Bearer rotated-token');
+});
