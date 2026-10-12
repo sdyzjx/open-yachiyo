@@ -58,9 +58,12 @@ test('TC-LLM-030 ID token verification checks signature, issuer, audience, expir
     iss: ISSUER, aud: 'oaiapp_test', sub: 'subject-1', nonce: 'nonce-1',
     iat: Math.floor(now / 1000) - 1, exp: Math.floor(now / 1000) + 60, email: 'person@example.com'
   };
-  const payload = Buffer.from(JSON.stringify(payloadValue)).toString('base64url');
-  const signature = crypto.sign('RSA-SHA256', Buffer.from(`${header}.${payload}`), privateKey).toString('base64url');
-  const token = `${header}.${payload}.${signature}`;
+  const sign = (value) => {
+    const payload = Buffer.from(JSON.stringify(value)).toString('base64url');
+    const signature = crypto.sign('RSA-SHA256', Buffer.from(`${header}.${payload}`), privateKey).toString('base64url');
+    return `${header}.${payload}.${signature}`;
+  };
+  const token = sign(payloadValue);
   const verified = await verifyIdToken(token, {
     clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
     fetchImpl: async () => jsonResponse({ keys: [jwk] })
@@ -74,6 +77,33 @@ test('TC-LLM-030 ID token verification checks signature, issuer, audience, expir
     clientId: 'oaiapp_test', nonce: 'wrong', now: () => now,
     fetchImpl: async () => jsonResponse({ keys: [jwk] })
   }), /nonce/);
+  const multipleAudiences = { ...payloadValue, aud: ['oaiapp_test', 'another-client'], azp: 'oaiapp_test' };
+  assert.equal((await verifyIdToken(sign(multipleAudiences), {
+    clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
+    fetchImpl: async () => jsonResponse({ keys: [jwk] })
+  })).sub, 'subject-1');
+  await assert.rejects(verifyIdToken(sign({ ...multipleAudiences, azp: 'another-client' }), {
+    clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
+    fetchImpl: async () => jsonResponse({ keys: [jwk] })
+  }), /authorized party/);
+});
+
+test('TC-LLM-031 returning profile authorization URL never includes stored tokens', async (t) => {
+  const store = new ChatGPTCredentialStore({ rootDir: path.join(tempDir(), 'auth') });
+  const profile = store.saveProfile({
+    issuer: ISSUER, subject: 'subject-1', client_id: 'oaiapp_existing', email: 'person@example.com',
+    access_token: 'stored-access-secret', refresh_token: 'stored-refresh-secret', id_token: 'stored-id-secret',
+    connected: true, scopes: [DIRECT_SCOPE], expires_at: new Date(Date.now() + 3600000).toISOString()
+  });
+  const service = new ChatGPTAuthService({ store });
+  t.after(() => service.close());
+  const started = await service.start({ profileId: profile.id });
+  const serialized = JSON.stringify(started);
+  assert.doesNotMatch(serialized, /stored-(?:access|refresh|id)-secret/);
+  const url = new URL(started.authorization_url);
+  assert.equal(url.searchParams.has('id_token_hint'), false);
+  assert.equal(url.searchParams.get('login_hint'), 'person@example.com');
+  service.cancel(started.attempt_id);
 });
 
 test('TC-LLM-031 OAuth callback validates dynamic registration and exposes no credentials', async (t) => {
@@ -170,6 +200,31 @@ test('TC-LLM-032 expired attempts abort work and close their loopback listener',
   await assert.rejects(fetch(callback));
 });
 
+test('TC-LLM-032 concurrent starts reserve synchronously and listen failure releases the reservation', async (t) => {
+  const store = new ChatGPTCredentialStore({ rootDir: path.join(tempDir(), 'auth') });
+  const service = new ChatGPTAuthService({ store });
+  t.after(() => service.close());
+  const settled = await Promise.allSettled([service.start(), service.start()]);
+  assert.equal(settled.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(settled.filter((result) => result.status === 'rejected').length, 1);
+  assert.match(settled.find((result) => result.status === 'rejected').reason.message, /already active/);
+  service.cancel(settled.find((result) => result.status === 'fulfilled').value.attempt_id);
+  assert.equal(service.status().pending, null);
+
+  const failed = new ChatGPTAuthService({
+    store,
+    serverFactory: () => {
+      const server = new (require('node:events').EventEmitter)();
+      server.listening = false;
+      server.listen = () => queueMicrotask(() => server.emit('error', new Error('bind failed')));
+      server.close = () => {};
+      return server;
+    }
+  });
+  await assert.rejects(failed.start(), /bind failed/);
+  assert.equal(failed.status().pending, null);
+});
+
 test('TC-LLM-033 access refresh is serialized and rotates the stored token set', async () => {
   const store = new ChatGPTCredentialStore({ rootDir: path.join(tempDir(), 'auth') });
   const profile = store.saveProfile({
@@ -182,12 +237,16 @@ test('TC-LLM-033 access refresh is serialized and rotates the stored token set',
     assert.equal(url, TOKEN_URL);
     calls += 1;
     await new Promise((resolve) => setTimeout(resolve, 20));
-    return jsonResponse({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600, scope: DIRECT_SCOPE });
+    return jsonResponse({
+      access_token: 'new-access', refresh_token: 'new-refresh', id_token: 'unverified-new-id',
+      expires_in: 3600, scope: DIRECT_SCOPE
+    });
   } });
   const values = await Promise.all([service.getAccessToken(), service.getAccessToken()]);
   assert.deepEqual(values, ['new-access', 'new-access']);
   assert.equal(calls, 1);
   assert.equal(store.getProfile(profile.id).refresh_token, 'new-refresh');
+  assert.equal(store.getProfile(profile.id).id_token, 'id-token');
 });
 
 test('TC-LLM-034 signout discovers and validates the revocation endpoint before clearing tokens', async () => {

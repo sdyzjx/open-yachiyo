@@ -12,7 +12,7 @@ Yachiyo 继续使用 pi AgentSession、工具循环和本地会话，同时允�
 
 ## 2. 行为说明
 
-电脑端发起授权后，gateway 在 `127.0.0.1` 随机端口启动短期 callback listener，为本次 attempt 生成 state、OIDC nonce 与 PKCE。首次连接使用动态 client 注册；已有 profile 使用已签发 client ID 复登。回调经过 state、client ID 与 ID token 验证后才原子保存凭据，并刷新所选账户的模型目录。
+电脑端发起授权后，gateway 先同步预留唯一 attempt，再在 `127.0.0.1` 随机端口启动短期 callback listener，为本次 attempt 生成 state、OIDC nonce 与 PKCE。首次连接使用动态 client 注册；已有 profile 使用已签发 client ID 与非敏感 `login_hint` 复登，授权 URL 不携带已保存的 ID token。回调经过 state、client ID 与 ID token 验证后才原子保存凭据，并刷新所选账户的模型目录。多 audience ID token 还必须满足 `azp` 等于当前 client ID。
 
 ```mermaid
 sequenceDiagram
@@ -30,7 +30,7 @@ sequenceDiagram
   D->>G: 轮询 status，随后用统一 selection API 选择模型
 ```
 
-attempt 同时只允许一个，默认五分钟过期；取消、过期、完成都会关闭 listener 并清除内存状态。access token 临近到期时按 profile 串行 refresh，成功后把 access / rotating refresh token 一起原子替换。
+attempt 同时只允许一个，默认五分钟过期；同步 reservation 防止并发 start 各自留下 listener，创建/listen 失败、取消、过期、完成都会关闭 listener 并清除内存状态。access token 临近到期时按 profile 串行 refresh，成功后把 access / rotating refresh token 一起原子替换；refresh 响应中的新 ID token 不会在未重新验证身份的情况下写入。
 
 模型目录或 Responses 请求遇到 `401` 时最多强制 refresh 并重试一次；第二次失败直接返回。`429`、订阅用量限制和权限错误不重试，也不进入 API key provider 的 fallback。
 
@@ -38,7 +38,7 @@ attempt 同时只允许一个，默认五分钟过期；取消、过期、完成
 
 ## 3. 接口与协议
 
-所有路由只接受真实 loopback socket 地址（`127.0.0.1`、`::1`、IPv4-mapped loopback），不信任 `X-Forwarded-For`，响应使用 `{ok:true,data}` 或 `{ok:false,error}`。
+所有路由只接受真实 loopback socket 地址（`127.0.0.1`、`::1`、IPv4-mapped loopback），不信任 `X-Forwarded-For`，并要求 `Host` 为与 socket local port 一致的 `localhost` / `127.0.0.1` / `[::1]` authority。浏览器写请求还必须具有与 Host 完全一致的非 null `Origin`，若带 `Sec-Fetch-Site` 只能为 `same-origin` / `none`；缺少所有浏览器来源头的本地 HTTP 客户端保持兼容。响应使用 `{ok:true,data}` 或 `{ok:false,error}`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -67,7 +67,7 @@ status 的 `pending` 固定为 `null` 或 `{attempt_id,state:"waiting"|"completi
 
 - 当前公开 npm registry 没有 `@siwc/local` / `@siwc/core` 包（2026-10-13 查询为 404），因此本实现按官方 OAuth/OIDC 协议直接实现，并使用 Node crypto 验签。
 - ChatGPT plan usage 只用于 OpenAI 官方允许的开源、本地运行场景。授权不会读取 ChatGPT 对话，也不会取得用户 API key。
-- HTTP Responses 请求不使用 `previous_response_id`；本地 pi 会话负责历史。预览路由不支持的托管工具和请求字段会被移除或拒绝。
+- HTTP Responses 请求不使用 `previous_response_id`；本地 pi 会话负责历史。预览路由不支持的托管工具和请求字段会被移除或拒绝。自动化覆盖 namespaced function call、本地执行和 `function_call_output` 回放的完整两轮链路。
 - `subscription_sharing_usage_limit_exceeded`、用量状态不可用、身份/权限/策略和 unsupported capability 等错误会终止当前推理，不会静默切换到 API key 计费 provider；任何上游错误文本都不会带出请求 Authorization。
 - 本轮只做 mock/OIDC 离线验证；真实账户登录和真实模型推理由统筹者在可审查 UI 就绪后验收。
 

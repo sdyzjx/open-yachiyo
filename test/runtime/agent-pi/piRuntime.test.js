@@ -1,8 +1,89 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
 const { fixture } = require('./fixture');
 const { createPiRuntime } = require('../../../apps/runtime/agent-pi/piRuntime');
+const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
 const { ToolExecutor } = require('../../../apps/runtime/executor/toolExecutor');
+
+async function responsesFixture(t) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-responses-'));
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    requests.push(body);
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const send = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (requests.length === 1) {
+      const item = {
+        type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'add', namespace: 'yachiyo',
+        arguments: '{"a":20,"b":22}', status: 'completed'
+      };
+      send({ type: 'response.created', response: { id: 'resp_1' } });
+      send({ type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '' } });
+      send({ type: 'response.function_call_arguments.delta', output_index: 0, delta: item.arguments });
+      send({ type: 'response.function_call_arguments.done', output_index: 0, arguments: item.arguments });
+      send({ type: 'response.output_item.done', output_index: 0, item });
+      send({ type: 'response.completed', response: {
+        id: 'resp_1', status: 'completed', output: [item],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }
+      } });
+    } else {
+      const item = {
+        type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
+        content: [{ type: 'output_text', text: 'answer 42', annotations: [] }]
+      };
+      send({ type: 'response.created', response: { id: 'resp_2' } });
+      send({ type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } });
+      send({ type: 'response.output_text.delta', output_index: 0, delta: 'answer 42' });
+      send({ type: 'response.output_item.done', output_index: 0, item });
+      send({ type: 'response.completed', response: {
+        id: 'resp_2', status: 'completed', output: [item],
+        usage: { input_tokens: 2, output_tokens: 2, total_tokens: 4 }
+      } });
+    }
+    res.end('data: [DONE]\n\n');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const descriptor = {
+    ref: 'chatgpt/gpt-test', provider: 'chatgpt', id: 'gpt-test', api: 'openai-responses',
+    api_key: 'oauth-test-token', base_url: `http://127.0.0.1:${server.address().port}/v1`,
+    input: ['text'], timeout_ms: 2000, max_retries: 0, chatgpt_plan: true
+  };
+  const catalog = {
+    models: [descriptor], active: descriptor,
+    resolve: (ref) => ref === descriptor.ref ? descriptor : null,
+    fallbackChain: () => [descriptor]
+  };
+  const bus = new RuntimeEventBus();
+  const executor = new ToolExecutor({
+    add: {
+      input_schema: {
+        type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b']
+      },
+      run: ({ a, b }) => String(a + b)
+    }
+  });
+  const skillConfig = {
+    home: { envKey: 'RESPONSES_FIXTURE_HOME', defaultPath: root },
+    load: { workspace: false, global: false, extraDirs: [] }, limits: {}, entries: {}
+  };
+  const runtime = await createPiRuntime({
+    bus, executor, modelCatalog: catalog, sessionDir: path.join(root, 'sessions'), cwd: root,
+    skillConfigStore: { load: () => skillConfig }, compaction: { enabled: false }
+  });
+  return { runtime, requests };
+}
 
 test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) => {
   const f = await fixture(t, (body) => body.messages.at(-1).role === 'tool' ? { text: 'answer 42' } : { tool: 'add', args: { a: 20, b: 22 } });
@@ -79,6 +160,21 @@ test('TC-PI-019 never fall back after tools or on authentication failures', asyn
   const planResult = await plan.runtime.run({ sessionId: 'plan', input: 'plan limit' });
   assert.equal(planResult.state, 'ERROR');
   assert.equal(plan.requests.length, 1);
+});
+
+test('TC-LLM-035 namespaced Responses tool calls execute locally and replay function_call_output', async (t) => {
+  const f = await responsesFixture(t);
+  const result = await f.runtime.run({ sessionId: 'responses', input: 'compute' });
+  assert.equal(result.state, 'DONE', result.output);
+  assert.equal(result.output, 'answer 42');
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests[0].tools[0].type, 'namespace');
+  assert.equal(f.requests[0].tools[0].name, 'yachiyo');
+  assert.ok(f.requests[0].tools[0].tools.some((tool) => tool.name === 'add'));
+  assert.ok(f.requests[1].input.some((item) => item.type === 'function_call'
+    && item.call_id === 'call_1' && item.namespace === 'yachiyo' && item.name === 'add'));
+  assert.ok(f.requests[1].input.some((item) => item.type === 'function_call_output'
+    && item.call_id === 'call_1' && item.output.includes('42')));
 });
 
 test('TC-PI-020 endless tools stop at configured step limit', async (t) => {

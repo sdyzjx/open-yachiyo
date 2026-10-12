@@ -462,9 +462,11 @@ ChatGPT 连接 API 使用现有 `{ok,data}` / `{ok:false,error}` 信封和 `/api
 | POST | `/api/chatgpt/signout` | `{profile_id?}`；先尝试撤销 refresh token，再清除本地 token |
 | POST | `/api/chatgpt/models/refresh` | `{profile_id?}` → `{models:[{slug,display_name}]}`；成功后激活该 profile 并写回同一 Model Catalog 缓存 |
 
-OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的 state、nonce、verifier，回调固定为 `http://127.0.0.1:<随机端口>/auth/callback`；首次使用 `dynamic_agent_client` 与稳定 `ext_agent_host_id` 动态注册，复登使用已签发的 `client_id`。交换后必须用 OpenAI JWKS 验证 ID token 的签名、issuer、audience、expiry、nonce 与 subject，并检查 `chatgpt.tokens.use.direct` scope。attempt 必须超时、可取消、互相隔离，完成后关闭 listener。
+OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的 state、nonce、verifier，回调固定为 `http://127.0.0.1:<随机端口>/auth/callback`；首次使用 `dynamic_agent_client` 与稳定 `ext_agent_host_id` 动态注册，复登使用已签发的 `client_id` 与非敏感 `login_hint`，不得把保存的 ID token 放进 authorization URL。交换后必须用 OpenAI JWKS 验证 ID token 的签名、issuer、audience、expiry、nonce 与 subject；多 audience 时 `azp` 必须等于 client ID，并检查 `chatgpt.tokens.use.direct` scope。attempt 必须在首个 await 前同步预留，超时、可取消、互相隔离，create/listen 失败或完成后关闭 listener。refresh 响应的新 ID token 未重新完成身份验证前不得替换已验证值。
 
 凭据根目录从 `YACHIYO_HOME` / runtime paths 解析，host ID 与各 registration 分开保存；Unix 文件权限为 `0600`，目录为 `0700`，更新采用原子替换。access / refresh / ID token 不得返回 renderer、Android、日志或 provider API。access token 临近到期时串行 refresh，并将旋转后的 token 集合原子写回。
+
+除真实 loopback socket 外，ChatGPT API 的 Host 必须是与 socket local port 一致的本机 authority。浏览器写请求必须有与 Host 完全一致的非 null Origin，Fetch Metadata 若存在只接受 same-origin/none；缺少全部浏览器来源头的本机非浏览器客户端可兼容。`X-Forwarded-For` 不参与任何判断。
 
 模型目录或 Responses 请求返回 `401` 时最多强制 refresh 并重试一次；第二次失败直接终止。`429`、订阅用量、权限和策略错误不得重试或 fallback。对外错误不得包含上游请求的 Authorization、token 或任意原始错误 body。
 

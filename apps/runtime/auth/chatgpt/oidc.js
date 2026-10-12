@@ -50,6 +50,7 @@ async function verifyIdToken(idToken, {
   const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   if (payload.iss !== ISSUER) throw new Error('ID token issuer is invalid');
   if (!audience.includes(clientId)) throw new Error('ID token audience is invalid');
+  if (audience.length > 1 && payload.azp !== clientId) throw new Error('ID token authorized party is invalid');
   if (!Number.isFinite(payload.exp) || payload.exp < nowSec - clockToleranceSec) throw new Error('ID token has expired');
   if (Number.isFinite(payload.nbf) && payload.nbf > nowSec + clockToleranceSec) throw new Error('ID token is not active');
   if (!Number.isFinite(payload.iat) || payload.iat > nowSec + clockToleranceSec) throw new Error('ID token issued-at time is invalid');

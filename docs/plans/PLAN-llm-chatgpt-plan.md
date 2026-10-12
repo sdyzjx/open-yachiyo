@@ -40,3 +40,4 @@
 - 功能提交：本提交（最终哈希见交付消息）。
 - 未完成：桌面 Continue with ChatGPT UI 与真实账户 OAuth / Responses 手工验收，留给后续 UI/验收工作流。
 - 已知限制：官方尚未在公开 npm registry 发布 `@siwc/local` / `@siwc/core`，因此按官方协议用 Node 标准库实现。
+- 独立审查修复：authorization URL token 泄漏、loopback CSRF/Host、并发 start listener、refresh ID token 与 OIDC azp；另补 Responses namespace 工具两轮回放测试。

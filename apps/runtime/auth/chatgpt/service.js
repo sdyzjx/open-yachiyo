@@ -54,6 +54,7 @@ class ChatGPTAuthService {
     providerStore,
     fetchImpl = (...args) => fetch(...args),
     verifyIdentity = verifyIdToken,
+    serverFactory = () => http.createServer(),
     attemptTtlMs = 5 * 60 * 1000,
     now = () => Date.now(),
     onConfigChange = () => {}
@@ -62,6 +63,7 @@ class ChatGPTAuthService {
     this.providerStore = providerStore;
     this.fetchImpl = fetchImpl;
     this.verifyIdentity = verifyIdentity;
+    this.serverFactory = serverFactory;
     this.attemptTtlMs = attemptTtlMs;
     this.now = now;
     this.onConfigChange = onConfigChange;
@@ -98,34 +100,43 @@ class ChatGPTAuthService {
     const state = randomValue();
     const nonce = randomValue();
     const id = crypto.randomUUID();
-    const server = http.createServer();
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        server.removeListener('error', reject);
-        resolve();
-      });
-    });
-    const address = server.address();
-    const redirectUri = `http://127.0.0.1:${address.port}${CALLBACK_PATH}`;
     const attempt = {
-      id, state: 'waiting', startedAt: this.now(), server, verifier, challenge, oauthState: state,
-      nonce, redirectUri, profileId: selected?.id || null, clientId: selected?.client_id || DYNAMIC_CLIENT_ID,
+      id, state: 'waiting', startedAt: this.now(), server: null, verifier, challenge, oauthState: state,
+      nonce, redirectUri: null, profileId: selected?.id || null, clientId: selected?.client_id || DYNAMIC_CLIENT_ID,
       abortController: new AbortController(), cancelled: false,
       timer: null
     };
-    server.on('request', (req, res) => { void this.handleCallback(attempt, req, res); });
-    attempt.timer = setTimeout(() => this.expireAttempt(id), this.attemptTtlMs);
-    attempt.timer.unref?.();
     this.pending = attempt;
     this.lastError = null;
+    attempt.timer = setTimeout(() => this.expireAttempt(id), this.attemptTtlMs);
+    attempt.timer.unref?.();
+    try {
+      const server = this.serverFactory();
+      attempt.server = server;
+      server.on('request', (req, res) => { void this.handleCallback(attempt, req, res); });
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen({ port: 0, host: '127.0.0.1', signal: attempt.abortController.signal }, () => {
+          server.removeListener('error', reject);
+          const address = server.address();
+          attempt.redirectUri = `http://127.0.0.1:${address.port}${CALLBACK_PATH}`;
+          resolve();
+        });
+      });
+      if (attempt.cancelled || this.pending?.id !== id) throw new Error('ChatGPT authorization attempt was cancelled');
+    } catch (error) {
+      attempt.cancelled = true;
+      attempt.abortController.abort();
+      this.closeAttempt(attempt);
+      throw error;
+    }
 
     const url = new URL(AUTHORIZE_URL);
     const params = {
       client_id: attempt.clientId,
       ext_agent_host_id: this.store.getHostId(),
       response_type: 'code',
-      redirect_uri: redirectUri,
+      redirect_uri: attempt.redirectUri,
       resource: RESOURCE,
       scope: SCOPE,
       state,
@@ -134,7 +145,6 @@ class ChatGPTAuthService {
       code_challenge: challenge
     };
     if (selected) {
-      if (selected.id_token) params.id_token_hint = selected.id_token;
       if (selected.email) params.login_hint = selected.email;
     } else {
       params.agent_name_hint = 'Yachiyo';
@@ -322,7 +332,7 @@ class ChatGPTAuthService {
       if (!scopes.includes(DIRECT_SCOPE)) throw new Error('ChatGPT plan usage permission is no longer enabled');
       const saved = this.store.saveProfile({ ...profile,
         access_token: token.access_token, refresh_token: token.refresh_token,
-        id_token: token.id_token || profile.id_token,
+        id_token: profile.id_token,
         expires_at: new Date(this.now() + expiresIn * 1000).toISOString(),
         earliest_refresh_at: token.earliest_refresh_at || null,
         scopes, saved_at: new Date(this.now()).toISOString(), connected: true
@@ -415,7 +425,11 @@ class ChatGPTAuthService {
   }
 
   close() {
-    if (this.pending) this.closeAttempt(this.pending);
+    if (this.pending) {
+      this.pending.cancelled = true;
+      this.pending.abortController.abort();
+      this.closeAttempt(this.pending);
+    }
   }
 }
 
