@@ -222,7 +222,7 @@
     setConfig(patchJson) {
       const patch = jp(patchJson);
       if (!patch) return JSON.stringify({ error: 'invalid json' });
-      config = { ...config, ...patch }; // C2.1: shallow merge, like the real bridge
+      config = merge(config, patch); // objects deep-merge, arrays replace
       store.set(CONFIG_KEY, config);
       setTimeout(() => emit('config.changed', config), 0);
       return ok;
@@ -296,6 +296,7 @@
     setOrientation(m) { config = merge(config, { orientation: m }); store.set(CONFIG_KEY, config); },
     openSettings() { location.href = 'settings.html'; },
     closeSettings() { location.href = 'index.html'; },
+    dismissKeyguard() { console.log('[mockNative] dismissKeyguard'); },
     vibrate(ms) { if (navigator.vibrate) navigator.vibrate(Number(ms) || 20); },
     consumeBack() { /* not needed in browser */ },
     log(level, msg) { /* console logging is done by the bridge wrapper */ }

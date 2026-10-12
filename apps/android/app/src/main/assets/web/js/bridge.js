@@ -23,7 +23,9 @@
   }
 
   // C2.2: must exist as early as possible so native can deliver (and queue) messages.
+  const early = Array.isArray(global.__yachiyoQueue) ? global.__yachiyoQueue.splice(0) : [];
   global.__yachiyoNative = { dispatch };
+  early.forEach(dispatch); // messages native pushed before this page was ready
 
   function native() { return global.YachiyoNative || null; }
 
