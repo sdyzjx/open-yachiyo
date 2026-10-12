@@ -14,7 +14,13 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.util.Log
+import com.yachiyo.companion.bridge.YachiyoNativeBridge
+import com.yachiyo.companion.features.NativeFeatures
 import com.yachiyo.companion.web.WebAssets
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.provider.Settings
 import androidx.webkit.WebViewAssetLoader
 
 /** Full-screen immersive WebView host shared by the main and lockscreen activities. */
@@ -25,11 +31,16 @@ abstract class WebHostActivity : Activity() {
     protected lateinit var webView: WebView
     protected lateinit var assetLoader: WebViewAssetLoader
     @Volatile protected var pageFinished = false
+    lateinit var bridge: YachiyoNativeBridge
+        private set
+    val features: NativeFeatures by lazy { NativeFeatures(this) }
 
     protected open fun pluginsEnabled(): Boolean = mode == "normal"
     protected open fun extraPathHandler(): WebViewAssetLoader.PathHandler? = null
     protected open fun onWebViewReady(view: WebView) {}
     protected open fun onPageFinishedHook() {}
+    /** Home/launcher activities swallow the back key instead of leaving. */
+    protected open val swallowBack: Boolean get() = false
     protected open fun entryUrl(): String = WebAssets.entryUrl(this, mode)
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -65,6 +76,10 @@ abstract class WebHostActivity : Activity() {
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         setContentView(webView)
         applyImmersive()
+        bridge = YachiyoNativeBridge(this, webView)
+        webView.addJavascriptInterface(bridge, "YachiyoNative")
+        bridge.attach()
+        applyOrientation(CompanionApp.instance.config.get().optString("orientation", "auto"), persist = false)
         onWebViewReady(webView)
         if (savedInstanceState == null) webView.loadUrl(entryUrl())
         else webView.restoreState(savedInstanceState)
@@ -90,7 +105,63 @@ abstract class WebHostActivity : Activity() {
             or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
     }
 
+    override fun onResume() {
+        super.onResume()
+        bridge.emitLifecycle("resume")
+    }
+
+    override fun onPause() {
+        bridge.emitLifecycle("pause")
+        super.onPause()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (swallowBack || pageFinished) bridge.requestBack() else defaultBack()
+    }
+
+    /** Fallback behaviour when the Web layer does not consume the back key within 300 ms. */
+    open fun defaultBack() {
+        if (swallowBack) return
+        if (this is SettingsActivity) finish() else moveTaskToBack(true)
+    }
+
+    fun isDefaultLauncher(): Boolean {
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val ri = packageManager.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY)
+        return ri?.activityInfo?.packageName == packageName
+    }
+
+    open fun openSettingsScreen() {
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    open fun closeSettingsScreen() {
+        if (this is SettingsActivity) finish()
+    }
+
+    fun openHomeSettings() {
+        try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (e: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+    }
+
+    fun launchApp(pkg: String) {
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** mode: auto | portrait | landscape. Activity is not recreated (see configChanges). */
+    fun applyOrientation(mode: String, persist: Boolean) {
+        requestedOrientation = when (mode) {
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        }
+        if (persist) CompanionApp.instance.config.set(org.json.JSONObject().put("orientation", mode).toString())
+    }
+
     override fun onDestroy() {
+        bridge.detach()
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
@@ -102,10 +173,12 @@ abstract class WebHostActivity : Activity() {
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             pageFinished = false
+            bridge.dispatcher.markNotReady()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             pageFinished = true
+            bridge.onPageFinished()
             onPageFinishedHook()
         }
 
