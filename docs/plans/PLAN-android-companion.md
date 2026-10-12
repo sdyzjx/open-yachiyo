@@ -2,7 +2,7 @@
 
 > 类型: plan
 > 状态: active
-> 负责人: claude-coordinator
+> 负责人: codex-coordinator
 > 更新: 2026-10-12
 > 关联: PLAN-android-companion-contracts.md, EXP-20261012-android-live2d-webview-feasibility.md, 各 PLAN-android-ws*.md
 
@@ -112,6 +112,16 @@ flowchart TD
 | 统筹：实验 + 契约 + 施工文档 + 接口桩 | done | 0c2b84b | |
 | WS1 | merged | 7d4419a | 合并后 564 测试通过；待办：工具名线上编码 |
 | WS2 | merged | 63504a1 | 统筹审查修复：/test 凭据外泄（63504a1）；538 测试通过 |
-| WS3 | in progress | | Codex，2026-10-12 启动 |
+| WS3 | merged / integration | 84c2924 | 设备总线已合并，继续鉴权、发现广播和跨端联调 |
 | WS4 | merged | c039c32 | 修复后合并：Bridge 令牌门控（391ab63）、插件推送仅信任网关且 token 不外发；Gradle 单测 + APK 构建通过 |
-| WS5 | in progress | | Sonnet，2026-10-12 启动 |
+| WS5 | merged / integration | 0eaf75c | Web 前端已合并，继续自动发现配置与真机联调 |
+
+
+## 8. Codex 接续验收（2026-10-12）
+
+- 已保留旧 worktree 与未提交契约修改，新增三个独立 `agent/*` worktree；子 agent 统一 GPT-5.6 Sol / high，统筹负责合并验收。
+- WS3 合并后 Node 588/588；WS5 合并后隔离测试环境 Node 624/624。首次 WS5 回归出现 legacy 子进程启动 7 秒超时，隔离后全量通过，继续观察。
+- 集成 Android 已同步模型资源，JDK17 单测与 assembleDebug 通过。
+- 用户新增目标 A14：配置页自动发现同一局域网的服务端、选择地址并配对；接口见 C7，广播不暴露令牌。
+- 新分工：`ws1-pi-completion` 负责工具名兼容与 pi 补查；`ws3-integration` 负责网关通信边界、音频元数据与发现广播；`android-integration` 负责 Android 联调与发现 UI。
+- 真机初验等待现有 WS5 设备锁释放，不抢占正在使用的设备。
