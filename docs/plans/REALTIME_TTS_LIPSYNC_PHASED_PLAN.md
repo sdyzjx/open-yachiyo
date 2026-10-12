@@ -56,7 +56,7 @@
 
 改动点：
 - 新增 `scripts/aliyun_voice_clone_http.py`
-- 新增 `docs/VOICE_CLONE_HTTP_SOP.md`
+- 新增 `docs/guides/VOICE_CLONE_HTTP_SOP.md`
 
 脚本能力：
 1. 输入参考音频路径、目标模型、音色名。

@@ -1,6 +1,6 @@
 # 嘴形同步与表情动作冲突问题 - 调查总结
 
-> 历史文档。主要记录 2026-03-01 左右的旧冲突调查，不代表当前主线 lipsync/face mixer 实现。现状请看 `docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`。
+> 历史文档。主要记录 2026-03-01 左右的旧冲突调查，不代表当前主线 lipsync/face mixer 实现。现状请看 `docs/debug/VOICE_LIPSYNC_DEBUG_GUIDE.md`。
 
 ## 问题描述
 
@@ -165,11 +165,11 @@ function applyLipSyncForCurrentFrame() {
 
 ### 新增的文件
 
-- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md` - 详细的调查方案
-- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md` - 调试指南
+- `docs/research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md` - 详细的调查方案
+- `docs/debug/LIPSYNC_CONFLICT_DEBUG_GUIDE.md` - 调试指南
 - `scripts/test-lipsync-expression-conflict.js` - 测试脚本
 - `scripts/investigate-lipsync-conflict.sh` - 调查工具脚本
-- `docs/LIPSYNC_CONFLICT_SUMMARY.md` - 本文档
+- `docs/debug/LIPSYNC_CONFLICT_SUMMARY.md` - 本文档
 
 ## 下一步
 
@@ -229,5 +229,5 @@ Live2D 模型参数更新有两种方式：
 
 - [Live2D Cubism SDK 文档](https://docs.live2d.com/)
 - [Pixi.js Ticker 文档](https://pixijs.download/release/docs/PIXI.Ticker.html)
-- [嘴形同步研究文档](./LIVE2D_LIPSYNC_RESEARCH.md)
-- [Desktop Live2D 模块文档](./modules/desktop-live2d/module-reference.md)
+- [嘴形同步研究文档](../research/LIVE2D_LIPSYNC_RESEARCH.md)
+- [Desktop Live2D 模块文档](../modules/desktop-live2d/module-reference.md)

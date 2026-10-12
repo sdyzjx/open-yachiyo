@@ -44,7 +44,7 @@ git push origin main
 ### 0.3 有冲突时的协调策略
 
 1. **拆分改动**：将共享文件的修改提取为独立的 `chore/` 分支先合并，两个 REQ 分支再 rebase
-2. **指定合并顺序**：在 PROGRESS_TODO.md 的 REQ 描述中注明 `Depends-On: REQ-XXX`，被依赖的先合并
+2. **指定合并顺序**：在 docs/process/PROGRESS_TODO.md 的 REQ 描述中注明 `Depends-On: REQ-XXX`，被依赖的先合并
 3. **功能分支特性优先**：冲突时以后合并的分支为准（`git checkout --theirs`），但需人工确认逻辑正确
 
 ### 0.4 本地并行开发：git worktree 快速上手

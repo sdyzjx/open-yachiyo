@@ -162,7 +162,7 @@ main 进程在 `apps/desktop-live2d/main/desktopSuite.js`
 
 ### 6.2 其他文档分别负责什么
 
-- `docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`
+- `docs/debug/VOICE_LIPSYNC_DEBUG_GUIDE.md`
   - 当前可执行的调试步骤与 topic
 - `docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
   - `desktop-live2d.json` 字段参考
@@ -172,9 +172,9 @@ main 进程在 `apps/desktop-live2d/main/desktopSuite.js`
 ### 6.3 已重叠且过时的文档
 
 以下文档保留为历史调查材料，但不应再当作当前主线事实来源：
-- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
-- `docs/LIPSYNC_CONFLICT_SUMMARY.md`
-- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
+- `docs/debug/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
+- `docs/debug/LIPSYNC_CONFLICT_SUMMARY.md`
+- `docs/research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
 
 它们的问题是：
 - 主要针对 2026-03-01 左右的旧 lipsync 冲突排查

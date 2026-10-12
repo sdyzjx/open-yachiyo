@@ -322,8 +322,8 @@ npm test -- test/desktop-live2d/bubbleTruncate.test.js
 
 ## 相关文档
 
-- [Desktop Live2D施工方案](./DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md)
-- [Bubble流式输出施工计划](./BUBBLE_STREAMING_CONSTRUCTION_PLAN.md)
+- [Desktop Live2D施工方案](../plans/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md)
+- [Bubble流式输出施工计划](../plans/BUBBLE_STREAMING_CONSTRUCTION_PLAN.md)
 - [Marked.js文档](https://marked.js.org/)
 - [KaTeX文档](https://katex.org/)
 - [Mermaid文档](https://mermaid.js.org/)

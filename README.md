@@ -51,11 +51,11 @@ Configure provider at `~/yachiyo/config/providers.yaml`:
 
 Provider setup:
 
-- `docs/PROVIDER_CONFIGURATION_GUIDE.md`
+- `docs/guides/PROVIDER_CONFIGURATION_GUIDE.md`
 
 Voice clone / TTS setup:
 
-- `docs/TTS_VOICE_CLONE_GUIDE.md`
+- `docs/guides/TTS_VOICE_CLONE_GUIDE.md`
 
 Health check:
 
@@ -130,11 +130,11 @@ Onboarding covers:
 
 Docs:
 
-- Architecture: `docs/ARCHITECTURE.md`
-- Testing: `docs/TESTING.md`
-- Runtime usage cases: `docs/RUNTIME_FEATURE_USAGE_CASES.md`
-- Provider configuration guide: `docs/PROVIDER_CONFIGURATION_GUIDE.md`
-- Voice clone and TTS guide: `docs/TTS_VOICE_CLONE_GUIDE.md`
+- Architecture: `docs/architecture/ARCHITECTURE.md`
+- Testing: `docs/testing/TESTING.md`
+- Runtime usage cases: `docs/guides/RUNTIME_FEATURE_USAGE_CASES.md`
+- Provider configuration guide: `docs/guides/PROVIDER_CONFIGURATION_GUIDE.md`
+- Voice clone and TTS guide: `docs/guides/TTS_VOICE_CLONE_GUIDE.md`
 
 ---
 
@@ -170,8 +170,8 @@ With topic filters, you can trace one request end-to-end:
 
 Reference:
 
-- `docs/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
-- `docs/DEBUG_CHAIN_FLOW_GUIDE.md`
+- `docs/debug/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
+- `docs/debug/DEBUG_CHAIN_FLOW_GUIDE.md`
 
 ---
 
@@ -179,9 +179,9 @@ Reference:
 
 Parallel development and integration are handled with branch/worktree discipline and documented merge strategy.
 
-- Branch/worktree collaboration: `docs/BRANCH_COLLABORATION_SPEC.md`
-- Merge strategy: `docs/MERGE_STRATEGY.md`
-- SSE logger MVP plan: `docs/SSE_EXPRESS_LOGGER_MVP_PLAN.md`
+- Branch/worktree collaboration: `docs/process/BRANCH_COLLABORATION_SPEC.md`
+- Merge strategy: `docs/process/MERGE_STRATEGY.md`
+- SSE logger MVP plan: `docs/plans/SSE_EXPRESS_LOGGER_MVP_PLAN.md`
 
 ---
 
@@ -222,7 +222,7 @@ CI runs on GitHub Actions (`.github/workflows/ci.yml`).
 
 ## TODO (Near-term)
 
-> Source: GitHub open issues + `PROGRESS_TODO.md` snapshot.
+> Source: GitHub open issues + `docs/process/PROGRESS_TODO.md` snapshot.
 
 ### Open Issues
 

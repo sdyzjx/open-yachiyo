@@ -115,6 +115,6 @@ git revert f81c033 fb45d12 dd68a74 0ba746b 2972398
 
 ## 6. 交付归档
 
-- [ ] 更新 `docs/LIVE2D_TOOL_CALL_IMPLEMENTATION_TRACKER.md` Phase-6 状态
+- [ ] 更新 `docs/plans/LIVE2D_TOOL_CALL_IMPLEMENTATION_TRACKER.md` Phase-6 状态
 - [ ] 在 PR 描述中附上：测试结果、验收截图/日志、回滚方案
 - [ ] 在发布日志中记录配置变更点

@@ -47,11 +47,11 @@ npm run dev
 
 Provider 配置：
 
-- `docs/PROVIDER_CONFIGURATION_GUIDE.md`
+- `docs/guides/PROVIDER_CONFIGURATION_GUIDE.md`
 
 声线克隆 / TTS 配置：
 
-- `docs/TTS_VOICE_CLONE_GUIDE.md`
+- `docs/guides/TTS_VOICE_CLONE_GUIDE.md`
 
 健康检查：
 
@@ -126,11 +126,11 @@ Onboarding 覆盖：
 
 文档入口：
 
-- 架构：`docs/ARCHITECTURE.md`
-- 测试：`docs/TESTING.md`
-- 使用案例：`docs/RUNTIME_FEATURE_USAGE_CASES.md`
-- Provider 配置指南：`docs/PROVIDER_CONFIGURATION_GUIDE.md`
-- 声线克隆与 TTS 指南：`docs/TTS_VOICE_CLONE_GUIDE.md`
+- 架构：`docs/architecture/ARCHITECTURE.md`
+- 测试：`docs/testing/TESTING.md`
+- 使用案例：`docs/guides/RUNTIME_FEATURE_USAGE_CASES.md`
+- Provider 配置指南：`docs/guides/PROVIDER_CONFIGURATION_GUIDE.md`
+- 声线克隆与 TTS 指南：`docs/guides/TTS_VOICE_CLONE_GUIDE.md`
 
 ---
 
@@ -168,8 +168,8 @@ OpenClaw 强在多渠道网关与编排能力。
 
 参考：
 
-- `docs/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
-- `docs/DEBUG_CHAIN_FLOW_GUIDE.md`
+- `docs/debug/AGENT_SSE_DEBUG_TOOLCHAIN_GUIDE.md`
+- `docs/debug/DEBUG_CHAIN_FLOW_GUIDE.md`
 
 ---
 
@@ -177,9 +177,9 @@ OpenClaw 强在多渠道网关与编排能力。
 
 并行开发与集成采用分支/worktree 协作与文档化合并策略。
 
-- 分支/worktree 协作规范：`docs/BRANCH_COLLABORATION_SPEC.md`
-- 合并策略：`docs/MERGE_STRATEGY.md`
-- SSE 调试链路方案：`docs/SSE_EXPRESS_LOGGER_MVP_PLAN.md`
+- 分支/worktree 协作规范：`docs/process/BRANCH_COLLABORATION_SPEC.md`
+- 合并策略：`docs/process/MERGE_STRATEGY.md`
+- SSE 调试链路方案：`docs/plans/SSE_EXPRESS_LOGGER_MVP_PLAN.md`
 
 ---
 
@@ -220,7 +220,7 @@ CI 配置在 GitHub Actions：`.github/workflows/ci.yml`。
 
 ## TODO（近期）
 
-> 来源：GitHub Open Issues + `PROGRESS_TODO.md`（快照）
+> 来源：GitHub Open Issues + `docs/process/PROGRESS_TODO.md`（快照）
 
 ### 待办 Issue
 

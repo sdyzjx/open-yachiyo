@@ -189,7 +189,7 @@ Do not add free-form items outside this format.
 - Impacted Modules:
   - `skills/test_skill_smoke/SKILL.md`
   - `test/runtime/skills/repoTestSkill.test.js`
-  - `docs/TEST_SKILL_SMOKE_GUIDE.md`
+  - `docs/testing/TEST_SKILL_SMOKE_GUIDE.md`
 - Risks/Dependencies:
   - Depends on skills runtime being enabled and loaded.
 - Plan:
@@ -246,7 +246,7 @@ Do not add free-form items outside this format.
   - `apps/desktop-live2d/*`
   - `scripts/live2d-import.js`
   - `scripts/desktop-up.js`
-  - `docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
+  - `docs/plans/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
 - Risks/Dependencies:
   - Depends on model asset import completeness and Electron runtime stability.
 - Plan:
@@ -285,7 +285,7 @@ Do not add free-form items outside this format.
   - `apps/desktop-live2d/main/*`
   - `apps/desktop-live2d/renderer/*`
   - `test/desktop-live2d/*`
-  - `docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
+  - `docs/plans/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
   - `README.md`
 - Risks/Dependencies:
   - Runtime event schema may evolve; adapter layer must be versioned to avoid desktop-side coupling.
@@ -404,7 +404,7 @@ Do not add free-form items outside this format.
 - Impacted Modules:
   - `docs/modules/desktop-live2d/README.md`
   - `docs/modules/desktop-live2d/module-reference.md`
-  - `docs/ARCHITECTURE_MODULE_INDEX.md`
+  - `docs/architecture/ARCHITECTURE_MODULE_INDEX.md`
   - `README.md`
 - Risks/Dependencies:
   - 后续若新增 RPC 或工具映射，需同步更新文档防止协议漂移。

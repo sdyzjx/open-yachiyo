@@ -819,6 +819,6 @@ ls -lt ~/yachiyo/data/desktop-live2d/mouth-waveforms | head
 ## 7. 历史文档说明
 
 以下文档仍可参考调查思路，但不代表当前主线实现：
-- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
-- `docs/LIPSYNC_CONFLICT_SUMMARY.md`
-- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
+- `docs/debug/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
+- `docs/debug/LIPSYNC_CONFLICT_SUMMARY.md`
+- `docs/research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`

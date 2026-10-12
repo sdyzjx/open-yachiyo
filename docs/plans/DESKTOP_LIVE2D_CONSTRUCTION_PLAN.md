@@ -295,7 +295,7 @@ flowchart LR
 
 文档与留痕：
 - 更新施工方案 + README
-- 更新 `PROGRESS_TODO.md` 阶段状态
+- 更新 `docs/process/PROGRESS_TODO.md` 阶段状态
 - 提交 commit（phase A）
 
 ### Phase B：聊天框 UI 闭环
@@ -383,7 +383,7 @@ flowchart LR
 文档与留痕：
 - 更新施工方案会话同步章节与阶段状态。
 - 更新 `README` 桌面命令与同步说明。
-- 更新 `PROGRESS_TODO.md` 需求登记和阶段日志。
+- 更新 `docs/process/PROGRESS_TODO.md` 需求登记和阶段日志。
 - 提交 commit（phase F）
 
 ## 9. 测试矩阵（按能力维度）
@@ -422,6 +422,6 @@ flowchart LR
 
 每个阶段完成必须同时满足：
 1. 代码实现完成，且对应新增测试通过。
-2. `PROGRESS_TODO.md` 更新阶段状态与变更日志。
+2. `docs/process/PROGRESS_TODO.md` 更新阶段状态与变更日志。
 3. 本施工方案中对应章节同步更新。
 4. 形成独立 commit 留痕（可追溯到阶段目标）。

@@ -12,8 +12,8 @@
 
 本方案遵循以下文档约束：
 
-1. [Branch Collaboration Spec](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/docs/BRANCH_COLLABORATION_SPEC.md)
-2. [Merge & Integration SOP](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/docs/process/merge-and-integration-sop.md)
+1. [Branch Collaboration Spec](../process/BRANCH_COLLABORATION_SPEC.md)
+2. [Merge & Integration SOP](../process/merge-and-integration-sop.md)
 
 对应执行策略：
 
@@ -40,15 +40,15 @@ MVP 外：
 
 ## 4. 架构与改动点
 
-1. 新增 [debugEventStream.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/gateway/debugEventStream.js)。
-2. 扩展 [eventBus.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/runtime/bus/eventBus.js) 支持 `subscribeAll`。
+1. 新增 [debugEventStream.js](../../apps/gateway/debugEventStream.js)。
+2. 扩展 [eventBus.js](../../apps/runtime/bus/eventBus.js) 支持 `subscribeAll`。
 3. 网关挂载 SSE/emit/debug-mode API，并在 `/health` 暴露 debug stream 状态：
-   [server.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/gateway/server.js)。
+   [server.js](../../apps/gateway/server.js)。
 4. 工具执行上下文透传 `bus`：
-   [toolExecutor.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/runtime/executor/toolExecutor.js)、
-   [toolCallDispatcher.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/runtime/orchestrator/toolCallDispatcher.js)。
+   [toolExecutor.js](../../apps/runtime/executor/toolExecutor.js)、
+   [toolCallDispatcher.js](../../apps/runtime/orchestrator/toolCallDispatcher.js)。
 5. `shell.exec` 由一次性回调执行改为流式 `spawn`，可实时 publish：
-   [shell.js](/Users/doosam/Documents/Programming/yachiyo-desktop/open-yachiyo-logger/apps/runtime/tooling/adapters/shell.js)。
+   [shell.js](../../apps/runtime/tooling/adapters/shell.js)。
 
 ## 5. 配置与运行参数
 

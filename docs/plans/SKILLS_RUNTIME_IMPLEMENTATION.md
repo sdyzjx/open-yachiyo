@@ -53,9 +53,9 @@ Integration points:
 - Module-level spec:
   - `docs/modules/runtime/skills-runtime.md`
 - Practical smoke skill:
-  - `docs/TEST_SKILL_SMOKE_GUIDE.md`
+  - `docs/testing/TEST_SKILL_SMOKE_GUIDE.md`
 - Combined runtime usage cases:
-  - `docs/RUNTIME_FEATURE_USAGE_CASES.md`
+  - `docs/guides/RUNTIME_FEATURE_USAGE_CASES.md`
 
 ## 5. Validation
 

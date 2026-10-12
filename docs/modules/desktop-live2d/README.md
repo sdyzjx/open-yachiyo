@@ -15,17 +15,17 @@
 - 桌面路径根与打包规则：`docs/modules/desktop-live2d/desktop-path-roots-and-packaging.md`
 - 配置参考：`docs/modules/desktop-live2d/desktop-live2d-config-reference.md`
 - Motion/Expression 资产补全文档：`docs/modules/desktop-live2d/model-motion-expression-assets.md`
-- Voice/Lipsync 调试指南：`docs/VOICE_LIPSYNC_DEBUG_GUIDE.md`
-- 施工与阶段计划：`docs/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
-- 桌面感知阶段计划：`docs/DESKTOP_PERCEPTION_DEVELOPMENT_PLAN.md`
-- 桌面感知执行 planner：`docs/DESKTOP_PERCEPTION_EXECUTION_PLANNER.md`
+- Voice/Lipsync 调试指南：`docs/debug/VOICE_LIPSYNC_DEBUG_GUIDE.md`
+- 施工与阶段计划：`docs/plans/DESKTOP_LIVE2D_CONSTRUCTION_PLAN.md`
+- 桌面感知阶段计划：`docs/plans/DESKTOP_PERCEPTION_DEVELOPMENT_PLAN.md`
+- 桌面感知执行 planner：`docs/plans/DESKTOP_PERCEPTION_EXECUTION_PLANNER.md`
 - 开发与排障日志：`docs/process/desktop-live2d-resize-dragzone-debug-log.md`
 - Lipsync 开发日志：`docs/process/desktop-live2d-lipsync-waveform-tuning-log.md`
 
 历史调查文档：
-- `docs/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
-- `docs/LIPSYNC_CONFLICT_SUMMARY.md`
-- `docs/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
+- `docs/debug/LIPSYNC_CONFLICT_DEBUG_GUIDE.md`
+- `docs/debug/LIPSYNC_CONFLICT_SUMMARY.md`
+- `docs/research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md`
 
 说明：
 - 上述历史文档保留了 2026-03-01 左右的排查过程，但不再代表当前主线实现。

@@ -233,7 +233,7 @@ git push -u origin integration/runtime-core
 | 文件 | 风险 | 约定 |
 |------|------|------|
 | `apps/gateway/server.js` | 几乎每个 REQ 都会新增路由/中间件 | 每个 PR 改完立即合并，不允许两个分支同时长期持有该文件的修改 |
-| `PROGRESS_TODO.md` | 多人同时更新 REQ 状态会冲突 | 开发中不修改状态字段，**仅在合并进 main 时**将对应 REQ 状态改为 DONE |
+| `docs/process/PROGRESS_TODO.md` | 多人同时更新 REQ 状态会冲突 | 开发中不修改状态字段，**仅在合并进 main 时**将对应 REQ 状态改为 DONE |
 | `apps/runtime/orchestrator/toolCallDispatcher.js` | 多个 REQ 可能同时注入 context 字段 | 修改前先 rebase main，确认无并发修改 |
 | `package.json` / `package-lock.json` | 依赖变更易冲突 | 新增依赖的 REQ 优先合并，其他分支 rebase 后重新 `npm install` |
 

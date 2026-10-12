@@ -2,7 +2,7 @@
 
 > 目标：将 Live2D 动作/表情能力以稳定、可观测、可回滚的方式接入 runtime 通用 tool call。
 >
-> 关联文档：`docs/LIVE2D_TOOL_CALL_ACTION_EXPOSURE_PLAN.md`
+> 关联文档：`docs/plans/LIVE2D_TOOL_CALL_ACTION_EXPOSURE_PLAN.md`
 > 关联分支：`codex/feature/live2d-tool-call-interface`
 > 更新时间：2026-02-27
 
@@ -233,7 +233,7 @@
 - `test/runtime/*`
 - `test/desktop-live2d/*`
 - `docs/modules/*`
-- `docs/LIVE2D_TOOL_CALL_ACTION_EXPOSURE_PLAN.md`
+- `docs/plans/LIVE2D_TOOL_CALL_ACTION_EXPOSURE_PLAN.md`
 
 ### 6.3 验收标准
 

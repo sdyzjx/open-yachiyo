@@ -19,7 +19,8 @@
     "desktop:dist:mac": "electron-builder --mac dmg zip --publish never",
     "live2d:import": "node scripts/live2d-import.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')"
+    "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')",
+    "docs:index": "node scripts/docs-index.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",
