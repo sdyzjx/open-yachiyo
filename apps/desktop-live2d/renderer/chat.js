@@ -10,6 +10,11 @@
   const chatComposerElement = document.getElementById('chat-panel-composer');
   const chatHideElement = document.getElementById('chat-hide');
   const openWebUiElement = document.getElementById('open-webui');
+  const newChatElement = document.getElementById('new-chat');
+  const presenceLabelElement = document.getElementById('presence-label');
+  const transferSelectElement = document.getElementById('transfer-select');
+  const transferButtonElement = document.getElementById('transfer-button');
+  const transferStatusElement = document.getElementById('transfer-status');
   const modelPickerToggleElement = document.getElementById('model-picker-toggle');
   const modelPickerElement = document.getElementById('model-picker');
   const modelPickerCloseElement = document.getElementById('model-picker-close');
@@ -30,6 +35,9 @@
     pendingUploads: [],
     models: null,
     modelsLoading: false,
+    followOutput: true,
+    shell: { connected: false, phones: [], send: { canSend: false, reason: '网关未连接' } },
+    selectedTransferTarget: '',
     stream: {
       active: false,
       sessionId: null,
@@ -52,7 +60,7 @@
   }
 
   function setModelControlsDisabled(disabled) {
-    for (const element of [modelActiveElement, modelProviderElement, modelSaveElement, modelDiscoverElement]) {
+    for (const element of [modelActiveElement]) {
       if (element) element.disabled = Boolean(disabled);
     }
   }
@@ -65,40 +73,33 @@
 
   function renderModelConfig() {
     const snapshot = state.models;
-    if (!modelActiveElement || !modelProviderElement) return;
+    if (!modelActiveElement) return;
     modelActiveElement.replaceChildren();
-    modelProviderElement.replaceChildren();
-    if (!snapshot || !Array.isArray(snapshot.models) || snapshot.models.length === 0) {
+    const enabledRefs = new Set(Array.isArray(snapshot?.enabled) ? snapshot.enabled : []);
+    const enabledModels = Array.isArray(snapshot?.models)
+      ? snapshot.models.filter((model) => model?.enabled === true || enabledRefs.has(model?.ref) || model?.ref === snapshot.active)
+      : [];
+    if (!snapshot || enabledModels.length === 0) {
       modelActiveElement.append(new Option('没有可用模型', ''));
-      modelProviderElement.append(new Option('没有可用 Provider', ''));
-      modelPickerToggleElement.dataset.state = 'empty';
-      modelPickerToggleElement.textContent = '模型';
+      modelActiveElement.title = '没有已启用的模型';
       setModelControlsDisabled(true);
       return;
     }
-    for (const model of snapshot.models) {
+    for (const model of enabledModels) {
       const option = new Option(modelLabel(model), model.ref);
       option.selected = model.ref === snapshot.active;
       modelActiveElement.append(option);
     }
-    const providers = Object.values(snapshot.providers || {});
-    for (const provider of providers) {
-      const option = new Option(provider.display_name || provider.key, provider.key);
-      modelProviderElement.append(option);
-    }
     const active = snapshot.models.find((model) => model.ref === snapshot.active);
-    modelPickerToggleElement.dataset.state = 'ready';
-    modelPickerToggleElement.textContent = active?.name || active?.id || '模型';
-    modelPickerToggleElement.title = active ? `当前模型：${active.ref}` : '选择模型';
+    modelActiveElement.title = active ? `当前模型：${active.ref}` : '选择对话模型';
     setModelControlsDisabled(false);
-    if (providers.length === 0) modelDiscoverElement.disabled = true;
   }
 
   async function loadModelConfig({ quiet = false } = {}) {
     if (state.modelsLoading || typeof bridge?.modelConfigRequest !== 'function') return;
     state.modelsLoading = true;
     setModelControlsDisabled(true);
-    modelPickerToggleElement.dataset.state = 'loading';
+    if (modelActiveElement) modelActiveElement.title = '正在读取模型…';
     if (!quiet) setModelStatus('正在从本机网关加载模型…');
     try {
       state.models = await bridge.modelConfigRequest({ method: 'GET', path: '/api/config/models' });
@@ -107,7 +108,7 @@
     } catch (err) {
       state.models = null;
       renderModelConfig();
-      modelPickerToggleElement.dataset.state = 'error';
+      if (modelActiveElement) modelActiveElement.title = `加载失败：${err?.message || err}`;
       setModelStatus(`加载失败：${err?.message || err}`, true);
     } finally {
       state.modelsLoading = false;
@@ -120,12 +121,10 @@
     setModelControlsDisabled(true);
     setModelStatus('正在保存模型选择…');
     try {
-      const enabled = new Set(Array.isArray(state.models.enabled) ? state.models.enabled : []);
-      enabled.add(ref);
       state.models = await bridge.modelConfigRequest({
         method: 'PUT',
         path: '/api/config/models/selection',
-        body: { active_model: ref, enabled_models: Array.from(enabled) }
+        body: { active_model: ref }
       });
       renderModelConfig();
       setModelStatus('模型选择已保存，下一次对话开始生效');
@@ -243,7 +242,7 @@
   }
 
   function scrollMessagesToBottom() {
-    if (!messagesElement) {
+    if (!messagesElement || !state.followOutput) {
       return;
     }
     messagesElement.scrollTop = messagesElement.scrollHeight;
@@ -790,6 +789,49 @@
     scrollMessagesToBottom();
   }
 
+  function renderShellState(next) {
+    if (next && typeof next === 'object') state.shell = next;
+    if (presenceLabelElement) presenceLabelElement.textContent = state.shell.statusLabel || '在电脑上';
+    const view = window.DesktopChatState?.resolveTransferView?.(state.shell, state.selectedTransferTarget) || {
+      disabled: true, label: '送到手机', reason: '状态同步中', phones: []
+    };
+    if (transferButtonElement) {
+      transferButtonElement.disabled = view.disabled;
+      transferButtonElement.textContent = view.requiresSelection ? '送出' : view.label;
+      transferButtonElement.title = view.reason || view.label;
+      transferButtonElement.dataset.target = view.target || '';
+      transferButtonElement.setAttribute('aria-busy', String(Boolean(view.pending)));
+    }
+    if (transferStatusElement) transferStatusElement.textContent = view.reason || '';
+    if (transferSelectElement) {
+      transferSelectElement.hidden = !view.requiresSelection;
+      if (view.requiresSelection) {
+        const stillOnline = view.phones.some((phone) => phone.device_id === state.selectedTransferTarget);
+        if (!stillOnline) state.selectedTransferTarget = '';
+        transferSelectElement.replaceChildren(
+          new Option('选择手机…', ''),
+          ...view.phones.map((phone) => new Option(phone.name, phone.device_id))
+        );
+        transferSelectElement.value = state.selectedTransferTarget;
+      }
+    }
+  }
+
+  async function transferAvatar() {
+    const target = String(transferButtonElement?.dataset.target || '');
+    if (!target || transferButtonElement?.disabled) return;
+    transferButtonElement.disabled = true;
+    transferButtonElement.textContent = '送出中…';
+    if (transferStatusElement) transferStatusElement.textContent = '正在请求迁移…';
+    try {
+      const next = await bridge?.requestAvatarTransfer?.({ to: target });
+      if (next) renderShellState(next);
+    } catch (err) {
+      renderShellState(state.shell);
+      if (transferStatusElement) transferStatusElement.textContent = `迁移失败：${err?.message || err}`;
+    }
+  }
+
   async function applyChatState(payload) {
     const nextInputEnabled = payload?.inputEnabled !== false;
     state.inputEnabled = nextInputEnabled;
@@ -887,6 +929,10 @@
     });
   });
   chatInputElement?.addEventListener('input', () => {
+    chatInputElement.style.height = 'auto';
+    const nextHeight = Math.min(132, chatInputElement.scrollHeight);
+    chatInputElement.style.height = `${nextHeight}px`;
+    chatInputElement.style.overflowY = chatInputElement.scrollHeight > 132 ? 'auto' : 'hidden';
     updateComposerState();
   });
   chatInputElement?.addEventListener('compositionstart', () => {
@@ -905,6 +951,7 @@
     if (event.isComposing || Number(event.keyCode) === 229 || chatInputComposing) {
       return;
     }
+    if (event.shiftKey) return;
     event.preventDefault();
     submitInput();
   });
@@ -927,6 +974,23 @@
   openWebUiElement?.addEventListener('click', () => {
     bridge?.sendWindowControl?.({ action: 'open_webui' });
   });
+  newChatElement?.addEventListener('click', () => {
+    bridge?.sendChatInput?.({ role: 'user', text: '/new', input_images: [] });
+  });
+  modelActiveElement?.addEventListener('change', () => { void saveActiveModel(); });
+  transferSelectElement?.addEventListener('change', () => {
+    state.selectedTransferTarget = transferSelectElement.value;
+    renderShellState(state.shell);
+  });
+  transferButtonElement?.addEventListener('click', () => { void transferAvatar(); });
+  messagesElement?.addEventListener('scroll', () => {
+    state.followOutput = window.DesktopChatState?.shouldFollowOutput?.({
+      scrollTop: messagesElement.scrollTop,
+      scrollHeight: messagesElement.scrollHeight,
+      clientHeight: messagesElement.clientHeight
+    }) !== false;
+  }, { passive: true });
+  bridge?.onShellStateSync?.((next) => renderShellState(next));
   modelPickerToggleElement?.addEventListener('click', () => setModelPickerOpen(modelPickerElement?.hidden !== false));
   modelPickerCloseElement?.addEventListener('click', () => setModelPickerOpen(false));
   modelSaveElement?.addEventListener('click', () => { void saveActiveModel(); });
@@ -952,5 +1016,9 @@
   }
   updateComposerState();
   renderUploadPreview();
+  renderShellState(state.shell);
+  Promise.resolve(bridge?.getShellState?.()).then((next) => renderShellState(next)).catch((err) => {
+    if (transferStatusElement) transferStatusElement.textContent = `状态读取失败：${err?.message || err}`;
+  });
   void loadModelConfig({ quiet: true });
 })();

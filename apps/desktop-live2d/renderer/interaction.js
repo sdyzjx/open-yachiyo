@@ -55,11 +55,16 @@
     return Boolean(fallbackComposing);
   }
 
+  function isDragDisplacement(deltaX, deltaY, thresholdPx = 4) {
+    return Math.hypot(Number(deltaX) || 0, Number(deltaY) || 0) > Math.max(0, Number(thresholdPx) || 0);
+  }
+
   const api = {
     createCooldownGate,
     nearlyEqual,
     shouldUpdate2D,
-    isImeComposingEvent
+    isImeComposingEvent,
+    isDragDisplacement
   };
 
   if (typeof module !== 'undefined' && module.exports) {

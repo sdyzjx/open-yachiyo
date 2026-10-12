@@ -31,7 +31,7 @@ test('Desktop avatar animation follows timing and hides/stops voice off host', a
   const controller = createAvatarTransfer({ element, height: () => 800, setVisible: (v) => visibility.push(v), stopVoice: () => stopped++, greet: async () => greeted++ });
   await controller.handle({ topic: 'avatar.welcome', data: { host: 'desktop' } });
   await controller.handle({ topic: 'avatar.transfer.exit' });
-  assert.deepEqual(animations.map((a) => a.options.duration), [120, 480]);
+  assert.deepEqual(animations.map((a) => a.options.duration), [520, 120, 480]);
   assert.equal(visibility.at(-1), false);
   await controller.handle({ topic: 'avatar.host.changed', data: { host: 'phone' } });
   assert.equal(controller.isHost, false);
@@ -51,6 +51,7 @@ test('Desktop handoff cancellation cannot resume an obsolete animation', async (
   let cancelFrame; let visible = false; let animations = 0;
   const element = { style: {}, getBoundingClientRect: () => ({ height: 200 }), animate() {
     animations++;
+    if (animations === 1) return { finished: Promise.resolve(), cancel() {} };
     const finished = new Promise((resolve, reject) => { cancelFrame = reject; });
     return { finished, cancel() { cancelFrame(new Error('cancelled')); } };
   } };
@@ -60,7 +61,7 @@ test('Desktop handoff cancellation cannot resume an obsolete animation', async (
   assert.equal(controller.isHost, false);
   await controller.handle({ topic: 'avatar.transfer.cancel' });
   await exit;
-  assert.equal(visible, true); assert.equal(animations, 1);
+  assert.equal(visible, true); assert.equal(animations, 2);
   assert.equal(controller.isHost, true);
 });
 

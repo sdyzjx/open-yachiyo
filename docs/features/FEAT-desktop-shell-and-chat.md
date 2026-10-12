@@ -28,11 +28,25 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 - 角色首次启动默认在主屏左下角，左边距 24 px，底部贴合工作区；高度为工作区约 38%，不超过 420 px，宽度保持模型窗口比例。
 - Desktop Chat 使用 macOS 原生窗口按钮与 `hiddenInset` 标题栏，默认 420×640，最小 360×480；移动和缩放后写入 `chat-window-state.json`，下次启动恢复并限制在屏幕工作区内。
 - 用户点击红色关闭按钮时隐藏聊天窗，应用退出时才真正销毁窗口。
+- 角色从屏幕下方升起；单击在聊天窗打开/关闭间切换，指针位移超过 4 px 即视为拖拽并抑制单击。
+
+### Desktop Chat
+
+- 顶栏仅列出已启用模型，选择后立即保存；手机迁移按钮依在线设备显示单目标或多目标选择，离线、不可迁移和 pending 均给出中文原因。
+- 「新对话」调用现有 `/new` 会话切换，「设置」打开设置窗。输入框支持多行，Enter 发送、Shift+Enter 换行，可选择或粘贴最多 4 张图片。
+- 消息区渲染 Markdown、Mermaid 和图片缩略图；在底部时跟随流式输出，用户上滑阅读后停止强制滚动。
+
+### 设置与气泡
+
+- 设置窗默认 1100×760，加载网关 `/config-v2.html`；连接失败或 HTTP 错误时显示月读夜景错误页与重试按钮。
+- 头顶气泡使用共享 `--y-*` token，超过 180 个 Unicode 字符时截断，并提供「在聊天中查看」入口。
 
 ## 接口与协议
 
 - `DeviceHubClient({ onStateChange, transferWatchdogMs })`，属性 `connected`、`host`、`devices`、`transferTarget`、`isHost`。
 - 窗口状态位于 `~/yachiyo/data/desktop-live2d/`，可用 `DESKTOP_LIVE2D_WINDOW_STATE_PATH` 和 `DESKTOP_CHAT_WINDOW_STATE_PATH` 改写路径。
+- 渲染进程的模型 IPC 精确 allowlist 为 `GET /api/config/models` 和 `PUT /api/config/models/selection {active_model}`；主进程对响应做字段投影，不返回 API Key、headers、extra body 或 Base URL。
+- `live2d:shell-state:{request,sync}` 只向 Chat 窗口返回菜单同源状态；`live2d:avatar-transfer:request` 只接受当前在线 Android `device_id`，错误文本经脱敏。
 
 ## 配置项
 
@@ -44,4 +58,4 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 
 ## 测试用例
 
-TC-DSK-001 ～ TC-DSK-005、TC-DSK-010 ～ TC-DSK-011、TC-DSK-020 ～ TC-DSK-025，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。
+TC-DSK-001 ～ TC-DSK-008、TC-DSK-010 ～ TC-DSK-016、TC-DSK-020 ～ TC-DSK-025，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。

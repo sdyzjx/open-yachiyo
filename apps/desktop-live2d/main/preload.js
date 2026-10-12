@@ -7,6 +7,9 @@ const CHANNELS = {
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  shellStateRequest: 'live2d:shell-state:request',
+  shellStateSync: 'live2d:shell-state:sync',
+  avatarTransferRequest: 'live2d:avatar-transfer:request',
   avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
@@ -102,6 +105,17 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   modelConfigRequest(payload = {}) {
     return ipcRenderer.invoke(CHANNELS.modelConfigRequest, payload);
+  },
+  getShellState() {
+    return ipcRenderer.invoke(CHANNELS.shellStateRequest);
+  },
+  onShellStateSync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.shellStateSync, listener);
+    return () => ipcRenderer.off(CHANNELS.shellStateSync, listener);
+  },
+  requestAvatarTransfer(payload = {}) {
+    return ipcRenderer.invoke(CHANNELS.avatarTransferRequest, payload);
   },
   sendAvatarContextMenu() {
     ipcRenderer.send(CHANNELS.avatarContextMenuRequest);

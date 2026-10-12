@@ -5,7 +5,8 @@ const {
   createCooldownGate,
   nearlyEqual,
   shouldUpdate2D,
-  isImeComposingEvent
+  isImeComposingEvent,
+  isDragDisplacement
 } = require('../../apps/desktop-live2d/renderer/interaction');
 
 test('createCooldownGate blocks repeated toggles until cooldown expires', () => {
@@ -51,4 +52,10 @@ test('isImeComposingEvent detects composition states from event and fallback', (
   assert.equal(isImeComposingEvent({ keyCode: 229 }, false), true);
   assert.equal(isImeComposingEvent({ isComposing: false, keyCode: 13 }, true), true);
   assert.equal(isImeComposingEvent({ isComposing: false, keyCode: 13 }, false), false);
+});
+
+test('TC-DSK-006 avatar movement over 4 px is a drag rather than a click', () => {
+  assert.equal(isDragDisplacement(4, 0), false);
+  assert.equal(isDragDisplacement(4.01, 0), true);
+  assert.equal(isDragDisplacement(3, 3), true);
 });

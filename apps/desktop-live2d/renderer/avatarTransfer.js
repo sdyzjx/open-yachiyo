@@ -19,10 +19,22 @@
         const current = ++generation;
         if (topic === 'avatar.connection.lost') { host = false; prepared = false; exiting = false; reset(); show(false); }
         if (topic === 'avatar.welcome' || topic === 'avatar.host.changed') {
+          const wasHost = host;
           exiting = false;
           deviceId = data.device_id || deviceId;
           host = data.host === 'desktop' || data.host === deviceId;
-          if (!prepared || !host) { reset(); show(host); }
+          if (!prepared || !host) {
+            reset();
+            show(host);
+            if (host && !wasHost) {
+              await animate(
+                [{ transform: `translateY(${height() + element.getBoundingClientRect().height}px)` }, { transform: 'translateY(0)' }],
+                { duration: 520, easing: 'cubic-bezier(.16,1,.3,1)' }
+              );
+              if (current !== generation) return { ok: false };
+              reset();
+            }
+          }
         } else if (topic === 'avatar.transfer.prepare') {
           prepared = true; reset(); show(false);
           element.style.transform = `translateY(${height() + element.getBoundingClientRect().height}px)`;

@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Yachiyo Bubble</title>
+    <link rel="stylesheet" href="../shared/theme/yachiyo-theme.css" />
     <style>
       html,
       body {
@@ -14,7 +15,7 @@
         overflow: hidden;
         background: transparent;
         pointer-events: none;
-        font-family: "SF Pro Text", "PingFang SC", sans-serif;
+        font-family: var(--y-font);
       }
 
       #bubble {
@@ -24,11 +25,11 @@
         position: absolute;
         left: 0;
         top: 0;
-        color: #f7f3ff;
-        background: linear-gradient(145deg, rgba(31, 30, 63, 0.86), rgba(10, 12, 31, 0.91));
-        border: 1px solid rgba(239, 208, 157, 0.28);
-        backdrop-filter: blur(14px) saturate(1.12);
-        border-radius: 19px;
+        color: var(--y-ink);
+        background: var(--y-surface-strong);
+        border: 1px solid var(--y-gold-line);
+        backdrop-filter: blur(var(--y-glass-blur)) saturate(1.12);
+        border-radius: var(--y-radius-l);
         padding: 10px 14px;
         line-height: 1.45;
         font-size: 16px;
@@ -64,6 +65,24 @@
         gap: 4px;
         overflow: hidden;
       }
+
+      #bubble-open-chat {
+        display: none;
+        position: absolute;
+        right: 12px;
+        bottom: 9px;
+        height: 26px;
+        padding: 0 10px;
+        pointer-events: auto;
+        border: 1px solid var(--y-line-strong);
+        border-radius: var(--y-radius-pill);
+        background: var(--y-surface-hover);
+        color: var(--y-gold);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #bubble.truncated #bubble-lines { padding-bottom: 32px; }
+      #bubble.truncated #bubble-open-chat { display: block; }
 
       #bubble.visible {
         opacity: 1;
@@ -110,7 +129,9 @@
   <body>
     <div id="bubble">
       <div id="bubble-lines"></div>
+      <button id="bubble-open-chat" type="button">在聊天中查看</button>
     </div>
+    <script src="./bubblePresentation.js"></script>
     <script src="./bubble.js"></script>
   </body>
 </html>

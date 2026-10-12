@@ -45,6 +45,8 @@ const {
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,
+  normalizeAvatarTransferTarget,
+  sanitizeDesktopUiError,
   createMainWindow,
   createChatWindow,
   resolveDefaultAvatarWindowSize,
@@ -104,6 +106,16 @@ test('TC-DSK-010 chat uses a standard hidden-inset window and restores safe boun
   assert.equal(options.resizable, true);
   assert.ok(options.x + options.width <= 1440);
   assert.ok(options.y + options.height <= 900);
+
+  createChatWindow({
+    BrowserWindow: Window,
+    preloadPath: '/tmp/preload.js',
+    uiConfig: { chat: { panel: { width: 320, height: 220 } } },
+    avatarBounds: { x: 24, y: 480, width: 260, height: 420 },
+    display
+  });
+  assert.equal(options.width, 420);
+  assert.equal(options.height, 640);
 });
 
 test('TC-DSK-011 persisted chat bounds are clamped and malformed state is ignored', () => {
@@ -117,6 +129,20 @@ test('TC-DSK-011 persisted chat bounds are clamped and malformed state is ignore
   assert.equal(normalizeChatWindowBounds(null, { display }), null);
   fs.writeFileSync(statePath, '{bad json');
   assert.equal(loadPersistedChatWindowState(statePath, { display, logger: { warn() {} } }), null);
+});
+
+test('TC-DSK-013 chat transfer accepts only an explicitly online Android target', () => {
+  const shell = {
+    connected: true,
+    busy: false,
+    avatarOnDesktop: true,
+    phones: [{ device_id: 'mi6', name: 'mi6' }]
+  };
+  assert.equal(normalizeAvatarTransferTarget({ to: 'mi6' }, shell), 'mi6');
+  assert.throws(() => normalizeAvatarTransferTarget({ to: 'offline' }, shell), /离线/);
+  assert.throws(() => normalizeAvatarTransferTarget({ to: 'desktop' }, shell), /无效/);
+  assert.throws(() => normalizeAvatarTransferTarget({ to: 'mi6' }, { ...shell, busy: true }), /正在迁移/);
+  assert.equal(sanitizeDesktopUiError(new Error('token=abc Bearer secret')), 'token=*** Bearer ***');
 });
 
 test('waitForRendererReady resolves when renderer sends ready event', async () => {
@@ -758,6 +784,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
   };
   let hideCount = 0;
   let hideChatCount = 0;
+  let showChatCount = 0;
   let closeCount = 0;
   let openWebUiCount = 0;
   let closeResizeModeCount = 0;
@@ -767,6 +794,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
     window,
     onHide: () => { hideCount += 1; },
     onHideChat: () => { hideChatCount += 1; },
+    onShowChat: () => { showChatCount += 1; },
     onClosePet: () => { closeCount += 1; },
     onOpenWebUi: () => { openWebUiCount += 1; },
     onCloseResizeMode: () => { closeResizeModeCount += 1; },
@@ -776,6 +804,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
 
   listener({ sender: webContents }, { action: 'hide' });
   listener({ sender: webContents }, { action: 'hide_chat' });
+  listener({ sender: webContents }, { action: 'show_chat' });
   listener({ sender: webContents }, { action: 'close_pet' });
   listener({ sender: webContents }, { action: 'open_webui' });
   listener({ sender: webContents }, { action: 'close_resize_mode' });
@@ -791,6 +820,7 @@ test('createWindowControlListener handles chat, hide, close, webui, and resize a
 
   assert.equal(hideCount, 1);
   assert.equal(hideChatCount, 1);
+  assert.equal(showChatCount, 1);
   assert.equal(closeCount, 1);
   assert.equal(openWebUiCount, 1);
   assert.equal(closeResizeModeCount, 1);

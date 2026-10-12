@@ -35,6 +35,9 @@ const CHANNELS = Object.freeze({
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  shellStateRequest: 'live2d:shell-state:request',
+  shellStateSync: 'live2d:shell-state:sync',
+  avatarTransferRequest: 'live2d:avatar-transfer:request',
   avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
@@ -106,6 +109,25 @@ function loadLive2dPresetConfig({ assetRoot = null, projectRoot = null, env = pr
 
 function isNewSessionCommand(text) {
   return String(text || '').trim().toLowerCase() === '/new';
+}
+
+function normalizeAvatarTransferTarget(payload, shell) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('迁移请求格式错误');
+  const target = String(payload.to || '').trim();
+  if (!target || target === 'desktop') throw new Error('目标手机无效');
+  if (!shell?.connected) throw new Error('网关未连接');
+  if (shell?.busy) throw new Error('角色正在迁移');
+  if (!shell?.avatarOnDesktop) throw new Error('八千代不在电脑上');
+  const phone = (Array.isArray(shell?.phones) ? shell.phones : []).find((item) => item.device_id === target);
+  if (!phone) throw new Error('目标手机已离线');
+  return phone.device_id;
+}
+
+function sanitizeDesktopUiError(error, fallback = '操作失败') {
+  return String(error?.message || error || fallback)
+    .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer ***')
+    .replace(/((?:api[_-]?key|token|secret)\s*[:=]\s*)[^\s,;}]+/gi, '$1***')
+    .slice(0, 180);
 }
 
 function normalizeWindowDragPayload(payload) {
@@ -460,7 +482,7 @@ function resizeWindowKeepingBottomRight({
 
 function normalizeWindowControlPayload(payload) {
   const action = String(payload?.action || '').trim().toLowerCase();
-  if (!['hide', 'hide_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides', 'save_drag_zone_overrides'].includes(action)) {
+  if (!['hide', 'hide_chat', 'show_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides', 'save_drag_zone_overrides'].includes(action)) {
     return null;
   }
   const normalized = { action };
@@ -518,6 +540,7 @@ function createWindowControlListener({
   windows = null,
   onHide = null,
   onHideChat = null,
+  onShowChat = null,
   onClosePet = null,
   onOpenWebUi = null,
   onCloseResizeMode = null,
@@ -559,6 +582,11 @@ function createWindowControlListener({
       if (typeof onHideChat === 'function') {
         onHideChat();
       }
+      return;
+    }
+
+    if (normalized.action === 'show_chat') {
+      if (typeof onShowChat === 'function') onShowChat();
       return;
     }
 
@@ -1744,6 +1772,12 @@ async function startDesktopSuite({
     bubbleHeight: bubbleRuntimeConfig.height
   });
   let deviceHubClient = null;
+  let chatState = null;
+  const shellSnapshot = () => computeShellState({
+    hub: projectHubState(deviceHubClient),
+    avatarVisible: !avatarWindow.isDestroyed() && avatarWindow.isVisible(),
+    chatOpen: chatState?.visible === true
+  });
   const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
   ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
     if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
@@ -1751,11 +1785,29 @@ async function startDesktopSuite({
     }
     return modelConfigRequest(payload);
   });
+  ipcMain.handle(CHANNELS.shellStateRequest, (event) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('shell state is only available to the chat window');
+    }
+    return shellSnapshot();
+  });
+  ipcMain.handle(CHANNELS.avatarTransferRequest, async (event, payload) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('avatar transfer is only available to the chat window');
+    }
+    try {
+      const target = normalizeAvatarTransferTarget(payload, shellSnapshot());
+      await deviceHubClient.transfer(target);
+      return shellSnapshot();
+    } catch (err) {
+      throw new Error(sanitizeDesktopUiError(err));
+    }
+  });
   await chatWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
   await bubbleWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
 
   const chatPanelConfig = config.uiConfig?.chat?.panel || {};
-  const chatState = {
+  chatState = {
     enabled: Boolean(chatPanelConfig.enabled),
     visible: Boolean(chatPanelConfig.enabled && chatPanelConfig.defaultVisible),
     maxMessages: toPositiveInt(chatPanelConfig.maxMessages, 200),
@@ -2121,6 +2173,9 @@ async function startDesktopSuite({
   function notifyShellChanged() {
     if (chatState.visible && !getChatGate().canOpen) {
       hideChatWindow();
+    }
+    if (!chatWindow.isDestroyed()) {
+      chatWindow.webContents.send(CHANNELS.shellStateSync, computeShellState(getShellInputs()));
     }
     onShellStateChange?.();
   }
@@ -2938,9 +2993,10 @@ async function startDesktopSuite({
   ipcMain.on(CHANNELS.lipsyncTelemetry, lipsyncTelemetryListener);
 
   const windowControlListener = createWindowControlListener({
-    windows: [avatarWindow, chatWindow],
+    windows: [avatarWindow, chatWindow, bubbleWindow],
     onHide: hidePetWindows,
     onHideChat: hideChatWindow,
+    onShowChat: () => setChatPanelVisible(true),
     onClosePet: hidePetWindows,
     onOpenWebUi: openWebUi,
     onCloseResizeMode: () => {
@@ -3260,11 +3316,11 @@ async function startDesktopSuite({
           clearChatMessages();
           appendChatMessage({
             role: 'system',
-            text: `[session] switched to ${sessionId}`,
+            text: '已开始新对话',
             timestamp: Date.now()
           }, 'system');
           showBubble({
-            text: 'New session created',
+            text: '已开始新对话',
             durationMs: 2200
           });
         }).catch((err) => {
@@ -3399,6 +3455,8 @@ async function startDesktopSuite({
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.removeHandler(CHANNELS.modelConfigRequest);
+    ipcMain.removeHandler(CHANNELS.shellStateRequest);
+    ipcMain.removeHandler(CHANNELS.avatarTransferRequest);
     ipcMain.off(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
     ipcMain.off(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
@@ -3945,8 +4003,11 @@ function loadPersistedChatWindowState(filePath, { display, logger = console } = 
 
 function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, display, persistedState = null }) {
   const panelConfig = uiConfig?.chat?.panel || {};
-  const width = Math.max(CHAT_WINDOW_MIN_WIDTH, toPositiveInt(panelConfig.width, CHAT_WINDOW_DEFAULT_WIDTH));
-  const height = Math.max(CHAT_WINDOW_MIN_HEIGHT, toPositiveInt(panelConfig.height, CHAT_WINDOW_DEFAULT_HEIGHT));
+  const configuredWidth = toPositiveInt(panelConfig.width, CHAT_WINDOW_DEFAULT_WIDTH);
+  const configuredHeight = toPositiveInt(panelConfig.height, CHAT_WINDOW_DEFAULT_HEIGHT);
+  // Migrate the legacy 320x220 panel defaults to the new native-window defaults.
+  const width = configuredWidth < CHAT_WINDOW_MIN_WIDTH ? CHAT_WINDOW_DEFAULT_WIDTH : configuredWidth;
+  const height = configuredHeight < CHAT_WINDOW_MIN_HEIGHT ? CHAT_WINDOW_DEFAULT_HEIGHT : configuredHeight;
   const bounds = normalizeChatWindowBounds(persistedState, { display }) || computeChatWindowBounds({
     avatarBounds, chatWidth: width, chatHeight: height, display
   });
@@ -4017,7 +4078,7 @@ function createBubbleWindow({
       sandbox: false
     }
   });
-  bubbleWindow.setIgnoreMouseEvents(true, { forward: true });
+  bubbleWindow.setIgnoreMouseEvents(false);
   return bubbleWindow;
 }
 
@@ -4287,6 +4348,8 @@ module.exports = {
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,
+  normalizeAvatarTransferTarget,
+  sanitizeDesktopUiError,
   createChatWindow,
   resolveDefaultAvatarWindowSize,
   normalizeChatWindowBounds,

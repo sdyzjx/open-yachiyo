@@ -3552,7 +3552,7 @@
       return;
     }
 
-    const moveThresholdPx = 6;
+    const moveThresholdPx = 4;
     const resetDragState = () => {
       dragPointerState = null;
       syncWindowInteractivityFromPointer();
@@ -3593,7 +3593,10 @@
       const deltaX = event.clientX - dragPointerState.startClientX;
       const deltaY = event.clientY - dragPointerState.startClientY;
       const moved = Math.hypot(deltaX, deltaY);
-      if (!dragPointerState.dragging && moved >= moveThresholdPx) {
+      const exceededThreshold = typeof interactionApi?.isDragDisplacement === 'function'
+        ? interactionApi.isDragDisplacement(deltaX, deltaY, moveThresholdPx)
+        : moved > moveThresholdPx;
+      if (!dragPointerState.dragging && exceededThreshold) {
         dragPointerState.dragging = true;
       }
       if (!dragPointerState.dragging) {

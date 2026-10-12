@@ -8,7 +8,7 @@ const {
   sanitizeErrorMessage
 } = require('../../apps/desktop-live2d/main/modelConfigClient');
 
-test('desktop model config IPC accepts only the three renderer operations', () => {
+test('TC-DSK-012 desktop model config IPC accepts only list and active selection', () => {
   assert.deepEqual(normalizeRequest({ method: 'get', path: '/api/config/models' }), {
     method: 'GET', path: '/api/config/models', body: undefined
   });
@@ -18,16 +18,12 @@ test('desktop model config IPC accepts only the three renderer operations', () =
   assert.throws(() => normalizeRequest({ method: 'GET', path: '/api/config/models', body: {} }), /does not accept/);
   assert.throws(() => normalizeRequest({
     method: 'PUT', path: '/api/config/models/selection',
-    body: { active_model: 'demo/model', enabled_models: ['demo/model'], roles: { chat: 'demo/model' } }
+    body: { active_model: 'demo/model', enabled_models: ['demo/model'] }
   }), /invalid model selection body/);
   assert.throws(() => normalizeRequest({
     method: 'POST', path: '/api/config/models/discover',
     body: { provider: { base_url: 'https://attacker.example', api_key_env: 'SECRET' } }
-  }), /invalid provider key/);
-  assert.throws(() => normalizeRequest({
-    method: 'POST', path: '/api/config/models/discover',
-    body: { provider: 'demo', timeout_ms: 60000 }
-  }), /invalid model discovery body/);
+  }), /unsupported/);
 });
 
 test('desktop model config client uses configured gateway and unwraps public data', async () => {
@@ -41,13 +37,13 @@ test('desktop model config client uses configured gateway and unwraps public dat
   });
   const result = await request({
     method: 'PUT', path: '/api/config/models/selection',
-    body: { active_model: 'demo/model', enabled_models: ['demo/model'] }
+    body: { active_model: 'demo/model' }
   });
   assert.deepEqual(result, { active: 'demo/model', enabled: [], models: [], providers: {} });
   assert.equal(called.url, 'http://127.0.0.1:43123/api/config/models/selection');
   assert.deepEqual(called.init, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: '{"active_model":"demo/model","enabled_models":["demo/model"]}'
+    body: '{"active_model":"demo/model"}'
   });
 });
 
@@ -77,15 +73,7 @@ test('desktop model config IPC projects successful responses onto non-sensitive 
     fetchImpl: async (_url, init) => ({
       ok: true,
       status: 200,
-      json: async () => init.method === 'POST'
-        ? ({ ok: true, data: {
-          ok: false,
-          status: 401,
-          error: 'Bearer header-secret token=body-secret',
-          models: [],
-          debug: { headers: { Authorization: 'header-secret' } }
-        } })
-        : ({ ok: true, data: {
+      json: async () => ({ ok: true, data: {
           active: 'demo/first',
           enabled: ['demo/first'],
           roles: { chat: 'demo/first' },
@@ -114,11 +102,6 @@ test('desktop model config IPC projects successful responses onto non-sensitive 
   assert.deepEqual(snapshot.models[0], {
     ref: 'demo/first', id: 'first', name: 'First', provider: 'demo', has_api_key: true, enabled: true
   });
-
-  const discovery = await request({
-    method: 'POST', path: '/api/config/models/discover', body: { provider: 'demo' }
-  });
-  assert.deepEqual(discovery, { ok: false, status: 401, error: 'Bearer *** token=***', models: [] });
 });
 
 test('desktop model config flow persists selection and handles success, empty, and offline states', async (t) => {
@@ -131,7 +114,6 @@ test('desktop model config flow persists selection and handles success, empty, a
     ],
     providers: { demo: { key: 'demo', display_name: 'Demo' } }
   };
-  let discovered = [{ id: 'remote-a', name: 'Remote A' }];
   const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -142,12 +124,8 @@ test('desktop model config flow persists selection and handles success, empty, a
       return;
     }
     if (req.method === 'PUT' && req.url === '/api/config/models/selection') {
-      snapshot = { ...snapshot, active: body.active_model, enabled: body.enabled_models };
+      snapshot = { ...snapshot, active: body.active_model };
       res.end(JSON.stringify({ ok: true, data: snapshot }));
-      return;
-    }
-    if (req.method === 'POST' && req.url === '/api/config/models/discover') {
-      res.end(JSON.stringify({ ok: true, data: { ok: true, models: discovered } }));
       return;
     }
     res.writeHead(404).end(JSON.stringify({ ok: false, error: 'missing' }));
@@ -162,14 +140,10 @@ test('desktop model config flow persists selection and handles success, empty, a
   await request({
     method: 'PUT',
     path: '/api/config/models/selection',
-    body: { active_model: 'demo/second', enabled_models: ['demo/first', 'demo/second'] }
+    body: { active_model: 'demo/second' }
   });
   const reopened = createModelConfigClient({ gatewayUrl });
   assert.equal((await reopened({ method: 'GET', path: '/api/config/models' })).active, 'demo/second');
-  assert.deepEqual((await request({ method: 'POST', path: '/api/config/models/discover', body: { provider: 'demo' } })).models, discovered);
-
-  discovered = [];
-  assert.deepEqual((await request({ method: 'POST', path: '/api/config/models/discover', body: { provider: 'demo' } })).models, []);
   snapshot = { active: '', enabled: [], models: [], providers: {} };
   assert.deepEqual((await request({ method: 'GET', path: '/api/config/models' })).models, []);
 
