@@ -167,7 +167,7 @@ HTTP（D2，均为 loopback-only）：
 | D2 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
 | V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
 | A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
-| T | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| T | done | 5c43f42 | B3 已定位并修复；真机逐帧证据见实验文档 |
 
 ## V 交付记录
 
@@ -188,3 +188,13 @@ HTTP（D2，均为 loopback-only）：
 | D2 | `agent/v2-config-webui` | 5201aa2（配置 API 安全）、77bb9fd（夜景外壳 + 模型/高级页） | a134579：语音路由与语音页 | 语音页按已合并的 V 接口联调、概览页、旧入口迁移、文档、截图 |
 | A | `agent/v2-android-ui` | 68de571（B1 presence）、86ea678（统一主题）、06c62f4（B6 竖屏对话面板） | 7aee801：B8 键盘（adjustNothing + ime 事件） | B8 完成与真机验证、HUD 迁移按钮、文档 |
 | T | `agent/v2-twitch` | — | fdd5085：逐帧 trace 采集脚本 | 复现、定位、修复、实验文档 |
+
+## T 交付记录（Codex）
+
+- 提交列表：`ef4493a` 合并 `feature/android-companion`；`5c43f42` 完成 B3 根因修复、默认关闭的逐帧 trace、Desktop 参数单写者、TC-AWB-029..031 与实验/功能文档。
+- 根因与修复：Android cached-model 帧的累计 dt 曾在恢复帧一次性进入 focus/自然运动/physics；现冻结跳过期间的模型时间，只送当前 raw dt（上限 50 ms）。Desktop 无同类累计链路，但非面部 RPC 曾在 `beforeModelUpdate` 外直写 coreModel，现统一由 overlay 单写者平滑写入和释放。
+- 真机结果：修复前动作采集 physics dt 最大 116.3 ms；最终 APK 的定向跳帧样本为 `raw=33, skipped=100, physicsDt=33, clamped=true`。离线 Idle 60.13 秒（1395 帧、0 focus/外部动作）physics dt 最大 50 ms；6 个 Idle 循环边界邻域 BodyX/BodyZ 最大帧差仅 0.0531/0.0534。原始 trace：`/tmp/yachiyo-live2d-t/before-idle.json`、`before-actions.json`、`after-idle-offline.json`、`after-actions-offline.json`、`after-skip-final.json`。
+- 测试结果：隔离 `HOME/TMPDIR` 的 `npm run test:ci` 689/689；`npm run docs:lint` 通过；JDK 17 `:app:testDebugUnitTest :app:assembleDebug` 通过（41 tasks）；最终 APK 已 Wi-Fi ADB 安装并经 CDP 验证。真机锁均在采集后释放。
+- 截图路径：无适用的静态截图；抽动验收依赖逐帧 JSON（低频截图无法证明连续性）。候选设备状态截图 `/tmp/yachiyo-live2d-t/after-idle-clean.png` 未作为结论证据。
+- 未完成项：无。未改用户 `127.0.0.1:3002` 网关配置、未触发 avatar 迁移、未调用真实计费 API。
+- 风险：trace 会增加采样开销，必须保持默认关闭；最终多工作流集成 APK 若修改舞台帧循环，应按 TC-AWB-029/030 重跑不少于 60 秒的离线 trace。60 FPS 目标仍按用户决定放弃，本提交未做性能优化，也未引入 Worker/VBO/physics/mask 历史实验。
