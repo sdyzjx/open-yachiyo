@@ -2,6 +2,7 @@
   const bridge = window.desktopLive2dBridge;
   const bubbleElement = document.getElementById('bubble');
   const bubbleLinesElement = document.getElementById('bubble-lines');
+  const openChatElement = document.getElementById('bubble-open-chat');
   let measureRaf = 0;
   let delayedMeasureTimer = null;
   let clearHiddenTimer = null;
@@ -166,7 +167,7 @@
     }
 
     if (!visible) {
-      bubbleElement.classList.remove('visible', 'streaming', 'pop-in');
+      bubbleElement.classList.remove('visible', 'streaming', 'pop-in', 'truncated');
       if (clearHiddenTimer) {
         clearTimeout(clearHiddenTimer);
       }
@@ -183,8 +184,13 @@
     }
 
     const wasVisible = bubbleElement.classList.contains('visible');
-    const lines = normalizeBubbleLines(payload);
-    renderBubbleLines(lines);
+    const normalizedLines = normalizeBubbleLines(payload);
+    const presentation = window.BubblePresentation?.truncateLines?.(normalizedLines, 180) || {
+      lines: normalizedLines,
+      truncated: false
+    };
+    renderBubbleLines(presentation.lines);
+    bubbleElement.classList.toggle('truncated', presentation.truncated);
 
     bubbleElement.classList.add('visible');
     if (!wasVisible) {
@@ -228,5 +234,8 @@
 
   bridge?.onBubbleStateSync?.((payload) => {
     applyBubbleState(payload);
+  });
+  openChatElement?.addEventListener('click', () => {
+    bridge?.sendWindowControl?.({ action: 'show_chat' });
   });
 })();

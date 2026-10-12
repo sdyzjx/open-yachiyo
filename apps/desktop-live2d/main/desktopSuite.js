@@ -21,6 +21,7 @@ const { createDesktopCaptureService } = require('./desktopCaptureService');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
 const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
 const { createModelConfigClient } = require('./modelConfigClient');
+const { projectHubState, computeShellState } = require('./shellModel');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -34,6 +35,10 @@ const CHANNELS = Object.freeze({
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  shellStateRequest: 'live2d:shell-state:request',
+  shellStateSync: 'live2d:shell-state:sync',
+  avatarTransferRequest: 'live2d:avatar-transfer:request',
+  avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
@@ -53,6 +58,13 @@ const CHANNELS = Object.freeze({
 });
 
 const AVATAR_WINDOW_MAX_OFFSCREEN_RATIO = 0.8;
+const AVATAR_DEFAULT_HEIGHT_RATIO = 0.38;
+const AVATAR_DEFAULT_MAX_HEIGHT = 420;
+const AVATAR_DEFAULT_LEFT_MARGIN = 24;
+const CHAT_WINDOW_DEFAULT_WIDTH = 420;
+const CHAT_WINDOW_DEFAULT_HEIGHT = 640;
+const CHAT_WINDOW_MIN_WIDTH = 360;
+const CHAT_WINDOW_MIN_HEIGHT = 480;
 const BUBBLE_DEFAULT_LINE_DURATION_MS = 2000;
 const BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS = 300;
 const BUBBLE_DEFAULT_WIDTH = 560;
@@ -97,6 +109,25 @@ function loadLive2dPresetConfig({ assetRoot = null, projectRoot = null, env = pr
 
 function isNewSessionCommand(text) {
   return String(text || '').trim().toLowerCase() === '/new';
+}
+
+function normalizeAvatarTransferTarget(payload, shell) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('迁移请求格式错误');
+  const target = String(payload.to || '').trim();
+  if (!target || target === 'desktop') throw new Error('目标手机无效');
+  if (!shell?.connected) throw new Error('网关未连接');
+  if (shell?.busy) throw new Error('角色正在迁移');
+  if (!shell?.avatarOnDesktop) throw new Error('八千代不在电脑上');
+  const phone = (Array.isArray(shell?.phones) ? shell.phones : []).find((item) => item.device_id === target);
+  if (!phone) throw new Error('目标手机已离线');
+  return phone.device_id;
+}
+
+function sanitizeDesktopUiError(error, fallback = '操作失败') {
+  return String(error?.message || error || fallback)
+    .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer ***')
+    .replace(/((?:api[_-]?key|token|secret)\s*[:=]\s*)[^\s,;}]+/gi, '$1***')
+    .slice(0, 180);
 }
 
 function normalizeWindowDragPayload(payload) {
@@ -451,7 +482,7 @@ function resizeWindowKeepingBottomRight({
 
 function normalizeWindowControlPayload(payload) {
   const action = String(payload?.action || '').trim().toLowerCase();
-  if (!['hide', 'hide_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides', 'save_drag_zone_overrides'].includes(action)) {
+  if (!['hide', 'hide_chat', 'show_chat', 'close_pet', 'open_webui', 'close_resize_mode', 'save_layout_overrides', 'save_drag_zone_overrides'].includes(action)) {
     return null;
   }
   const normalized = { action };
@@ -509,6 +540,7 @@ function createWindowControlListener({
   windows = null,
   onHide = null,
   onHideChat = null,
+  onShowChat = null,
   onClosePet = null,
   onOpenWebUi = null,
   onCloseResizeMode = null,
@@ -550,6 +582,11 @@ function createWindowControlListener({
       if (typeof onHideChat === 'function') {
         onHideChat();
       }
+      return;
+    }
+
+    if (normalized.action === 'show_chat') {
+      if (typeof onShowChat === 'function') onShowChat();
       return;
     }
 
@@ -1632,6 +1669,9 @@ async function startDesktopSuite({
   workspaceRoot = null,
   projectRoot = null,
   onResizeModeChange = null,
+  onShellStateChange = null,
+  onAvatarContextMenu = null,
+  onOpenSettings = null,
   logger = console,
   onChatInput = null
 } = {}) {
@@ -1719,8 +1759,10 @@ async function startDesktopSuite({
     preloadPath: path.join(__dirname, 'preload.js'),
     uiConfig: config.uiConfig,
     avatarBounds: avatarWindowBounds,
-    display
+    display,
+    persistedState: loadPersistedChatWindowState(config.chatWindowStatePath, { display, logger })
   });
+  let allowChatWindowClose = false;
   const bubbleWindow = createBubbleWindow({
     BrowserWindow,
     preloadPath: path.join(__dirname, 'preload.js'),
@@ -1729,6 +1771,13 @@ async function startDesktopSuite({
     bubbleWidth: bubbleRuntimeConfig.width,
     bubbleHeight: bubbleRuntimeConfig.height
   });
+  let deviceHubClient = null;
+  let chatState = null;
+  const shellSnapshot = () => computeShellState({
+    hub: projectHubState(deviceHubClient),
+    avatarVisible: !avatarWindow.isDestroyed() && avatarWindow.isVisible(),
+    chatOpen: chatState?.visible === true
+  });
   const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
   ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
     if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
@@ -1736,11 +1785,29 @@ async function startDesktopSuite({
     }
     return modelConfigRequest(payload);
   });
+  ipcMain.handle(CHANNELS.shellStateRequest, (event) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('shell state is only available to the chat window');
+    }
+    return shellSnapshot();
+  });
+  ipcMain.handle(CHANNELS.avatarTransferRequest, async (event, payload) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('avatar transfer is only available to the chat window');
+    }
+    try {
+      const target = normalizeAvatarTransferTarget(payload, shellSnapshot());
+      await deviceHubClient.transfer(target);
+      return shellSnapshot();
+    } catch (err) {
+      throw new Error(sanitizeDesktopUiError(err));
+    }
+  });
   await chatWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
   await bubbleWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
 
   const chatPanelConfig = config.uiConfig?.chat?.panel || {};
-  const chatState = {
+  chatState = {
     enabled: Boolean(chatPanelConfig.enabled),
     visible: Boolean(chatPanelConfig.enabled && chatPanelConfig.defaultVisible),
     maxMessages: toPositiveInt(chatPanelConfig.maxMessages, 200),
@@ -2090,9 +2157,40 @@ async function startDesktopSuite({
     return { ok: true, count: 0 };
   }
 
+  function getShellInputs() {
+    return {
+      hub: projectHubState(deviceHubClient),
+      avatarVisible: !avatarWindow.isDestroyed() && avatarWindow.isVisible(),
+      chatOpen: chatState.visible
+    };
+  }
+
+  function getChatGate() {
+    return computeShellState(getShellInputs()).chat;
+  }
+
+  // Single funnel for "something that menus/chat depend on changed".
+  function notifyShellChanged() {
+    if (chatState.visible && !getChatGate().canOpen) {
+      hideChatWindow();
+    }
+    if (!chatWindow.isDestroyed()) {
+      chatWindow.webContents.send(CHANNELS.shellStateSync, computeShellState(getShellInputs()));
+    }
+    onShellStateChange?.();
+  }
+
   function setChatPanelVisible(visible) {
     if (!chatState.enabled) {
       return { ok: false, visible: false };
+    }
+    if (visible) {
+      const gate = getChatGate();
+      if (!gate.canOpen) {
+        // The chat window may only exist while the avatar is on this computer and visible.
+        if (chatState.visible) hideChatWindow();
+        return { ok: false, visible: false, reason: gate.reason };
+      }
     }
     chatState.visible = Boolean(visible);
     syncChatStateToRenderer();
@@ -2102,6 +2200,7 @@ async function startDesktopSuite({
     } else {
       chatWindow.hide();
     }
+    onShellStateChange?.();
     return { ok: true, visible: chatState.visible };
   }
 
@@ -2703,9 +2802,14 @@ async function startDesktopSuite({
     if (!chatWindow.isDestroyed()) {
       chatWindow.hide();
     }
+    onShellStateChange?.();
   }
 
   function openWebUi() {
+    if (typeof onOpenSettings === 'function') {
+      onOpenSettings();
+      return;
+    }
     const gatewayUrl = String(config.gatewayUrl || '').trim();
     if (!gatewayUrl || typeof shell?.openExternal !== 'function') {
       return;
@@ -2763,7 +2867,27 @@ async function startDesktopSuite({
   });
   avatarWindow.on('hide', () => {
     hideBubbleWindow();
+    notifyShellChanged();
   });
+  avatarWindow.on('show', () => {
+    notifyShellChanged();
+  });
+  const persistChatWindowBounds = () => {
+    if (chatWindow.isDestroyed()) return;
+    writePersistedWindowState(config.chatWindowStatePath, chatWindow.getBounds(), { logger });
+  };
+  chatWindow.on('move', persistChatWindowBounds);
+  chatWindow.on('resize', persistChatWindowBounds);
+  chatWindow.on('close', (event) => {
+    if (allowChatWindowClose) return;
+    event?.preventDefault?.();
+    hideChatWindow();
+  });
+  const avatarContextMenuListener = (event) => {
+    if (avatarWindow.isDestroyed() || event?.sender !== avatarWindow.webContents) return;
+    onAvatarContextMenu?.();
+  };
+  ipcMain.on(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
 
   const avatarUiConfig = {
     ...config.uiConfig,
@@ -2869,9 +2993,10 @@ async function startDesktopSuite({
   ipcMain.on(CHANNELS.lipsyncTelemetry, lipsyncTelemetryListener);
 
   const windowControlListener = createWindowControlListener({
-    windows: [avatarWindow, chatWindow],
+    windows: [avatarWindow, chatWindow, bubbleWindow],
     onHide: hidePetWindows,
     onHideChat: hideChatWindow,
+    onShowChat: () => setChatPanelVisible(true),
     onClosePet: hidePetWindows,
     onOpenWebUi: openWebUi,
     onCloseResizeMode: () => {
@@ -2955,7 +3080,6 @@ async function startDesktopSuite({
   });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
-  let deviceHubClient = null;
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
     sessionId: 'desktop-live2d-chat',
@@ -3192,11 +3316,11 @@ async function startDesktopSuite({
           clearChatMessages();
           appendChatMessage({
             role: 'system',
-            text: `[session] switched to ${sessionId}`,
+            text: '已开始新对话',
             timestamp: Date.now()
           }, 'system');
           showBubble({
-            text: 'New session created',
+            text: '已开始新对话',
             durationMs: 2200
           });
         }).catch((err) => {
@@ -3263,7 +3387,8 @@ async function startDesktopSuite({
   deviceHubClient = new DeviceHubClient({
     gatewayUrl: config.gatewayUrl,
     invokeRenderer: (method, params) => bridge.invoke({ method, params, timeoutMs: 4000 }),
-    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params })
+    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params }),
+    onStateChange: notifyShellChanged
   });
   void deviceHubClient.start();
 
@@ -3330,6 +3455,9 @@ async function startDesktopSuite({
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.removeHandler(CHANNELS.modelConfigRequest);
+    ipcMain.removeHandler(CHANNELS.shellStateRequest);
+    ipcMain.removeHandler(CHANNELS.avatarTransferRequest);
+    ipcMain.off(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
     ipcMain.off(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
     ipcMain.off(CHANNELS.chatPanelToggle, chatPanelToggleListener);
@@ -3360,6 +3488,7 @@ async function startDesktopSuite({
       bubbleWindow.destroy();
     }
     if (!chatWindow.isDestroyed()) {
+      allowChatWindowClose = true;
       chatWindow.destroy();
     }
     if (imagePreviewWindow && !imagePreviewWindow.isDestroyed()) {
@@ -3379,6 +3508,10 @@ async function startDesktopSuite({
     summary,
     deviceHubClient,
     transferAvatar: (to) => deviceHubClient.transfer(to),
+    getShellInputs,
+    getHubState: () => projectHubState(deviceHubClient),
+    openChat: () => setChatPanelVisible(true),
+    closeChat: () => setChatPanelVisible(false),
     window: avatarWindow,
     avatarWindow,
     chatWindow,
@@ -3762,19 +3895,17 @@ async function handleDesktopRpcRequest({
 function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windowMetrics, initialSizeOverride = null }) {
   const windowConfig = uiConfig?.window || {};
   const aspectRatio = resolveWindowAspectRatio(windowMetrics);
-  const initialSize = normalizePersistedWindowState(initialSizeOverride, { windowMetrics }) || {
-    width: windowMetrics?.expandedWidth || 320,
-    height: windowMetrics?.expandedHeight || 500
-  };
+  const initialSize = normalizePersistedWindowState(initialSizeOverride, { windowMetrics })
+    || resolveDefaultAvatarWindowSize({ display, windowMetrics });
   const placement = windowConfig.placement || {};
   const unclampedWindowBounds = computeWindowBounds({
     width: initialSize.width,
     height: initialSize.height,
     display,
-    anchor: String(placement.anchor || 'bottom-right'),
+    anchor: initialSizeOverride ? String(placement.anchor || 'bottom-left') : 'bottom-left',
     marginRight: Number(placement.marginRight) || 18,
-    marginBottom: Number(placement.marginBottom) || 18,
-    marginLeft: Number(placement.marginLeft) || 18,
+    marginBottom: initialSizeOverride ? (Number(placement.marginBottom) || 0) : 0,
+    marginLeft: initialSizeOverride ? (Number(placement.marginLeft) || AVATAR_DEFAULT_LEFT_MARGIN) : AVATAR_DEFAULT_LEFT_MARGIN,
     marginTop: Number(placement.marginTop) || 18,
     x: placement.x,
     y: placement.y
@@ -3791,6 +3922,7 @@ function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windo
     minHeight: windowMetrics?.minHeight || 320,
     maxWidth: windowMetrics?.maxWidth || Number.POSITIVE_INFINITY,
     maxHeight: windowMetrics?.maxHeight || Number.POSITIVE_INFINITY,
+    margin: 0,
     maxOffscreenRatio: AVATAR_WINDOW_MAX_OFFSCREEN_RATIO
   });
 
@@ -3829,31 +3961,78 @@ function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windo
   return win;
 }
 
-function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, display }) {
+function resolveDefaultAvatarWindowSize({ display, windowMetrics } = {}) {
+  const workAreaHeight = Math.max(1, Number(display?.workArea?.height) || 900);
+  const ratio = resolveWindowAspectRatio(windowMetrics);
+  const minHeight = Math.max(1, Number(windowMetrics?.minHeight) || 260);
+  const height = Math.max(minHeight, Math.min(AVATAR_DEFAULT_MAX_HEIGHT, Math.round(workAreaHeight * AVATAR_DEFAULT_HEIGHT_RATIO)));
+  return {
+    width: Math.max(1, Math.round(height * ratio)),
+    height
+  };
+}
+
+function normalizeChatWindowBounds(input, { display } = {}) {
+  if (!input || typeof input !== 'object') return null;
+  const width = Math.max(CHAT_WINDOW_MIN_WIDTH, Math.round(Number(input.width) || 0));
+  const height = Math.max(CHAT_WINDOW_MIN_HEIGHT, Math.round(Number(input.height) || 0));
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return clampWindowBoundsToWorkArea({
+    bounds: {
+      x: Number.isFinite(Number(input.x)) ? Math.round(Number(input.x)) : Number(display?.workArea?.x) || 0,
+      y: Number.isFinite(Number(input.y)) ? Math.round(Number(input.y)) : Number(display?.workArea?.y) || 0,
+      width,
+      height
+    },
+    display,
+    minWidth: CHAT_WINDOW_MIN_WIDTH,
+    minHeight: CHAT_WINDOW_MIN_HEIGHT
+  });
+}
+
+function loadPersistedChatWindowState(filePath, { display, logger = console } = {}) {
+  if (!filePath) return null;
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return normalizeChatWindowBounds(JSON.parse(fs.readFileSync(filePath, 'utf8')), { display });
+  } catch (err) {
+    logger.warn?.('[desktop-live2d] failed to load chat window state', err?.message || err);
+    return null;
+  }
+}
+
+function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, display, persistedState = null }) {
   const panelConfig = uiConfig?.chat?.panel || {};
-  const width = toPositiveInt(panelConfig.width, 320);
-  const height = toPositiveInt(panelConfig.height, 220);
-  const bounds = computeChatWindowBounds({
-    avatarBounds,
-    chatWidth: width,
-    chatHeight: height,
-    display
+  const configuredWidth = toPositiveInt(panelConfig.width, CHAT_WINDOW_DEFAULT_WIDTH);
+  const configuredHeight = toPositiveInt(panelConfig.height, CHAT_WINDOW_DEFAULT_HEIGHT);
+  // Migrate the legacy 320x220 panel defaults to the new native-window defaults.
+  const width = configuredWidth < CHAT_WINDOW_MIN_WIDTH ? CHAT_WINDOW_DEFAULT_WIDTH : configuredWidth;
+  const height = configuredHeight < CHAT_WINDOW_MIN_HEIGHT ? CHAT_WINDOW_DEFAULT_HEIGHT : configuredHeight;
+  const bounds = normalizeChatWindowBounds(persistedState, { display }) || computeChatWindowBounds({
+    avatarBounds, chatWidth: width, chatHeight: height, display
   });
 
   return new BrowserWindow({
-    width,
-    height,
+    width: bounds.width || width,
+    height: bounds.height || height,
     x: bounds.x,
     y: bounds.y,
-    minWidth: Math.max(260, Math.min(width, width)),
-    minHeight: Math.max(180, Math.min(height, height)),
-    frame: false,
-    transparent: true,
+    minWidth: CHAT_WINDOW_MIN_WIDTH,
+    minHeight: CHAT_WINDOW_MIN_HEIGHT,
+    title: '八千代',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    frame: true,
+    transparent: false,
     hasShadow: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     show: false,
     movable: true,
-    backgroundColor: '#00000000',
+    minimizable: true,
+    maximizable: true,
+    closable: true,
+    resizable: true,
+    backgroundColor: '#090b20',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -3899,7 +4078,7 @@ function createBubbleWindow({
       sandbox: false
     }
   });
-  bubbleWindow.setIgnoreMouseEvents(true, { forward: true });
+  bubbleWindow.setIgnoreMouseEvents(false);
   return bubbleWindow;
 }
 
@@ -3927,10 +4106,11 @@ function computeWindowBounds({ width, height, display, anchor = 'bottom-right', 
     return { x: customX, y: customY };
   }
 
-  const marginLeft = Number(margins.marginLeft) || 16;
-  const marginTop = Number(margins.marginTop) || 16;
-  const marginRight = Number(margins.marginRight) || 16;
-  const marginBottom = Number(margins.marginBottom) || 16;
+  const marginValue = (value, fallback = 16) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const marginLeft = marginValue(margins.marginLeft);
+  const marginTop = marginValue(margins.marginTop);
+  const marginRight = marginValue(margins.marginRight);
+  const marginBottom = marginValue(margins.marginBottom);
 
   if (anchor === 'top-left') {
     return {
@@ -4168,7 +4348,12 @@ module.exports = {
   forwardLive2dActionEvent,
   handleDesktopRpcRequest,
   isNewSessionCommand,
+  normalizeAvatarTransferTarget,
+  sanitizeDesktopUiError,
   createChatWindow,
+  resolveDefaultAvatarWindowSize,
+  normalizeChatWindowBounds,
+  loadPersistedChatWindowState,
   createBubbleWindow,
   computeChatWindowBounds,
   computeBubbleWindowBounds,

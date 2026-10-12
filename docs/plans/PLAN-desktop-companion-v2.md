@@ -132,7 +132,7 @@ HTTP（D2，均为 loopback-only）：
 | B6 | 手机竖屏对话框遮挡八千代的脸；长文本无法滑动 | A |
 | B7 | TTS 只认 `qwen3_tts` 硬编码 key，配置混乱 | V + D2 |
 | B8 | 手机点击输入框弹出键盘时人物被挤走；要求人物与舞台完全不动，只把输入框（及对话面板）上移到键盘上方 | A |
-| B9 | 手机对话框遮挡：横屏时挡住左右侧拉栏，竖屏时挡脸。新规则：对话框以角色**脖子线**（模型 bounds 顶部向下约 24% 模型高度，按实际头部参数/截图校准）为上界，可以盖住身体但绝不盖脸；**竖屏**放在脖子以下、输入栏以上；**横屏居中**放在角色左侧或右侧较宽的空白区域（垂直方向不高于脖子线）；**横屏左滑/右滑（侧拉栏打开）**放在角色脖子以下区域，水平范围限制在侧拉栏之外；任何状态不得与输入栏、迁移按钮、设置按钮、侧拉栏、插件面板重叠；状态切换时平滑过渡（`--y-dur`），长文本在面板内滚动 | A |
+| B9 | 手机对话框遮挡：横屏时挡住左右侧拉栏，竖屏时挡脸。新规则：对话框以角色**脖子线**（模型 bounds 顶部向下约 24% 模型高度，按实际头部参数/截图校准）为上界，可以盖住身体但绝不盖脸；**竖屏**放在脖子以下、输入栏以上；**横屏居中**放在角色左侧或右侧较宽的空白区域（垂直方向不高于脖子线）；**横屏左滑/右滑（侧拉栏打开）**放在角色脖子以下区域，水平范围限制在侧拉栏之外；任何状态不得与输入栏、迁移按钮、设置按钮、侧拉栏、插件面板重叠；状态切换时平滑过渡（`--y-dur`），长文本在面板内滚动；**左右滑动过程中对话框跟随手指实时移动并连续插值样式（与人物、侧拉栏同步、同一吸附曲线），横竖屏切换同样平滑过渡** | A |
 
 ## 5. 工作流
 
@@ -164,8 +164,8 @@ HTTP（D2，均为 loopback-only）：
 | 工作流 | 状态 | 提交 | 备注 |
 |---|---|---|---|
 | 统筹：设计规范 + 本计划 | done | 06e6898 | |
-| D1 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
-| D2 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| D1 | merged（打磨中） | 04dafbc | 720 测试；聊天窗细节打磨（下拉截断、占位换行、提示遮挡）由 Codex 续做 |
+| D2 | merged | 5743baf | 统筹追加 DNS 重绑定防护（6d6cccb） |
 | V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
 | A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
 | T | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
@@ -198,3 +198,13 @@ HTTP（D2，均为 loopback-only）：
 - 视觉验收：隔离 `YACHIYO_HOME`、假 API Key、`PORT=3120`，Chromium 1100×760；截图：`/tmp/yachiyo-d2-visual.Vo9lNn/shots/overview-final.png`、`models-final.png`、`voice.png`、`voice-editor.png`、`advanced-stable.png`。验收结束已关闭浏览器与网关进程。
 - 未完成项：无。
 - 风险：未向真实供应商发起 TTS 试听（避免计费），真实端到端试听仍需统筹者使用自己的本机配置人工确认；截图位于临时目录，系统清理临时文件后不可用。
+## D1 交付记录（Codex）
+
+- 完成：菜单栏 Template 图标与状态菜单、Dock 点击/菜单、角色左下默认几何与升起动画、>4 px 拖拽判定、角色右键菜单与聊天可用性门禁。
+- 完成：原生 `hiddenInset` Desktop Chat（420×640，最小 360×480，位置尺寸持久化）；顶栏已启用模型选择、多设备迁移/离线原因/pending、新对话、设置；流式/Markdown/Mermaid/图片消息区；多行中文输入与图片附件。
+- 完成：模型 IPC 精确 allowlist 与响应投影脱敏；1100×760 设置窗加载 `/config-v2.html`，网关失败显示夜景错误页与重试；夜景气泡长文截断与「在聊天中查看」。B4/B5 已修复。
+- 提交：`d6785e3` Hub pending/取消竞态；`15006eb` 前任 WIP 检查点；`8b7b53f` 原生聊天窗与角色几何；`94aa6fb` Desktop Chat 控件、夜景 UI、气泡与设置错误页。
+- 验证：隔离 `HOME/TMPDIR` 执行 `npm run test:ci`，720/720 通过；`npm run docs:lint` 通过；假 Android WebSocket 客户端完成 `prepare → host.changed → enter → completed`，迁移后 Chat 自动关闭并拒绝再打开。
+- CDP 截图：`/tmp/yachiyo-d1.d9CDM4/screens/avatar.png`、`chat-v2.png`、`chat-messages.png`、`chat-phone-online.png`、`settings.png`、`settings-error.png`。
+- 未完成项：无。
+- 风险：Markdown/Mermaid/KaTeX 增强脚本仍沿用既有 CDN 加载方式；离线时文本与图片仍可显示，但高级排版会降级。截图在临时目录，统筹验收前请保留该路径。

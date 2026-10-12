@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>八千代设置</title>
+    <link rel="stylesheet" href="../shared/theme/yachiyo-theme.css" />
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid; place-items: center;
+        background: var(--y-grad-night); color: var(--y-ink);
+        font-family: var(--y-font); font-size: var(--y-fs-m); line-height: 1.55;
+      }
+      .card {
+        width: min(440px, calc(100vw - 48px)); box-sizing: border-box;
+        padding: var(--y-sp-6) var(--y-sp-6) var(--y-sp-5);
+        text-align: center; animation: rise var(--y-dur) var(--y-ease-out);
+      }
+      .moon {
+        width: 56px; height: 56px; margin: 0 auto var(--y-sp-4); border-radius: 50%;
+        background: var(--y-grad-primary);
+        box-shadow: var(--y-glow); position: relative; overflow: hidden;
+      }
+      .moon::after { content: ""; position: absolute; inset: -4px -4px -4px 18px; border-radius: 50%; background: var(--y-bg-2); }
+      h1 { margin: 0 0 var(--y-sp-2); font-size: var(--y-fs-xl); font-weight: 600; color: var(--y-gold); letter-spacing: 0.08em; }
+      p { margin: 0 0 var(--y-sp-2); color: var(--y-ink-dim); }
+      .reason { font: var(--y-fs-xs) / 1.5 var(--y-font-mono); color: var(--y-ink-faint); word-break: break-all; min-height: 18px; }
+      .actions { margin-top: var(--y-sp-5); display: flex; gap: var(--y-sp-3); justify-content: center; }
+      .y-btn { height: 36px; padding: 0 var(--y-sp-5); font-size: var(--y-fs-m); }
+      @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    </style>
+  </head>
+  <body>
+    <main class="card y-glass" role="alert">
+      <div class="moon" aria-hidden="true"></div>
+      <h1>设置页打不开</h1>
+      <p>没能连上八千代的本机网关。确认网关已经启动后，再试一次。</p>
+      <div class="reason" id="reason"></div>
+      <div class="actions">
+        <button class="y-btn y-btn--primary" id="retry" type="button">重试</button>
+      </div>
+    </main>
+    <script>
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var reason = params.get('reason') || '';
+        var target = params.get('target') || '';
+        document.getElementById('reason').textContent = reason;
+        var safe = '';
+        try {
+          var url = new URL(target);
+          if (url.protocol === 'http:' || url.protocol === 'https:') safe = url.toString();
+        } catch (err) { /* no valid retry target */ }
+        var retry = document.getElementById('retry');
+        retry.disabled = !safe;
+        retry.addEventListener('click', function () {
+          retry.textContent = '正在重试…';
+          retry.disabled = true;
+          location.href = safe;
+        });
+      })();
+    </script>
+  </body>
+</html>

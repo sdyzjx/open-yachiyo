@@ -98,6 +98,9 @@ function resolveDesktopLive2dConfig({
     windowStatePath: path.resolve(
       env.DESKTOP_LIVE2D_WINDOW_STATE_PATH || path.join(runtimePaths.dataDir, 'desktop-live2d', 'window-state.json')
     ),
+    chatWindowStatePath: path.resolve(
+      env.DESKTOP_CHAT_WINDOW_STATE_PATH || path.join(runtimePaths.dataDir, 'desktop-live2d', 'chat-window-state.json')
+    ),
     importBackupRoot: path.resolve(
       env.DESKTOP_LIVE2D_BACKUP_ROOT || path.join(runtimePaths.dataDir, 'backups', 'live2d')
     ),

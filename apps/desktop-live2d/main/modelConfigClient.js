@@ -1,7 +1,6 @@
 const ALLOWED_REQUESTS = new Set([
   'GET /api/config/models',
-  'PUT /api/config/models/selection',
-  'POST /api/config/models/discover'
+  'PUT /api/config/models/selection'
 ]);
 
 const PROVIDER_KEY_RE = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -38,25 +37,15 @@ function normalizeRequest(input = {}) {
   }
 
   if (requestPath === '/api/config/models/selection') {
-    assertExactKeys(input.body, new Set(['active_model', 'enabled_models']), 'invalid model selection body');
+    assertExactKeys(input.body, new Set(['active_model']), 'invalid model selection body');
     const activeModel = normalizeModelRef(input.body.active_model, 'active_model');
-    if (!Array.isArray(input.body.enabled_models) || input.body.enabled_models.length > MAX_LIST_ITEMS) {
-      throw new Error('enabled_models must be a bounded array');
-    }
     return {
       method,
       path: requestPath,
-      body: {
-        active_model: activeModel,
-        enabled_models: input.body.enabled_models.map((ref) => normalizeModelRef(ref, 'enabled_models'))
-      }
+      body: { active_model: activeModel }
     };
   }
-
-  assertExactKeys(input.body, new Set(['provider']), 'invalid model discovery body');
-  const provider = String(input.body.provider || '').trim();
-  if (!PROVIDER_KEY_RE.test(provider)) throw new Error('invalid provider key');
-  return { method, path: requestPath, body: { provider } };
+  throw new Error('unsupported model config request');
 }
 
 function sanitizeErrorMessage(value, fallback = 'model config request failed') {
@@ -113,27 +102,7 @@ function sanitizeSnapshot(value) {
   };
 }
 
-function sanitizeDiscovery(value) {
-  const result = isObject(value) ? value : {};
-  const models = Array.isArray(result.models)
-    ? result.models.slice(0, MAX_LIST_ITEMS).map((model) => {
-      if (!isObject(model) || typeof model.id !== 'string' || !model.id) return null;
-      return { id: model.id, name: typeof model.name === 'string' ? model.name : null };
-    }).filter(Boolean)
-    : [];
-  return {
-    ok: result.ok === true,
-    status: Number.isInteger(result.status) ? result.status : null,
-    error: result.error ? sanitizeErrorMessage(result.error) : null,
-    models
-  };
-}
-
-function sanitizeResponse(request, value) {
-  return request.path === '/api/config/models/discover'
-    ? sanitizeDiscovery(value)
-    : sanitizeSnapshot(value);
-}
+function sanitizeResponse(_request, value) { return sanitizeSnapshot(value); }
 
 function createModelConfigClient({ gatewayUrl, fetchImpl = (...args) => fetch(...args) } = {}) {
   const baseUrl = new URL(String(gatewayUrl || ''));
