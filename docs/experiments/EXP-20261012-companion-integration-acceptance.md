@@ -85,3 +85,20 @@
 - 后续真实模型调用返回 `Arrearage`（服务账户欠费），已停止真实API重试，离线测试不受影响。声音服务之前成功和之后账户阻断分别记录。
 - 用户报告性能实验版人物持续抽动。立即回退主线稳定APK，人物恢复完整显示；性能实验不合并。确认缺陷：原库每帧 saveParameters→physics→Core→loadParameters，简单跳过physics会导致输出与基础姿态交替。后续候选先恢复逐帧physics，并在隔离分支审查顶点插值/GL缓冲合并。
 - 有问题的compositor实验虽然idle rAF57.99、swipe55.49，但真实draw/Worker约17Hz且画面抽动，绝不视作60FPS达标。A15继续阻塞。
+
+### 插值绘制候选 827f036 的独立复测（2026-10-13）
+
+在设备锁 `coordinator-perf` 内安装隔离候选，未合并主线；未调用模型或音频服务。模型恢复逐帧 physics、每个 rAF 实际执行 WebGL draw，Core 在 Worker 求值，帧间顶点和透明度插值。
+
+| 场景 | 时长 | 实际绘制帧数 / FPS | 帧间隔均值 / p95 | draw 耗时均值 / p95 | Worker Hz |
+|---|---:|---:|---:|---:|---:|
+| 竖屏待机 | 10.001 s | 556 / 55.59 | 18.12 / 21.50 ms | 16.57 / 20.00 ms | 18.50 |
+| 横屏连续左右滑动 | 10.484 s | 569 / 54.27 | 18.44 / 23.10 ms | 16.26 / 20.40 ms | 17.93 |
+
+本次 draw 数与 rAF 一致，区别于此前只移动缓存画布的失败实验；但 Core 原始求值频率仍低于显示帧率，必须如实区分。截图确认人物完整、横屏分屏布局正确；静态截图不能证明动态无抽动，因此尚未验收动作连续性。每帧约400次 draw call、59次 program change，后续优先减少重复 GL 状态设置。
+
+原始数据保留在本机 `/tmp/yachiyo-companion-acceptance/perf-827f036-idle.json` 与 `perf-827f036-swipe.json`。结束后重新安装稳定 `c96dc4b` APK并启动 MainActivity，恢复自动旋转1/user_rotation0、释放锁。候选未达到60FPS，不合并为正式修复。
+
+### 背景素材选择
+
+已找到并视觉确认[影片官网角色背景](https://www.cho-kaguyahime.com/assets/img/character/character_bg.jpg)（2400×1440）：蓝紫水面、朱红宫殿、暖色灯光，没有其他人物，适合叠加八千代。已向用户展示原图及官网来源；本轮只提供候选，未将第三方素材打包入仓库或修改手机背景。
