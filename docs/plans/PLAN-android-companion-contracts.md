@@ -181,7 +181,22 @@ pub audio.input.end   {stream_id, reason:"released"|"vad"|"cancel"}
 
 宿主页：`https://appassets.androidplatform.net/web/index.html`（主界面）与 `.../web/settings.html`（配置界面），由 `WebViewAssetLoader` 提供。
 
-### C2.1 Web → 原生：`window.YachiyoNative`（`@JavascriptInterface`，参数与返回值均为字符串）
+### C2.0 注入方式与防插件越权（统筹决策 2026-10-12）
+
+Android 的 `addJavascriptInterface` 会把对象注入到页面**所有 frame**（含插件沙箱 iframe）。因此原生**只注入** `window.__YachiyoBridge`，它只有两个方法：
+
+| 方法 | 说明 |
+|---|---|
+| `handshake()` | 每次页面加载（`onPageStarted` 重置）**只有第一次调用**返回随机 token（32 字节 hex），之后调用返回空串并记录告警 |
+| `invoke(token, method, argsJson)` | `argsJson` 为参数数组的 JSON（如 `["avatar.*"]`）；token 不匹配返回 `{"error":{"code":-32006}}` 的 JSON 字符串；否则调用 C2.1 中同名方法并返回其字符串结果 |
+
+Web 前端 `js/nativeShim.js` 必须是宿主页**第一个执行的脚本**（在任何 iframe 创建之前）：调用 `handshake()` 取得 token 并保存在闭包中，然后定义 `window.YachiyoNative`，其 C2.1 方法都转发到 `invoke(token, name, JSON.stringify(args))`。token 不得写入全局变量、不得通过 postMessage 发给插件。插件 iframe 是 opaque origin，无法读取宿主闭包，因此即使能看到 `__YachiyoBridge` 也无法调用。
+
+其他：WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（宿主源为 `https://appassets…`，网关为局域网 `http://`）；导航仍限制在 `appassets.androidplatform.net`。网关对 `/api/device/*`、`/api/config/models*` 返回 CORS 头允许源 `https://appassets.androidplatform.net`。
+
+WS4 实现细节（统筹确认）：`dispatch` 参数为对象 `{type, data}`（Web 端同时兼容字符串）；页面定义 `__yachiyoNative` 之前的消息进入 `window.__yachiyoQueue` 数组，前端定义后须清空处理；`plugins.changed` 的 data 为插件数组；`setConfig` 为深合并（数组整体替换）；新增 `dismissKeyguard()`（仅锁屏模式）；配置页由独立 `SettingsActivity` 加载 `/web/settings.html`。
+
+### C2.1 Web → 原生：`window.YachiyoNative`（由 `nativeShim.js` 基于 C2.0 构造；参数与返回值均为字符串）
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
