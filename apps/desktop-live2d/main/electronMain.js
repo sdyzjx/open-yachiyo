@@ -208,6 +208,13 @@ async function bootstrap() {
           trayController?.setResizeModeEnabled(nextEnabled);
         },
         isResizeModeEnabled: () => suite?.isResizeModeEnabled?.() || false,
+        onSendToPhone: () => {
+          const phone = suite?.deviceHubClient?.devices.find((device) => device.device_type === 'android');
+          if (phone) void suite.transferAvatar(phone.device_id).catch((err) => console.warn('[device-hub]', err.message));
+        },
+        onRecallAvatar: () => {
+          void suite?.transferAvatar('desktop').catch((err) => console.warn('[device-hub]', err.message));
+        },
         onQuit: () => {
           app.quit();
         }

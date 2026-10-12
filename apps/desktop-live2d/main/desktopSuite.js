@@ -2806,6 +2806,8 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowDrag, windowDragListener);
   const chatPanelVisibilityListener = createChatPanelVisibilityListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     windowMetrics,
     screen,
@@ -2813,6 +2815,8 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
   const chatPanelToggleListener = createChatPanelToggleListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onToggle: () => {
       toggleChatPanelVisible();
@@ -2831,6 +2835,8 @@ async function startDesktopSuite({
   };
   ipcMain.on(CHANNELS.chatImagePreviewOpen, chatImagePreviewListener);
   const modelBoundsListener = createModelBoundsListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onModelBounds: (modelBounds) => {
       applyAvatarFitBounds(modelBounds);
@@ -2849,11 +2855,15 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.bubbleMetricsUpdate, bubbleMetricsListener);
   const actionTelemetryListener = createActionTelemetryListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onTelemetry: publishLive2dActionTelemetry
   });
   ipcMain.on(CHANNELS.actionTelemetry, actionTelemetryListener);
   const lipsyncTelemetryListener = createLipsyncTelemetryListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onTelemetry: publishLipsyncTelemetry
   });
@@ -2877,6 +2887,8 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowControl, windowControlListener);
   const windowResizeListener = createWindowResizeListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     windowMetrics,
     screen,
@@ -2887,6 +2899,8 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
   const windowInteractivityListener = createWindowInteractivityListener({
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     isResizeModeEnabled: () => resizeModeEnabled
   });
@@ -2946,6 +2960,7 @@ async function startDesktopSuite({
   });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
+  let deviceHubClient = null;
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
     sessionId: 'desktop-live2d-chat',
@@ -2973,15 +2988,9 @@ async function startDesktopSuite({
         const activeBridge = ipcBridgeRef;
 
         if (eventName === ACTION_EVENT_NAME) {
-          void forwardLive2dActionEvent({
-            eventName,
-            eventPayload: desktopEvent.data.data,
-            bridge: activeBridge,
-            rendererTimeoutMs: config.rendererTimeoutMs,
-            onTelemetry: publishLive2dActionTelemetry,
-            logger
-          });
+          // Device Hub delivers avatar actions exactly once to the current host.
         } else if (eventName === 'voice.requested') {
+          if (!deviceHubClient?.isHost) return;
           const voicePayload = desktopEvent.data.data;
           const requestId = String(voicePayload?.request_id || voicePayload?.requestId || '').trim();
           if (requestId) {
@@ -3011,7 +3020,7 @@ async function startDesktopSuite({
             emitDebug: emitDesktopDebug,
             logger
           });
-        } else if (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.')) {
+        } else if (eventName !== ACTION_EVENT_NAME && (!eventName.startsWith('voice.') || deviceHubClient?.isHost) && (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.'))) {
           activeBridge?.invoke({
             method: 'server_event_forward',
             params: {
@@ -3255,6 +3264,13 @@ async function startDesktopSuite({
     timeoutMs: config.rendererTimeoutMs
   });
   ipcBridgeRef = bridge;
+  const { DeviceHubClient } = require('./deviceHubClient');
+  deviceHubClient = new DeviceHubClient({
+    gatewayUrl: config.gatewayUrl,
+    invokeRenderer: (method, params) => bridge.invoke({ method, params, timeoutMs: 4000 }),
+    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params })
+  });
+  void deviceHubClient.start();
 
   const rpcServer = new Live2dRpcServer({
     host: config.rpcHost,
@@ -3315,6 +3331,7 @@ async function startDesktopSuite({
   async function stop() {
     if (stopped) return;
     stopped = true;
+    deviceHubClient?.stop();
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
@@ -3364,6 +3381,8 @@ async function startDesktopSuite({
   return {
     config,
     summary,
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     avatarWindow,
     chatWindow,

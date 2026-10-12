@@ -58,6 +58,8 @@ function createTrayController({
   onHide = null,
   onToggleResizeMode = null,
   isResizeModeEnabled = null,
+  onSendToPhone = null,
+  onRecallAvatar = null,
   onQuit = null
 } = {}) {
   if (typeof Tray !== 'function' || !Menu || typeof Menu.buildFromTemplate !== 'function') {
@@ -105,6 +107,8 @@ function createTrayController({
           }
         }
       },
+      ...(onSendToPhone ? [{ label: '把八千代送到手机', click: onSendToPhone }] : []),
+      ...(onRecallAvatar ? [{ label: '接回电脑', click: onRecallAvatar }] : []),
       {
         type: 'separator'
       },

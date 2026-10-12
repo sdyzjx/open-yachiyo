@@ -19,6 +19,7 @@
     resizeModeEnabled: false
   };
 
+  let avatarTransfer = null;
   let pixiApp = null;
   let live2dModel = null;
   let hideBubbleTimer = null;
@@ -3929,7 +3930,9 @@
 
     try {
       let result;
-      if (method === 'state.get') {
+      if (method === 'avatar.hub.event') {
+        result = await avatarTransfer.handle(params);
+      } else if (method === 'state.get') {
         result = getState();
       } else if (method === 'debug.mouthOverride.set') {
         result = setExternalMouthOverride(params);
@@ -3964,7 +3967,7 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        if (name === 'voice.playback.electron') {
+        if (name === 'voice.playback.electron' && avatarTransfer?.isHost) {
           const audioUrl = normalizeLegacyVoiceAudioUrl(data?.audio_ref || data?.audioRef || '');
           if (!audioUrl) {
             throw createRpcError(-32602, 'voice.playback.electron requires audio_ref');
@@ -4048,6 +4051,15 @@
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);
       ensureActionQueuePlayer();
+      avatarTransfer = window.AvatarTransfer.createAvatarTransfer({
+        element: pixiApp.view,
+        setVisible: (visible) => { live2dModel.visible = visible; },
+        stopVoice: () => { systemAudio.pause(); interruptRealtimeVoicePlayer('avatar-transfer'); },
+        greet: async () => {
+          try { await ensureActionQueuePlayer().enqueue({ action_id: `greet-${Date.now()}`, action: { type: 'gesture', name: 'greet', args: { type: 'greet' } }, duration_sec: 2, queue_policy: 'append' }); } catch { /* Model may not provide greet. */ }
+        }
+      });
+      await avatarTransfer.handle({ topic: 'avatar.connection.lost' });
 
       bridge.onInvoke((payload) => {
         void handleInvoke(payload);
@@ -4058,6 +4070,7 @@
       });
 
       bridge.onVoicePlayMemory?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         const coarseBytes = coerceAudioBytes(payload?.audioBytes);
         emitRendererDebug('voice_memory.received', {
@@ -4083,6 +4096,7 @@
       }
 
       bridge.onVoicePlayRemote?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         emitRendererDebug('voice_remote.received', {
           request_id: requestId,
@@ -4112,6 +4126,7 @@
       }
 
       bridge.onVoiceStreamStart?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         emitRendererDebug('voice_stream.start_received', {
           request_id: requestId,
@@ -4130,6 +4145,7 @@
       }
 
       bridge.onVoiceStreamChunk?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         appendRealtimeVoiceChunk(payload);
       });
       if (typeof bridge.onVoiceStreamChunk !== 'function') {
