@@ -234,9 +234,9 @@
 |---|---|
 | 类型 | e2e |
 | 前置条件 | 网关含 /api/config/models（WS2） |
-| 步骤 | 打开设置；切换当前模型、启用模型；断网重开 |
-| 期望结果 | 列表来自网关；PUT selection 生效；离线时区块隐藏 |
-| 自动化 | manual |
+| 步骤 | 分别让网关直出模型对象、返回 `{ok,data}` 包装；打开设置；切换当前模型、启用模型；断网重开 |
+| 期望结果 | 两种响应都正常渲染且不阻断其他设置区；PUT selection 生效；离线时区块隐藏 |
+| 自动化 | `test/android-web/settingsModels.test.js`（响应兼容）；真机交互 manual |
 
 ## TC-AWB-024 返回键优先级
 
@@ -267,4 +267,3 @@
 | 步骤 | 打开 `http://localhost:8790/web/index.html?debug=1` |
 | 期望结果 | 无原生也能完整运行：配置存 localStorage、示例插件可见、debug 面板可模拟移交/语音/聊天 |
 | 自动化 | manual |
-

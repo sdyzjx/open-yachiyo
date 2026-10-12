@@ -20,7 +20,7 @@
 | 语音 | 麦克风模式（按住说话/连续）、播放音量 |
 | 插件 | 列表（图标、名称、类型、版本）、启用开关（`setPluginEnabled`）、卸载（`uninstallPlugin`，确认框）、导入（`pickPluginPackage`，安装完成后 `plugins.changed` 刷新列表） |
 | 桌面与锁屏 | 默认桌面状态 + 跳转系统设置（`openHomeSettings`）、启用桌面抽屉、锁屏显示人物（`setLockscreenEnabled` + 配置）、设备别名 |
-| 模型 | `GET http://<server>/api/config/models`（带 `Authorization: Bearer <token>`）；当前模型下拉、启用模型复选框；改动 `PUT /api/config/models/selection {active_model?, enabled_models?}`；请求失败（离线/旧网关）时整个区块隐藏 |
+| 模型 | `GET http://<server>/api/config/models`（带 `Authorization: Bearer <token>`）；兼容契约直出与网关 `{ok,data}` 包装；当前模型下拉、启用模型复选框；改动 `PUT /api/config/models/selection {active_model?, enabled_models?}`；请求失败（离线/旧网关）时整个区块隐藏 |
 
 所有写入都是 `setConfig(patch)`（原生深合并，数组整体替换）；页面监听 `config.changed`、`hub.state`、`plugins.changed`、`picker.result` 重新渲染。返回按钮/返回键 → `closeSettings()`。无原生（桌面浏览器）时由 mockNative 提供全部能力，便于调试。
 

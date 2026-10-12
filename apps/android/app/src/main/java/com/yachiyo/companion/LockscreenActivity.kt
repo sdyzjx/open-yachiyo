@@ -37,9 +37,18 @@ class LockscreenActivity : WebHostActivity() {
 
     fun dismissKeyguardAndFinish() {
         val km = getSystemService(KeyguardManager::class.java)
+        if (!km.isKeyguardLocked) {
+            finish()
+            return
+        }
         km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
             override fun onDismissSucceeded() { finish() }
+            override fun onDismissCancelled() { finish() }
+            override fun onDismissError() { finish() }
         })
+        // Some ROMs omit the callback when a showWhenLocked activity requests dismissal. Leaving
+        // this overlay does not bypass authentication; the system keyguard remains underneath.
+        window.decorView.postDelayed({ if (!isFinishing) finish() }, 750L)
     }
 
     override fun onDestroy() {

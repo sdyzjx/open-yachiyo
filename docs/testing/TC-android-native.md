@@ -415,7 +415,7 @@
 | 类型 | manual-device |
 | 前置条件 | 锁屏人物显示中（无安全锁） |
 | 步骤 | 按返回键；或解锁 |
-| 期望结果 | 返回键触发 requestDismissKeyguard 后 Activity 结束；Hub 收到 mode=normal；解锁（USER_PRESENT）也会结束 |
+| 期望结果 | 返回键触发 requestDismissKeyguard 后 Activity 结束；ROM 未回调时 750 ms 后关闭人物覆盖页且系统认证仍保留；Hub 收到 mode=normal；解锁（USER_PRESENT）也会结束 |
 | 自动化 | manual |
 
 ### TC-AND-035 包名与图标路径校验

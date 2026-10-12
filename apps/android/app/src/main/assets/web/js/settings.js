@@ -4,6 +4,7 @@
 
   const B = window.YachiyoBridge;
   const Address = window.YachiyoServerAddress;
+  const SettingsModels = window.YachiyoSettingsModels;
   const root = document.getElementById('root');
   let cfg = B.getConfig();
   const info = B.deviceInfo();
@@ -205,8 +206,8 @@
       const res = await fetch(`${serverBase()}/api/config/models`, { signal: ctl.signal, headers: s.token ? { authorization: `Bearer ${s.token}` } : {} });
       clearTimeout(t);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      models = await res.json();
-      modelsError = '';
+      models = SettingsModels.normalizeResponse(await res.json());
+      modelsError = models ? '' : '模型接口返回格式无效';
     } catch (err) {
       models = null; // offline: the section is hidden
       modelsError = err.message;
