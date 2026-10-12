@@ -418,6 +418,11 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 | POST | `/api/config/models/test` | `{ref}` 或临时 provider 配置 → 发送一条最小请求，返回延迟与错误 |
 | POST | `/api/config/models/discover` | `{provider}` → 调 `GET {base_url}/models` 列出可用模型 |
 
+| PUT | `/api/config/models/providers/:key` | 新增/更新 provider（`api_key` 留空表示保留原值，`clear_api_key: true` 清除） |
+| DELETE | `/api/config/models/providers/:key` | 删除 provider（被引用时 400） |
+
+响应补充（WS2 实现，2026-10-12 统筹确认）：`GET /api/config/models` 中 `active` / `enabled` 为 ref 字符串，另含 `providers{}`（无密钥）；`/test` 返回 `{ok, latency_ms, status, error}`、`/discover` 返回 `{ok, models[]}`，上游失败时 HTTP 200 + `ok:false`；草稿 provider 只有在 `base_url` 与已存储 provider 一致时才继承其凭据。Descriptor `name` 为 `model.name || id`；`timeout_ms` 缺省 20000。
+
 运行时切换模型：`runtime.run` 的 `params.model_ref`（可选）覆盖本次使用的模型；会话设置 `PUT /api/sessions/:id/settings {model_ref}` 持久覆盖。
 
 ---

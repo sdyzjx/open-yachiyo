@@ -96,14 +96,19 @@ flowchart TD
 | A12 | `AGENT_CORE=pi` 下全部原有 e2e 测试通过；`AGENT_CORE=legacy` 可回滚 | 自动 |
 | A13 | 每个功能均有 `FEAT-*` 文档与 `TC-*` 用例，`docs/README.md` 索引更新 | 审查 |
 
-## 6. 进度
+## 6. 统筹待办
+
+- [ ] **网关局域网加固**（WS3 合并后，统筹执行）：网关监听 `0.0.0.0`，`/api/config/*`、`/api/sessions*`、`/api/memory*` 等管理接口目前对局域网无鉴权，且既有 `GET /api/config/providers/config` 会返回内联 api_key。方案：非 loopback 请求必须携带 Device Hub `pairing_token`；`/api/config/providers/config` 与 `/raw` 对外脱敏。
+- [ ] 合并时统一重新生成 `package-lock.json`（WS1 新增 pi 依赖）。
+
+## 7. 进度
 
 | 工作流 | 状态 | 最新提交 | 备注 |
 |---|---|---|---|
 | 统筹：文档整理 + AGENT.md | done | 608edd7 | |
 | 统筹：实验 + 契约 + 施工文档 + 接口桩 | done | 0c2b84b | |
 | WS1 | in progress | | Codex，2026-10-12 启动 |
-| WS2 | in progress | | Sonnet，2026-10-12 启动 |
+| WS2 | merged | 63504a1 | 统筹审查修复：/test 凭据外泄（63504a1）；538 测试通过 |
 | WS3 | in progress | | Codex，2026-10-12 启动 |
 | WS4 | in progress | | Sonnet，2026-10-12 启动 |
 | WS5 | in progress | | Sonnet，2026-10-12 启动 |
