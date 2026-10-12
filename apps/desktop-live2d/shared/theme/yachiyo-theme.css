@@ -1,0 +1,133 @@
+/*
+ * Yachiyo 统一主题（月读夜景）— 唯一的设计 token 来源。
+ * 规范：docs/architecture/UI_DESIGN_SYSTEM.md
+ * 使用方：Desktop renderer（chat/bubble/settings）、Gateway WebUI（/config-v2.html）、
+ *        Android WebView（由 scripts/android-sync-assets.js 复制到 generated/shared/）。
+ * 只定义变量与少量基础组件类，不写页面布局。
+ */
+:root {
+  /* 背景层级：越往上越亮、越不透明 */
+  --y-bg: #090b20;
+  --y-bg-2: #11132e;
+  --y-surface: rgba(23, 23, 50, 0.76);
+  --y-surface-strong: rgba(15, 16, 38, 0.94);
+  --y-surface-hover: rgba(46, 42, 92, 0.72);
+  --y-glass-blur: 18px;
+
+  /* 线与文字 */
+  --y-line: rgba(235, 225, 255, 0.13);
+  --y-line-strong: rgba(235, 225, 255, 0.24);
+  --y-ink: #f7f3ff;
+  --y-ink-dim: #b9b4ce;
+  --y-ink-faint: #7f7a9a;
+
+  /* 强调色：薰衣草为主操作，暖金为品牌/高亮，状态色克制使用 */
+  --y-accent: #b6a1ff;
+  --y-accent-deep: #7969c5;
+  --y-accent-ink: #160f33;
+  --y-gold: #efd09d;
+  --y-gold-line: rgba(239, 208, 157, 0.32);
+  --y-good: #65d6a3;
+  --y-warn: #f3c46b;
+  --y-bad: #ff8a9d;
+
+  /* 渐变 */
+  --y-grad-primary: linear-gradient(135deg, #c3b2ff 0%, #8e7ae0 100%);
+  --y-grad-night: radial-gradient(120% 80% at 50% 0%, #1d1f4a 0%, #0b0d26 55%, #070818 100%);
+
+  /* 形状与阴影 */
+  --y-radius-s: 10px;
+  --y-radius-m: 16px;
+  --y-radius-l: 22px;
+  --y-radius-pill: 999px;
+  --y-shadow: 0 18px 48px rgba(3, 3, 16, 0.55);
+  --y-shadow-soft: 0 6px 18px rgba(3, 3, 16, 0.35);
+  --y-glow: 0 0 0 1px var(--y-gold-line), 0 0 24px rgba(182, 161, 255, 0.18);
+
+  /* 字体 */
+  --y-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+  --y-font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --y-fs-xs: 11px;
+  --y-fs-s: 13px;
+  --y-fs-m: 15px;
+  --y-fs-l: 18px;
+  --y-fs-xl: 22px;
+
+  /* 动效 */
+  --y-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --y-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --y-dur-fast: 140ms;
+  --y-dur: 240ms;
+  --y-dur-slow: 420ms;
+
+  /* 间距（4 的倍数） */
+  --y-sp-1: 4px;
+  --y-sp-2: 8px;
+  --y-sp-3: 12px;
+  --y-sp-4: 16px;
+  --y-sp-5: 24px;
+  --y-sp-6: 32px;
+}
+
+/* ---- 基础组件（可选使用） ---- */
+.y-glass {
+  background: var(--y-surface);
+  border: 1px solid var(--y-line);
+  border-radius: var(--y-radius-m);
+  box-shadow: var(--y-shadow-soft);
+  -webkit-backdrop-filter: blur(var(--y-glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--y-glass-blur)) saturate(140%);
+}
+
+.y-btn {
+  appearance: none;
+  border: 1px solid var(--y-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--y-ink);
+  font: 500 var(--y-fs-s) / 1 var(--y-font);
+  height: 32px;
+  padding: 0 var(--y-sp-4);
+  border-radius: var(--y-radius-pill);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--y-dur-fast) var(--y-ease), border-color var(--y-dur-fast) var(--y-ease),
+    transform var(--y-dur-fast) var(--y-ease);
+}
+.y-btn:hover { background: var(--y-surface-hover); border-color: var(--y-accent); }
+.y-btn:active { transform: scale(0.97); }
+.y-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.y-btn--primary { background: var(--y-grad-primary); border-color: transparent; color: var(--y-accent-ink); font-weight: 600; }
+.y-btn--ghost { background: transparent; border-color: transparent; color: var(--y-ink-dim); }
+
+.y-input {
+  background: rgba(8, 9, 26, 0.6);
+  border: 1px solid var(--y-line);
+  border-radius: var(--y-radius-s);
+  color: var(--y-ink);
+  font: var(--y-fs-m) / 1.4 var(--y-font);
+  padding: var(--y-sp-2) var(--y-sp-3);
+  outline: none;
+  transition: border-color var(--y-dur-fast) var(--y-ease), box-shadow var(--y-dur-fast) var(--y-ease);
+}
+.y-input:focus { border-color: var(--y-accent); box-shadow: 0 0 0 3px rgba(182, 161, 255, 0.18); }
+
+.y-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--y-sp-1);
+  height: 24px;
+  padding: 0 var(--y-sp-2);
+  border-radius: var(--y-radius-pill);
+  border: 1px solid var(--y-line);
+  color: var(--y-ink-dim);
+  font-size: var(--y-fs-xs);
+}
+
+.y-scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--y-line-strong) transparent; }
+.y-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.y-scroll::-webkit-scrollbar-thumb { background: var(--y-line-strong); border-radius: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --y-dur-fast: 0ms; --y-dur: 0ms; --y-dur-slow: 0ms; }
+}

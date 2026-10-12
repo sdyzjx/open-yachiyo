@@ -241,6 +241,7 @@ WS4 实现细节（统筹确认）：`dispatch` 参数为对象 `{type, data}`�
 | `plugins.changed` | 插件列表 |
 | `picker.result` | `{ kind, uri?, url?, error? }` |
 | `lifecycle` | `{ state: resume\|pause\|screen_off\|screen_on, mode: normal\|lockscreen }` |
+| `ime` | `{ visible, height_px, height_css }`：软键盘显示/隐藏与高度（Activity 使用 `adjustNothing`，WebView 尺寸不变，前端自行上移输入框）|
 | `back` | `{}` 返回键（Web 决定是否消费；未消费时 Web 调用 `YachiyoNative.log` 无需处理，原生在 300 ms 内未收到 `consumeBack()` 则执行默认行为） |
 
 补充方法：`consumeBack()` —— Web 消费返回键。
