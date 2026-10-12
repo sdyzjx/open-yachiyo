@@ -7,10 +7,17 @@ class RpcInputQueue {
     this.bus = bus;
     this.items = [];
     this.waiters = [];
+    this.submitListeners = new Set();
   }
 
   size() {
     return this.items.length;
+  }
+
+  onSubmit(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this.submitListeners.add(listener);
+    return () => this.submitListeners.delete(listener);
   }
 
   async submit(payload, context = {}) {
@@ -45,6 +52,10 @@ class RpcInputQueue {
       context,
       accepted_at: Date.now()
     };
+
+    for (const listener of this.submitListeners) {
+      try { listener(envelope); } catch { /* queue admission must stay reliable */ }
+    }
 
     if (this.waiters.length > 0) {
       const waiter = this.waiters.shift();

@@ -35,7 +35,7 @@ sequenceDiagram
 
 每次 run 重新读取 Model Catalog、skills.yaml 和设备方法；同一 session 串行，session_id 的 SHA-256 对应固定 pi JSONL。恢复由 SessionManager 完成，旧 UI 历史只在首次建立 pi 会话时导入。系统 memory SOP/bootstrap seeds 随 pi 会话保留，后续不会重复导入 user/assistant seeds。
 
-模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。
+模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。同一手机会话提交新语音时，RuntimeRpcWorker 通过 `AbortSignal` 停止仍在执行的旧 turn，使新语音不需等待旧工具链；音频 turn 默认最长 90 s，其他 turn 默认最长 180 s，超时以 `ABORTED` final 收尾并释放 worker。
 
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 pi 解析；使用 pi 官方 formatter 显式展示技能清单，因为内置 read/bash 禁用后 pi 不会自动展示它们。
 
@@ -87,6 +87,8 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | PI_SESSION_STORE_DIR / sessionDir | data/pi-sessions | 覆盖 pi JSONL 根目录；自定义 sessionStore 根目录时使用其同级 pi-sessions |
 | RUNTIME_MAX_STEP / maxStep | 128 | 正整数，模型轮次数上限 |
 | RUNTIME_TOOL_ERROR_MAX_RETRIES / toolErrorMaxRetries | 5 | 正整数，工具失败预算 |
+| RUNTIME_VOICE_RUN_TIMEOUT_MS | 90000 | 手机音频 turn 的总执行时限；新语音仍会提前打断同 session 旧 turn |
+| RUNTIME_RUN_TIMEOUT_MS | 180000 | 非音频 turn 的总执行时限 |
 | RUNTIME_STREAMING_ENABLED | true | false 时保留 llm.final，由 worker 按原协议发送 final preview |
 | compaction.enabled | true | 工厂布尔参数，交给 pi 自动压缩 |
 | compaction.reserveTokens | 16384 | 工厂非负整数 |
@@ -113,6 +115,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…028，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩及 TTS 首动作优先级。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…029，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级及语音最新输入打断。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

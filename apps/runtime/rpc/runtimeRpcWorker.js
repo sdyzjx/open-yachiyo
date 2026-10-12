@@ -89,11 +89,26 @@ function shouldPublishRuntimeEventToDebugBus(event) {
 }
 
 class RuntimeRpcWorker {
-  constructor({ queue, runner, bus }) {
+  constructor({ queue, runner, bus, voiceRunTimeoutMs = 90000, runTimeoutMs = 180000 }) {
     this.queue = queue;
     this.runner = runner;
     this.bus = bus;
     this.running = false;
+    this.activeRun = null;
+    this.voiceRunTimeoutMs = voiceRunTimeoutMs;
+    this.runTimeoutMs = runTimeoutMs;
+    this.unsubscribeSubmit = this.queue.onSubmit?.((envelope) => this.interruptForNewVoice(envelope)) || (() => {});
+  }
+
+  interruptForNewVoice(envelope) {
+    const request = envelope?.request;
+    const params = request?.params || {};
+    const sessionId = typeof params.session_id === 'string' ? params.session_id : '';
+    if (request?.method !== 'runtime.run' || !params.input_audio || !sessionId) return false;
+    const active = this.activeRun;
+    if (!active || active.sessionId !== sessionId || active.controller.signal.aborted) return false;
+    active.controller.abort({ code: 'SUPERSEDED_BY_VOICE', message: '已停止上一条任务，正在处理新的语音。' });
+    return true;
   }
 
   start() {
@@ -104,6 +119,7 @@ class RuntimeRpcWorker {
 
   stop() {
     this.running = false;
+    this.activeRun?.controller.abort({ code: 'WORKER_STOPPED', message: '运行时已停止。' });
   }
 
   async loop() {
@@ -372,14 +388,24 @@ class RuntimeRpcWorker {
       input_chars: input.length,
       input_images: inputImages.length
     });
-    const result = await this.runner.run({
-      sessionId,
-      input,
-      inputImages,
-      seedMessages,
-      runtimeContext,
-      modelRef,
-      onEvent: (event) => {
+    const controller = new AbortController();
+    const timeoutMs = inputAudio ? this.voiceRunTimeoutMs : this.runTimeoutMs;
+    const timer = setTimeout(() => controller.abort({
+      code: 'RUN_TIMEOUT',
+      message: inputAudio ? '语音任务执行超时，已停止。请重试或换一种说法。' : '任务执行超时，已停止。'
+    }), timeoutMs);
+    this.activeRun = { sessionId, requestId: request?.id ?? null, controller };
+    let result;
+    try {
+      result = await this.runner.run({
+        sessionId,
+        input,
+        inputImages,
+        seedMessages,
+        runtimeContext,
+        modelRef,
+        signal: controller.signal,
+        onEvent: (event) => {
         if (shouldPublishRuntimeEventToDebugBus(event)) {
           this.bus.publish('runtime.event', event);
         }
@@ -400,8 +426,24 @@ class RuntimeRpcWorker {
         if (toolCallEvent) {
           context.sendEvent?.(toRpcEvent('tool_call.event', toolCallEvent));
         }
-      }
-    });
+        }
+      });
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+      result = null;
+    } finally {
+      clearTimeout(timer);
+      if (this.activeRun?.controller === controller) this.activeRun = null;
+    }
+    if (controller.signal.aborted) {
+      const reason = controller.signal.reason || {};
+      result = {
+        output: reason.message || '任务已停止。',
+        traceId: result?.traceId || `aborted-${uuidv4()}`,
+        state: 'ABORTED',
+        metrics: { ...(result?.metrics || {}), aborted: true, abort_code: reason.code || 'ABORTED' }
+      };
+    }
 
     const payload = {
       session_id: sessionId,

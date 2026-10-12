@@ -17,6 +17,7 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
   fs.mkdirSync(directory, { recursive: true });
   const streams = new Map();
   const busy = new Set();
+  const processingRealtime = new Map();
   const rejected = new Map();
   let stopped = false;
   const rememberRejected = (device, streamId) => {
@@ -49,7 +50,15 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
       if (!/^[\w-]{1,128}$/.test(data.stream_id || '')) throw fault(-32602, 'Invalid stream id');
       if (topic === 'audio.input.start') {
         forgetRejected(device, data.stream_id);
-        if (busy.has(device) || streams.has(device)) throw fault(-32600, 'Audio stream already active');
+        if (streams.has(device)) throw fault(-32600, 'Audio stream already active');
+        const previousRealtime = processingRealtime.get(device);
+        if (busy.has(device) && !previousRealtime) throw fault(-32600, 'Audio stream already active');
+        if (previousRealtime) {
+          previousRealtime.interrupted = true;
+          processingRealtime.delete(device);
+          busy.delete(device);
+          previousRealtime.realtime.cancel();
+        }
         if (data.format !== 'pcm_s16le' || data.sample_rate !== 16000 || data.channels !== 1 || !['push_to_talk', 'continuous'].includes(data.mode) || !['auto', 'zh', 'en'].includes(data.lang || 'auto')) throw fault(-32602, 'Expected 16 kHz mono PCM s16le');
         if (!['transcribe', 'direct', 'realtime'].includes(data.audio_mode || 'transcribe')) throw fault(-32602, 'Invalid audio_mode');
         if ((data.audio_mode === 'direct' || data.audio_mode === 'realtime') && (typeof data.model_ref !== 'string' || !data.model_ref)) throw fault(-32602, 'model_ref required for audio pass-through');
@@ -88,8 +97,19 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
           }
           if (!stream.bytes) throw fault(-32602, 'Empty recording');
           if (stream.audio_mode === 'realtime') {
+            const processing = { realtime: stream.realtime, stream_id: stream.stream_id, interrupted: false };
+            processingRealtime.set(device, processing);
             busy.add(device);
-            try { await stream.realtime.finish(); } finally { busy.delete(device); }
+            try {
+              await stream.realtime.finish();
+            } catch (error) {
+              if (!processing.interrupted) throw error;
+            } finally {
+              if (processingRealtime.get(device) === processing) {
+                processingRealtime.delete(device);
+                busy.delete(device);
+              }
+            }
             return;
           }
           const wav = pcmToWav(Buffer.concat(stream.chunks));
@@ -124,9 +144,19 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
     }
   };
   const listener = (event) => { void handle(event); };
-  const offline = (device) => { clearCurrent(device)?.realtime?.cancel(); forgetRejected(device); };
+  const stopDevice = (device) => {
+    clearCurrent(device)?.realtime?.cancel();
+    const processing = processingRealtime.get(device);
+    if (processing) {
+      processing.interrupted = true;
+      processing.realtime.cancel();
+      processingRealtime.delete(device);
+      busy.delete(device);
+    }
+  };
+  const offline = (device) => { stopDevice(device); forgetRejected(device); };
   hub.on('publication', listener); hub.on('offline', offline);
-  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clearCurrent(device)?.realtime?.cancel(); rejected.clear(); });
-  return { handle, streams };
+  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of new Set([...streams.keys(), ...processingRealtime.keys()])) stopDevice(device); rejected.clear(); });
+  return { handle, streams, processingRealtime };
 }
 module.exports = { pcmToWav, attachAudioInput };

@@ -324,6 +324,72 @@ test('RuntimeRpcWorker forwards tool_call runtime events as tool_call.event', as
   worker.stop();
 });
 
+test('a newer voice request interrupts the active turn for the same session', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  let firstStarted;
+  const started = new Promise((resolve) => { firstStarted = resolve; });
+  const seen = [];
+  const runner = {
+    async run({ input, signal }) {
+      seen.push(input);
+      if (input !== 'first voice') return { output: 'second reply', traceId: 'second-trace', state: 'DONE' };
+      firstStarted();
+      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      return { output: 'late first reply', traceId: 'first-trace', state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus, voiceRunTimeoutMs: 1000 });
+  worker.start();
+  const firstEvents = [];
+  const secondEvents = [];
+  const audio = { audio_ref: '/tmp/voice.wav', format: 'wav', transcribed_text: 'voice' };
+
+  await queue.submit({ jsonrpc: '2.0', id: 'voice-first', method: 'runtime.run', params: {
+    session_id: 'same-phone', input: 'first voice', input_audio: audio
+  } }, { send: () => {}, sendEvent: (event) => firstEvents.push(event) });
+  await started;
+  await queue.submit({ jsonrpc: '2.0', id: 'voice-second', method: 'runtime.run', params: {
+    session_id: 'same-phone', input: 'second voice', input_audio: audio
+  } }, { send: () => {}, sendEvent: (event) => secondEvents.push(event) });
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const interrupted = firstEvents.find((event) => event.method === 'runtime.final');
+  const completed = secondEvents.find((event) => event.method === 'runtime.final');
+  assert.equal(interrupted.params.state, 'ABORTED');
+  assert.equal(interrupted.params.output, '已停止上一条任务，正在处理新的语音。');
+  assert.equal(interrupted.params.metrics.abort_code, 'SUPERSEDED_BY_VOICE');
+  assert.equal(completed.params.output, 'second reply');
+  assert.deepEqual(seen, ['first voice', 'second voice']);
+  worker.stop();
+});
+
+test('a voice turn has a bounded execution time and releases the worker', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  const runner = {
+    async run({ signal }) {
+      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      return { output: 'late', traceId: 'timeout-trace', state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus, voiceRunTimeoutMs: 20 });
+  worker.start();
+  const events = [];
+  await queue.submit({ jsonrpc: '2.0', id: 'voice-timeout', method: 'runtime.run', params: {
+    session_id: 'timeout-phone', input: 'slow voice',
+    input_audio: { audio_ref: '/tmp/voice.wav', format: 'wav', transcribed_text: 'slow voice' }
+  } }, { send: () => {}, sendEvent: (event) => events.push(event) });
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const final = events.find((event) => event.method === 'runtime.final');
+  assert.equal(final.params.state, 'ABORTED');
+  assert.equal(final.params.metrics.abort_code, 'RUN_TIMEOUT');
+  assert.match(final.params.output, /语音任务执行超时/);
+  assert.equal(worker.activeRun, null);
+  worker.stop();
+});
+
 test('RuntimeRpcWorker accepts image-only input_images and forwards to runner', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();

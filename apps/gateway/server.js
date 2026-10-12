@@ -354,7 +354,13 @@ const dispatcher = new ToolCallDispatcher({
 });
 dispatcher.start();
 
-const worker = new RuntimeRpcWorker({ queue, runner, bus });
+const worker = new RuntimeRpcWorker({
+  queue,
+  runner,
+  bus,
+  voiceRunTimeoutMs: parsePositiveIntEnv('RUNTIME_VOICE_RUN_TIMEOUT_MS', 90000),
+  runTimeoutMs: parsePositiveIntEnv('RUNTIME_RUN_TIMEOUT_MS', 180000)
+});
 worker.start();
 
 app.get('/api/session-images/:sessionId/:fileName', async (req, res) => {

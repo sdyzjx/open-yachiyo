@@ -113,6 +113,56 @@ test('TC-VOC-025 Realtime audio streams chunks and does not enqueue a second age
   assert.equal(runs, 0);
 });
 
+test('a new recording interrupts a realtime response that is still running tools', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-interrupt-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const published = [];
+  const pending = [];
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish(topic, data) { published.push({ topic, data }); },
+    async runInput() {}
+  });
+  const audio = attachAudioInput({
+    hub, directory,
+    omniAudio: { startRealtime() {
+      let resolveDone;
+      let rejectDone;
+      const done = new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject; });
+      done.catch(() => {});
+      const state = { cancelled: 0, resolveDone };
+      pending.push(state);
+      return {
+        append() {},
+        finish: () => done,
+        cancel() { state.cancelled += 1; rejectDone(new Error('cancelled by newer voice')); }
+      };
+    } }
+  });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 2).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, {
+    ...startData('old-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
+  }));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'old-rt', seq: 0, data_b64: pcm }));
+  const oldEnd = audio.handle(audioEvent('audio.input.end', device, { stream_id: 'old-rt', reason: 'released' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(audio.processingRealtime.get(device)?.stream_id, 'old-rt');
+
+  await audio.handle(audioEvent('audio.input.start', device, {
+    ...startData('new-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
+  }));
+  await oldEnd;
+  assert.equal(pending[0].cancelled, 1);
+  assert.equal(audio.streams.get(device)?.stream_id, 'new-rt');
+  assert.equal(published.some(({ data }) => data.error?.message === 'Audio stream already active'), false);
+  assert.equal(published.some(({ data }) => data.error?.message === 'cancelled by newer voice'), false);
+
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'new-rt', reason: 'cancel' }));
+});
+
 test('TC-VOC-026 Realtime start preserves an actionable configuration error', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-config-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
