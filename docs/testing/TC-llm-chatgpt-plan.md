@@ -9,7 +9,7 @@
 | ID | 标题 | 类型 | 前置条件 | 步骤 | 期望结果 | 自动化 |
 |---|---|---|---|---|---|---|
 | TC-LLM-029 | 独立 host/profile 私密存储 | unit | 临时 Yachiyo 数据目录 | 生成 host，保存 profile | host 稳定；目录 `0700`、文件 `0600`；profile 可独立读取 | `test/runtime/auth/chatgpt.test.js`「credential store persists…」 |
-| TC-LLM-030 | OIDC ID token 完整验证 | unit | 临时 RSA key/JWKS | 验证有效 token，再改 audience/nonce/azp | 有效 token 通过；audience/nonce 错误被拒绝；多 audience 时 azp 必须匹配；同时校验签名、issuer、expiry、iat、sub | 同文件「ID token verification…」 |
+| TC-LLM-030 | OIDC ID token 完整验证 | unit | 临时 RSA key/JWKS | 验证有效 token，再改 audience/nonce/azp | 有效 token 通过；audience/nonce 错误被拒绝；单 audience 可不带 azp，若带则必须匹配；多 audience 必须带匹配的 azp；同时校验签名、issuer、expiry、iat、sub | 同文件「ID token verification…」 |
 | TC-LLM-031 | 动态注册 callback、模型过滤与 URL 脱敏 | integration | mock token/models endpoint；已保存 profile | start → callback → exchange → status；复登 start | PKCE/host/resource 参数正确；仅保存 visible model；status/start URL 不含 access/refresh/ID token，复登只使用 login_hint | 同文件「OAuth callback validates…」「returning profile authorization URL…」 |
 | TC-LLM-032 | state 隔离、并发 start、精确取消与超时 | integration | 活跃 attempt | 并发 start；模拟 listen 失败；发错误 state；错误/正确 id 取消；启动短 TTL attempt | 并发仅一个成功；listen 失败释放 reservation；错误 state 不消费 attempt；取消/超时 abort 并关闭 listener | 同文件「concurrent starts reserve…」「state mismatch stays isolated…」「expired attempts abort…」 |
 | TC-LLM-033 | refresh 串行、轮换、身份固定与有限 401 恢复 | integration | 已过期/有效 profile、mock refresh/models | 并发取 token；refresh 返回未验证 ID token；模型请求依次返回 401/429 | 并发只 refresh 一次；旋转 access/refresh token 原子保存且忽略新 ID token；401 只重试一次，429 不重试；错误无 Authorization | 同文件「access refresh is serialized…」「token failures redact…」 |

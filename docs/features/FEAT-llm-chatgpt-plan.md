@@ -12,7 +12,7 @@ Yachiyo 继续使用 pi AgentSession、工具循环和本地会话，同时允�
 
 ## 2. 行为说明
 
-电脑端发起授权后，gateway 先同步预留唯一 attempt，再在 `127.0.0.1` 随机端口启动短期 callback listener，为本次 attempt 生成 state、OIDC nonce 与 PKCE。首次连接使用动态 client 注册；已有 profile 使用已签发 client ID 与非敏感 `login_hint` 复登，授权 URL 不携带已保存的 ID token。回调经过 state、client ID 与 ID token 验证后才原子保存凭据，并刷新所选账户的模型目录。多 audience ID token 还必须满足 `azp` 等于当前 client ID。
+电脑端发起授权后，gateway 先同步预留唯一 attempt，再在 `127.0.0.1` 随机端口启动短期 callback listener，为本次 attempt 生成 state、OIDC nonce 与 PKCE。首次连接使用动态 client 注册；已有 profile 使用已签发 client ID 与非敏感 `login_hint` 复登，授权 URL 不携带已保存的 ID token。回调经过 state、client ID 与 ID token 验证后才原子保存凭据，并刷新所选账户的模型目录。ID token 只要带有 `azp`，其值就必须等于当前 client ID；多 audience 时 `azp` 必须存在。
 
 ```mermaid
 sequenceDiagram

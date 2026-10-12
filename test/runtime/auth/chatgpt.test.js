@@ -77,11 +77,24 @@ test('TC-LLM-030 ID token verification checks signature, issuer, audience, expir
     clientId: 'oaiapp_test', nonce: 'wrong', now: () => now,
     fetchImpl: async () => jsonResponse({ keys: [jwk] })
   }), /nonce/);
+  const singleAudienceWithAuthorizedParty = { ...payloadValue, azp: 'oaiapp_test' };
+  assert.equal((await verifyIdToken(sign(singleAudienceWithAuthorizedParty), {
+    clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
+    fetchImpl: async () => jsonResponse({ keys: [jwk] })
+  })).sub, 'subject-1');
+  await assert.rejects(verifyIdToken(sign({ ...singleAudienceWithAuthorizedParty, azp: 'another-client' }), {
+    clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
+    fetchImpl: async () => jsonResponse({ keys: [jwk] })
+  }), /authorized party/);
   const multipleAudiences = { ...payloadValue, aud: ['oaiapp_test', 'another-client'], azp: 'oaiapp_test' };
   assert.equal((await verifyIdToken(sign(multipleAudiences), {
     clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
     fetchImpl: async () => jsonResponse({ keys: [jwk] })
   })).sub, 'subject-1');
+  await assert.rejects(verifyIdToken(sign({ ...multipleAudiences, azp: undefined }), {
+    clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
+    fetchImpl: async () => jsonResponse({ keys: [jwk] })
+  }), /authorized party/);
   await assert.rejects(verifyIdToken(sign({ ...multipleAudiences, azp: 'another-client' }), {
     clientId: 'oaiapp_test', nonce: 'nonce-1', now: () => now,
     fetchImpl: async () => jsonResponse({ keys: [jwk] })
