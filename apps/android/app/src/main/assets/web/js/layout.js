@@ -148,6 +148,19 @@
     return lowRam || (totalMemMb > 0 && totalMemMb < 3000) ? 2048 : 4096;
   }
 
+  // Rendering profile for Android WebView. Texture size controls memory and Cubism Core runs in a worker.
+  function resolvePerformanceProfile({ configured = 'auto', lowRam = false, totalMemMb = 0, dpr = 1 } = {}) {
+    const constrained = lowRam || (totalMemMb > 0 && totalMemMb <= 6144);
+    const quality = configured === '4096' || configured === '2048'
+      ? Number(configured)
+      : (constrained ? 2048 : 4096);
+    return {
+      quality,
+      resolution: Math.min(Math.max(Number(dpr) || 1, 1), constrained ? 1.25 : 1.5),
+      constrained
+    };
+  }
+
   function isLandscape(w, h) { return w > h; }
 
   // Which camera focus applies to the current orientation and config.
@@ -158,6 +171,7 @@
 
   return {
     clamp, stepSpring, createSpring, computeFrame, placeModel, panelGeometry, panelTransforms,
-    rubberband, SNAP, resolvePanelSnap, resolveDrawerSnap, createGestureTracker, resolveQuality, isLandscape, resolveFocus
+    rubberband, SNAP, resolvePanelSnap, resolveDrawerSnap, createGestureTracker, resolveQuality,
+    resolvePerformanceProfile, isLandscape, resolveFocus
   };
 });

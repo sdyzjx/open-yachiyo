@@ -1,0 +1,166 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const Bridge = require('../../apps/android/app/src/main/assets/web/js/live2dCoreBridge.js');
+
+class FakeWorker {
+  constructor(url) { this.url = url; this.sent = []; this.terminated = false; }
+  postMessage(data, transfer = []) { this.sent.push({ data, transfer }); }
+  terminate() { this.terminated = true; }
+  emit(data) { this.onmessage({ data }); }
+}
+
+test('TC-AWB-027 bridge falls back until a worker frame then applies drawable state asynchronously', () => {
+  let instance;
+  class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
+  let synchronousUpdates = 0;
+  let resets = 0;
+  let time = 0;
+  const raw = {
+    parameters: { values: new Float32Array([1, 2]) },
+    parts: { opacities: new Float32Array([0.5]) },
+    drawables: {
+      vertexPositions: [new Float32Array([0, 0]), new Float32Array([1, 1, 2, 2])],
+      opacities: new Float32Array([1, 1]),
+      renderOrders: new Int32Array([0, 1]),
+      dynamicFlags: new Uint8Array([1, 1]),
+      resetDynamicFlags() { resets += 1; }
+    }
+  };
+  const bridge = Bridge.create({
+    model: { getModel: () => raw, update: () => { synchronousUpdates += 1; } },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.model3.json', WorkerClass: Worker,
+    now: () => time
+  });
+  assert.deepEqual(instance.sent[0].data, { type: 'init', coreUrl: '/core.js', modelUrl: '/model.model3.json' });
+  instance.emit({ type: 'ready', drawables: 2, vertexValues: 6 });
+  bridge.update();
+  assert.equal(synchronousUpdates, 1);
+  assert.equal(instance.sent[1].data.type, 'update');
+  assert.deepEqual(Array.from(instance.sent[1].data.parameters), [1, 2]);
+
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([3, 4, 5, 6, 7, 8]),
+    opacities: new Float32Array([0.8, 0.9]), renderOrders: new Int32Array([1, 0]),
+    dynamicFlags: new Uint8Array([2, 3]), workerMs: 12.5
+  });
+  bridge.update();
+  assert.equal(synchronousUpdates, 1);
+  assert.equal(resets, 0);
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [3, 4]);
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[1]), [5, 6, 7, 8]);
+  assert.ok(Math.abs(raw.drawables.opacities[0] - 0.8) < 1e-6);
+  assert.ok(Math.abs(raw.drawables.opacities[1] - 0.9) < 1e-6);
+  assert.equal(bridge.state.active, true);
+  assert.equal(bridge.state.lastWorkerMs, 12.5);
+
+  time = 60;
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([13, 14, 15, 16, 17, 18]),
+    opacities: new Float32Array([0.7, 0.8]), renderOrders: new Int32Array([1, 0]),
+    dynamicFlags: new Uint8Array([2, 3]), workerMs: 11
+  });
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [3, 4], 'worker arrival does not jump the mesh');
+  time = 90;
+  bridge.update();
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [8, 9], 'display frame interpolates a new mesh');
+  assert.ok(Math.abs(raw.drawables.opacities[0] - 0.75) < 1e-6, 'opacity follows the vertex interpolation');
+  assert.equal(raw.drawables.dynamicFlags[0] & 32, 32, 'interpolated vertices keep clipping masks dirty');
+  assert.equal(bridge.state.interpolationProgress, 0.5);
+  assert.equal(instance.sent.at(-1).transfer.length, 6, 'previous drawable payload is returned to the worker pool');
+  bridge.destroy();
+  assert.equal(instance.sent.at(-1).data.type, 'destroy');
+  instance.emit({ type: 'destroyed' });
+  assert.equal(instance.terminated, true);
+});
+
+test('TC-AWB-028 worker evaluates Cubism and returns transferable drawable arrays', async () => {
+  const messages = [];
+  const requests = [];
+  let clock = 0;
+  let reservedMemory = 0;
+  let modelReleased = 0;
+  let mocReleased = 0;
+  const evaluationOrder = [];
+  const raw = {
+    parameters: { values: new Float32Array([0, 0]) },
+    parts: { opacities: new Float32Array([1]) },
+    drawables: {
+      count: 2,
+      vertexPositions: [new Float32Array([0, 1]), new Float32Array([2, 3, 4, 5])],
+      opacities: new Float32Array([1, 0.5]), renderOrders: new Int32Array([0, 1]),
+      dynamicFlags: new Uint8Array([1, 2]),
+      resetDynamicFlags() { evaluationOrder.push('reset'); this.dynamicFlags.fill(0); }
+    },
+    update() {
+      evaluationOrder.push('update');
+      this.drawables.vertexPositions[0][0] = this.parameters.values[0] + 10;
+      this.drawables.dynamicFlags[0] = 7;
+    },
+    release() { modelReleased += 1; }
+  };
+  const context = {
+    Float32Array, Int32Array, Uint8Array, Promise, setTimeout, clearTimeout,
+    performance: { now: () => { clock += 1; return clock; } },
+    URL,
+    location: { href: 'https://appassets.androidplatform.net/web/js/live2dCoreWorker.js' },
+    fetch: async (url) => {
+      requests.push(String(url));
+      if (String(url).endsWith('.json')) return { ok: true, json: async () => ({ FileReferences: { Moc: 'model.moc3' } }) };
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+    },
+    close() {},
+    postMessage(data, transfer) { messages.push({ data, transfer }); },
+    importScripts() {
+      context.Live2DCubismCore = {
+        Version: { csmGetVersion: () => 1 },
+        Memory: { initializeAmountOfMemory: (bytes) => { reservedMemory = bytes; } },
+        Moc: { fromArrayBuffer: () => ({ _release: () => { mocReleased += 1; } }) },
+        Model: { fromMoc: () => raw }
+      };
+    }
+  };
+  context.self = context;
+  vm.createContext(context);
+  const file = path.join(__dirname, '../../apps/android/app/src/main/assets/web/js/live2dCoreWorker.js');
+  vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
+  context.onmessage({ data: { type: 'init', coreUrl: '/core.js', modelUrl: '/generated/model/2048/model.model3.json' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(messages[0].data.type, 'ready');
+  assert.equal(messages[0].data.vertexValues, 6);
+  assert.equal(reservedMemory, 64 * 1024 * 1024);
+  assert.deepEqual(requests, [
+    'https://appassets.androidplatform.net/generated/model/2048/model.model3.json',
+    'https://appassets.androidplatform.net/generated/model/2048/model.moc3'
+  ]);
+
+  context.onmessage({ data: { type: 'update', parameters: new Float32Array([7, 8]), parts: new Float32Array([0.7]) } });
+  const frame = messages[1];
+  assert.equal(frame.data.type, 'frame');
+  assert.deepEqual(Array.from(frame.data.vertices), [17, 1, 2, 3, 4, 5]);
+  assert.deepEqual(Array.from(frame.data.opacities), [1, 0.5]);
+  assert.deepEqual(Array.from(frame.data.dynamicFlags), [7, 0]);
+  assert.deepEqual(evaluationOrder, ['reset', 'update']);
+  assert.equal(frame.transfer.length, 6);
+  assert.equal(frame.data.parameterBuffer[0], 7);
+  const recycledVertices = frame.data.vertices;
+  context.onmessage({
+    data: {
+      type: 'update', parameters: new Float32Array([9, 8]), parts: new Float32Array([0.6]),
+      recycle: {
+        vertices: frame.data.vertices,
+        opacities: frame.data.opacities,
+        renderOrders: frame.data.renderOrders,
+        dynamicFlags: frame.data.dynamicFlags
+      }
+    }
+  });
+  assert.equal(messages[2].data.vertices, recycledVertices);
+  context.onmessage({ data: { type: 'destroy' } });
+  assert.equal(modelReleased, 1);
+  assert.equal(mocReleased, 1);
+});

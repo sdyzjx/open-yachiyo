@@ -6,10 +6,8 @@
 (function (global) {
   'use strict';
 
-  const Layout = global.YachiyoLayout;
-
   class Stage {
-    constructor({ container, log = () => {}, onContextLost = () => {} }) {
+    constructor({ container, log = () => {}, onContextLost = () => {}, performanceProfile = {} }) {
       this.container = container;
       this.log = log;
       this.onContextLost = onContextLost;
@@ -25,6 +23,10 @@
       this.mouth = { active: false, open: 0, form: 0 };
       this.contextLost = false;
       this.hookDetach = null;
+      this.performanceProfile = performanceProfile;
+      this.coreBridge = null;
+      this.rendererOptimization = null;
+      this.metrics = { rafFrames: 0, drawFrames: 0, frameIntervals: [], drawSamples: [], lastFrameAt: 0, workerFrameBase: 0 };
     }
 
     async init() {
@@ -34,7 +36,7 @@
       this.container.appendChild(canvas);
       this.canvas = canvas;
       const { width, height } = this.size();
-      this.resolution = Math.min(global.devicePixelRatio || 1, 2);
+      this.resolution = this.performanceProfile.resolution || Math.min(global.devicePixelRatio || 1, 1.5);
       this.app = new PIXI.Application({
         view: canvas, width, height, backgroundAlpha: 0, antialias: true, autoDensity: true,
         resolution: this.resolution, autoStart: false, powerPreference: 'high-performance', preserveDrawingBuffer: false
@@ -70,7 +72,8 @@
       this.modelName = name || '';
       this.content = this.measureContent();
       this.bindHook();
-      this.wrapUpdate();
+      this.optimizeRenderer();
+      this.startCoreWorker(url);
       this.log('info', `model loaded in ${Math.round(performance.now() - t0)} ms @${quality}, content ${JSON.stringify(this.content)}`);
       return { loadMs: performance.now() - t0, content: this.content };
     }
@@ -105,18 +108,27 @@
       this.model.visible = this.visible;
     }
 
-    // Cubism Core's mesh update is CPU-heavy on mid-range phones (~21 ms on MI 6). While the UI is animating
-    // (drag, camera, transfer) we skip it on most frames and only redraw the cached mesh at the new transform.
-    wrapUpdate() {
-      const im = this.model.internalModel;
-      const orig = im.update.bind(im);
-      this.skipped = 0;
-      this.skipUpdate = false;
-      im.update = (dt, now) => {
-        if (this.skipUpdate) { this.skipped += dt; return; }
-        orig(dt + this.skipped, now);
-        this.skipped = 0;
-      };
+    startCoreWorker(modelUrl) {
+      const factory = global.YachiyoLive2DCoreBridge;
+      if (!factory || typeof global.Worker !== 'function') return;
+      const coreModel = this.model.internalModel.coreModel;
+      const bridge = factory.create({
+        model: coreModel,
+        WorkerClass: global.Worker,
+        workerUrl: '/web/js/live2dCoreWorker.js',
+        coreUrl: '/generated/lib/live2dcubismcore.min.js',
+        modelUrl,
+        log: this.log
+      });
+      if (!bridge) return;
+      this.coreBridge = bridge;
+      coreModel.update = bridge.update;
+    }
+
+    optimizeRenderer() {
+      const optimizer = global.YachiyoLive2DRendererOptimizer;
+      if (!optimizer) return;
+      this.rendererOptimization = optimizer.install(this.model.internalModel.renderer, this.model.internalModel.coreModel);
     }
 
     bindHook() {
@@ -163,14 +175,53 @@
     }
 
     // pose: { x, y, scale } in CSS px; one frame step.
-    render(dtMs, pose, fullUpdate = true) {
+    render(dtMs, pose) {
       if (!this.app || !this.model || this.contextLost) return;
-      this.skipUpdate = !fullUpdate;
       if (pose) this.pose = pose;
+      const frameAt = performance.now();
+      this.metrics.rafFrames += 1;
+      if (this.metrics.lastFrameAt) this.recordMetric(this.metrics.frameIntervals, frameAt - this.metrics.lastFrameAt);
+      this.metrics.lastFrameAt = frameAt;
+      if (this.visible) this.model.update(dtMs);
+
       this.model.position.set(this.pose.x, this.pose.y);
       this.model.scale.set(this.pose.scale);
-      if (this.visible) this.model.update(dtMs);
+      const drawAt = performance.now();
       this.app.renderer.render(this.app.stage);
+      this.recordMetric(this.metrics.drawSamples, performance.now() - drawAt);
+      this.metrics.drawFrames += 1;
+    }
+
+    recordMetric(samples, value) {
+      samples.push(value);
+      if (samples.length > 600) samples.shift();
+    }
+
+    beginPerformanceSample() {
+      this.metrics.rafFrames = 0;
+      this.metrics.drawFrames = 0;
+      this.metrics.frameIntervals.length = 0;
+      this.metrics.drawSamples.length = 0;
+      this.metrics.lastFrameAt = 0;
+      this.metrics.workerFrameBase = this.coreBridge ? this.coreBridge.state.frames : 0;
+      if (this.coreBridge) this.coreBridge.state.workerSamples.length = 0;
+      if (this.rendererOptimization) this.rendererOptimization.resetStats();
+    }
+
+    performanceSnapshot() {
+      const worker = this.coreBridge && this.coreBridge.state;
+      return {
+        rafFrames: this.metrics.rafFrames,
+        drawFrames: this.metrics.drawFrames,
+        frameIntervals: this.metrics.frameIntervals.slice(),
+        drawSamples: this.metrics.drawSamples.slice(),
+        workerFrames: worker ? worker.frames - this.metrics.workerFrameBase : 0,
+        workerSamples: worker ? worker.workerSamples.slice() : [],
+        workerReady: !!(worker && worker.ready),
+        workerActive: !!(worker && worker.active),
+        workerFailed: !!(worker && worker.failed),
+        gl: this.rendererOptimization ? { ...this.rendererOptimization.stats } : null
+      };
     }
 
     // Model bounds in viewport CSS px (for hit testing / transfer sizing).
@@ -201,9 +252,13 @@
 
     destroy() {
       try { if (this.hookDetach) this.hookDetach(); } catch { /* ignore */ }
+      try { if (this.coreBridge) this.coreBridge.destroy(); } catch { /* ignore */ }
+      try { if (this.rendererOptimization) this.rendererOptimization.detach(); } catch { /* ignore */ }
       try { if (this.app) this.app.destroy(false, { children: true, texture: true, baseTexture: true }); } catch (err) { this.log('warn', `destroy: ${err && err.message}`); }
       if (this.canvas && this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
-      this.app = null; this.model = null; this.canvas = null; this.contextLost = false; this.overlays.clear();
+      this.app = null; this.model = null; this.canvas = null; this.contextLost = false;
+      this.coreBridge = null; this.rendererOptimization = null;
+      this.overlays.clear();
     }
   }
 

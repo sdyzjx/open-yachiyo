@@ -43,7 +43,26 @@
   const stageShown = () => !!stage.model && (S.parked || !!S.anim || (isHost() && !S.exited));
 
   /* ------------------------------------------------------------------ stage */
-  const stage = new window.YachiyoStage({ container: el.stage, log, onContextLost: () => { rebuildStage('contextlost'); } });
+  function performanceProfile() {
+    return L.resolvePerformanceProfile({
+      configured: (cfg.appearance || {}).model_quality,
+      lowRam: !!info.low_ram,
+      totalMemMb: info.total_mem_mb,
+      dpr: window.devicePixelRatio || 1
+    });
+  }
+
+  const stage = new window.YachiyoStage({
+    container: el.stage,
+    log,
+    performanceProfile: performanceProfile(),
+    onContextLost: () => { rebuildStage('contextlost'); }
+  });
+  // Read-only sampling hook used by scripts/android-profile-live2d.js over an explicitly forwarded CDP port.
+  window.__yachiyoPerf = {
+    begin: () => stage.beginPerformanceSample(),
+    snapshot: () => stage.performanceSnapshot()
+  };
   const lipsync = new window.YachiyoLipsync.LipsyncDriver({ stage });
   let actions = null;
   let taskCanvas = null;
@@ -56,7 +75,7 @@
   }
 
   function quality() {
-    return L.resolveQuality({ configured: (cfg.appearance || {}).model_quality, lowRam: !!info.low_ram, totalMemMb: info.total_mem_mb });
+    return performanceProfile().quality;
   }
 
   async function ensureModel() {
@@ -169,10 +188,7 @@
           y: cam.y.value + pvy * sc * (1 - mul) + ty
         };
         lipsync.step();
-        const interacting = !!dragging || !!S.anim || [cam.scale, cam.x, cam.y, panel, drawer].some((s) => !s.settled());
-        const full = !interacting || now - lastFullUpdate >= 90;
-        if (full) lastFullUpdate = now;
-        stage.render(dt * 1000, pose, full);
+        stage.render(dt * 1000, pose);
         busy = true;
       } else if (S.firstFrame === false) {
         lipsync.step();
@@ -182,7 +198,6 @@
     return busy;
   }
 
-  let lastFullUpdate = 0;
   let lastPanelKey = '';
   function applyPanels(tr, p) {
     const key = `${tr.appsX.toFixed(1)}|${tr.widgetsX.toFixed(1)}|${S.landscape}`;
@@ -539,6 +554,7 @@
   B.on('config.changed', (c) => {
     const q = quality();
     cfg = c;
+    stage.performanceProfile = performanceProfile();
     applyConfig();
     if (stage.model && quality() !== q) rebuildStage('quality-changed');
     retargetCamera(false);

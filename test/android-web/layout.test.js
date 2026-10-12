@@ -103,3 +103,18 @@ test('quality and focus resolution', () => {
   assert.equal(L.resolveFocus({ landscape: true, config: { landscape_focus: 'full_body' } }), 'full');
   assert.equal(L.resolveFocus({ landscape: false, config: { portrait_full_body: true } }), 'full');
 });
+
+test('performance profile selects a bounded mobile LOD without overriding explicit texture quality', () => {
+  assert.deepEqual(
+    L.resolvePerformanceProfile({ configured: 'auto', totalMemMb: 5632, dpr: 3 }),
+    { quality: 2048, resolution: 1.25, constrained: true }
+  );
+  assert.deepEqual(
+    L.resolvePerformanceProfile({ configured: '4096', totalMemMb: 5632, dpr: 3 }),
+    { quality: 4096, resolution: 1.25, constrained: true }
+  );
+  assert.deepEqual(
+    L.resolvePerformanceProfile({ configured: 'auto', totalMemMb: 8192, dpr: 2 }),
+    { quality: 4096, resolution: 1.5, constrained: false }
+  );
+});

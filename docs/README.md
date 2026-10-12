@@ -19,6 +19,7 @@
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
 - [Android 手势布局与取景](features/FEAT-android-gesture-layout.md)
 - [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
+- [Android Live2D 性能管线](features/FEAT-android-live2d-performance.md)
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 - [Android 统一配置界面](features/FEAT-android-settings.md)
@@ -79,6 +80,7 @@
 
 实验记录（EXP-*）。
 
+- [小米 6 Live2D 60 FPS 优化实验](experiments/EXP-20261012-android-live2d-performance.md)
 - [Android 端 Live2D WebView 渲染可行性实验](experiments/EXP-20261012-android-live2d-webview-feasibility.md)
 
 ## 调研 Research

@@ -253,9 +253,9 @@
 | 字段 | 内容 |
 |---|---|
 | 类型 | manual-device |
-| 前置条件 | 小米 6，4096 纹理，resolution=2 |
-| 步骤 | 静止与交互动画期间用 rAF 计数或 CDP 测帧率 |
-| 期望结果 | 静止 ≥ 25 FPS；拖动/移交动画期间模型更新降频、交互帧率明显更高；结果记录在 EXP-20261012 第 6 节 |
+| 前置条件 | 小米 6，包含 Worker Core 性能实现的集成 APK |
+| 步骤 | 建立临时 CDP forward；运行 `node scripts/android-profile-live2d.js --port <port> --duration 5`，再加 `--swipe` 运行一次；播放 motion/语音并观察呼吸、头发、衣摆与口型 |
+| 期望结果 | rAF 与真实 WebGL draw 稳态目标均 ≥ 60 FPS；Worker frame 持续增长；人物逐帧形变、没有冻结或抽动；结果如实记录在 `EXP-20261012-android-live2d-performance.md` |
 | 自动化 | manual |
 
 ## TC-AWB-026 离线 mockNative 运行
@@ -268,3 +268,32 @@
 | 期望结果 | 无原生也能完整运行：配置存 localStorage、示例插件可见、debug 面板可模拟移交/语音/聊天 |
 | 自动化 | manual |
 
+## TC-AWB-027 Cubism Worker 主线程桥接
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | fake Worker、typed-array drawable 模型 |
+| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；再次 update；销毁 |
+| 期望结果 | ready 前同步回退；首帧后不再同步 Core；worker 到达不跳网格；显示帧生成中间顶点与透明度并保持 mask vertex-changed；上一组 typed array 返回 Worker 池；Worker 释放 |
+| 自动化 | `test/android-web/live2dPerformance.test.js`（TC-AWB-027） |
+
+## TC-AWB-028 Cubism Worker 求值协议
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | VM 内 fake Cubism Core、模型与 fetch |
+| 步骤 | init 加载 moc；发送参数与部件透明度；执行 Core update |
+| 期望结果 | ready 报告形状；预留 64 MiB heap；frame 返回完整 transferable typed arrays、参数回收 buffer 与耗时；下一帧复用回收数组；destroy 释放 model 与 moc |
+| 自动化 | `test/android-web/live2dPerformance.test.js`（TC-AWB-028） |
+
+## TC-AWB-029 Cubism packed renderer
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | fake WebGL context、两个 drawable、原 renderer draw 顺序 |
+| 步骤 | 安装 optimizer；绘制两帧；检查 attrib/index offset、上传次数和 program；触发 draw 异常；detach |
+| 期望结果 | UV/index 只上传一次、position 每模型帧一次；draw 顺序不变；透明非 mask drawable 可跳过；真实 draw 异常不重试；GL 方法、原 `_bufferData` 和自有 buffer 正确恢复/释放 |
+| 自动化 | `test/android-web/live2dRendererOptimizer.test.js` |
