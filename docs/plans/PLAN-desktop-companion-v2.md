@@ -162,9 +162,29 @@ HTTP（D2，均为 loopback-only）：
 
 | 工作流 | 状态 | 提交 | 备注 |
 |---|---|---|---|
-| 统筹：设计规范 + 本计划 | done | | |
-| D1 | pending | | |
-| D2 | pending | | |
-| V | pending | | |
-| A | pending | | |
-| T | pending | | |
+| 统筹：设计规范 + 本计划 | done | 06e6898 | |
+| D1 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| D2 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
+| A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| T | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+
+## V 交付记录
+
+- 分支 `agent/v2-voice-providers`，提交：`8121d9e` schema/catalog；`voice 模块` 提交（`apps/runtime/voice/`）；`aaf8307` 消费方切换；模板与指南提交（见 `git log`）。
+- 完成：C8 全部——`voice.active_tts/active_asr`、`tts_openai_compatible`、ASR `model`（兼容 `asr_model`）、`modelCatalog.tts/asr` 解析顺序（active → `TTS_PROVIDER_KEY`(仅 TTS) → 第一个）；`apps/runtime/voice/{index,tts,asr,common}.js` 导出 `createTtsClient/createAsrClient/describeVoiceConfig`（签名同 §2，另支持可选 `providerKey`、`fetchImpl`，供 D2 `test-tts` 指定 key）；voiceRelay/asrService 改用新模块；`QwenTtsClient` 变薄包装（每次调用重新解析 provider；非 URL 型 provider 返回 `data:` URL）；实时客户端 `streamSynthesis` 为 getter，provider 不支持实时时为 `undefined`，桌面自动回退非流式。模板新增 `voice:`、`qwen_tts`、openai/asr 注释示例。B7 的后端部分完成。
+- `desktopSuite.js` 零改动（靠包装器与 getter 保持接口不变），不会与 D1 冲突。
+- 文档/用例：`FEAT-voice-provider-config.md`、`TC-voice-provider-config.md`（TC-VOC-001…006, 010…016, 020…023）、两份指南。`npm run test:ci` 685 全绿，`docs:lint` 通过。
+- 未完成/风险：`apps/runtime/tooling/adapters/voice.js`（Agent voice 工具）仍硬编码 `TTS_PROVIDER_KEY || qwen3_tts`，不在 V 的所属路径，建议后续让它改用 `createTtsClient`；声音克隆脚本 `--provider-key` 默认仍为 `qwen3_tts`；D2 需注意旧 `/api/config/providers/*` 写入口保存时会按新校验（含 `voice` 引用）拒绝悬空引用。
+
+## 子 agent 切换记录（2026-10-13）
+
+用户要求因 Claude 额度不足，把子 agent 全部切换为 Codex `gpt-5.6-sol`（reasoning medium，service_tier priority）。切换时 Sonnet 子 agent 已停止，各 worktree 未提交改动由统筹者打成 WIP 检查点（未审查、未跑测试），由 Codex 在同一 worktree / 分支上继续：
+
+| 工作流 | 分支 | 已完成提交 | WIP 检查点 | 剩余 |
+|---|---|---|---|---|
+| V | `agent/v2-voice-providers` | 已合并（f147f3d）；统筹修复 agent 语音工具硬编码（7fca8b9） | — | — |
+| D1 | `agent/v2-desktop-shell` | d6785e3（Hub client 迁移状态跟踪） | 15006eb：托盘模板图标、shellModel/shellController、设置窗口 | §1 其余全部（Dock、角色窗口位置/点击/右键、标准聊天窗与模型选择/送到手机、气泡、截图验收、文档） |
+| D2 | `agent/v2-config-webui` | 5201aa2（配置 API 安全）、77bb9fd（夜景外壳 + 模型/高级页） | a134579：语音路由与语音页 | 语音页按已合并的 V 接口联调、概览页、旧入口迁移、文档、截图 |
+| A | `agent/v2-android-ui` | 68de571（B1 presence）、86ea678（统一主题）、06c62f4（B6 竖屏对话面板） | 7aee801：B8 键盘（adjustNothing + ime 事件） | B8 完成与真机验证、HUD 迁移按钮、文档 |
+| T | `agent/v2-twitch` | — | fdd5085：逐帧 trace 采集脚本 | 复现、定位、修复、实验文档 |

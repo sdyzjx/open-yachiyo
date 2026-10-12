@@ -52,6 +52,21 @@ function findByType(config, types) {
   return null;
 }
 
+const TTS_TYPES = ['tts_dashscope', 'tts_openai_compatible'];
+const ASR_TYPES = ['asr_openai_compatible', 'asr_dashscope'];
+
+// Resolution: explicit key (voice.active_*) -> env fallback key (TTS only) -> first provider of that kind.
+function resolveVoiceProvider(config, types, candidateKeys) {
+  const providers = config.providers || {};
+  for (const key of candidateKeys) {
+    const provider = key && providers[key];
+    if (provider && types.includes(provider.type)) {
+      return { key, ...provider, api_key: resolveApiKey(provider) };
+    }
+  }
+  return findByType(config, types);
+}
+
 function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
   const config = normalizeProviderConfig(store.load());
   const models = [];
@@ -83,9 +98,9 @@ function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
       const chain = [active, ...fallbackRefs.map(resolve)].filter(Boolean);
       return chain.filter((m, i) => chain.findIndex((x) => x.ref === m.ref) === i);
     },
-    tts: findByType(config, ['tts_dashscope']),
-    asr: findByType(config, ['asr_openai_compatible', 'asr_dashscope'])
+    tts: resolveVoiceProvider(config, TTS_TYPES, [config.voice?.active_tts, process.env.TTS_PROVIDER_KEY]),
+    asr: resolveVoiceProvider(config, ASR_TYPES, [config.voice?.active_asr])
   };
 }
 
-module.exports = { loadModelCatalog, toDescriptor };
+module.exports = { loadModelCatalog, toDescriptor, resolveVoiceProvider, resolveApiKey, TTS_TYPES, ASR_TYPES };

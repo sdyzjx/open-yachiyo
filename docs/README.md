@@ -33,6 +33,7 @@
 - [插件打包、存储与推送](features/FEAT-plugin-push.md)
 - [插件系统（Android 宿主与 SDK）](features/FEAT-plugin-system.md)
 - [pi Agent 核心](features/FEAT-runtime-pi-agent-core.md)
+- [语音 Provider 配置（TTS / ASR 可切换）](features/FEAT-voice-provider-config.md)
 
 ## 指南 Guides
 
@@ -162,6 +163,7 @@
 - [网关配置 WebUI 测试用例](testing/TC-gateway-config-webui.md)
 - [插件系统测试用例](testing/TC-plugin-system.md)
 - [pi Agent 核心测试用例](testing/TC-runtime-pi-agent-core.md)
+- [语音 Provider 配置测试用例](testing/TC-voice-provider-config.md)
 - [Testing and CI](testing/TESTING.md)
 
 ## 排障 Debug
