@@ -48,6 +48,10 @@
 
 会话 `model_ref` 优先级：`runtime.run params.model_ref` > 会话设置 `model_ref` > `active_model`。
 
+### 3.4 配置页
+
+`/config-v2.html` 新增 **models** 标签页（`config-v2-models.js/.css`）：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、headers/compat/extra_body JSON、发现模型、测试连接、保存/删除）。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。
+
 ## 4. 配置项
 
 支持的 `type`：`openai_compatible`、`anthropic`、`google`、`tts_dashscope`、`asr_openai_compatible`、`asr_dashscope`。完整 schema 见契约 C4.1。
@@ -58,4 +62,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-025，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-027，见 `docs/testing/TC-llm-model-config-v2.md`。

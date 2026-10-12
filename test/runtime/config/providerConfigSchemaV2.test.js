@@ -94,3 +94,16 @@ test('splitModelRef handles model ids containing slashes', () => {
   assert.deepEqual(splitModelRef('openrouter/openai/gpt-4o', providers), { provider: 'openrouter', id: 'openai/gpt-4o' });
   assert.equal(splitModelRef('nope/x', providers), null);
 });
+
+test('shipped config/providers.yaml template is a valid v2 config with a catalog', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const cfg = YAML.parse(fs.readFileSync(path.resolve(__dirname, '../../../config/providers.yaml'), 'utf8'));
+  validateConfig(cfg);
+  const { loadModelCatalog } = require('../../../apps/runtime/config/modelCatalog');
+  const catalog = loadModelCatalog({ store: { load: () => cfg } });
+  assert.equal(catalog.active.ref, 'qwen35_plus/qwen3.5-plus');
+  assert.ok(catalog.resolve('deepseek/deepseek-reasoner').reasoning);
+  assert.equal(catalog.enabled.length, 3);
+  assert.equal(catalog.tts.key, 'qwen3_tts');
+});
