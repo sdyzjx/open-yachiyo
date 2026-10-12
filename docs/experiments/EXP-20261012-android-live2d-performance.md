@@ -17,6 +17,7 @@
 - 模型：409 drawables、27207 vertices、2 textures。
 - 工具：CDP `Runtime.evaluate` 注入仅计时包装；每段 5 秒；采样结束恢复包装和 renderer resolution。
 - 基线：quality 4096、renderer resolution 2。
+- 连接：首次候选采样后的离线原因由用户确认为手机电量耗尽。手机重启后用户明确授权本轮改用 USB 调试；所有 ADB 命令固定指定同一 USB 设备，没有执行 kill-server、tcpip、usb 或 disconnect。该例外只适用于本次授权，不改变仓库默认 Wi-Fi ADB 规范。
 
 ## 方法
 
@@ -82,6 +83,8 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 曾尝试只给实际变化的 drawable 设置 mask dirty，但审查发现 Cubism 每帧先清空整张共享 mask FBO，再按 dirty 位画 source；局部 dirty 会令同 atlas 中未变化的 mask 在清屏后缺失。候选 `7ff5774` 未进入真机即由 `bb4a197` 明确回退。后续只考虑在全部依赖稳定时复用完整 atlas，否则整张重建；先由 profiler 分别统计 mask/color 的真实 draw 占比，不基于总 draw 数盲目引入缓存。
 
+2026-10-13 性能阶段 checkpoint：手机恢复充电后电量从 35% 增至 42%，但电池温度仅从 46.0°C 降到 45.0°C；充电和前台状态仍不满足与旧样本公平对比的温控条件，因此没有安装新性能候选或追加热降频样本。测试期间用户正在使用 desktop owner；后续真机性能回归只能走完整生产 transfer，短样本结束后恢复 desktop，并在服务端前后读取 owner，禁止再伪造客户端 `onHubState`。
+
 ## 结论与决策
 
 分辨率不是本模型在小米 6 上的首要瓶颈。当前候选采用以下方案：
@@ -97,3 +100,5 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 - 由统筹者安排下一候选的可回退真机窗口，完成同口径静止、连续滑动、连续帧录屏、动作与口型复测。
 - 若真实逐帧 draw 仍超过 16.7 ms，评估原生 Cubism Core/JNI 或离线模型网格 LOD；不再用 canvas 合成频率代替人物帧率。
+- 下一次降温真机窗口先用 `4b4d6cf` 的 mask/color 分项计数确认 clipping pass 占比。只有在整张 atlas 的 layout、矩阵、可见性、透明度、尺寸与上下文均稳定时才评估整 pass 复用；任一依赖变化都完整重建 atlas。
+- 口型持续张嘴已在独立分支修复和验收；人物身体连续性、动作切换、左右滑动与横竖屏仍须单独录像/截图验收，不能把口型通过视为人物抽动整体通过。
