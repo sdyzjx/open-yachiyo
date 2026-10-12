@@ -23,3 +23,4 @@
 | TC-PI-011 | 低权限和语音关闭 | unit | low、voice off | 构造 prompt | 不含 memory seed 与语音强制规则 | promptBuilder.test.js: TC-PI-011 low permission omits memory seeds and voice force-off instructions |
 | TC-PI-012 | pi JSONL 恢复与路径隔离 | integration | 临时目录、实际 SessionManager | 写入并重建 bridge | 第一轮上下文可恢复，seed 不重复，路径安全 | sessionBridge.test.js: TC-PI-012 stable pi sessions restore history and do not duplicate seeds |
 | TC-PI-013 | 串行与 UI 镜像 | integration | 真 FileSessionStore | 并发同 session、写历史 | 顺序稳定、关闭镜像不重复写 | sessionBridge.test.js: TC-PI-013 session serialization and optional UI history mirror |
+| TC-PI-014 | 技能来源与禁用规则 | integration | 临时 workspace/global 技能 | pi loader 加载并禁用后 reload | workspace 覆盖 global，禁用项消失，不加载扩展 | skillBridge.test.js: TC-PI-014 pi skills honor configured roots, disable rules, precedence and reload |

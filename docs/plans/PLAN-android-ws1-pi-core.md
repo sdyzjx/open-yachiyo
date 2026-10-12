@@ -63,6 +63,8 @@
 - C4/C5：现有 `RuntimeRpcWorker` 不传递 `params.model_ref`，会话 settings 的规范化也不保留 `model_ref`。WS1 将在 agent 装配适配层转送每次请求覆盖；持久 settings 支持需要 WS2/统筹补齐，不修改只读 RPC/session 文件。
 - C5：Hub 契约只规定设备 `invoke(device_id, method, ...)`，未规定服务端 Avatar transfer API。WS1 将支持显式注入 avatar 控制器；请统筹与 WS3 确认生产装配接口，禁止将未定义的 gateway device_id 当成契约。
 
+- **统筹答复（2026-10-12）**：①锁文件由统筹合并时统一生成，同意。②`model_ref` 透传与 settings 持久化归 WS2，WS1 读取 `params.model_ref`（优先）与会话 settings 的 `model_ref` 即可。③Avatar 服务端 API 已写入契约 C5「Device Hub 服务端 API」：使用 `getDeviceHub().requestAvatarTransfer(to)`、`getAvatarHost()`、`listDevices()`、`invoke('avatar-host', ...)`，空实现已在 `apps/gateway/deviceHub/index.js` 提供；不需要另行注入 avatar 控制器（可保留注入点用于测试）。
+
 ## 进度记录
 
 - 开始前完整阅读四份约束文档；Node v24.10.0，分支 `agent/ws1-pi-core`，工作区干净。
@@ -95,3 +97,7 @@ loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模�
 ### 任务 6
 
 SessionManager 持久化、稳定安全路径、旧历史单次导入、同会话串行、UI 镜像开关及压缩配置完成；`npm run test:ci` 522 / 522 通过。
+
+### 任务 7
+
+pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成；`npm run test:ci` 523 / 523 通过。

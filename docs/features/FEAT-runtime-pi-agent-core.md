@@ -39,3 +39,5 @@
 Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system seeds、语音强制/自动回复、persona 修改和截图规则逐段保留，并附会话权限说明。low 权限过滤传入的 memory seeds。
 
 会话由 SessionManager 写入 pi-sessions 的 SHA-256(session_id).jsonl，同一会话串行处理；首次恢复导入旧 UI 历史，后续不重复 seed。支持独立模式镜像 FileSessionStore；网关模式关闭镜像并继续使用原 hooks。压缩默认 enabled=true/reserveTokens=16384/keepRecentTokens=20000，可由工厂 compaction 覆盖。
+
+技能由 pi DefaultResourceLoader 管理，先使用已有 skills.yaml 来源优先级、enabled 和 eligibility 过滤，再由 pi 解析实际 SKILL.md。每轮重新加载；禁止额外发现用户 pi 扩展、模板和开发仓库 AGENTS 上下文。
