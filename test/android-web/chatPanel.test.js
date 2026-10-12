@@ -156,6 +156,28 @@ test('an interrupted assistant stream expires after 30 seconds without a final e
   assert.equal(root.classList.contains('has-content'), false);
 });
 
+test('repeated task failures are compacted into one counted row', () => {
+  const { api } = load();
+  const root = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root });
+
+  canvas.updateTask({
+    task_id: 'task-retries', status: 'failed', title: '执行电脑操作',
+    steps: [
+      { name: 'shell.exec', status: 'failed' },
+      { name: 'live2d.gesture', status: 'done' },
+      { name: 'shell.exec', status: 'failed' },
+      { name: 'shell.exec', status: 'failed' }
+    ]
+  });
+
+  const task = canvas.mergedScrollEl.children[1].children[0];
+  assert.deepEqual(task.children[1].children.map((node) => node.textContent), [
+    '✓ live2d.gesture',
+    '✕ shell.exec ×3'
+  ]);
+});
+
 test('chat panel is a bounded scroller that does not feed the stage swipe gestures', () => {
   const css = read('css/app.css');
   assert.match(css, /\.chat-scroll\s*\{[^}]*overflow-y:\s*auto/s);

@@ -13,6 +13,25 @@
   const MAX_BUBBLES = 8;
   const STALE_STREAM_MS = 30000;
 
+  function compactTaskSteps(steps) {
+    const compact = [];
+    for (const step of steps || []) {
+      const normalized = {
+        name: String(step && step.name || 'unknown'),
+        status: String(step && step.status || 'running'),
+        count: 1
+      };
+      const duplicate = compact.findIndex((entry) =>
+        entry.name === normalized.name && entry.status === normalized.status);
+      if (duplicate >= 0) {
+        normalized.count = compact[duplicate].count + 1;
+        compact.splice(duplicate, 1);
+      }
+      compact.push(normalized);
+    }
+    return compact.slice(-4);
+  }
+
   function createCanvas({ root }) {
     const L = global.YachiyoLayout;
 
@@ -185,8 +204,9 @@
       for (const entry of card.nodes) {
         entry.node.dataset.status = task.status || 'running';
         entry.title.textContent = `${STATUS_ICON[task.status] || STATUS_ICON.running} ${task.title || task.task_id}`;
-        entry.steps.replaceChildren(...(task.steps || []).slice(-4).map((step) =>
-          el('li', `tc-step st-${step.status}`, `${STATUS_ICON[step.status] || '·'} ${step.name}`)));
+        entry.steps.replaceChildren(...compactTaskSteps(task.steps).map((step) =>
+          el('li', `tc-step st-${step.status}`,
+            `${STATUS_ICON[step.status] || '·'} ${step.name}${step.count > 1 ? ` ×${step.count}` : ''}`)));
       }
       pin(agentView);
       pin(mergedView);

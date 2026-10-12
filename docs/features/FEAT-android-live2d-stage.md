@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws5, Codex（工作流 A / T）
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-043
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-044
 
 ## 1. 概述
 
@@ -88,7 +88,7 @@ sequenceDiagram
 
 ### 2.6 对话面板（任务画布 / 聊天气泡）
 
-订阅 `chat.delta`（按 `trace_id` 流式追加到对应助手气泡）、`chat.final`（按同一 trace 定稿且重复 final 幂等；淡出延时 `16 s + 0.09 s × 字数`，上限 60 s，用户正在触摸/滚动时顺延）、`audio.input.transcript`（用户气泡）、`task.update`（任务卡：标题 + 最近 4 步，完成/失败 8 s 后淡出）。每张气泡独立持有淡出计时器；新回答开始只更新自己的计时，不会取消旧回答的自动收起。流式回答若 30 s 没有新增量且未收到 final，视为通道中断并自动淡出；新增量会重置该计时。并发的文字与语音 Realtime 请求分别维护气泡，不会交错或把同一 final 创建两次。文本输入框发送 `chat.input {text}`。
+订阅 `chat.delta`（按 `trace_id` 流式追加到对应助手气泡）、`chat.final`（按同一 trace 定稿且重复 final 幂等；淡出延时 `16 s + 0.09 s × 字数`，上限 60 s，用户正在触摸/滚动时顺延）、`audio.input.transcript`（用户气泡）、`task.update`（任务卡：标题 + 最近 4 个不同的步骤状态，完成/失败 8 s 后淡出）。同一任务内名称与状态相同的重复步骤合并为一行并显示次数（如 `shell.exec ×3`），避免重试错误刷满画布。每张气泡独立持有淡出计时器；新回答开始只更新自己的计时，不会取消旧回答的自动收起。流式回答若 30 s 没有新增量且未收到 final，视为通道中断并自动淡出；新增量会重置该计时。并发的文字与语音 Realtime 请求分别维护气泡，不会交错或把同一 final 创建两次。文本输入框发送 `chat.input {text}`。
 
 - **竖屏**：以模型 bounds 顶部向下 24% 的脖子线为上界，面板位于脖子线 + 10 px 到输入栏上方，可覆盖身体而不覆盖脸；左右各留 14 px。`task_canvas.position` 在竖屏只有 `hidden` 生效。
 - **横屏**：居中态为左半屏回答列、右半屏用户消息列，中间留 16 px 间距。两列从模型外框顶部向下 30% 的脸部保护线下方开始，不遮挡表情；水平方向填满安全边距内的半屏，可覆盖人物下半身，使宽屏长文不再受 420 px 上限影响。侧栏打开态合并为脖子线以下、严格位于侧栏之外的单面板。拖动时双列向单面板矩形移动并淡出，按完整时间顺序排列的合并视图淡入，松手与人物共用面板弹簧。状态点、迁移控件、设置按钮、输入区、语音/聊天按钮、侧栏及插件面板均参与避让；右侧插件栏打开时设置齿轮同步移到栏外。
@@ -126,4 +126,4 @@ sequenceDiagram
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-043（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js` 与 `apps/android/app/src/test/**/ImeMetricsTest.kt`。
+TC-AWB-001..TC-AWB-044（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js` 与 `apps/android/app/src/test/**/ImeMetricsTest.kt`。

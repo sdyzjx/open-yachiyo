@@ -438,6 +438,16 @@
 | 期望结果 | 第二次增量重置超时；最后一次增量 30 s 后气泡开始淡出，420 ms 后从 DOM 移除，不会永久停留 |
 | 自动化 | `test/android-web/chatPanel.test.js`（an interrupted assistant stream expires after 30 seconds without a final event）+ manual-device |
 
+## TC-AWB-044 任务重试错误合并显示
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 同一 `task_id` 的 `task.update` 含多个名称与状态相同的失败步骤 |
+| 步骤 | 连续加入三次 `shell.exec failed`，中间穿插其他成功步骤；显示任务卡 |
+| 期望结果 | 三个失败步骤合并为一行 `shell.exec ×3`；其他不同步骤保留；任务卡最多显示最近 4 个不同状态 |
+| 自动化 | `test/android-web/chatPanel.test.js`（repeated task failures are compacted into one counted row）+ manual-device |
+
 ## TC-AND-053 手机聊天模型选择与音频模式
 
 | 字段 | 内容 |
