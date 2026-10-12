@@ -20,7 +20,8 @@
     "live2d:import": "node scripts/live2d-import.js",
     "test": "node --test \"test/**/*.test.js\"",
     "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')",
-    "docs:index": "node scripts/docs-index.js"
+    "docs:index": "node scripts/docs-index.js",
+    "android:sync-assets": "node scripts/android-sync-assets.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.1.0",

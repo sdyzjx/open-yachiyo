@@ -1,0 +1,16 @@
+{
+  "id": "com.yachiyo.pomodoro",
+  "name": "番茄钟",
+  "version": "1.0.0",
+  "type": "app",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "description": "专注计时，结束时八千代会庆祝；agent 可以通过 start_timer 工具替你开始计时。",
+  "sdk": 1,
+  "background": true,
+  "permissions": [
+    "rpc.register",
+    "agent.tool",
+    "rpc.call:live2d.**"
+  ]
+}

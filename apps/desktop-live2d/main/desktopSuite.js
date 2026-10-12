@@ -2946,6 +2946,7 @@ async function startDesktopSuite({
   });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
+  let deviceHubClient = null;
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
     sessionId: 'desktop-live2d-chat',
@@ -2973,15 +2974,9 @@ async function startDesktopSuite({
         const activeBridge = ipcBridgeRef;
 
         if (eventName === ACTION_EVENT_NAME) {
-          void forwardLive2dActionEvent({
-            eventName,
-            eventPayload: desktopEvent.data.data,
-            bridge: activeBridge,
-            rendererTimeoutMs: config.rendererTimeoutMs,
-            onTelemetry: publishLive2dActionTelemetry,
-            logger
-          });
+          // Device Hub delivers avatar actions exactly once to the current host.
         } else if (eventName === 'voice.requested') {
+          if (!deviceHubClient?.isHost) return;
           const voicePayload = desktopEvent.data.data;
           const requestId = String(voicePayload?.request_id || voicePayload?.requestId || '').trim();
           if (requestId) {
@@ -3011,7 +3006,7 @@ async function startDesktopSuite({
             emitDebug: emitDesktopDebug,
             logger
           });
-        } else if (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.')) {
+        } else if (eventName !== ACTION_EVENT_NAME && (!eventName.startsWith('voice.') || deviceHubClient?.isHost) && (eventName.startsWith('ui.') || eventName.startsWith('client.') || eventName.startsWith('voice.'))) {
           activeBridge?.invoke({
             method: 'server_event_forward',
             params: {
@@ -3255,6 +3250,13 @@ async function startDesktopSuite({
     timeoutMs: config.rendererTimeoutMs
   });
   ipcBridgeRef = bridge;
+  const { DeviceHubClient } = require('./deviceHubClient');
+  deviceHubClient = new DeviceHubClient({
+    gatewayUrl: config.gatewayUrl,
+    invokeRenderer: (method, params) => bridge.invoke({ method, params, timeoutMs: 4000 }),
+    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params })
+  });
+  void deviceHubClient.start();
 
   const rpcServer = new Live2dRpcServer({
     host: config.rpcHost,
@@ -3315,6 +3317,7 @@ async function startDesktopSuite({
   async function stop() {
     if (stopped) return;
     stopped = true;
+    deviceHubClient?.stop();
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
@@ -3364,6 +3367,8 @@ async function startDesktopSuite({
   return {
     config,
     summary,
+    deviceHubClient,
+    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     avatarWindow,
     chatWindow,

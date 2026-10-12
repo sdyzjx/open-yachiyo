@@ -502,3 +502,15 @@ WebViewAssetLoader 路径映射（WS4 实现）：
 | `https://appassets.androidplatform.net/plugins/<id>/` | `files/plugins/<id>/` |
 | `https://appassets.androidplatform.net/user/` | `files/user/`（背景图等） |
 | `https://appassets.androidplatform.net/appicon/<package>.png` | 运行时渲染的应用图标（PackageManager，内存缓存） |
+
+## C7. 局域网服务端自动发现（2026-10-12）
+
+配置页通过 Android NSD / DNS-SD 查找 `_yachiyo._tcp.`（mDNS local 域），不扫描整个 IP 网段。
+
+- 网关在 HTTP server `listening` 后广播实际端口；实例名称默认为 `Yachiyo on <hostname>`，`YACHIYO_DISCOVERY_NAME` 可覆盖；重名由 Bonjour 协议处理。`YACHIYO_DISCOVERY_ENABLED=false` 禁用，默认启用。发布失败只影响发现功能，手动连接仍可用；退出、server close 时撤销广播并释放资源。
+- TXT 仅含 `version=1`、`path=/ws/device`。不得包含 pairing token、API key、用户配置。发现仅提供连接候选，不代替配对认证。
+- C2.1 新增 `startServerDiscovery()`、`stopServerDiscovery()`，立即返回；start 幂等；每次扫描最多 10 秒，Activity pause/destroy 自动停止并释放资源。锁屏与插件不能发起发现。
+- C2.2 新增 `server.discovery.state`：`{state: scanning|stopped|error, reason?: manual|timeout|lifecycle|permission_denied|unavailable, error?: string}`。
+- C2.2 新增 `server.discovery.results`：`{services:[{id,name,host,port,path,version}]}`，在发现、解析、丢失后发送完整快照；id 在本轮稳定。host 优先 IPv4，IPv6 不含 URL 方括号（构造 URL 时补方括号）；仅接受合法端口、version=1、path=/ws/device。
+- 配置页提供扫描/停止、状态、结果列表和无结果说明，保留手动地址。选择候选填入 host/port；若地址或端口改变，清空旧 token 并提示输入新服务端配对令牌，避免把原服务端凭据发送给其他候选；同一地址可保留 token。不自动连接未知候选，也不自动信任 TXT 中额外字段。
+- 设备网络不支持 multicast、权限未授予或服务端关闭时，显示可理解的失败/无结果状态，不能卡住配置页。

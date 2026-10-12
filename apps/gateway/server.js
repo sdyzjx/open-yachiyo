@@ -1050,7 +1050,8 @@ const server = app.listen(port, host, () => {
   console.log(`LLM provider: ${summary.active_provider} / ${summary.active_model} / has_api_key=${summary.has_api_key}`);
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ noServer: true });
+require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore });
 
 function sendSafe(ws, payload) {
   if (ws.readyState !== 1) return;

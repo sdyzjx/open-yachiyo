@@ -1,0 +1,64 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { fixture } = require('./helpers');
+const { createArchive, readArchive, validateManifest, crc32 } = require('../../../apps/gateway/deviceHub/pluginArchive');
+const { packDirectory } = require('../../../scripts/plugin-pack');
+const { pushPlugin } = require('../../../scripts/plugin-push');
+const manifest = { id: 'com.test.demo', name: 'Demo', version: '1.0.0', type: 'app', sdk: 1, entry: 'index.html', permissions: [] };
+const entries = () => new Map([['manifest.json', Buffer.from(JSON.stringify(manifest))], ['index.html', Buffer.from('<h1>Demo</h1>')]]);
+
+test('Plugin ZIP roundtrip is deterministic and rejects unsafe archives/manifests', () => {
+  const archive = createArchive(entries());
+  assert.deepEqual(createArchive(entries()), archive);
+  assert.deepEqual(readArchive(archive).manifest, manifest);
+  const corrupt = Buffer.from(archive); corrupt[35] ^= 1;
+  assert.throws(() => readArchive(corrupt), { code: -32602 });
+  assert.throws(() => validateManifest({ ...manifest, entry: '../secret' }, entries()), { code: -32602 });
+  assert.throws(() => validateManifest({ ...manifest, type: 'unknown' }, entries()), { code: -32602 });
+  assert.throws(() => validateManifest({ ...manifest, sdk: 2 }, entries()), { code: -32602 });
+  const traversal = Buffer.from(archive);
+  for (let pos = traversal.indexOf('index.html'); pos >= 0; pos = traversal.indexOf('index.html', pos + 10)) traversal.write('../bad.htm', pos);
+  assert.throws(() => readArchive(traversal), { code: -32602 });
+  const symlink = Buffer.from(archive); const central = symlink.indexOf(Buffer.from('504b0102', 'hex'));
+  symlink.writeUInt32LE(0xa1ff0000, central + 38);
+  assert.throws(() => readArchive(symlink), { code: -32602 });
+  const bomb = Buffer.from(archive); bomb.writeUInt32LE(100 * 1024 * 1024, central + 24);
+  assert.throws(() => readArchive(bomb), { code: -32602 });
+});
+
+test('Plugin upload, download, CLI push and lockscreen denial', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.plugin-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const source = path.join(directory, 'source'); fs.mkdirSync(source);
+  for (const [name, bytes] of entries()) fs.writeFileSync(path.join(source, name), bytes);
+  const packed = packDirectory(source); assert.deepEqual(readArchive(packed).manifest, manifest);
+  const f = await fixture(t, { plugins: { directory: path.join(directory, 'store') } });
+  const phone = await f.client('phone'); const locked = await f.client('locked', { mode: 'lockscreen' });
+  const result = await pushPlugin(source, { gateway: f.base });
+  assert.deepEqual(result.targets, ['phone']);
+  const event = await phone.next((m) => m.topic === 'plugin.install');
+  assert.equal(event.data.sha256, result.sha256); assert.equal(event.data.size, packed.length);
+  assert.deepEqual(Buffer.from(await (await fetch(event.data.url)).arrayBuffer()), packed);
+  assert.equal((await (await fetch(`${f.base}/api/device/plugins`)).json()).plugins.length, 1);
+  phone.send('pub', { plugin_id: manifest.id, version: manifest.version }, { topic: 'plugin.installed' }); await phone.sync();
+  assert.equal(f.hub.pluginStore.receipts.size, 1);
+  const denied = await fetch(`${f.base}/api/device/plugins/${result.sha256}/push`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'locked' }) });
+  assert.equal(denied.status, 403); await locked.sync();
+  assert.equal(locked.inbox.some((m) => m.topic === 'plugin.install'), false);
+  const invalid = await fetch(`${f.base}/api/device/plugins`, { method: 'POST', headers: { 'content-type': 'application/zip' }, body: Buffer.from('invalid') });
+  assert.equal(invalid.status, 400);
+  // External ZIP writer: a valid store-method ZIP containing an invalid manifest.
+  const name = Buffer.from('manifest.json'); const body = Buffer.from('{}');
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50); local.writeUInt16LE(20, 4);
+  local.writeUInt32LE(crc32(body), 14); local.writeUInt32LE(body.length, 18); local.writeUInt32LE(body.length, 22); local.writeUInt16LE(name.length, 26);
+  const central = Buffer.alloc(46); central.writeUInt32LE(0x02014b50); central.writeUInt16LE(20, 4); local.copy(central, 6, 4, 26); central.writeUInt16LE(name.length, 28);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(local.length + name.length + body.length, 16);
+  const invalidManifest = await fetch(`${f.base}/api/device/plugins`, { method: 'POST', headers: { 'content-type': 'application/zip' }, body: Buffer.concat([local, name, body, central, name, end]) });
+  assert.equal(invalidManifest.status, 400);
+  phone.send('pub', { url: 'https://untrusted.invalid' }, { topic: 'plugin.install' });
+  assert.equal((await phone.next((m) => m.type === 'error')).data.code, -32006);
+  fs.symlinkSync(path.join(source, 'index.html'), path.join(source, 'link.html'));
+  assert.throws(() => packDirectory(source), /symlinks/);
+});
