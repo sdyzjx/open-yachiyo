@@ -42,6 +42,7 @@
       this.running = true;
       this.releasing = false;
       this.stage.mouth.active = true;
+      if (typeof this.stage.traceEvent === 'function') this.stage.traceEvent('lipsyncStart', {});
       return true;
     }
 
@@ -50,6 +51,7 @@
       this.running = false;
       this.releasing = true;
       this.target = { mouthOpen: 0, mouthForm: 0 };
+      if (typeof this.stage.traceEvent === 'function') this.stage.traceEvent('lipsyncRelease', {});
     }
 
     get active() { return this.running || this.releasing; }
@@ -111,6 +113,7 @@
         this.stage.mouth.open = 0;
         this.stage.mouth.form = 0;
         this.stage.mouth.active = false;
+        if (typeof this.stage.traceEvent === 'function') this.stage.traceEvent('lipsyncStop', {});
       }
     }
   }

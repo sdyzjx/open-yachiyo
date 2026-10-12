@@ -5,6 +5,7 @@
   const actionMutexApi = window.Live2DActionMutex || null;
   const actionQueueApi = window.Live2DActionQueuePlayer || null;
   const actionExecutorApi = window.Live2DActionExecutor || null;
+  const parameterOverlayApi = window.Live2DParameterOverlay || null;
   const lipsyncApi = window.Live2DVisemeLipSync || null;
   const mouthTransitionApi = window.Live2DMouthTransition || null;
   const state = {
@@ -37,6 +38,8 @@
   let actionQueuePlayer = null;
   let actionExecutionMutex = null;
   let actionExecutor = null;
+  const modelParameterOverlay = parameterOverlayApi?.createLive2dParameterOverlay?.() || null;
+  let parameterOverlayDetachModelHook = null;
   let audioContext = null;
   let lipsyncState = null;
   let lipsyncAnimationFrame = null;
@@ -3076,13 +3079,24 @@
       return { ok: true, mixed: true };
     }
 
-    const coreModel = live2dModel.internalModel?.coreModel;
-    if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
-      throw createRpcError(-32005, 'setParameterValueById is unavailable on this model runtime');
+    if (!modelParameterOverlay) {
+      throw createRpcError(-32005, 'parameter overlay is unavailable on this renderer');
     }
+    modelParameterOverlay.set(name, value, 'rpc');
+    return { ok: true, mixed: true };
+  }
 
-    coreModel.setParameterValueById(name, value);
-    return { ok: true };
+  function bindParameterOverlayHook() {
+    if (parameterOverlayDetachModelHook) return true;
+    const internalModel = live2dModel?.internalModel;
+    if (!internalModel || typeof internalModel.on !== 'function' || !modelParameterOverlay) return false;
+    const handler = () => modelParameterOverlay.apply(internalModel.coreModel);
+    internalModel.on('beforeModelUpdate', handler);
+    parameterOverlayDetachModelHook = () => {
+      if (typeof internalModel.off === 'function') internalModel.off('beforeModelUpdate', handler);
+      else if (typeof internalModel.removeListener === 'function') internalModel.removeListener('beforeModelUpdate', handler);
+    };
+    return true;
   }
 
   function setModelParamsBatch(params) {
@@ -3270,6 +3284,7 @@
         afterIdleAction: async () => {
           resetModelExpressionRaw();
           resetModelMouthPoseRaw();
+          modelParameterOverlay?.release();
         },
         maxQueueSize: Number(runtimeActionQueueConfig.maxQueueSize) || 120,
         overflowPolicy: runtimeActionQueueConfig.overflowPolicy || 'drop_oldest',
@@ -3508,6 +3523,7 @@
     resetModelExpressionRaw();
     resetModelMouthPoseRaw();
     bindPersistentMouthOverrideHook();
+    bindParameterOverlayHook();
   }
 
   function bindModelInteraction() {

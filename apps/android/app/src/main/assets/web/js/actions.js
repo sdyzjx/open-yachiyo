@@ -49,26 +49,26 @@
       return { ok: true, group, index: hasIndex ? Number(params.index) : null };
     }
 
-    function setParam(params) {
+    function setParam(params, source = 'rpc') {
       requireModel();
       const name = String((params && params.name) || '').trim();
       const value = Number(params && params.value);
       if (!name || !Number.isFinite(value)) throw rpcError(-32602, 'param.set requires { name, value:number }');
-      stage.setParam(name, value);
+      stage.setParam(name, value, source);
       return { ok: true };
     }
 
-    function setParamBatch(params) {
+    function setParamBatch(params, source = 'rpc') {
       const updates = Array.isArray(params && params.updates) ? params.updates : [];
       if (!updates.length) throw rpcError(-32602, 'model.param.batchSet requires non-empty updates array');
-      updates.forEach(setParam);
+      updates.forEach((update) => setParam(update, source));
       return { ok: true, applied: updates.length };
     }
 
     const executeAction = Exec.createLive2dActionExecutor({
       setExpression: setExpressionRaw,
       playMotion: playMotionRaw,
-      setParamBatch,
+      setParamBatch: (params) => setParamBatch(params, 'action'),
       presetConfig: presets || {},
       createError: rpcError
     });
@@ -106,8 +106,8 @@
     offs.push(bridge.handleRpc('state.get', () => state()));
     offs.push(bridge.handleRpc('model.motion.play', (p) => mutex.runExclusive(() => playMotionRaw(p))));
     offs.push(bridge.handleRpc('model.expression.set', (p) => mutex.runExclusive(() => setExpressionRaw(p))));
-    offs.push(bridge.handleRpc('model.param.set', (p) => setParam(p)));
-    offs.push(bridge.handleRpc('model.param.batchSet', (p) => setParamBatch(p)));
+    offs.push(bridge.handleRpc('model.param.set', (p) => setParam(p, 'rpc')));
+    offs.push(bridge.handleRpc('model.param.batchSet', (p) => setParamBatch(p, 'rpc')));
     offs.push(bridge.handleRpc(Msg.ACTION_ENQUEUE_METHOD, (p) => enqueue(p)));
     offs.push(bridge.subscribe(Msg.ACTION_EVENT_NAME, (payload) => {
       try { enqueue(payload); } catch (err) { log('warn', `ui.live2d.action rejected: ${err.message}`); }

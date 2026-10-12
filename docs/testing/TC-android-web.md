@@ -2,7 +2,7 @@
 
 > 类型: testcase
 > 状态: active
-> 负责人: sonnet-ws5
+> 负责人: sonnet-ws5, Codex（工作流 T）
 > 更新: 2026-10-13
 > 关联: docs/features/FEAT-android-live2d-stage.md, docs/features/FEAT-android-gesture-layout.md, docs/features/FEAT-android-settings.md, test/android-web/
 
@@ -287,3 +287,33 @@
 | 步骤 | 1) 静音 Idle 15 秒并切换 Greet/Error motion；2) 播放本地参考音频并观察口型；3) 等待播放结束；4) 设置一次 `ParamMouthForm` overlay；5) 再播放一段音频 |
 | 期望结果 | 静音及 motion 切换时不自发持续张嘴，连续真实模型更新后 `ParamMouthOpenY`/`ParamMouthForm` 均为 MOC 默认值；播放中嘴形随音频自然变化且优先于 overlay；结束后迅速回到中性；显式 overlay 优先于静音中性层 |
 | 自动化 | `test/android-web/lipsync.test.js`、`test/android-web/stageMouth.test.js`（TC-AWB-028）；2026-10-13 在 `ecdfb6b` 完成真机子集（静音 466 次更新全 0/0、播放中动态覆盖、结束后 94 次更新全 0/0）。Greet/ReactError 与显式 overlay 本轮由资源审计和自动化覆盖，尚未单独完成真机手工步骤；详见 `EXP-20261013-android-mouth-neutral.md` |
+
+## TC-AWB-029 跳帧后的 Cubism/physics 步长上限
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit / manual-device |
+| 前置条件 | 小米 6 已安装 debug APK；WebView CDP 可连接；舞台发生手势/面板动画并跳过若干模型更新 |
+| 步骤 | 连续产生多个 cached-model 帧后恢复完整更新；记录 raw dt、累计 skipped dt、送入模型及 physics 的 dt |
+| 期望结果 | 累计时间不会作为一次超大更新送入 Cubism；恢复时只送当前帧 dt，模型与 physics 单步最大 50 ms，且 trace 标记 `clamped=true` |
+| 自动化 | `test/android-web/stageContinuity.test.js`；真机数据见 `docs/experiments/EXP-20261013-live2d-body-twitch.md` |
+
+## TC-AWB-030 默认关闭的逐帧连续性 trace
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit / manual-device |
+| 前置条件 | debug WebView 可经 CDP 连接；默认 URL 不带 `trace=1` |
+| 步骤 | 1) 确认普通运行不采集；2) CDP 调用 `__yachiyoStage.startTrace()`；3) 覆盖 Idle 循环、Greet/ReactError、表情、RPC/动作参数；4) `stopTrace()` 并运行分析脚本 |
+| 期望结果 | trace 包含逐帧时间、raw/applied/physics dt、motion 状态变化、表情、focus、overlay/RPC 写入来源、motion 前后与最终参数；分析报告给出各参数最大帧差，功能默认关闭 |
+| 自动化 | `test/android-web/stageContinuity.test.js`、`test/android-web/live2dTraceAnalyze.test.js`；采集脚本 `scripts/dev/live2d-trace-capture.js` |
+
+## TC-AWB-031 桌面身体参数单写者与缓释
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | Desktop Live2D 模型已加载，收到非面部 `model.param.set` / `model.param.batchSet` |
+| 步骤 | RPC 写入 `ParamBodyAngleX`，推进多个 `beforeModelUpdate`，动作队列回到 Idle 后继续推进 |
+| 期望结果 | RPC 时不直接改 coreModel；参数只在 `beforeModelUpdate` overlay 层平滑写入；Idle 复位后权重渐退并最终移除 |
+| 自动化 | `test/desktop-live2d/live2dParameterOverlay.test.js` |

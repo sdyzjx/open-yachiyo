@@ -2,9 +2,9 @@
 
 > 类型: feature
 > 状态: active
-> 负责人: sonnet-ws5
+> 负责人: sonnet-ws5, Codex（工作流 T）
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-028
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-031
 
 ## 1. 概述
 
@@ -46,7 +46,7 @@ sequenceDiagram
 - 质量档：`appearance.model_quality`（auto/4096/2048）；auto 时 `getDeviceInfo().low_ram` 或总内存 < 3000 MB → 2048，否则 4096。
 - 单一帧循环：Pixi 自带 ticker 被关闭（`autoStart:false`，`autoUpdate:false`），由 `app.js` 的 rAF 统一推进弹簧、DOM 变换、口型与渲染，避免多源时序抖动。
 - 取景（见 FEAT-android-gesture-layout）由弹簧驱动；模型真实外框由可见 drawable 的包围盒并集得到，而不是画布留白。
-- 性能策略：Cubism Core 的网格更新在小米 6 上约 21 ms/帧（CPU）。交互动画期间（拖动、取景、移交）仅每 ~90 ms 做一次完整模型更新，其余帧只用新的变换重绘缓存网格，保证手势/移交动画流畅；静止时每帧完整更新。
+- 性能策略：Cubism Core 的网格更新在小米 6 上约 21 ms/帧（CPU）。交互动画期间（拖动、取景、移交）仅每 ~90 ms 做一次完整模型更新，其余帧只用新的变换重绘缓存网格；静止时每帧完整更新。恢复完整更新时只推进当前页面帧的 dt，丢弃 cached-model 帧期间冻结的模型时间，且单步沿用页面既有的 50 ms 上限，避免身体物理追帧瞬移。本修复不以提高 FPS 为目标。
 - `webglcontextlost` / 恢复：丢失后销毁并重建 Pixi 应用与模型（`rebuildStage`），可见状态与相机保持；回前台（`lifecycle resume` / `visibilitychange`）也会检查 `gl.isContextLost()`。`pause`/`screen_off` 停止帧循环并终止当前语音，避免普通页面与锁屏页面同时播放。
 - 点击互动：头部（外框上 27%）→ `smile` 表情 + 轻振动；身体 → `Greet` 动作；长按人物 → 菜单（去电脑那边 / 设置 / 打招呼）。指针移动时模型 `focus` 跟随视线。
 
@@ -60,6 +60,8 @@ sequenceDiagram
 | `live2d.action.enqueue` 与 `ui.live2d.action` 事件 | `Live2DActionMessage.normalizeLive2dActionMessage` → `Live2dActionQueuePlayer`（idle 回退为 Idle 动作 + 复位表情/参数） |
 
 预设（emote/gesture/react）来自 `generated/config/live2d-presets.json`。错误码沿用桌面（-32602 / -32004 / -32005）。
+
+调试时可经 CDP 调用 `window.__yachiyoStage.startTrace()` / `stopTrace()`，或临时在页面 URL 加 `trace=1`。trace 默认关闭，记录逐帧 raw/applied/physics dt、motion 组/索引/优先级、表情与 focus 事件、RPC/action overlay 来源，以及 motion 前后和最终的角度/身体/physics 关键参数。`scripts/dev/live2d-trace-capture.js` 负责采集，`live2d-trace-analyze.js` 输出每参数最大帧差和最坏点。
 
 ### 2.4 移交（契约 C1.5）
 
@@ -104,13 +106,16 @@ sequenceDiagram
 
 `appearance.background/model_quality/portrait_full_body/landscape_focus`、`task_canvas.*`、`audio.*`、`orientation`（见 FEAT-android-settings）。
 
+逐帧 trace 没有持久化配置，默认关闭；仅通过 CDP 方法或一次性的 `trace=1` 查询参数开启。
+
 ## 5. 限制与已知问题
 
 - 无 sips/ImageMagick 的平台无法降采样。
 - 小米 6 上 Cubism Core CPU 更新 ~21 ms，静止约 25–30 FPS（低于实验 40 FPS 的"空模型+单参数"负载）；交互动画期间用跳过更新策略缓解。
 - 移动浏览器（Jelly）的 `getUserMedia` 在非 HTTPS 局域网地址不可用，麦克风只在 App 内测。
 - 参数覆盖层不处理桌面端的"表情混合目标"（face blend）高级逻辑，emote 预设里的 `ParamMouthForm` 等以覆盖权重混入。
+- trace 会增加每帧取样与序列化开销，只用于 debug APK 的短时诊断，不能用其帧率代表正常运行性能。
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-028（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`。
+TC-AWB-001..TC-AWB-031（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js`。
