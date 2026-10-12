@@ -55,6 +55,7 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   server.on('upgrade', upgrade);
   attachHttpRoutes({ app, server, hub, ...options });
   if (options.bus) require('./runtimeBridge').attachRuntimeBridge({ hub, ...options });
+  if (options.bus && (settings.home || options.voice)) require('./voiceRelay').attachVoiceRelay({ hub, bus: options.bus, directory: settings.home && require('node:path').join(settings.home, 'data/device-media'), ...options.voice });
   server.once('close', () => {
     hub.close();
     server.off('upgrade', upgrade);

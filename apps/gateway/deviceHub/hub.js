@@ -42,6 +42,7 @@ class DeviceHub extends EventEmitter {
   }
   connect(ws, req) {
     ws.lastPing = Date.now();
+    ws.baseUrl = `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host}`;
     if (!tokenMatches(new URL(req.url, 'http://localhost').searchParams.get('token'), this.token)) {
       ws.close(1008, 'Invalid pairing token');
       return;
