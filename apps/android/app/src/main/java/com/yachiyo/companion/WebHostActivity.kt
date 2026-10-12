@@ -3,6 +3,7 @@ package com.yachiyo.companion
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
@@ -79,6 +80,9 @@ abstract class WebHostActivity : Activity() {
         bridge = YachiyoNativeBridge(this, webView)
         webView.addJavascriptInterface(bridge, "YachiyoNative")
         bridge.attach()
+        registerReceiver(screenState, android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
+        }, android.content.Context.RECEIVER_NOT_EXPORTED)
         applyOrientation(CompanionApp.instance.config.get().optString("orientation", "auto"), persist = false)
         onWebViewReady(webView)
         if (savedInstanceState == null) webView.loadUrl(entryUrl())
@@ -116,6 +120,12 @@ abstract class WebHostActivity : Activity() {
         features.onPermissionResult(requestCode, grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
     }
 
+    private val screenState = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            bridge.emitLifecycle(if (intent.action == Intent.ACTION_SCREEN_OFF) "screen_off" else "screen_on")
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         bridge.emitLifecycle("resume")
@@ -138,6 +148,11 @@ abstract class WebHostActivity : Activity() {
     }
 
     fun isDefaultLauncher(): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val rm = getSystemService(android.app.role.RoleManager::class.java)
+            if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME))
+                return rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
+        }
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val ri = packageManager.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY)
         return ri?.activityInfo?.packageName == packageName
@@ -172,6 +187,7 @@ abstract class WebHostActivity : Activity() {
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(screenState) } catch (_: Exception) {}
         bridge.detach()
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()

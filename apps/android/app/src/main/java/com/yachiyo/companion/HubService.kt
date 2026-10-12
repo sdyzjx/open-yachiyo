@@ -5,6 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -23,10 +26,34 @@ class HubService : Service() {
         override fun onState(state: HubState) = refreshNotification()
     }
 
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) onScreenOff()
+        }
+    }
+
+    /** Pre-launches the lockscreen activity while the screen is off so it is on top when it wakes. */
+    private fun onScreenOff() {
+        val app = CompanionApp.instance
+        if (!app.config.get().getJSONObject("lockscreen").optBoolean("enabled", false)) return
+        if (LockscreenActivity.active) return
+        val intent = LockscreenActivity.launchIntent(this)
+        try { startActivity(intent) } catch (e: Exception) { Log.w("HubService", "direct launch blocked: ${e.message}") }
+        // Full-screen-intent notification is the platform-sanctioned way to start over the keyguard.
+        val nm = getSystemService(NotificationManager::class.java)
+        val pi = PendingIntent.getActivity(this, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        nm.notify(NOTIF_LOCK, Notification.Builder(this, CHANNEL_LOCK)
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle("Yachiyo")
+            .setCategory(Notification.CATEGORY_ALARM).setFullScreenIntent(pi, true).setAutoCancel(true)
+            .setTimeoutAfter(10_000).build())
+    }
+
     override fun onCreate() {
         super.onCreate()
+        registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Yachiyo connection", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_LOCK, "Lockscreen", NotificationManager.IMPORTANCE_HIGH))
         CompanionApp.instance.hub.addListener(listener)
     }
 
@@ -77,6 +104,7 @@ class HubService : Service() {
 
     override fun onDestroy() {
         CompanionApp.instance.hub.removeListener(listener)
+        try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 
@@ -85,6 +113,8 @@ class HubService : Service() {
     companion object {
         private const val CHANNEL = "hub"
         private const val NOTIF_ID = 1
+        private const val NOTIF_LOCK = 2
+        private const val CHANNEL_LOCK = "lockscreen"
         const val EXTRA_MIC = "mic"
         @Volatile var micActive = false
 

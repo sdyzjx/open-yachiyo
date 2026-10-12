@@ -185,6 +185,11 @@ class YachiyoNativeBridge(
         }
     }
 
+    /** Extra (not in C2.1): lets the lockscreen UI offer an explicit unlock gesture. */
+    @JavascriptInterface fun dismissKeyguard() {
+        if (host is com.yachiyo.companion.LockscreenActivity) main.post { host.dismissKeyguardAndFinish() }
+    }
+
     @JavascriptInterface fun openSettings() {
         if (lockscreen) return
         main.post { host.openSettingsScreen() }

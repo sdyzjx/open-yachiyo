@@ -162,7 +162,10 @@ class NativeFeatures(private val host: WebHostActivity) {
     }
 
     fun listLaunchableApps(lockscreen: Boolean): String = if (lockscreen) "[]" else app.apps.list().toString()
-    fun setLockscreenEnabled(enabled: Boolean) {}
+    fun setLockscreenEnabled(enabled: Boolean) {
+        app.config.set(JSONObject().put("lockscreen", JSONObject().put("enabled", enabled)).toString())
+        if (enabled) HubService.start(host)
+    }
 
     companion object { const val REQ_MIC = 100; const val REQ_BG = 201; const val REQ_PLUGIN = 202 }
 }
