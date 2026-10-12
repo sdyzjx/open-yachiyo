@@ -129,3 +129,31 @@ test('TC-CFG-005 error responses are single-line and do not echo secrets', async
   assert.equal(r.status, 400);
   assert.equal(r.text.includes('sk-SECRET-VALUE'), false);
 });
+
+function rawGet(port, pathName, headers) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: pathName, method: 'GET', headers }, (res) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('TC-CFG-017 /api/config/** rejects DNS-rebinding Host and foreign Origin from a loopback peer', async (t) => {
+  const app = express();
+  app.use('/api/config', configLoopbackOnly);
+  app.get('/api/config/ping', (req, res) => res.json({ ok: true }));
+  const server = http.createServer(app);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address();
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `127.0.0.1:${port}` }), 200);
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `localhost:${port}`, origin: `http://localhost:${port}` }), 200);
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `[::1]:${port}` }), 200);
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `evil.example:${port}` }), 403);
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `127.0.0.1:${port}`, origin: 'http://evil.example' }), 403);
+  assert.equal(await rawGet(port, '/api/config/ping', { host: `127.0.0.1:${port}`, origin: 'null' }), 403);
+});

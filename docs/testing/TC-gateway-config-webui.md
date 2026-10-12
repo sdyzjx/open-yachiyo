@@ -24,3 +24,4 @@
 | TC-CFG-014 | TTS 试听复用运行时客户端 | unit | 注入 runtime client spy | 指定 provider key 试听 | `providerKey`、store、`fetchImpl` 传给 `createTtsClient`，无临时直连适配 | `test/gateway/voiceConfig.test.js` |
 | TC-CFG-015 | 语音配置路由仅限 loopback | integration | 伪造非本机 TCP peer | GET/PUT/DELETE/POST 所有语音配置入口 | 全部返回 403 | `test/gateway/voiceConfig.test.js` |
 | TC-CFG-016 | 概览聚合状态与快捷入口 | unit | 无 | 检查概览脚本 | 读取 models/voice/devices，展示四类状态并提供三个设置页快捷入口 | `test/gateway/configUi.test.js` |
+| TC-CFG-017 | 本机对端的 DNS 重绑定 / 外域 Origin 被拒 | integration | 本机 TCP 对端访问 `/api/config/**` | 分别以 Host `127.0.0.1`/`localhost`/`[::1]`、Host `evil.example`、Origin `http://evil.example`、Origin `null` 请求 | 本机 Host 且无 Origin 或本机 Origin → 200；其他 → 403 | `test/gateway/configSecurity.test.js` / TC-CFG-017 |

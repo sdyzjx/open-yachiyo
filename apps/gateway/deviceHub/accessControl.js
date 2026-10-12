@@ -48,8 +48,31 @@ function appassetsCors(req, res, next) {
 
 // /api/config/** is loopback-only. Decided purely by the TCP peer address: X-Forwarded-For is
 // ignored and a valid pairing token does not unlock it.
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+function hostnameOf(value) {
+  try {
+    return new URL(`http://${value}`).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// DNS rebinding guard: a hostile page whose domain resolves to 127.0.0.1 still sends its own
+// Host/Origin, so the loopback peer check alone is not enough for a local admin surface.
+function isLoopbackHostAndOrigin(req) {
+  if (!LOOPBACK_HOSTNAMES.has(hostnameOf(req.headers?.host || ''))) return false;
+  const origin = req.headers?.origin;
+  if (origin === undefined) return true;
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(origin).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function configLoopbackOnly(req, res, next) {
-  if (isLocal(req)) return next();
+  if (isLocal(req) && isLoopbackHostAndOrigin(req)) return next();
   res.set('Cache-Control', 'no-store').status(403).json({
     ok: false,
     error: 'Configuration APIs are only available from the local machine'
@@ -71,6 +94,7 @@ module.exports = {
   configLoopbackOnly,
   isAuthorized,
   isLocal,
+  isLoopbackHostAndOrigin,
   remoteApiAuth,
   requestToken
 };
