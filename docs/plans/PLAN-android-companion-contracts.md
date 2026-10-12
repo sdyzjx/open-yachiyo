@@ -441,6 +441,30 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 
 运行时切换模型：`runtime.run` 的 `params.model_ref`（可选）覆盖本次使用的模型；会话设置 `PUT /api/sessions/:id/settings {model_ref}` 持久覆盖。
 
+### C4.5 ChatGPT 订阅用量 provider（2026-10-13）
+
+Yachiyo 保持 pi Agent 核心，仅把 OpenAI 的公开 Responses API 作为一个模型 provider。不得读取、复制或复用 Codex / ChatGPT 客户端自身的凭据，也不得调用 ChatGPT `backend-api`。
+
+- provider key 固定为 `chatgpt`，类型为 `openai_chatgpt_plan`，API 映射为 `openai-responses`，base URL 固定为 `https://api.openai.com/v1`。
+- `providers.yaml` 只保存 `chatgpt` 的模型目录与统一模型选择；OAuth access / refresh / ID token 存在 Yachiyo 自己的受保护数据目录，不写入 provider 配置。
+- 模型目录使用所选账户的 bearer token 请求 `GET https://api.openai.com/v1/models`，读取顶层 `models[]`，仅保留 `visibility: "list"`，显示 `display_name`，推理时传 `slug`；ref 为 `chatgpt/<slug>`。切换账户后必须刷新目录。
+- 模型选择唯一写入口仍是 `PUT /api/config/models/selection`。`GET /api/config/models` 聚合缓存的 ChatGPT 模型；不得新增第二套模型选择状态。
+- ChatGPT provider 不接受 `api_key`、自定义 `base_url`、自定义请求 headers 或静默计费回退。订阅额度、权限或路由失败必须终止该次推理并透传可诊断错误。
+
+ChatGPT 连接 API 使用现有 `{ok,data}` / `{ok:false,error}` 信封和 `/api` 鉴权；其中开始授权、取消和退出还必须来自 loopback：
+
+| 方法 | 路径 | 请求 / 响应 |
+|---|---|---|
+| GET | `/api/chatgpt/status` | `{connected, plan_usage_enabled, active_profile, profiles, pending, error}`；profile 仅含 `{id,email,name,connected,plan_usage_enabled,expires_at}`，`pending` 为 `null` 或 `{attempt_id,state:"waiting"\|"completing",started_at}` |
+| POST | `/api/chatgpt/auth/start` | `{profile_id?}` → `{authorization_url,attempt_id}`；URL origin 必须为 `https://auth.openai.com`，由 Electron main 用系统浏览器打开 |
+| POST | `/api/chatgpt/auth/cancel` | `{attempt_id}`；只取消匹配的短期 attempt 并关闭 listener |
+| POST | `/api/chatgpt/signout` | `{profile_id?}`；先尝试撤销 refresh token，再清除本地 token |
+| POST | `/api/chatgpt/models/refresh` | `{profile_id?}` → `{models:[{slug,display_name}]}`；写回同一 Model Catalog 缓存 |
+
+OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的 state、nonce、verifier，回调固定为 `http://127.0.0.1:<随机端口>/auth/callback`；首次使用 `dynamic_agent_client` 与稳定 `ext_agent_host_id` 动态注册，复登使用已签发的 `client_id`。交换后必须用 OpenAI JWKS 验证 ID token 的签名、issuer、audience、expiry、nonce 与 subject，并检查 `chatgpt.tokens.use.direct` scope。attempt 必须超时、可取消、互相隔离，完成后关闭 listener。
+
+凭据根目录从 `YACHIYO_HOME` / runtime paths 解析，host ID 与各 registration 分开保存；Unix 文件权限为 `0600`，目录为 `0700`，更新采用原子替换。access / refresh / ID token 不得返回 renderer、Android、日志或 provider API。access token 临近到期时串行 refresh，并将旋转后的 token 集合原子写回。
+
 ---
 
 ## C5. Agent 核心（pi）集成点
@@ -458,6 +482,8 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 - **技能**：仓库 `skills/` 与 `~/yachiyo/skills` 作为 pi 技能目录；`config/skills.yaml` 的启用/禁用规则继续生效。
 - **会话**：网关 `session_id` ↔ pi 会话文件一一对应，存放 `~/yachiyo/data/pi-sessions/`；`FileSessionStore` 继续写入供 UI 读取历史（或提供等价读取适配器，保证 `/api/sessions*` 不变）。
 - **模型**：通过 C4.2 Model Catalog 生成 pi 模型（按 `api` 映射到 pi-ai 实现），支持 `fallbackChain()` 与 `params.model_ref`。
+- **ChatGPT 订阅 provider**：仍由 pi AgentSession、工具循环、会话与事件桥接执行；pi-ai 1.1.0 的 `openai-responses` adapter 负责 Responses SSE。请求必须强制 `store:false`、`stream:true`，发送完整本地上下文，省略 `previous_response_id` 和订阅路由不支持的字段。function/custom 工具置于 namespace，由 pi 在本地执行；不得启用托管 file search、Code Interpreter、computer use、hosted MCP/connectors、image generation 或 `tool_search`。
+- **失败与 fallback**：`subscription_sharing_usage_limit_exceeded`、`subscription_sharing_usage_unavailable`、身份/授权/策略错误、unsupported capability 与 route-not-supported 均不得自动切换到 API key 计费 provider；只有与计费无关且原有 fallback 规则明确允许的普通 provider 故障才可继续 fallback。
 
 `apps/gateway/deviceHub/index.js` 导出 `getDeviceHub()`；Device Hub 未启用时返回空实现（`listToolMethods()` → `[]`，`invoke` → 抛 `-32010`）。
 
