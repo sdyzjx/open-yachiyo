@@ -162,9 +162,9 @@ HTTP（D2，均为 loopback-only）：
 
 | 工作流 | 状态 | 提交 | 备注 |
 |---|---|---|---|
-| 统筹：设计规范 + 本计划 | done | | |
-| D1 | pending | | |
-| D2 | pending | | |
-| V | pending | | |
-| A | pending | | |
-| T | pending | | |
+| 统筹：设计规范 + 本计划 | done | 06e6898 | |
+| D1 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| D2 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| V | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| T | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
