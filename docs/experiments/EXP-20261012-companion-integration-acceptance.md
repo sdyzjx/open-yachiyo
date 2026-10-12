@@ -115,4 +115,6 @@
 
 该产品沿用通用API凭据，和限制应用后端使用的Token Plan不同，见[官方节省计划使用方式](https://help.aliyun.com/zh/model-studio/savings-plan-and-resource-package)。原文档关于“只换Coding Plan Base URL即可”的误导表述已纠正。
 
-手机自播放参考语音并用原生MIC回录：系统媒体音量从0/25临时设5，录音RMS最大0.208，recording→uploading→idle；服务返回Empty ASR transcript，故实录ASR→回复仍未通过。WAV已保留为`mic-d23c8c95-1791823517037-0.wav`，正在离线检查内容/格式。测试结束恢复媒体音量0并释放设备锁。
+手机自播放参考语音并用原生MIC回录时，曾尝试通过系统命令把媒体音量从0/25设为5；后续复核发现该命令静默返回但没有生效，真实读回始终为0。录音RMS最大0.208来自低频瞬态，WAV没有参考语音的谐波结构；服务返回Empty ASR transcript。该次实验不能用于判断同机回声抑制或声学路径，详见[Android 麦克风回录与扬声器试听验收](EXP-20261013-android-microphone-acoustic-capture.md)。
+
+随后用户用实体音量键把系统媒体音量调到17/25（68%），应用音量1，播放`voice/qwen-tts-real.wav`（“这是八千代手机语音测试。”）；`voice.playback.ended`完成，用户明确反馈“能听清，音量正常”。物理扬声器输出通过，但此次未同步录音，真实讲话ASR→回复仍未通过。

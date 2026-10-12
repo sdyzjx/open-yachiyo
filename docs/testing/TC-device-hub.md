@@ -32,7 +32,7 @@
 | TC-HUB-014 | 配对配置持久化 | unit | 临时目录 | 首次/二次加载 | 24 随机字节；0600 文件；仅首次打印 | `test/gateway/deviceHub/configAuth.test.js` / Pairing config persists a private random token and does not log it twice |
 | TC-HUB-015 | HTTP 远程权限 | integration | 模拟远程 socket 的本机 HTTP | 伪造代理头、Bearer/query token、pairing | 代理头不能绕过；token 授权有效；pairing 仍拒绝远程 | 同文件 / Remote HTTP auth rejects proxy spoofing and pairing remains localhost-only |
 
-| TC-HUB-016 | 真实 TTS/麦克风闭环 | manual-device | 合并客户端；已配置 TTS/ASR | 手机为 host，发送聊天播放回复；按住说话、取消、连续模式 | TTS 正常播放并口型同步；transcript 正确；取消不触发 run；设备会话有回复 | manual（统筹者待执行） |
+| TC-HUB-016 | 真实 TTS/麦克风闭环 | manual-device | 合并客户端；已配置 TTS/ASR | 手机为 host，发送聊天播放回复；按住说话、取消、连续模式 | TTS 正常播放并口型同步；transcript 正确；取消不触发 run；设备会话有回复 | manual；TTS口型及物理扬声器试听通过（系统17/25、应用1，用户确认清晰正常）；原生录音文件生成通过。先前同机回录实际媒体音量为0且ASR为空，真实讲话transcript/设备回复仍待执行 |
 | TC-HUB-017 | Android 插件实际安装 | manual-device | WS4/WS5 插件宿主、示例包 | 设备页上传/推送；手机回执；锁屏再推送 | SHA-256/size 校验安装；插件可用；锁屏拒绝安装 | manual（统筹者待执行） |
 | TC-HUB-018 | 设备页可视交互 | manual-device | 本机 Hub 与自动回执假设备 | Chrome 打开设备页，移交到 MI 6 再接回电脑 | host 文案/当前按钮正确；锁屏手机不出现在插件目标选择器 | manual（2026-10-12 WS3 已执行，无云端/真机） |
 | TC-HUB-019 | 保留 topic 防伪造 | integration | 已配对设备 | 逐一发布 plugin.install、avatar 控制、sys online/offline、voice.play、chat delta/final、task.update | 全部 -32006；ready/exited/entered 回执仍允许 | `test/gateway/deviceHub/hub.test.js` / Devices cannot publish gateway and runtime reserved topics |

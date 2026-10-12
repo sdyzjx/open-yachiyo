@@ -68,6 +68,7 @@
 - [WS3 施工文档：Device Hub（双工事件总线）+ 桌面移交 + 语音/麦克风路由 + 插件推送](plans/PLAN-android-ws3-device-hub.md)
 - [WS4 施工文档：Android 原生壳（Kotlin）](plans/PLAN-android-ws4-android-native.md)
 - [WS5 施工文档：Android Web 前端（Live2D 舞台 / 手势布局 / 插件宿主 / 配置界面）](plans/PLAN-android-ws5-web-ui.md)
+- [pi 到手机与桌面的实时 TTS 路由计划](plans/PLAN-voice-realtime-tts-routing.md)
 - [Real-time TTS + LipSync 分阶段施工方案（主线基线）](plans/REALTIME_TTS_LIPSYNC_PHASED_PLAN.md)
 - [Session Context Isolation + Workspace Isolation + Permission Levels](plans/SESSION_WORKSPACE_PERMISSION_IMPLEMENTATION.md)
 - [Skills Runtime Implementation](plans/SKILLS_RUNTIME_IMPLEMENTATION.md)
@@ -84,6 +85,7 @@
 
 - [Android 端 Live2D WebView 渲染可行性实验](experiments/EXP-20261012-android-live2d-webview-feasibility.md)
 - [Android Companion 集成与真机验收](experiments/EXP-20261012-companion-integration-acceptance.md)
+- [Android 麦克风回录与扬声器试听验收](experiments/EXP-20261013-android-microphone-acoustic-capture.md)
 - [真实 pi、TTS 与 ASR 服务验收](experiments/EXP-20261013-real-voice-services.md)
 
 ## 调研 Research
