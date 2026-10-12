@@ -31,7 +31,9 @@ Preload 只暴露 `modelConfigRequest({method,path,body})`。Main process 在加
 | PUT | `/api/config/models/selection` | 保存当前/启用模型 |
 | POST | `/api/config/models/discover` | 拉取 Provider 模型列表 |
 
-任意查询串、其他路径或方法都会在访问网关前拒绝。Renderer 不接收配对 token、Provider API key 或原始配置文件；错误消息在 main process 截断并遮盖 Bearer/token/api_key 片段。
+任意查询串、其他路径或方法都会在访问网关前拒绝。请求体也按操作精确投影：选择接口只接收 `active_model`/`enabled_models`，发现接口只接收 Provider key，不能传入 Provider 对象、URL、header、环境变量名或超时。
+
+Renderer 不接收配对 token、Provider API key 或原始配置文件。Main process 对成功响应再次投影，只返回模型的展示字段与 Provider 的 key/display name/密钥存在性布尔值；`headers`、`extra_body`、`base_url`、`api_key_env`、roles/fallback 等字段不会进入 renderer。错误消息在 main process 截断并遮盖 Bearer/token/api_key 片段，网络异常也走同一脱敏路径。
 
 ## 4. 配置项
 

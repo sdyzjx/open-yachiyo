@@ -12,8 +12,8 @@
 |---|---|
 | 类型 | unit |
 | 前置条件 | 无 |
-| 步骤 | 分别请求 allowlist 内外的 method/path，并尝试在路径附加 token 查询串 |
-| 期望结果 | 仅 GET models、PUT selection、POST discover 三个精确组合通过；其余请求在访问网关前拒绝 |
+| 步骤 | 请求 allowlist 内外的 method/path；附加 token 查询串；在允许路径中夹带 roles、Provider 对象、URL/header/timeout；让成功快照包含 headers/extra_body/base_url/api_key_env，失败响应包含 Bearer/token/api_key |
+| 期望结果 | 仅 GET models、PUT selection、POST discover 三个精确组合及各自最小请求体通过；成功响应只保留 UI 字段，失败与网络异常脱敏，renderer 不得到敏感配置 |
 | 自动化 | `test/desktop-live2d/modelConfigClient.test.js` |
 
 ## TC-DESKTOP-002 模型选择与列表拉取
