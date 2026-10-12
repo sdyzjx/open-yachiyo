@@ -111,5 +111,5 @@ flowchart TD
 | WS1 | in progress | | Codex，2026-10-12 启动 |
 | WS2 | merged | 63504a1 | 统筹审查修复：/test 凭据外泄（63504a1）；538 测试通过 |
 | WS3 | in progress | | Codex，2026-10-12 启动 |
-| WS4 | review | d6cd0d6 | 审查发现：Bridge 注入到插件 iframe（越权）、插件推送 token 可外发；已退回修复 |
+| WS4 | merged | c039c32 | 修复后合并：Bridge 令牌门控（391ab63）、插件推送仅信任网关且 token 不外发；Gradle 单测 + APK 构建通过 |
 | WS5 | in progress | | Sonnet，2026-10-12 启动 |
