@@ -79,3 +79,7 @@
 ### 任务 2
 
 loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模型选择、DeepSeek compat/request body 测试通过。`npm run test:ci` 513 / 513 通过。
+
+### 任务 3
+
+全注册表工具桥、权限/参数失败与截图附件完成；`npm run test:ci` 518 / 518 通过（含下一任务准备的两个设备用例）。
