@@ -53,6 +53,7 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   };
   server.on('upgrade', upgrade);
   attachHttpRoutes({ app, server, hub, ...options });
+  if (options.bus) require('./runtimeBridge').attachRuntimeBridge({ hub, ...options });
   server.once('close', () => {
     hub.close();
     server.off('upgrade', upgrade);

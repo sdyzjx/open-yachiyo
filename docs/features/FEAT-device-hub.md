@@ -22,6 +22,12 @@
 
 `GET /api/device/pairing` 仅 socket 来源为 localhost 可读；`GET /api/device/devices` 返回 `{devices, avatar_host}`。HTTP 远程请求使用 Bearer 或 query token，不信任代理头。
 
+### 运行时桥接
+
+订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，内存最多保存 128 个任务。
+
+`chat.input` 固定使用 `device-<device_id>` 会话，通过现有网关入队入口执行，复用权限、历史记录与 workspace；设备提交的其他 session_id 不覆盖设备会话。TC-HUB-005 对应 `test/gateway/deviceHub/runtimeBridge.test.js`。
+
 ## 配置项
 
 `~/yachiyo/config/device-hub.yaml`（遵循 `YACHIYO_HOME`）：`pairing_token` 缺省生成 24 字节随机值并保存为仅用户可读文件；`heartbeat_ms` 默认 15000，最小 100。RPC 默认 8000 ms；单帧上限 1 MiB。
