@@ -190,3 +190,11 @@ flowchart TD
 - 用户反馈电脑端不可见时，隔离 gateway `127.0.0.1:3002` 与 Electron 均在运行，实际原因是 `avatar_host` 仍为 Android。手机验收释放设备后，正常 `avatar.transfer` 已切回 `desktop`；CUA 分别确认角色窗口和聊天主界面实际可见。主界面常驻双向迁移按钮由独立 UI 工作流实现，复用现有 transfer/owner/pending 状态。
 - A15 仍未通过，身体抽动也未验收通过。本轮口型结论不能替代 60 FPS、连续身体动画或性能候选验收；设备当时温度 46°C、电量 27%，不用于性能基准。
 - ChatGPT 认证候选的独立审查发现 ID token 经 authorization URL 泄漏、loopback 写 API CSRF/DNS rebinding、并发 start listener 泄漏和 OIDC `azp` 缺失；修复候选仍在复审，未合入主线。实时 TTS 与真实讲话 ASR→pi 回复仍在进行。
+
+### 用户停止 checkpoint（2026-10-13）
+
+- 用户要求立即停止开发并保留完整交接；主线停在 `d2d606b`，没有继续合入 Android presence、Desktop native shell、配置 WebUI 或 ChatGPT OAuth 候选。
+- 手机“角色突然出现后消失”的根因已定位为 Android 旧 `isHost()` 在 Device Hub 断线/owner 未知时默认返回 true，重连收到权威 `avatar_host=desktop` 后再隐藏。独立修复 `d3d526a` 已保存且聚焦测试 3/3 通过，但未合主、未构建 Android、未装机；完整 Desktop/Android 迁移控件仅以未审查 WIP `5d59805` 保存。
+- 配置 WebUI 重构仅完成只读盘点与方案文档 `5db6a91`，产品代码未开始。当前 `/api/config/models` 仍会返回 Provider `headers`/`extra_body`，且整个 `/api/config/**` 尚未实施真实 socket loopback-only 门禁；恢复工作时先修安全边界。
+- ChatGPT OAuth/Responses 候选链 `111c933` → `5b8f67f` → `f99f2d2` → `95260ee` 已完成代码与修复候选审查，但未合主、未做真实 OAuth/API；恢复时必须在当前主线重放并处理文档/配置 UI 冲突后再跑隔离全量测试。
+- 详细分支、测试、运行态、设备状态和下一步见 [HANDOFF-20261013-companion.md](../process/HANDOFF-20261013-companion.md)。A15 仍为 55.96 FPS、未到 60；身体抽动未通过。共享 mask 局部 dirty 候选 `7ff5774` 因会清空共享 FBO 后漏画未变化 source，已由 `bb4a197` 撤销，未安装、未合主。

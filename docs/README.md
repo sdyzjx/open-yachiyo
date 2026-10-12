@@ -175,6 +175,7 @@
 协作流程、SOP、阶段日志。
 
 - [Branch 协作规范（Branch Collaboration Spec）](process/BRANCH_COLLABORATION_SPEC.md)
+- [Android Companion 停止交接记录](process/HANDOFF-20261013-companion.md)
 - [Branch Merge Strategy](process/MERGE_STRATEGY.md)
 - [Runtime Progress & TODO List](process/PROGRESS_TODO.md)
 - [Core Streaming 阶段 0 实现说明](process/core-streaming-stage0-implementation.md)
