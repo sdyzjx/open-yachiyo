@@ -1,7 +1,7 @@
 // Model Catalog — contract C4.2 in docs/plans/PLAN-android-companion-contracts.md.
-// Minimal v1-compatible implementation; WS2 replaces the internals (schema v2, presets,
-// roles, fallback) but must keep this exported surface unchanged.
-const { ProviderConfigStore } = require('./providerConfigStore');
+// Reads providers.yaml (v1 or v2) through normalizeProviderConfig, so every consumer sees
+// the same multi-model view. The exported surface is stable (WS1/WS2/WS3 depend on it).
+const { ProviderConfigStore, normalizeProviderConfig } = require('./providerConfigStore');
 
 const CHAT_TYPES = new Map([
   ['openai_compatible', 'openai-completions'],
@@ -23,33 +23,37 @@ function toDescriptor(providerKey, provider, model = {}) {
     ref: `${providerKey}/${id}`,
     provider: providerKey,
     id,
-    name: model.name || provider.display_name || id,
+    name: model.name || id,
     api: CHAT_TYPES.get(provider.type),
     base_url: String(provider.base_url || '').replace(/\/$/, ''),
     api_key: resolveApiKey(provider),
     api_key_env: provider.api_key_env || null,
-    headers: { ...(provider.headers || {}) },
+    headers: { ...(provider.headers || {}), ...(model.headers || {}) },
     timeout_ms: Number(provider.timeout_ms) || 20000,
     max_retries: provider.max_retries !== undefined ? Number(provider.max_retries) : null,
     context_window: Number(model.context_window) || null,
     max_tokens: Number(model.max_tokens) || null,
     reasoning: Boolean(model.reasoning),
     input: Array.isArray(model.input) ? model.input : ['text'],
-    compat: { ...(provider.compat || {}) },
-    extra_body: { ...(provider.extra_body || {}) },
-    temperature: provider.temperature !== undefined ? Number(provider.temperature) : null
+    compat: { ...(provider.compat || {}), ...(model.compat || {}) },
+    extra_body: { ...(provider.extra_body || {}), ...(model.extra_body || {}) },
+    temperature: model.temperature !== undefined
+      ? Number(model.temperature)
+      : (provider.temperature !== undefined ? Number(provider.temperature) : null)
   };
 }
 
 function findByType(config, types) {
   for (const [key, provider] of Object.entries(config.providers || {})) {
-    if (types.includes(provider.type)) return { key, ...provider };
+    if (types.includes(provider.type)) {
+      return { key, ...provider, api_key: resolveApiKey(provider) };
+    }
   }
   return null;
 }
 
 function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
-  const config = store.load();
+  const config = normalizeProviderConfig(store.load());
   const models = [];
   for (const [key, provider] of Object.entries(config.providers || {})) {
     if (!CHAT_TYPES.has(provider.type)) continue;
@@ -62,10 +66,7 @@ function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
   const byRef = new Map(models.map((m) => [m.ref, m]));
   const resolve = (ref) => byRef.get(String(ref || '')) || null;
 
-  const activeProvider = config.providers?.[config.active_provider];
-  const activeRef = config.active_model
-    || (activeProvider ? `${config.active_provider}/${activeProvider.model || activeProvider.models?.[0]?.id}` : null);
-  const active = resolve(activeRef) || models[0] || null;
+  const active = resolve(config.active_model) || models[0] || null;
 
   const enabledRefs = Array.isArray(config.enabled_models) ? config.enabled_models : [];
   const enabled = enabledRefs.map(resolve).filter(Boolean);

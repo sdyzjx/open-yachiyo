@@ -20,6 +20,11 @@
 
 见契约 C4（`PLAN-android-companion-contracts.md`）。本功能新增导出：`normalizeProviderConfig`、`splitModelRef`、`ProviderConfigStore#loadNormalized()`。
 
+### 3.1 预设与 Model Catalog
+
+- `providerPresets.js`：`listPresets()`、`getPreset(id)`；预设 id：openai、deepseek、qwen、moonshot、zhipu、siliconflow、openrouter、ollama、anthropic、gemini、custom。provider 写 `preset: <id>` 即继承 type/base_url/api_key_env/models/compat。
+- `modelCatalog.loadModelCatalog({store})`：返回 `models/enabled/active/resolve/forRole/fallbackChain/tts/asr`（契约 C4.2）。描述符的 `headers/compat/extra_body/temperature` 为 provider 与模型级字段合并（模型级优先）；`api_key` 由 `api_key` 或 `api_key_env` 解析。
+
 ## 4. 配置项
 
 支持的 `type`：`openai_compatible`、`anthropic`、`google`、`tts_dashscope`、`asr_openai_compatible`、`asr_dashscope`。完整 schema 见契约 C4.1。
@@ -30,4 +35,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-005，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-009，见 `docs/testing/TC-llm-model-config-v2.md`。
