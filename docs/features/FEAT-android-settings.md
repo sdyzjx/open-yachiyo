@@ -3,8 +3,8 @@
 > 类型: feature
 > 状态: active
 > 负责人: sonnet-ws5
-> 更新: 2026-10-12
-> 关联: apps/android/app/src/main/assets/web/settings.html, js/settings.js, docs/plans/PLAN-android-companion-contracts.md §C2.3 §C4.4, TC-AWB-021..TC-AWB-023
+> 更新: 2026-10-13
+> 关联: apps/android/app/src/main/assets/web/settings.html, js/settings.js, docs/plans/PLAN-android-companion-contracts.md §C2.3 §C4.4, TC-AWB-021..TC-AWB-023, TC-AWB-027
 
 ## 1. 概述
 
@@ -15,7 +15,7 @@
 | 区块 | 项目 |
 |---|---|
 | 服务器 | 地址、端口、配对 token（密码框）、启动时自动连接、连接状态点、"测试连接"（断开后重连，6 s 内等待 `connected`/`unauthorized`，给出 toast） |
-| 外观 | 背景预览/颜色/选图（`pickBackground` → `picker.result`）/移除、模型画质（自动/4096/2048）、竖屏全身、横屏取景、屏幕方向（`setOrientation`） |
+| 外观 | 深蓝紫夜景主题；背景预览/颜色/选图（`pickBackground` → `picker.result`）/移除；带来源链接的官网月读宫殿夜景预设；模型画质（自动/4096/2048）、竖屏全身、横屏取景、屏幕方向（`setOrientation`） |
 | 任务画布 | 位置（顶/底/左/右/隐藏）、不透明度 |
 | 语音 | 麦克风模式（按住说话/连续）、播放音量 |
 | 插件 | 列表（图标、名称、类型、版本）、启用开关（`setPluginEnabled`）、卸载（`uninstallPlugin`，确认框）、导入（`pickPluginPackage`，安装完成后 `plugins.changed` 刷新列表） |
@@ -30,13 +30,14 @@
 
 ## 4. 配置项
 
-见契约 C2.3；本页面读写其中全部键。
+见契约 C2.3；本页面读写其中全部键。官网夜景预设写入 `appearance.background={type:"image", image_url:"https://www.cho-kaguyahime.com/assets/img/character/character_bg.jpg", color:"#090b20"}`，没有把图片复制进发布包。
 
 ## 5. 限制与已知问题
 
 - 模型区块依赖 WS2 的 `/api/config/models`，且需要网关对 `https://appassets.androidplatform.net` 返回 CORS 头并允许混合内容（契约 C2.0 已约定）。
 - 设置页的"测试连接"通过原生 WebSocket 验证，不直接 `fetch` 网关。
+- 官网夜景预设依赖网络；离线使用时应通过“选择图片”把已授权图片复制到 App 私有目录。
 
 ## 6. 测试用例
 
-TC-AWB-021、TC-AWB-022、TC-AWB-023（`docs/testing/TC-android-web.md`）。
+TC-AWB-021、TC-AWB-022、TC-AWB-023、TC-AWB-027（`docs/testing/TC-android-web.md`）。

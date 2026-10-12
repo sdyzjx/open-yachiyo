@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: sonnet-ws5
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: apps/android/app/src/main/assets/web/js/layout.js, js/app.js, test/android-web/layout.test.js, TC-AWB-003, TC-AWB-004, TC-AWB-009..TC-AWB-011
 
 ## 1. 概述
@@ -30,6 +30,7 @@ stateDiagram-v2
 - 跟手：`p = start + dx / panelW`，超界按橡皮筋阻尼（0.35）。人物移动 `p*panelW/2`（视差感），并轻微缩小（最多 5%）。
 - 松手：`resolvePanelSnap({progress, velocity, from})`：`projected = progress + v*0.12s`；位移/投影超过 0.3 或速度 ≥ 1.1 进度/秒 → 前进一档（一次手势不会跨过中间态），否则回弹。弹簧继承手指速度（stiffness 260, damping 27，轻微过冲）。
 - 面板宽度 `clamp(46% * viewW, 260, 560)`；面板透明度随进度渐显；只在 |p|>0.5 时可点击。
+- 面板采用深蓝紫半透明渐变与内部 18 px 高斯预模糊装饰层；不对面板后的 Live2D 内容使用大型 `backdrop-filter`，避免拖动时每帧触发人物画面的离屏滤镜开销。
 - 竖屏不启用面板（契约：横屏）。竖屏旋转为横屏时保留 `panelState=0`；横屏转竖屏时面板与已打开插件被收起。
 
 ### 2.2 取景（相机）
@@ -68,4 +69,4 @@ stateDiagram-v2
 
 ## 6. 测试用例
 
-TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`。
+TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011、TC-AWB-027（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`、`test/android-web/theme.test.js`。

@@ -15,6 +15,7 @@
   let testing = false;
   let discovery = { state: 'stopped', reason: '', error: '' };
   let discoveredServices = [];
+  const OFFICIAL_NIGHT_BACKGROUND = 'https://www.cho-kaguyahime.com/assets/img/character/character_bg.jpg';
 
   const set = (patch) => { B.setConfig(patch); };
 
@@ -123,8 +124,11 @@
     const color = h('input', { type: 'color', value: bg.color || '#1d2233' });
     color.onchange = () => set({ appearance: { background: { type: 'color', color: color.value } } });
     const swatch = h('div', { class: 'swatch', style: bg.type === 'image' && bg.image_url ? `background-image:url("${bg.image_url}")` : `background:${bg.color || '#1d2233'}` });
+    const useOfficialNight = () => set({ appearance: { background: { type: 'image', image_url: OFFICIAL_NIGHT_BACKGROUND, color: '#090b20' } } });
     return card('外观',
       row('背景预览', swatch),
+      row('夜景主题', h('button', { class: 'btn primary', type: 'button', onclick: useOfficialNight }, '使用官网夜景'),
+        h('span', { class: 'source-note' }, '月读宫殿夜景 · ', h('a', { href: OFFICIAL_NIGHT_BACKGROUND, target: '_blank', rel: 'noreferrer' }, '图片来源'))),
       row('背景颜色', color),
       row('背景图片', h('div', { style: 'display:flex;gap:8px' },
         h('button', { class: 'btn', type: 'button', onclick: () => B.call('pickBackground') }, '选择图片'),
