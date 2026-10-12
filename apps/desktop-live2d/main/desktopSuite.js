@@ -1729,6 +1729,13 @@ async function startDesktopSuite({
     bubbleWidth: bubbleRuntimeConfig.width,
     bubbleHeight: bubbleRuntimeConfig.height
   });
+  const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
+  ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('model config requests are only available to the chat window');
+    }
+    return modelConfigRequest(payload);
+  });
   await chatWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'chat.html'));
   await bubbleWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'bubble.html'));
 
@@ -2801,13 +2808,6 @@ async function startDesktopSuite({
     live2dPresets: live2dPresetConfig,
     uiConfig: event?.sender === avatarWindow.webContents ? avatarUiConfig : config.uiConfig
   }));
-  const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
-  ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
-    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
-      throw new Error('model config requests are only available to the chat window');
-    }
-    return modelConfigRequest(payload);
-  });
   const windowDragListener = createWindowDragListener({
     BrowserWindow,
     screen,

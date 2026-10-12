@@ -23,7 +23,7 @@
 
 ## 3. 接口与协议
 
-Preload 只暴露 `modelConfigRequest({method,path,body})`。Main process 仅允许以下 method/path 组合，并使用现有 `config.gatewayUrl` 发起请求：
+Preload 只暴露 `modelConfigRequest({method,path,body})`。Main process 在加载聊天 renderer 前注册处理器，仅允许以下 method/path 组合，并使用现有 `config.gatewayUrl` 发起请求：
 
 | Method | Path | 用途 |
 |---|---|---|
@@ -44,4 +44,4 @@ Preload 只暴露 `modelConfigRequest({method,path,body})`。Main process 仅允
 
 ## 6. 测试用例
 
-TC-DESKTOP-001..TC-DESKTOP-003（`docs/testing/TC-desktop-ui.md`）；自动化 `test/desktop-live2d/modelConfigClient.test.js`。
+TC-DESKTOP-001..TC-DESKTOP-004（`docs/testing/TC-desktop-ui.md`）；自动化 `test/desktop-live2d/modelConfigClient.test.js`。

@@ -172,3 +172,4 @@ flowchart TD
 - 真机已通过系统 DocumentsUI 把官网 2400×1440 夜景复制到应用私有 `files/user/backgrounds/`；强停重启后背景保持。竖屏人物、横屏插件抽屉与设置页截图已留存；背景素材未进入发布包。
 - 用户明确手机是客户端：Android 已移除模型目录拉取、模型选择、Provider 与 Provider API key UI/调用。桌面继续提供模型选择和 Provider 列表拉取；ChatGPT 登录与模型资料也只在电脑端。
 - 本轮分支交付为 Android `08f3198`、Desktop `2958a90`；音频文档 `251b1b2` 由统筹待合并。以上均为隔离分支提交，尚未等同主分支集成。A15 的 60 FPS/人物抽动仍由性能验收工作流验证，当前未达标。
+- Desktop Electron 已连接隔离网关 `127.0.0.1:3002` 实测：首次打开直接加载 2 个模型/4 个 Provider；对当前模型执行保存后刷新 renderer，仍恢复同一 active ref。模型浮层截图为 `/tmp/ui-refresh-desktop-chat-models.png`。状态化本地网关自动覆盖 discover 成功、空列表、服务离线与保存后重开。实测同时发现并修复了 chat renderer 早于模型 IPC 注册的首次启动竞态。
