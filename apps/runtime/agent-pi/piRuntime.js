@@ -54,7 +54,8 @@ async function createPiRuntime(deps) {
           const chain = selectModels(catalog, args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref);
           const models = await createModelRuntime(catalog);
           const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
-          const context = () => ({ ...runtimeContext, trace_id: events.traceId, session_id: sessionId, step_index: events.step });
+          const context = () => ({ ...runtimeContext, trace_id: events.traceId, session_id: sessionId, step_index: events.step,
+            reportToolError: (callId, failure) => events.toolFailures.set(callId, failure) });
           const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context });
           devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
             bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });

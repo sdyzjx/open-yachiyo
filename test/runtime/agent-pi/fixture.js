@@ -21,7 +21,7 @@ async function fixture(t, respond, overrides = {}) {
       return;
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
-    const write = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+    const write = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }], ...(finish_reason && reply.usage ? { usage: reply.usage } : {}) })}\n\n`);
     write({ role: 'assistant' });
     if (reply.tool) write({ tool_calls: [{ index: 0, id: `call_${requests.length}`, type: 'function', function: { name: reply.tool, arguments: JSON.stringify(reply.args || {}) } }] });
     if (reply.text) write({ content: reply.text });

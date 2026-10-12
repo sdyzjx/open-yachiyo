@@ -45,3 +45,7 @@ Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system 
 实际 pi 循环已接通：图片保留原始上传内容（网关执行尺寸上限检查，pi 自动缩放关闭），音频复用 transcribeAudio/预填 transcript；每轮重建会话服务并从 pi JSONL 恢复。流式与工具事件保留旧信封，增加 C5 要求的 requested/started/completed/failed；无重复 dispatcher 调用。仅未输出文本、未执行工具的瞬态模型失败可回退，401 和已执行工具后的失败不会重放。
 
 网关装配默认 AGENT_CORE=pi，legacy 保留原循环；旧 RPC worker 的 model_ref 在装配层补充进入 runtimeContext，新 worker 可直接传 model_ref。Avatar 移交采用统筹明确的 Hub.requestAvatarTransfer(to, {reason:'agent'})。原 gateway.e2e 五个用例在两种核心下完整执行。
+
+自动压缩已用实际 SDK + 本地摘要模型验证；事件为 pi.compaction_start/end。工具失败事件保留原始权限/RPC code。reasoning_content_field 支持自定义 SSE 字段，按流式 UTF-8 帧转换并在历史回放时恢复配置字段，strip_reasoning_in_history 可禁止回放推理内容。
+
+由于 pi 默认技能目录提示只识别内置 read/bash，而本项目禁用这些工具，资源适配层使用 pi.formatSkillsForPrompt 将获准技能清单加入 system prompt，避免出现“技能已加载但模型不可见”。

@@ -44,3 +44,19 @@ test('TC-PI-004 model override and fallback selection reject invalid models and 
   assert.equal(isRetryableModelError({ status: 429 }), true);
   assert.equal(isRetryableModelError(new Error('fetch failed')), true);
 });
+
+test('TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history replay', async () => {
+  const raw = new TextEncoder().encode('data: {"choices":[{"delta":{"private_reason":"思考"}}]}\n\ndata: [DONE]\n\n');
+  const response = new Response(new ReadableStream({ start(controller) {
+    for (const byte of raw) controller.enqueue(Uint8Array.of(byte));
+    controller.close();
+  } }), { headers: { 'content-type': 'text/event-stream' } });
+  const options = requestOptions({ ...descriptor, compat: { reasoning_content_field: 'private_reason' } }, { fetch: async () => response });
+  const normalized = await (await options.fetch('http://127.0.0.1')).text();
+  assert.match(normalized, /"reasoning_content":"思考"/);
+  assert.doesNotMatch(normalized, /private_reason/);
+  assert.match(normalized, /\[DONE\]/);
+  const payload = await options.onPayload({ messages: [{ role: 'assistant', reasoning_content: 'thinking', content: 'text' }] });
+  assert.equal(payload.messages[0].private_reason, 'thinking');
+  assert.equal(payload.messages[0].reasoning_content, undefined);
+});

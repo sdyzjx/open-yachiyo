@@ -1,3 +1,4 @@
+const { ToolingError } = require('../tooling/errors');
 const { ToolExecutor } = require('../executor/toolExecutor');
 const { bridgeTools } = require('./toolBridge');
 
@@ -24,7 +25,12 @@ class DeviceTools {
     const definitions = new Map();
     const add = (name, description, input_schema, run) => {
       if (definitions.has(name) || reservedNames.includes(name)) throw new Error(`Duplicate tool name: ${name}`);
-      definitions.set(name, { name, description, input_schema, run });
+      definitions.set(name, { name, description, input_schema, run: async (...args) => {
+        try { return await run(...args); } catch (error) {
+          if (error.code !== undefined) throw new ToolingError(error.code, error.message, error.data || error.details);
+          throw error;
+        }
+      } });
     };
     add('bus_publish', 'Publish a plugin, avatar, ui or task event', {
       type: 'object', properties: { topic: { type: 'string', pattern: '^(plugin|avatar|ui|task)\\..+' }, data: { type: 'object' } },

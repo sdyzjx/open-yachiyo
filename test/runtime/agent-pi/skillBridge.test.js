@@ -22,7 +22,9 @@ test('TC-PI-014 pi skills honor configured roots, disable rules, precedence and 
     settingsManager: sdk.SettingsManager.inMemory({}), skillConfigStore: { load: () => config } });
   assert.deepEqual(loader.getSkills().skills.map((skill) => skill.name), ['sample']);
   assert.equal(loader.getSkills().skills[0].description, 'workspace winner');
-  assert.equal(loader.getSystemPrompt(), 'custom policy');
+  assert.match(loader.getSystemPrompt(), /^custom policy/);
+  assert.match(loader.getSystemPrompt(), /workspace winner/);
+  assert.doesNotMatch(loader.getSystemPrompt(), /do not show/);
   assert.deepEqual(loader.getAgentsFiles().agentsFiles, []);
   assert.deepEqual(loader.getExtensions().extensions, []);
   config.entries.sample = { enabled: false };

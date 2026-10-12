@@ -32,3 +32,5 @@
 | TC-PI-020 | 循环步数上限 | integration | 无限工具 mock | maxStep=2 | 有限请求后 ERROR | piRuntime.test.js: TC-PI-020 endless tools stop at configured step limit |
 | TC-PI-021 | 网关完整双模式 e2e | e2e | 每模式独立 home、本地 mock | 子进程分别执行原 gateway.e2e.test.js 五项 | pi/legacy 均通过 HTTP、WS、历史、记忆、Live2D、图片及语音设置 | gatewayModes.test.js: TC-PI-021 existing gateway e2e suite passes with AGENT_CORE=pi/legacy |
 | TC-PI-022 | 回滚与 model_ref 转送 | unit | 假 worker | legacy 选择、无效开关、组装 context | 回滚对象保留，model_ref 与权限共存 | gatewayModes.test.js: TC-PI-022 core rollback and RPC model_ref assembly preserve existing context |
+| TC-PI-023 | 自动压缩持久化 | integration | 小上下文模型、本地 mock usage | 三轮对话触发 threshold | 实际生成并持久化 compaction entry，下一轮继续 | piRuntime.test.js: TC-PI-023 automatic compaction persists a summary and resumes through pi |
+| TC-PI-024 | 自定义推理字段 | unit | 字节切分 UTF-8 SSE | 转换字段并回放历史 | 中文与 DONE 帧保留，历史映射到配置字段 | modelAdapter.test.js: TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history replay |

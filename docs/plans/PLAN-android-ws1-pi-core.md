@@ -109,3 +109,9 @@ pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成�
 ### 任务 9
 
 默认 pi / legacy 回滚装配完成；旧 gateway.e2e 五用例分别在两种核心下完整通过；全量 `npm run test:ci` 533 / 533 通过。统筹补充契约后已接入 requestAvatarTransfer，接受新 worker 的 model_ref；未修改或暂存统筹带入的契约 diff。
+
+### 集成补查
+
+补充真实自动压缩与自定义 reasoning 字段的离线验证；修正 pi 1.1.0 的 compaction_start/end 事件名，保留 executor/Hub 的错误码。pi 默认只为 read/bash 添加技能提示，已用官方 formatter 显式添加通过过滤的技能列表，内置工具仍禁用。
+
+集成补查验证：`npm run test:ci` 535 / 535 通过，`git diff --check` 通过。

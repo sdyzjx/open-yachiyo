@@ -24,6 +24,7 @@ function bridgeTools({ executor, bus, context = {} }) {
         })
       });
       if (!result.ok) {
+        current.reportToolError?.(callId, result);
         const error = new Error(result.error || 'Tool execution failed');
         error.code = result.code;
         error.details = result.details;

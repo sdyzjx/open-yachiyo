@@ -36,9 +36,50 @@ function selectModels(catalog, modelRef) {
   return chain.filter((item, i) => chain.findIndex((other) => other.ref === item.ref) === i);
 }
 
+// Normalize a provider-specific reasoning field before pi-ai parses SSE. Keep
+// decoding incremental: a UTF-8 character or JSON frame may span chunks.
+function reasoningFetch(fetchImpl, field) {
+  return async (...args) => {
+    const response = await fetchImpl(...args);
+    if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) return response;
+    let pending = '';
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const normalize = (line) => {
+      if (!line.startsWith('data:')) return line;
+      try {
+        const data = JSON.parse(line.slice(5).trim());
+        for (const choice of data.choices || []) {
+          if (typeof choice.delta?.[field] === 'string') {
+            choice.delta.reasoning_content = choice.delta[field];
+            if (field !== 'reasoning_content') delete choice.delta[field];
+          }
+        }
+        return `data: ${JSON.stringify(data)}`;
+      } catch { return line; }
+    };
+    const body = response.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) {
+        pending += decoder.decode(chunk, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        for (const line of lines) controller.enqueue(encoder.encode(`${normalize(line)}\n`));
+      },
+      flush(controller) {
+        pending += decoder.decode();
+        if (pending) controller.enqueue(encoder.encode(normalize(pending)));
+      }
+    }));
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
+
 function requestOptions(descriptor, options = {}) {
+  const reasoningField = descriptor.compat?.reasoning_content_field;
   return {
     ...options,
+    ...(descriptor.api === 'openai-completions' && reasoningField && reasoningField !== 'reasoning_content'
+      ? { fetch: reasoningFetch(options.fetch || globalThis.fetch, reasoningField) } : {}),
     timeoutMs: descriptor.timeout_ms || 60000,
     maxRetries: descriptor.max_retries ?? 0,
     ...(descriptor.temperature !== null && descriptor.temperature !== undefined ? { temperature: descriptor.temperature } : {}),
@@ -50,6 +91,15 @@ function requestOptions(descriptor, options = {}) {
           const copy = { ...message };
           if (Array.isArray(copy.content) && copy.content.every((part) => part.type === 'text')) {
             copy.content = copy.content.map((part) => part.text).join('');
+          }
+          if (reasoningField && !descriptor.compat?.strip_reasoning_in_history) {
+            const thinking = copy.reasoning_content ?? copy.reasoning ?? copy.reasoning_text;
+            if (thinking !== undefined) {
+              delete copy.reasoning_content;
+              delete copy.reasoning;
+              delete copy.reasoning_text;
+              copy[reasoningField] = thinking;
+            }
           }
           if (descriptor.compat?.strip_reasoning_in_history) {
             for (const field of ['reasoning', 'reasoning_content', 'reasoning_text', descriptor.compat.reasoning_content_field]) {

@@ -59,7 +59,9 @@ test('TC-PI-018 tool denial is visible to pi and does not bypass permissions', a
   const result = await f.runtime.run({ sessionId: 'low', input: 'write', permissionLevel: 'low', onEvent: (e) => events.push(e) });
   assert.equal(result.state, 'DONE', result.output);
   assert.equal(executed, false);
-  assert.ok(events.some((e) => e.event === 'tool_call.failed'));
+  const failed = events.find((e) => e.event === 'tool_call.failed');
+  assert.equal(failed.payload.code, 'PERMISSION_DENIED');
+  assert.equal(JSON.parse(failed.payload.result).code, 'PERMISSION_DENIED');
   assert.match(f.requests[1].messages.at(-1).content, /not allowed/);
 });
 
@@ -79,4 +81,22 @@ test('TC-PI-020 endless tools stop at configured step limit', async (t) => {
   assert.equal(result.state, 'ERROR');
   assert.match(result.output, /limit reached/);
   assert.ok(f.requests.length <= 3);
+});
+
+test('TC-PI-023 automatic compaction persists a summary and resumes through pi', async (t) => {
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const f = await fixture(t, () => ({ text: 'offline summary or reply', usage: { prompt_tokens: 3800, completion_tokens: 10, total_tokens: 3810 } }), {
+    compaction: { enabled: true, reserveTokens: 1024, keepRecentTokens: 128 }
+  });
+  f.deps.modelCatalog.models.forEach((model) => { model.context_window = 4096; });
+  const events = [];
+  assert.equal((await f.runtime.run({ sessionId: 'compact', input: 'first ' + 'context '.repeat(2000), onEvent: (e) => events.push(e) })).state, 'DONE');
+  await f.runtime.run({ sessionId: 'compact', input: 'middle ' + 'context '.repeat(1000), onEvent: (e) => events.push(e) });
+  const result = await f.runtime.run({ sessionId: 'compact', input: 'continue', onEvent: (e) => events.push(e) });
+  assert.equal(result.state, 'DONE', result.output);
+  const file = (await fs.readdir(path.join(f.root, 'sessions'))).find((name) => name.endsWith('.jsonl'));
+  const entries = (await fs.readFile(path.join(f.root, 'sessions', file), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(entries.some((entry) => entry.type === 'compaction'), JSON.stringify({ events: events.map((e) => [e.event, e.payload.reason]), usage: entries.filter((e) => e.type === 'message').map((e) => e.message.usage), requests: f.requests.length }));
+  assert.ok(events.some((event) => event.event === 'pi.compaction_end'));
 });

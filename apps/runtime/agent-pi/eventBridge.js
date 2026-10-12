@@ -16,6 +16,7 @@ class EventBridge {
     this.events = [];
     this.hasOutput = false;
     this.hasTools = false;
+    this.toolFailures = new Map();
     this.metrics = { run_started_ms: Date.now(), first_token_ms: null, first_tool_stable_ms: null,
       first_tool_result_ms: null, final_ms: null, out_of_order_events: 0, tool_dedup_hit: 0, tool_parse_error: 0 };
   }
@@ -59,9 +60,11 @@ class EventBridge {
       this.emit('tool_call.started', payload);
     } else if (event.type === 'tool_execution_end') {
       this.mark('first_tool_result_ms');
-      const result = contentText(event.result?.content);
+      const failure = this.toolFailures.get(event.toolCallId);
+      this.toolFailures.delete(event.toolCallId);
+      const result = failure ? JSON.stringify({ error: failure.error, code: failure.code, details: failure.details || null }) : contentText(event.result?.content);
       const payload = { call_id: event.toolCallId, name: event.toolName, result, error: Boolean(event.isError),
-        ...(event.isError ? { code: event.result?.details?.code || 'RUNTIME_ERROR' } : {}) };
+        ...(event.isError ? { code: failure?.code || event.result?.details?.code || 'RUNTIME_ERROR' } : {}) };
       this.emit('tool.result', payload);
       this.emit(event.isError ? 'tool_call.failed' : 'tool_call.completed', payload);
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
@@ -74,8 +77,8 @@ class EventBridge {
           ? { type: 'tool', tools: calls.map((call) => ({ name: call.name, args: call.arguments })) }
           : { type: 'final', preview: text.slice(0, 160) }, streamed: this.streaming, stream_meta: null });
       }
-    } else if (event.type === 'auto_compaction_start' || event.type === 'auto_compaction_end') {
-      this.emit(`pi.${event.type}`, { reason: event.reason || null });
+    } else if (event.type === 'compaction_start' || event.type === 'compaction_end') {
+      this.emit(`pi.${event.type}`, { reason: event.reason || null, aborted: event.aborted || false, error: event.errorMessage || null });
     }
   }
 
