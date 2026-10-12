@@ -9,9 +9,14 @@ const script = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
 
 test('TC-AND-053 phone chat selects a safe remote model and carries it on text and microphone input', () => {
   assert.match(html, /id="chat-model"/);
+  assert.match(html, /id="active-model-badge"/);
+  assert.match(html, /id="active-model-name"/);
+  assert.match(html, /id="active-model-mode"/);
   assert.match(script, /B\.rpc\('model\.catalog\.get'/);
   assert.match(script, /B\.publish\('chat\.input', \{ text, model_ref:/);
   assert.match(script, /audio_mode: audioModeForSelectedModel\(\)/);
   assert.match(script, /model_ref: S\.selectedModelRef/);
+  assert.match(script, /activeModelName\.textContent = active\?\.name/);
+  assert.match(script, /activeModelBadge\.onclick = openChat/);
   assert.doesNotMatch(script, /api_key|enabled_models|\/api\/config\/models/);
 });

@@ -18,7 +18,9 @@ data class Envelope(
         o.put("type", type)
         if (id != null) o.put("id", id)
         if (topic != null) o.put("topic", topic)
-        if (data != null) o.put("data", data)
+        // C1 envelopes always carry an object payload, including heartbeat frames.  The gateway
+        // deliberately rejects missing data so malformed clients cannot bypass per-type checks.
+        o.put("data", data ?: JSONObject())
         if (from != null) o.put("from", from)
         o.put("ts", ts)
         return o.toString()

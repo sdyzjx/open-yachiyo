@@ -73,6 +73,8 @@ test('app gates entered acknowledgement after model load and animation, and abor
   assert.match(enter, /if \(!completed \|\| !transferEvents\.isCurrent\(ticket\)\) return;/);
   assert.ok(enter.indexOf("publish('avatar.transfer.entered'") > enter.indexOf('if (!completed'));
   assert.match(source, /case 'avatar\.transfer\.failed': onCancel2\(d\)/);
+  assert.match(source, /onCancel2\(d\)\.then\(\(\) => recoverOwnedAvatar\(\)\)/);
+  assert.match(source, /stage\.setVisible\(true\)/);
   assert.match(source, /case 'avatar\.transfer\.cancel': onCancel2\(d\)/);
 });
 

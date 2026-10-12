@@ -25,6 +25,7 @@
     transfer: $('btn-transfer'), transferReason: $('transfer-reason'),
     mic: $('mic-level'), micBtn: $('btn-mic'), chatBtn: $('btn-chat'), chatForm: $('chat-form'), chatText: $('chat-text'),
     chatModel: $('chat-model'), modelModeBadge: $('model-mode-badge'),
+    activeModelBadge: $('active-model-badge'), activeModelName: $('active-model-name'), activeModelMode: $('active-model-mode'),
     settings: $('btn-settings'), sheet: $('sheet'), drawer: $('drawer'), menu: $('menu'), toast: $('toast')
   };
 
@@ -53,6 +54,8 @@
     if (!models.length) {
       el.chatModel.append(new Option('没有已启用模型', ''));
       el.chatModel.disabled = true;
+      if (el.activeModelName) el.activeModelName.textContent = '没有可用模型';
+      if (el.activeModelBadge) el.activeModelBadge.disabled = true;
       return;
     }
     for (const model of models) {
@@ -66,6 +69,13 @@
     el.chatModel.disabled = false;
     const modeName = { transcribe: '转写', direct: '直通', realtime: '实时' }[audioModeForSelectedModel()];
     if (el.modelModeBadge) el.modelModeBadge.textContent = modeName;
+    const active = selectedModel();
+    if (el.activeModelName) el.activeModelName.textContent = active?.name || active?.id || '选择模型';
+    if (el.activeModelMode) el.activeModelMode.textContent = modeName;
+    if (el.activeModelBadge) {
+      el.activeModelBadge.disabled = false;
+      el.activeModelBadge.dataset.mode = audioModeForSelectedModel();
+    }
   }
 
   async function loadModelCatalog() {
@@ -661,6 +671,18 @@
     kick();
   }
 
+  async function recoverOwnedAvatar() {
+    if (!isHost()) return;
+    cancelAnim();
+    S.parked = false;
+    S.exited = false;
+    try { await ensureModel(); } catch { return; }
+    stage.setVisible(true);
+    await runAnim('enter', 'owner-recovery');
+    refreshAway();
+    kick();
+  }
+
   function refreshAway() {
     const away = !lockscreen && (!isHost() || S.exited) && !S.parked && !S.anim;
     el.away.hidden = !away;
@@ -746,7 +768,9 @@
     if (d.state === 'idle' && micOn && ((cfg.audio || {}).mic_mode) !== 'continuous') { micOn = false; el.micBtn.classList.remove('rec'); }
   });
 
-  el.chatBtn.onclick = () => { document.body.dataset.chat = '1'; el.chatForm.classList.add('open'); el.chatText.focus(); };
+  const openChat = () => { document.body.dataset.chat = '1'; el.chatForm.classList.add('open'); el.chatText.focus(); };
+  el.chatBtn.onclick = openChat;
+  if (el.activeModelBadge) el.activeModelBadge.onclick = openChat;
   el.chatForm.onsubmit = (e) => {
     e.preventDefault();
     const text = el.chatText.value.trim();
@@ -858,7 +882,7 @@
         case 'avatar.transfer.cancel': onCancel2(d); break;
         case 'avatar.host.changed': if (d && d.host) onHubState({ ...S.hub, avatar_host: d.host }); break;
         case 'avatar.transfer.completed': transferEvents.clear(d && d.transfer_id); refreshTransferControl(); break;
-        case 'avatar.transfer.failed': onCancel2(d); toast(`迁移失败：${(d && d.reason) || ''}`); break;
+        case 'avatar.transfer.failed': onCancel2(d).then(() => recoverOwnedAvatar()); toast(`迁移失败：${(d && d.reason) || ''}`); break;
         default:
       }
     });

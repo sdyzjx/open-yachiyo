@@ -22,6 +22,12 @@ class EnvelopeTest {
         assertNull(p.id); assertNull(p.topic); assertNull(p.data)
     }
 
+    @Test fun heartbeatSerializationIncludesObjectPayload() {
+        val raw = JSONObject(Envelope("ping").toJson())
+        assertTrue(raw.has("data"))
+        assertEquals(0, raw.getJSONObject("data").length())
+    }
+
     @Test fun backoffSequence() {
         assertEquals(listOf(1000L, 2000L, 4000L, 8000L, 16000L, 30000L, 30000L), (0..6).map { Backoff.delayMs(it) })
         assertEquals(30000L, Backoff.delayMs(500))

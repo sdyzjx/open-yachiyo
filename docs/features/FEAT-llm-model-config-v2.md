@@ -69,7 +69,7 @@
 
 - `anthropic`/`google` 类型当前仅由 Model Catalog 描述，legacy 循环尚不直接调用，由 pi 核心（WS1）消费。
 
-- Provider 编辑与默认/启用模型配置只接受电脑 loopback。Android 只通过 Device Hub 读取已启用模型的安全目录并为当前聊天选择 `model_ref`，不能读取或修改 provider、凭据、默认值或启用列表。
+- Provider 编辑与默认/启用模型配置只接受电脑 loopback。Android 只通过 Device Hub 读取已启用模型的安全目录并为当前聊天选择 `model_ref`，不能读取或修改 provider、凭据、默认值或启用列表。Android 主界面常驻显示当前模型和“转写 / 直通 / 实时”模式徽标，点击徽标直接展开聊天输入与模型选择。
 
 ## 6. 测试用例
 
