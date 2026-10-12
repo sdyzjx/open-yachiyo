@@ -60,8 +60,8 @@
 ## 7. 待统筹决策
 
 - 范围说明：第 1、10 项明确列出的研究/功能/测试/架构文档、`docs/README.md` 索引及本文按任务要求维护；`package-lock.json` 未列入负责路径，本工作流只锁定 package.json 精确版本，合并时请统筹统一更新锁文件（安装使用 `--package-lock=false`）。
-- C4/C5：现有 `RuntimeRpcWorker` 不传递 `params.model_ref`，会话 settings 的规范化也不保留 `model_ref`。WS1 将在 agent 装配适配层转送每次请求覆盖；持久 settings 支持需要 WS2/统筹补齐，不修改只读 RPC/session 文件。
-- C5：Hub 契约只规定设备 `invoke(device_id, method, ...)`，未规定服务端 Avatar transfer API。WS1 将支持显式注入 avatar 控制器；请统筹与 WS3 确认生产装配接口，禁止将未定义的 gateway device_id 当成契约。
+- 已分工（统筹 2026-10-12 补充 C5）：WS2 负责 RPC 透传与 settings 持久化；WS1 同时接受 model_ref/modelRef，并保留当前桩的装配兼容层。原问题：现有 `RuntimeRpcWorker` 不传递 `params.model_ref`，会话 settings 的规范化也不保留 `model_ref`。WS1 将在 agent 装配适配层转送每次请求覆盖；持久 settings 支持需要 WS2/统筹补齐，不修改只读 RPC/session 文件。
+- 已解决（统筹 2026-10-12 补充 C5）：服务端使用 `requestAvatarTransfer(to, { reason })`；WS1 已按此装配。原问题：Hub 契约只规定设备 `invoke(device_id, method, ...)`，未规定服务端 Avatar transfer API。WS1 将支持显式注入 avatar 控制器；请统筹与 WS3 确认生产装配接口，禁止将未定义的 gateway device_id 当成契约。
 
 - **统筹答复（2026-10-12）**：①锁文件由统筹合并时统一生成，同意。②`model_ref` 透传与 settings 持久化归 WS2，WS1 读取 `params.model_ref`（优先）与会话 settings 的 `model_ref` 即可。③Avatar 服务端 API 已写入契约 C5「Device Hub 服务端 API」：使用 `getDeviceHub().requestAvatarTransfer(to)`、`getAvatarHost()`、`listDevices()`、`invoke('avatar-host', ...)`，空实现已在 `apps/gateway/deviceHub/index.js` 提供；不需要另行注入 avatar 控制器（可保留注入点用于测试）。
 
@@ -105,3 +105,7 @@ pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成�
 ### 任务 8
 
 实际 pi AgentSession 循环、旧事件映射、图片/音频、恢复、无副作用回退与步数上限完成；`npm run test:ci` 529 / 529 通过。本地 SSE mock 验证真实 provider 请求。为兼容旧端点，纯文本 content 数组归一化为字符串，关闭 pi 图片自动缩放，保留网关已校验的原始图片。
+
+### 任务 9
+
+默认 pi / legacy 回滚装配完成；旧 gateway.e2e 五用例分别在两种核心下完整通过；全量 `npm run test:ci` 533 / 533 通过。统筹补充契约后已接入 requestAvatarTransfer，接受新 worker 的 model_ref；未修改或暂存统筹带入的契约 diff。

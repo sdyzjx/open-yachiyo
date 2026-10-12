@@ -39,12 +39,14 @@ class DeviceTools {
     add('avatar_transfer', 'Transfer avatar to desktop or an online device', {
       type: 'object', properties: { to: { type: 'string', minLength: 1 } }, required: ['to'], additionalProperties: false
     }, async ({ to }) => {
-      if (!this.avatar?.transfer) {
+      const transfer = this.avatar?.transfer
+        || (this.hub?.requestAvatarTransfer ? (target) => this.hub.requestAvatarTransfer(target, { reason: 'agent' }) : null);
+      if (!transfer) {
         const error = new Error('Avatar transfer controller is not configured');
         error.code = -32601;
         throw error;
       }
-      return JSON.stringify(await this.avatar.transfer(to));
+      return JSON.stringify(await transfer(to));
     });
     for (const method of this.methods) {
       add(method.tool_name, method.description || method.method, method.params_schema || EMPTY_SCHEMA, async (params) => {

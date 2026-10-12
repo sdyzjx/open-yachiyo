@@ -30,3 +30,5 @@
 | TC-PI-018 | pi 执行权限拒绝 | integration | low 与 memory_write | 模型请求写入 | 工具未执行，模型收到失败 | piRuntime.test.js: TC-PI-018 tool denial is visible to pi and does not bypass permissions |
 | TC-PI-019 | 副作用后禁止回退 | integration | 工具后 503、401 | 执行两种错误 | 不重放工具，不回退鉴权失败 | piRuntime.test.js: TC-PI-019 never fall back after tools or on authentication failures |
 | TC-PI-020 | 循环步数上限 | integration | 无限工具 mock | maxStep=2 | 有限请求后 ERROR | piRuntime.test.js: TC-PI-020 endless tools stop at configured step limit |
+| TC-PI-021 | 网关完整双模式 e2e | e2e | 每模式独立 home、本地 mock | 子进程分别执行原 gateway.e2e.test.js 五项 | pi/legacy 均通过 HTTP、WS、历史、记忆、Live2D、图片及语音设置 | gatewayModes.test.js: TC-PI-021 existing gateway e2e suite passes with AGENT_CORE=pi/legacy |
+| TC-PI-022 | 回滚与 model_ref 转送 | unit | 假 worker | legacy 选择、无效开关、组装 context | 回滚对象保留，model_ref 与权限共存 | gatewayModes.test.js: TC-PI-022 core rollback and RPC model_ref assembly preserve existing context |

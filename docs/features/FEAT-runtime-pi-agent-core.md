@@ -43,3 +43,5 @@ Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system 
 技能由 pi DefaultResourceLoader 管理，先使用已有 skills.yaml 来源优先级、enabled 和 eligibility 过滤，再由 pi 解析实际 SKILL.md。每轮重新加载；禁止额外发现用户 pi 扩展、模板和开发仓库 AGENTS 上下文。
 
 实际 pi 循环已接通：图片保留原始上传内容（网关执行尺寸上限检查，pi 自动缩放关闭），音频复用 transcribeAudio/预填 transcript；每轮重建会话服务并从 pi JSONL 恢复。流式与工具事件保留旧信封，增加 C5 要求的 requested/started/completed/failed；无重复 dispatcher 调用。仅未输出文本、未执行工具的瞬态模型失败可回退，401 和已执行工具后的失败不会重放。
+
+网关装配默认 AGENT_CORE=pi，legacy 保留原循环；旧 RPC worker 的 model_ref 在装配层补充进入 runtimeContext，新 worker 可直接传 model_ref。Avatar 移交采用统筹明确的 Hub.requestAvatarTransfer(to, {reason:'agent'})。原 gateway.e2e 五个用例在两种核心下完整执行。

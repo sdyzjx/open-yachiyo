@@ -33,3 +33,11 @@ test('TC-PI-009 bus namespace, schema, policy and avatar routing are enforced', 
   await assert.rejects(denied.execute('id', { topic: 'ui.test', data: {} }), /denied/);
   assert.throws(() => bridge.snapshot({}, ['bus_publish']), /Duplicate/);
 });
+
+test('TC-PI-009 avatar transfer uses the coordinator-defined Hub API', async () => {
+  let call;
+  const hub = { listToolMethods: () => [], requestAvatarTransfer: async (...args) => { call = args; return { host: args[0], status: 'completed' }; } };
+  const tool = new DeviceTools({ deviceHub: hub }).snapshot({}).find((item) => item.name === 'avatar_transfer');
+  await tool.execute('transfer', { to: 'phone' });
+  assert.deepEqual(call, ['phone', { reason: 'agent' }]);
+});

@@ -51,7 +51,7 @@ async function createPiRuntime(deps) {
           if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
           catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog() : deps.modelCatalog;
           const settings = await deps.sessionStore?.getSessionSettings(sessionId);
-          const chain = selectModels(catalog, args.modelRef || runtimeContext.model_ref || settings?.model_ref);
+          const chain = selectModels(catalog, args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref);
           const models = await createModelRuntime(catalog);
           const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
           const context = () => ({ ...runtimeContext, trace_id: events.traceId, session_id: sessionId, step_index: events.step });
