@@ -8,7 +8,7 @@
 
 系统级架构与长期设计决策。
 
-- [Architecture (Native Runtime, Queue + EventBus)](architecture/ARCHITECTURE.md)
+- [Architecture (pi Runtime, Queue + EventBus)](architecture/ARCHITECTURE.md)
 - [Architecture & Module Documentation Index](architecture/ARCHITECTURE_MODULE_INDEX.md)
 
 ## 功能 Features
@@ -20,6 +20,7 @@
 - [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 - [模型配置 v2（多 provider / 多模型）](features/FEAT-llm-model-config-v2.md)
+- [pi Agent 核心](features/FEAT-runtime-pi-agent-core.md)
 
 ## 指南 Guides
 
@@ -78,6 +79,7 @@
 
 - [嘴形同步与表情动作冲突问题调查方案](research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md)
 - [Live2D Web端音频对口型 (Lip-Sync) 开源方案调研报告](research/LIVE2D_LIPSYNC_RESEARCH.md)
+- [pi 1.1.0 Agent 集成调研](research/RESEARCH-pi-agent-integration.md)
 - [Skills 接入调研报告（OpenClaw vs AstrBot）](research/SKILLS_INTEGRATION_RESEARCH_REPORT.md)
 - [OpenClaw 持久化记忆系统实现分析（基于代码）](research/openclaw-memory-system-analysis.md)
 
@@ -129,6 +131,7 @@
 
 - [Android 原生壳测试用例](testing/TC-android-native.md)
 - [模型配置 v2 测试用例](testing/TC-llm-model-config-v2.md)
+- [pi Agent 核心测试用例](testing/TC-runtime-pi-agent-core.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 

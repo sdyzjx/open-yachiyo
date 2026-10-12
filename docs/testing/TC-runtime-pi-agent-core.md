@@ -1,0 +1,36 @@
+# pi Agent 核心测试用例
+
+> 类型: testcase
+> 状态: active
+> 负责人: Codex (gpt-6-astra)
+> 更新: 2026-10-12
+> 关联: ../features/FEAT-runtime-pi-agent-core.md, ../../test/runtime/agent-pi/
+
+所有用例离线执行，mock 服务仅监听 127.0.0.1；运行 `npm run test:ci`。
+
+| ID | 标题 | 类型 | 前置条件 | 步骤 | 期望结果 | 自动化 |
+|---|---|---|---|---|---|---|
+| TC-PI-001 | pi 精确版本 | unit | 安装依赖 | 比对 package.json 与安装包元数据 | 三个包均为 1.1.0 ESM | dependencies.test.js: TC-PI-001 pi dependency versions are exact and installed |
+| TC-PI-002 | DeepSeek 字段与请求映射 | unit | 假 descriptor | 映射并构建请求 | reasoning/compat/headers/body 正确，历史不变 | modelAdapter.test.js: TC-PI-002 maps reasoning, compat, headers and request body without mutating history |
+| TC-PI-003 | ESM 缓存与 provider 注册 | integration | 实际 SDK、内存凭证 | 并发加载并注册 | 一次加载，密钥作为字面量处理 | modelAdapter.test.js: TC-PI-003 loads ESM once and registers isolated catalog with literal credentials |
+| TC-PI-004 | 模型覆盖与回退 | unit | 双模型目录 | 覆盖、去重、非法引用与错误分类 | 无静默错误模型回退，401 不重试 | modelAdapter.test.js: TC-PI-004 model override and fallback selection reject invalid models and auth errors |
+| TC-PI-005 | 工具上下文与 schema | unit | 真 ToolExecutor | 执行 echo 和非法参数 | 上下文传递正确、非法参数拒绝 | toolBridge.test.js: TC-PI-005 bridge preserves schema, permission, trace, workspace and publishEvent |
+| TC-PI-006 | 权限拒绝与取消 | unit | low 会话 | 调 memory_write、取消后执行 | 不执行工具，pi 收到异常 | toolBridge.test.js: TC-PI-006 permission rejection becomes a pi tool error without executing |
+| TC-PI-007 | 截图附件 | unit | 临时离线图像 | 调 capture bridge | 返回 text + image | toolBridge.test.js: TC-PI-007 desktop capture result includes an actual image block |
+| TC-PI-008 | 设备工具动态刷新 | unit | 假 EventEmitter Hub | 注册后变更、取下一快照 | 新快照撤销工具、旧快照路由稳定、释放订阅 | deviceTools.test.js: TC-PI-008 device tools refresh next snapshot and preserve in-flight definitions |
+| TC-PI-009 | 总线与 Avatar 权限 | unit | 假 Hub/controller | 发布合法/非法主题、移交、deny | 非法发布拒绝，移交参数保留 | deviceTools.test.js: TC-PI-009 bus namespace, schema, policy and avatar routing are enforced |
+| TC-PI-010 | Prompt 与旧核心逐段比对 | integration | 离线假 reasoner | 捕获旧循环 system messages，对比新 builder | 每个原有段落存在 | promptBuilder.test.js: TC-PI-010 prompt migration preserves each legacy system paragraph |
+| TC-PI-011 | 低权限和语音关闭 | unit | low、voice off | 构造 prompt | 不含 memory seed 与语音强制规则 | promptBuilder.test.js: TC-PI-011 low permission omits memory seeds and voice force-off instructions |
+| TC-PI-012 | pi JSONL 恢复与路径隔离 | integration | 临时目录、实际 SessionManager | 写入并重建 bridge | 第一轮上下文可恢复，seed 不重复，路径安全 | sessionBridge.test.js: TC-PI-012 stable pi sessions restore history and do not duplicate seeds |
+| TC-PI-013 | 串行与 UI 镜像 | integration | 真 FileSessionStore | 并发同 session、写历史 | 顺序稳定、关闭镜像不重复写 | sessionBridge.test.js: TC-PI-013 session serialization and optional UI history mirror |
+| TC-PI-014 | 技能来源与禁用规则 | integration | 临时 workspace/global 技能 | pi loader 加载并禁用后 reload | workspace 覆盖 global，禁用项消失，不加载扩展 | skillBridge.test.js: TC-PI-014 pi skills honor configured roots, disable rules, precedence and reload |
+| TC-PI-015 | 真实 pi 循环与事件 | integration | 本地 SSE mock | 工具 add 后流式回复 | 输出 42，全部兼容事件与 trace/seq 字段正确，无内置工具 | piRuntime.test.js: TC-PI-015 real pi loop executes tools and maps legacy events |
+| TC-PI-016 | 第二轮、图片、音频 | integration | 本地 mock 与 pi JSONL | 重建 runtime，图片/ASR 请求 | 历史恢复、图片发送、转录入 prompt | piRuntime.test.js: TC-PI-016 real session resume, image input and audio transcription |
+| TC-PI-017 | 实际模型回退和覆盖 | integration | 503 主模型、本地备用 | 请求并覆盖 modelRef | 按顺序回退且 user 输入不重复 | piRuntime.test.js: TC-PI-017 transient fallback and per-run model override use actual provider requests |
+| TC-PI-018 | pi 执行权限拒绝 | integration | low 与 memory_write | 模型请求写入 | 工具未执行，模型收到失败 | piRuntime.test.js: TC-PI-018 tool denial is visible to pi and does not bypass permissions |
+| TC-PI-019 | 副作用后禁止回退 | integration | 工具后 503、401 | 执行两种错误 | 不重放工具，不回退鉴权失败 | piRuntime.test.js: TC-PI-019 never fall back after tools or on authentication failures |
+| TC-PI-020 | 循环步数上限 | integration | 无限工具 mock | maxStep=2 | 有限请求后 ERROR | piRuntime.test.js: TC-PI-020 endless tools stop at configured step limit |
+| TC-PI-021 | 网关完整双模式 e2e | e2e | 每模式独立 home、本地 mock | 子进程分别执行原 gateway.e2e.test.js 五项 | pi/legacy 均通过 HTTP、WS、历史、记忆、Live2D、图片及语音设置 | gatewayModes.test.js: TC-PI-021 existing gateway e2e suite passes with AGENT_CORE=pi/legacy |
+| TC-PI-022 | 回滚与 model_ref 转送 | unit | 假 worker | legacy 选择、无效开关、组装 context | 回滚对象保留，model_ref 与权限共存 | gatewayModes.test.js: TC-PI-022 core rollback and RPC model_ref assembly preserve existing context |
+| TC-PI-023 | 自动压缩持久化 | integration | 小上下文模型、本地 mock usage | 三轮对话触发 threshold | 实际生成并持久化 compaction entry，下一轮继续 | piRuntime.test.js: TC-PI-023 automatic compaction persists a summary and resumes through pi |
+| TC-PI-024 | 自定义推理字段 | unit | 字节切分 UTF-8 SSE | 转换字段并回放历史 | 中文与 DONE 帧保留，历史映射到配置字段 | modelAdapter.test.js: TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history replay |

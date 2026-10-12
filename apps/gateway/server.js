@@ -254,19 +254,31 @@ async function persistSessionInputImages(sessionId, inputImages = [], workspaceR
   return persisted;
 }
 
-const runner = new ToolLoopRunner({
-  bus,
-  getReasoner: (opts) => llmManager.getReasoner(opts),
-  listTools: () => executor.listTools(),
-  resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
-  resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
+const { createGatewayRunner, attachModelContext } = require('../runtime/agent-pi/gatewayAssembly');
+const { loadModelCatalog } = require('../runtime/config/modelCatalog');
+const { getDeviceHub } = require('./deviceHub');
+const runner = createGatewayRunner({
+  bus, executor, sessionStore, personaContextBuilder, skillConfigStore,
+  modelCatalog: () => loadModelCatalog({ store: providerStore }),
+  deviceHub: getDeviceHub,
+  runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
   toolErrorMaxRetries: parsePositiveIntEnv('RUNTIME_TOOL_ERROR_MAX_RETRIES', 5),
-  toolResultTimeoutMs: parsePositiveIntEnv('RUNTIME_TOOL_RESULT_TIMEOUT_MS', 30000),
-  runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
-  toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
-  toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', true),
-  maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
+  resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
+  legacyFactory: () => new ToolLoopRunner({
+    bus,
+    getReasoner: (opts) => llmManager.getReasoner(opts),
+    listTools: () => executor.listTools(),
+    resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
+    resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
+    maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
+    toolErrorMaxRetries: parsePositiveIntEnv('RUNTIME_TOOL_ERROR_MAX_RETRIES', 5),
+    toolResultTimeoutMs: parsePositiveIntEnv('RUNTIME_TOOL_RESULT_TIMEOUT_MS', 30000),
+    runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
+    toolAsyncMode: parseToolAsyncMode(process.env.RUNTIME_TOOL_ASYNC_MODE, 'parallel'),
+    toolEarlyDispatch: parseBooleanEnv('RUNTIME_TOOL_EARLY_DISPATCH', true),
+    maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
+  })
 });
 
 const dispatcher = new ToolCallDispatcher({
@@ -276,7 +288,7 @@ const dispatcher = new ToolCallDispatcher({
 });
 dispatcher.start();
 
-const worker = new RuntimeRpcWorker({ queue, runner, bus });
+const worker = attachModelContext(new RuntimeRpcWorker({ queue, runner, bus }));
 worker.start();
 
 app.get('/api/session-images/:sessionId/:fileName', async (req, res) => {
