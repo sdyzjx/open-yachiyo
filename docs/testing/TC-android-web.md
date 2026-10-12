@@ -228,15 +228,15 @@
 | 期望结果 | 配置保存；主页面收到 config.changed 立即生效（画质变化重建模型） |
 | 自动化 | manual |
 
-## TC-AWB-023 设置：模型配置区块
+## TC-AWB-023 设置：客户端职责边界
 
 | 字段 | 内容 |
 |---|---|
-| 类型 | e2e |
-| 前置条件 | 网关含 /api/config/models（WS2） |
-| 步骤 | 分别让网关直出模型对象、返回 `{ok,data}` 包装；打开设置；切换当前模型、启用模型；断网重开 |
-| 期望结果 | 两种响应都正常渲染且不阻断其他设置区；PUT selection 生效；离线时区块隐藏 |
-| 自动化 | `test/android-web/settingsModels.test.js`（响应兼容）；2026-10-13 真机验证 `{ok,data}` 响应可同时渲染模型选项和发现候选 |
+| 类型 | unit + manual-device |
+| 前置条件 | 安装最新 APK；电脑端网关可连接 |
+| 步骤 | 打开手机设置页并检查全部区块；测试服务器连接；搜索构建资产中的模型配置路径和 Provider 凭据字段 |
+| 期望结果 | 手机可配置服务器连接、背景、音频、插件、布局与 Launcher；没有模型选择、Provider 或 Provider API key 入口，也不调用 `/api/config/models*` |
+| 自动化 | `test/android-web/settingsClientScope.test.js`；最终 APK 真机设置页截图 |
 
 ## TC-AWB-024 返回键优先级
 

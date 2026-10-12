@@ -4,14 +4,11 @@
 
   const B = window.YachiyoBridge;
   const Address = window.YachiyoServerAddress;
-  const SettingsModels = window.YachiyoSettingsModels;
   const root = document.getElementById('root');
   let cfg = B.getConfig();
   const info = B.deviceInfo();
   let hub = B.hubState();
   let plugins = [];
-  let models = null;     // result of GET /api/config/models, or null when unavailable
-  let modelsError = '';
   let testing = false;
   let discovery = { state: 'stopped', reason: '', error: '' };
   let discoveredServices = [];
@@ -177,57 +174,15 @@
       row('设备别名', text((cfg.device || {}).alias, (v) => set({ device: { alias: v } }), { maxlength: '24' }), '用于 agent 工具前缀，如 mi6'));
   }
 
-  function modelSection() {
-    if (!models) return null;
-    const enabled = new Set(models.enabled.map((m) => (typeof m === 'string' ? m : m.ref)));
-    const refs = models.models.map((m) => ({ ref: m.ref, name: m.name || m.id, provider: m.provider, ok: m.has_api_key !== false }));
-    const save = (patch) => api('PUT', '/api/config/models/selection', patch).then(() => { toast('已保存'); return loadModels(); }).catch((e) => toast(`保存失败：${e.message}`));
-    return h('section', { class: 'models' }, h('h2', null, '模型'), h('div', { class: 'card' },
-      row('当前模型', select(models.active, refs.map((m) => [m.ref, `${m.name} · ${m.provider}`]), (v) => save({ active_model: v }))),
-      refs.map((m) => h('label', null,
-        h('input', { type: 'checkbox', checked: enabled.has(m.ref), onchange: (e) => { if (e.target.checked) enabled.add(m.ref); else enabled.delete(m.ref); save({ enabled_models: Array.from(enabled) }); } }),
-        h('span', null, m.name, ' ', h('small', null, `${m.provider}${m.ok ? '' : ' · 缺少 API key'}`))))));
-  }
-
-  function serverBase() { const s = cfg.server || {}; return Address.baseUrl('http', s.host, s.port); }
-
-  async function api(method, path, body) {
-    const s = cfg.server || {};
-    const res = await fetch(`${serverBase()}${path}`, {
-      method,
-      headers: { 'content-type': 'application/json', ...(s.token ? { authorization: `Bearer ${s.token}` } : {}) },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  }
-
-  async function loadModels() {
-    try {
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 3500);
-      const s = cfg.server || {};
-      const res = await fetch(`${serverBase()}/api/config/models`, { signal: ctl.signal, headers: s.token ? { authorization: `Bearer ${s.token}` } : {} });
-      clearTimeout(t);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      models = SettingsModels.normalizeResponse(await res.json());
-      modelsError = models ? '' : '模型接口返回格式无效';
-    } catch (err) {
-      models = null; // offline: the section is hidden
-      modelsError = err.message;
-    }
-    render();
-  }
-
   function render() {
     const scrollY = window.scrollY;
     const active = document.activeElement;
     if (active && /INPUT|SELECT/.test(active.tagName) && root.contains(active)) active.blur();
-    root.replaceChildren(connectionSection(), appearanceSection(), canvasSection(), audioSection(), pluginSection(), systemSection(), modelSection());
+    root.replaceChildren(connectionSection(), appearanceSection(), canvasSection(), audioSection(), pluginSection(), systemSection());
     window.scrollTo(0, scrollY);
   }
 
-  B.on('config.changed', (c) => { const hostChanged = JSON.stringify(c.server) !== JSON.stringify(cfg.server); cfg = c; render(); if (hostChanged) loadModels(); });
+  B.on('config.changed', (c) => { cfg = c; render(); });
   B.on('hub.state', (st) => { hub = st; render(); });
   B.on('plugins.changed', () => { plugins = B.json('listPlugins', []); render(); });
   B.on('picker.result', (r) => {
@@ -244,5 +199,4 @@
   plugins = B.json('listPlugins', []);
   render();
   B.start();
-  loadModels();
 })();

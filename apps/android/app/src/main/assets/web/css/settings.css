@@ -52,8 +52,5 @@ input[type=range] { width: 150px; accent-color: var(--accent); }
 .server-candidate:active { background: rgba(238,230,255,.1); }
 .candidate-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .candidate-address { flex: none; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-.models label { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid rgba(235,225,255,.09); font-size: 14px; }
-.models input { width: 20px; height: 20px; accent-color: var(--accent-deep); }
-.models small { color: var(--dim); }
 .toast { position: fixed; left: 50%; bottom: calc(30px + var(--sab)); z-index: 9; max-width: 82%; transform: translateX(-50%); padding: 10px 17px; border-radius: 999px; background: var(--surface-strong); border: 1px solid var(--line); box-shadow: 0 12px 36px rgba(3,4,15,.36); font-size: 13px; text-align: center; }
 .toast[hidden] { display: none; }

@@ -14,7 +14,7 @@
 4. 手机端：音频播放（TTS）、麦克风输入；竖屏全身 + 可自定义背景；横屏聚焦上半身，左滑露出插件入口，右滑露出桌面组件；动效丝滑。
 5. 插件系统：JS + HTML5 小程序（横屏打开）与桌面组件，统一 `.yplug` 包格式，手机可直接导入，电脑端可推送；插件可访问事件总线并注册接口（可暴露为 agent 工具）。
 6. 手机统一配置界面：服务端地址、背景、任务画布位置、插件导入、默认桌面接管、锁屏显示人物（锁屏下 agent 可控制人物、麦克风与音频，但不能访问插件）。
-7. 模型配置升级：支持 DeepSeek 等多种 API、多模型选择、按用途分配、失败回退；电脑端配置页与手机端配置界面均可查看/切换。
+7. 模型配置升级：支持 DeepSeek 等多种 API、多模型选择、按用途分配、失败回退；配置与凭据只在电脑端管理，手机保持纯客户端职责。
 8. **Agent 核心迁移到 pi**（`@earendil-works/pi-coding-agent`）：循环、上下文管理、技能、会话都由 pi 承担；现有工具、事件总线、设备 RPC、音频功能注册为 pi 工具；现有 prompt 迁移到 pi。
 
 ## 2. 架构总览
@@ -92,7 +92,7 @@ flowchart TD
 | A8 | 导入示例插件（app + widget）；插件经事件总线与电脑端通信并注册工具，agent 能调用 | 真机 |
 | A9 | 电脑端推送插件到手机并自动安装 | 真机 |
 | A10 | 设为默认桌面；锁屏显示人物，锁屏下 agent 可控制人物/语音，插件不可用 | 真机 |
-| A11 | DeepSeek 等 provider 配置、多模型选择、回退生效；配置页可切换 | 自动 + 手工 |
+| A11 | DeepSeek 等 provider 配置、多模型选择、回退生效；电脑配置页/桌面聊天窗可切换，手机不暴露模型或 Provider 配置 | 自动 + 手工 |
 | A12 | `AGENT_CORE=pi` 下全部原有 e2e 测试通过；`AGENT_CORE=legacy` 可回滚 | 自动 |
 | A13 | 每个功能均有 `FEAT-*` 文档与 `TC-*` 用例，`docs/README.md` 索引更新 | 审查 |
 | A14 | 配置页自动发现同一局域网服务端，选择端点并配对 | 真机 |
@@ -102,7 +102,7 @@ flowchart TD
 ## 6. 统筹待办
 
 - [x] **网关局域网加固**（WS3 合并后，统筹执行）：网关监听 `0.0.0.0`，`/api/config/*`、`/api/sessions*`、`/api/memory*` 等管理接口目前对局域网无鉴权，且既有 `GET /api/config/providers/config` 会返回内联 api_key。方案：非 loopback 请求必须携带 Device Hub `pairing_token`；`/api/config/providers/config` 与 `/raw` 对外脱敏。
-- [x] **WS3 合并审查必查**：设备 `pub` 不得发布网关保留主题（`plugin.install`、`avatar.host.changed`、`avatar.transfer.*`（除 ready/exited/entered）、`sys.device.online/offline`、`voice.play`、`chat.delta/final`、`task.update`）；`/api/device/*`、`/api/config/models*` 增加 CORS（源 `https://appassets.androidplatform.net`）。
+- [x] **WS3 合并审查必查**：设备 `pub` 不得发布网关保留主题（`plugin.install`、`avatar.host.changed`、`avatar.transfer.*`（除 ready/exited/entered）、`sys.device.online/offline`、`voice.play`、`chat.delta/final`、`task.update`）。`/api/device/*` 保留精确 Android appassets CORS；模型与 ChatGPT 管理接口改为仅电脑 loopback 使用，不再向 Android 暴露。
 - [x] **工具名线上编码（阻塞多 provider）**：`config/tools.yaml` 工具名含 `.`（如 `live2d.motion.play`），OpenAI/Anthropic/DeepSeek 要求 `^[a-zA-Z0-9_-]{1,64}$`。在 `apps/runtime/agent-pi/toolBridge.js` 中把名称编码为线上名（`.`→`__`），执行时映射回原名；`piRuntime.js` 中 `toolName.startsWith('live2d.')` 等判断与 eventBridge 发出的 `tool_call.*` 事件需使用原名；补测试。
 - [x] WS1 遗留：`attachModelContext` 与 WS2 的 worker `model_ref` 透传重复，可删除。
 - [x] 合并时统一重新生成 `package-lock.json`（WS1 合并时已 `npm i`）（WS1 新增 pi 依赖）。
@@ -168,4 +168,7 @@ flowchart TD
 - Android `08f3198`：主舞台、HUD、横屏面板、抽屉和设置页统一深蓝紫夜景、暖金/淡紫强调色。侧面板使用内部静态高斯预模糊装饰层，不对 Live2D 使用大型 `backdrop-filter`，因此不新增每帧人物离屏滤镜；未修改 `stage.js`、Live2D core、渲染优化器或人物动作逻辑。
 - Desktop：透明人物窗口保持透明；聊天、气泡、布局/口型/拖拽区浮层统一夜景视觉。聊天窗模型选择经 main process 精确 allowlist 调用现有 `GET /api/config/models`、`PUT /api/config/models/selection`、`POST /api/config/models/discover`；renderer 不接收 token/API key，错误在 main 截断并脱敏。
 - 自动验证：Node `npm run test:ci` 663/663；Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
-- 尚待验收：安装 UI 版 APK，通过系统选图实际导入官网背景并保存横竖屏/面板/设置截图；桌面启动截图及模型选择/拉取状态实测。A15 继续未达标，不能用旧 host clock 或历史约 59 FPS 数据标记完成。
+- 尚待验收：安装移除手机模型入口后的最终 UI APK，确认设置页职责边界；完成桌面启动截图及模型选择/拉取的成功、空列表、离线与保存重开实测。A15 继续未达标，不能用旧 host clock 或历史约 59 FPS 数据标记完成。
+- 真机已通过系统 DocumentsUI 把官网 2400×1440 夜景复制到应用私有 `files/user/backgrounds/`；强停重启后背景保持。竖屏人物、横屏插件抽屉与设置页截图已留存；背景素材未进入发布包。
+- 用户明确手机是客户端：Android 已移除模型目录拉取、模型选择、Provider 与 Provider API key UI/调用。桌面继续提供模型选择和 Provider 列表拉取；ChatGPT 登录与模型资料也只在电脑端。
+- 本轮分支交付为 Android `08f3198`、Desktop `2958a90`；音频文档 `251b1b2` 由统筹待合并。以上均为隔离分支提交，尚未等同主分支集成。A15 的 60 FPS/人物抽动仍由性能验收工作流验证，当前未达标。
