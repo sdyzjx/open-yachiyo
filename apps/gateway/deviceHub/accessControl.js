@@ -23,11 +23,10 @@ function isAuthorized(req, token, { allowLocal = true } = {}) {
   return (allowLocal && isLocal(req)) || tokenMatches(requestToken(req), token);
 }
 
+// Only the device channel is exposed to the Android WebView origin. /api/config/** is a
+// local administration surface and is intentionally NOT listed (no CORS headers at all).
 function isAppassetsApiPath(pathname) {
-  return pathname === '/api/device'
-    || pathname.startsWith('/api/device/')
-    || pathname === '/api/config/models'
-    || pathname.startsWith('/api/config/models/');
+  return pathname === '/api/device' || pathname.startsWith('/api/device/');
 }
 
 function appassetsCors(req, res, next) {
@@ -47,6 +46,16 @@ function appassetsCors(req, res, next) {
   next();
 }
 
+// /api/config/** is loopback-only. Decided purely by the TCP peer address: X-Forwarded-For is
+// ignored and a valid pairing token does not unlock it.
+function configLoopbackOnly(req, res, next) {
+  if (isLocal(req)) return next();
+  res.set('Cache-Control', 'no-store').status(403).json({
+    ok: false,
+    error: 'Configuration APIs are only available from the local machine'
+  });
+}
+
 function remoteApiAuth(token) {
   return (req, res, next) => {
     if (isAuthorized(req, token)) return next();
@@ -59,6 +68,7 @@ function remoteApiAuth(token) {
 module.exports = {
   APPASSETS_ORIGIN,
   appassetsCors,
+  configLoopbackOnly,
   isAuthorized,
   isLocal,
   remoteApiAuth,

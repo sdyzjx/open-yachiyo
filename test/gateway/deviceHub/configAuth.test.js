@@ -54,19 +54,23 @@ test('Remote management APIs require pairing auth and appassets CORS supports pr
   assert.equal((await fetch(`${base}/api/sessions`, { headers: { authorization: 'Bearer test-token' } })).status, 200);
   assert.equal((await fetch(`${base}/api/sessions?token=test-token`)).status, 200);
 
+  // /api/config/** is never exposed to the Android origin: no CORS headers, even for preflight.
   const preflight = await fetch(`${base}/api/config/models`, {
     method: 'OPTIONS',
     headers: { origin: APPASSETS_ORIGIN, 'access-control-request-headers': 'authorization,content-type' }
   });
-  assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-origin'), APPASSETS_ORIGIN);
-  assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/);
-
+  assert.equal(preflight.headers.get('access-control-allow-origin'), null);
   const models = await fetch(`${base}/api/config/models`, {
     headers: { origin: APPASSETS_ORIGIN, authorization: 'Bearer test-token' }
   });
-  assert.equal(models.status, 200);
-  assert.equal(models.headers.get('access-control-allow-origin'), APPASSETS_ORIGIN);
+  assert.equal(models.headers.get('access-control-allow-origin'), null);
+  const devicePreflight = await fetch(`${base}/api/device/devices`, {
+    method: 'OPTIONS',
+    headers: { origin: APPASSETS_ORIGIN, 'access-control-request-headers': 'authorization,content-type' }
+  });
+  assert.equal(devicePreflight.status, 204);
+  assert.equal(devicePreflight.headers.get('access-control-allow-origin'), APPASSETS_ORIGIN);
+  assert.match(devicePreflight.headers.get('access-control-allow-headers'), /Authorization/);
   const device = await fetch(`${base}/api/device/devices?token=test-token`, { headers: { origin: APPASSETS_ORIGIN } });
   assert.equal(device.headers.get('access-control-allow-origin'), APPASSETS_ORIGIN);
   const foreign = await fetch(`${base}/api/config/models?token=test-token`, { headers: { origin: 'https://example.invalid' } });

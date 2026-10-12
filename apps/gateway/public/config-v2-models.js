@@ -1,61 +1,16 @@
-// config-v2-models.js — "models" tab for Config v2 (contract C4.4 HTTP API).
-// All dynamic text is inserted via textContent (no innerHTML) so config values cannot inject markup.
+// config-v2-models.js — 「模型与路由」页 (contract C4.4 HTTP API).
 (function () {
-  const ROLES = ['chat', 'vision', 'summary'];
-  const pane = document.getElementById('cv2-models-pane');
-  if (!pane) return;
+  const { h, api, toast, chip, field, card, register } = window.CV2;
+  const CHAT_TYPES = ['openai_compatible', 'anthropic', 'google'];
+  const ROLES = [['chat', '对话'], ['vision', '看图'], ['summary', '摘要']];
 
-  let state = null; // GET /api/config/models data
+  let state = null;
   let presets = [];
-  let editing = null; // { key, isNew }
-
-  function h(tag, attrs, ...children) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (k === 'class') node.className = v;
-      else if (k === 'text') node.textContent = v;
-      else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
-      else if (v === true) node.setAttribute(k, '');
-      else if (v !== false && v !== null && v !== undefined) node.setAttribute(k, v);
-    }
-    for (const c of children.flat()) {
-      if (c === null || c === undefined || c === false) continue;
-      node.append(c.nodeType ? c : document.createTextNode(String(c)));
-    }
-    return node;
-  }
-
-  async function api(method, url, body) {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json.data;
-  }
-
-  function setStatus(text, isErr) {
-    const status = document.getElementById('cv2-models-status');
-    if (!status) return;
-    status.textContent = text || '';
-    status.className = `status ${isErr ? 'err' : 'ok'}`;
-  }
-
-  function modelOptions(selectedRef, { allowEmpty, emptyLabel } = {}) {
-    const opts = [];
-    if (allowEmpty) opts.push(h('option', { value: '', text: emptyLabel || '(默认)' }));
-    for (const m of state.models) {
-      const o = h('option', { value: m.ref, text: `${m.ref}${m.name && m.name !== m.id ? ` — ${m.name}` : ''}` });
-      if (m.ref === selectedRef) o.selected = true;
-      opts.push(o);
-    }
-    return opts;
-  }
-
-  // ---------- selection section ----------
+  let editing = null; // { key, isNew, preset }
   const draft = { active: null, enabled: new Set(), roles: {}, fallback: [] };
+  let rerender = () => {};
+
+  const chatProviders = () => Object.values(state.providers).filter((p) => CHAT_TYPES.includes(p.type));
 
   function resetDraft() {
     draft.active = state.active;
@@ -64,120 +19,49 @@
     draft.fallback = [...state.fallback_models];
   }
 
-  function renderSelection(root) {
-    const byProvider = new Map();
+  function modelOptions(selected, emptyLabel) {
+    const opts = [];
+    if (emptyLabel) opts.push(h('option', { value: '', text: emptyLabel }));
     for (const m of state.models) {
-      if (!byProvider.has(m.provider)) byProvider.set(m.provider, []);
-      byProvider.get(m.provider).push(m);
+      opts.push(h('option', { value: m.ref, selected: m.ref === selected, text: m.ref }));
     }
-    const list = h('div', { class: 'cv2m-model-list' });
-    for (const [provider, models] of byProvider) {
-      list.append(h('div', { class: 'cv2m-provider-label', text: state.providers[provider]?.display_name || provider }));
-      for (const m of models) {
-        list.append(h('div', { class: 'cv2m-model-row' },
-          h('label', { class: 'cv2m-check' },
-            h('input', {
-              type: 'checkbox', checked: draft.enabled.has(m.ref),
-              onchange: (e) => { if (e.target.checked) draft.enabled.add(m.ref); else draft.enabled.delete(m.ref); }
-            }),
-            h('span', { text: ' 启用' })),
-          h('label', { class: 'cv2m-check' },
-            h('input', {
-              type: 'radio', name: 'cv2m-active', checked: draft.active === m.ref,
-              onchange: () => { draft.active = m.ref; draft.enabled.add(m.ref); renderAll(); }
-            }),
-            h('span', { text: ' 当前' })),
-          h('span', { class: 'cv2m-model-name', text: m.name || m.id }),
-          h('code', { class: 'cv2m-ref', text: m.ref }),
-          m.reasoning ? h('span', { class: 'cv2m-tag', text: 'reasoning' }) : null,
-          (m.input || []).includes('image') ? h('span', { class: 'cv2m-tag', text: 'vision' }) : null,
-          !m.has_api_key ? h('span', { class: 'cv2m-tag cv2m-tag-warn', text: '无密钥' }) : null));
-      }
-    }
-
-    const roles = h('div', { class: 'cv2m-roles' },
-      ROLES.map((role) => h('label', { class: 'cv2m-field' },
-        h('span', { text: role }),
-        h('select', {
-          onchange: (e) => { if (e.target.value) draft.roles[role] = e.target.value; else delete draft.roles[role]; }
-        }, modelOptions(draft.roles[role], { allowEmpty: true, emptyLabel: '(使用当前模型)' })))));
-
-    const fallbackBox = h('div', { class: 'cv2m-fallback' });
-    draft.fallback.forEach((ref, i) => {
-      fallbackBox.append(h('div', { class: 'cv2m-fallback-row' },
-        h('span', { text: `${i + 1}.` }),
-        h('select', { onchange: (e) => { draft.fallback[i] = e.target.value; } }, modelOptions(ref)),
-        h('button', { class: 'btn', type: 'button', text: '移除', onclick: () => { draft.fallback.splice(i, 1); renderAll(); } })));
-    });
-    fallbackBox.append(h('button', {
-      class: 'btn', type: 'button', text: '+ 添加回退模型',
-      onclick: () => { if (state.models[0]) { draft.fallback.push(state.models[0].ref); renderAll(); } }
-    }));
-
-    root.append(
-      h('h2', { class: 'cv2m-h', text: '模型选择' }),
-      h('p', { class: 'cv2m-hint', text: '勾选需要出现在切换器中的模型，选择当前使用的模型；主模型遇到网络错误 / 429 / 5xx 时按顺序尝试回退模型。' }),
-      list,
-      h('h3', { class: 'cv2m-h3', text: '按用途分配' }), roles,
-      h('h3', { class: 'cv2m-h3', text: '回退链' }), fallbackBox,
-      h('div', { class: 'cv2m-actions' },
-        h('button', { class: 'btn btn-primary', type: 'button', text: '保存选择', onclick: saveSelection }),
-        h('button', { class: 'btn', type: 'button', text: '还原', onclick: () => { resetDraft(); renderAll(); } })));
+    return opts;
   }
 
-  async function saveSelection() {
-    try {
-      setStatus('保存中…');
-      const enabled = state.models.map((m) => m.ref).filter((r) => draft.enabled.has(r));
-      state = await api('PUT', '/api/config/models/selection', {
-        active_model: draft.active,
-        enabled_models: enabled,
-        roles: draft.roles,
-        fallback_models: draft.fallback.filter(Boolean)
-      });
-      resetDraft();
-      renderAll();
-      setStatus('已保存 ✓');
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-  }
+  // ---- providers ----
+  function renderProviders() {
+    const list = chatProviders().map((p) => h('div', { class: 'cv-row' },
+      h('div', { class: 'cv-row-main' },
+        h('strong', { text: p.display_name }),
+        h('span', { class: 'cv-mono cv-dim', text: p.key })),
+      h('div', { class: 'cv-row-meta' },
+        chip(p.type),
+        p.requires_api_key
+          ? (p.has_api_key ? chip('密钥已设置', 'good') : chip('缺少密钥', 'warn'))
+          : chip('无需密钥'),
+        h('span', { class: 'cv-dim cv-ellipsis', title: p.base_url || '', text: p.base_url || '' })),
+      h('button', { class: 'y-btn', type: 'button', text: '编辑', onclick: () => { editing = { key: p.key, isNew: false }; rerender(); } })));
 
-  // ---------- providers section ----------
-  function renderProviders(root) {
-    const rows = Object.values(state.providers).map((p) => h('div', { class: 'cv2m-provider-row' },
-      h('strong', { text: p.display_name }),
-      h('code', { text: p.key }),
-      h('span', { class: 'cv2m-muted', text: `${p.type} · ${p.base_url || ''}` }),
-      p.requires_api_key && !p.has_api_key ? h('span', { class: 'cv2m-tag cv2m-tag-warn', text: '无密钥' }) : null,
-      h('button', { class: 'btn', type: 'button', text: '编辑', onclick: () => { editing = { key: p.key, isNew: false }; renderAll(); } })));
-
-    const presetSelect = h('select', { id: 'cv2m-new-preset' },
+    const presetSelect = h('select', { class: 'y-input', id: 'cv-new-preset', 'aria-label': '预设' },
       presets.map((p) => h('option', { value: p.id, text: p.name })));
-    root.append(
-      h('h2', { class: 'cv2m-h', text: 'Provider' }),
-      h('div', { class: 'cv2m-provider-list' }, rows),
-      h('div', { class: 'cv2m-actions' },
-        h('label', { class: 'cv2m-field' }, h('span', { text: '从预设添加' }), presetSelect),
+    return card('服务商',
+      h('p', { class: 'cv-hint', text: '服务商是一个 API 接入点（Base URL + 密钥）。DeepSeek、通义千问、OpenRouter 等兼容 OpenAI 的服务通过预设添加。API Key 只写不读，保存后不会回显。' }),
+      list.length ? h('div', { class: 'cv-list' }, list) : h('p', { class: 'cv-hint', text: '尚未配置任何对话服务商。' }),
+      h('div', { class: 'cv-actions' },
+        presetSelect,
         h('button', {
-          class: 'btn', type: 'button', text: '+ 添加',
+          class: 'y-btn', type: 'button', text: '添加服务商',
           onclick: () => {
             const preset = presets.find((p) => p.id === presetSelect.value);
             editing = { key: preset.id === 'custom' ? '' : preset.id, isNew: true, preset };
-            renderAll();
+            rerender();
           }
         })));
-  }
-
-  function jsonField(label, id, value) {
-    return h('label', { class: 'cv2m-field cv2m-wide' }, h('span', { text: label }),
-      h('textarea', { id, rows: 3, spellcheck: false, text: JSON.stringify(value || {}, null, 2) }));
   }
 
   function modelsToText(models) {
     return (models || []).map((m) => (m.name && m.name !== m.id ? `${m.id} | ${m.name}` : m.id)).join('\n');
   }
-
   function textToModels(text, previous) {
     const prev = new Map((previous || []).map((m) => [m.id, m]));
     return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
@@ -186,141 +70,192 @@
     });
   }
 
-  function renderEditor(root) {
+  function renderEditor() {
     const existing = state.providers[editing.key] || null;
-    const base = existing || (editing.preset ? {
-      key: editing.key, type: editing.preset.type, preset: editing.preset.id === 'custom' ? null : editing.preset.id,
-      display_name: editing.preset.name, base_url: editing.preset.base_url, api_key_env: editing.preset.api_key_env,
-      has_api_key: false, requires_api_key: editing.preset.requires_api_key,
-      timeout_ms: 60000, headers: {}, compat: editing.preset.compat, extra_body: {}, models: editing.preset.models
-    } : {});
-    const val = (id) => document.getElementById(id).value;
-    const inputField = (label, id, value, type) => h('label', { class: 'cv2m-field' }, h('span', { text: label }),
-      h('input', { id, type: type || 'text', value: value ?? '', autocomplete: 'off', spellcheck: false }));
+    const pr = editing.preset;
+    const base = existing || (pr ? {
+      type: pr.type, preset: pr.id === 'custom' ? null : pr.id, display_name: pr.name, base_url: pr.base_url,
+      api_key_env: pr.api_key_env, has_api_key: false, requires_api_key: pr.requires_api_key,
+      timeout_ms: 60000, models: pr.models
+    } : { type: 'openai_compatible', models: [] });
+    const ids = {};
+    const input = (name, value, type, extra) => {
+      const node = h('input', { class: 'y-input', type: type || 'text', value: value ?? '', autocomplete: 'off', spellcheck: false, ...extra });
+      ids[name] = node;
+      return node;
+    };
+    const typeSelect = h('select', { class: 'y-input' }, CHAT_TYPES.map((t) => h('option', { value: t, selected: t === base.type, text: t })));
+    ids.type = typeSelect;
+    const modelsArea = h('textarea', { class: 'y-input cv-mono', rows: 5, spellcheck: false, value: modelsToText(base.models) });
+    const clearKey = h('input', { type: 'checkbox' });
+    const result = h('div', { class: 'cv-result', role: 'status' });
+    const showResult = (text, isErr) => { result.textContent = text; result.className = `cv-result${text ? (isErr ? ' is-err' : ' is-ok') : ''}`; };
 
-    const typeSelect = h('select', { id: 'cv2m-type' },
-      ['openai_compatible', 'anthropic', 'google'].map((t) => {
-        const o = h('option', { value: t, text: t }); if (t === base.type) o.selected = true; return o;
-      }));
-
-    function collectDraft() {
-      const parse = (id, label) => {
-        try { return JSON.parse(val(id) || '{}'); } catch { throw new Error(`${label} 不是合法 JSON`); }
-      };
+    function collect() {
       const out = {
-        type: val('cv2m-type'),
-        display_name: val('cv2m-display') || undefined,
-        base_url: val('cv2m-base'),
-        api_key_env: val('cv2m-env') || undefined,
-        timeout_ms: Number(val('cv2m-timeout')) || undefined,
-        headers: parse('cv2m-headers', 'headers'),
-        compat: parse('cv2m-compat', 'compat'),
-        extra_body: parse('cv2m-extra', 'extra_body'),
-        models: textToModels(val('cv2m-models'), base.models)
+        type: typeSelect.value,
+        display_name: ids.display.value.trim() || undefined,
+        base_url: ids.base.value.trim(),
+        timeout_ms: Number(ids.timeout.value) || undefined,
+        models: textToModels(modelsArea.value, base.models)
       };
+      const env = ids.env.value.trim();
+      if (env || existing) out.api_key_env = env || null;
       if (base.preset) out.preset = base.preset;
-      const key = val('cv2m-apikey');
-      if (key) out.api_key = key;
       if (base.requires_api_key === false) out.requires_api_key = false;
+      const key = ids.apikey.value;
+      if (key) out.api_key = key;
+      if (clearKey.checked) out.clear_api_key = true;
       return out;
     }
 
-    const result = h('div', { id: 'cv2m-edit-result', class: 'cv2m-result', role: 'status' });
-    const showResult = (text, isErr) => { result.textContent = text; result.className = `cv2m-result ${isErr ? 'err' : 'ok'}`; };
+    const keyHint = existing && existing.has_api_key
+      ? '已设置。留空保持不变；输入新值将替换。'
+      : '保存后不会回显。也可只填下方环境变量名。';
 
-    root.append(h('div', { class: 'cv2m-editor panel' },
-      h('h2', { class: 'cv2m-h', text: editing.isNew ? '添加 provider' : `编辑 provider: ${editing.key}` }),
-      h('div', { class: 'cv2m-grid' },
-        inputField('Key（唯一标识）', 'cv2m-key', editing.key),
-        inputField('显示名', 'cv2m-display', base.display_name),
-        h('label', { class: 'cv2m-field' }, h('span', { text: '类型' }), typeSelect),
-        inputField('Base URL', 'cv2m-base', base.base_url),
-        inputField(`API Key${base.has_api_key ? '（已设置，留空保持不变）' : ''}`, 'cv2m-apikey', '', 'password'),
-        inputField('API Key 环境变量', 'cv2m-env', base.api_key_env),
-        inputField('超时 ms', 'cv2m-timeout', base.timeout_ms, 'number'),
-        h('label', { class: 'cv2m-field cv2m-wide' }, h('span', { text: '模型（每行一个：id 或 id | 名称）' }),
-          h('textarea', { id: 'cv2m-models', rows: 5, spellcheck: false, text: modelsToText(base.models) })),
-        jsonField('额外请求头 headers (JSON)', 'cv2m-headers', base.headers),
-        jsonField('兼容项 compat (JSON)', 'cv2m-compat', base.compat),
-        jsonField('额外请求体 extra_body (JSON)', 'cv2m-extra', base.extra_body)),
-      h('div', { class: 'cv2m-actions' },
+    return card(editing.isNew ? '添加服务商' : `编辑服务商：${base.display_name || editing.key}`,
+      h('div', { class: 'cv-grid' },
+        field('Key（唯一标识）', input('key', editing.key, 'text', existing ? { readonly: true } : {})),
+        field('显示名', input('display', base.display_name)),
+        field('类型', typeSelect),
+        field('Base URL', input('base', base.base_url)),
+        field('API Key', input('apikey', '', 'password', { autocomplete: 'new-password', placeholder: existing && existing.has_api_key ? '••••••••' : '' }), keyHint),
+        field('API Key 环境变量', input('env', base.api_key_env), '例如 DEEPSEEK_API_KEY；没有内联密钥时读取该变量'),
+        field('超时（毫秒）', input('timeout', base.timeout_ms, 'number')),
+        existing && existing.has_api_key
+          ? h('label', { class: 'cv-check cv-field' }, clearKey, h('span', { text: '清除已保存的密钥' }))
+          : null,
+        field('模型（每行一个：id 或 id | 显示名）', modelsArea, null, true)),
+      existing && (existing.has_custom_headers || existing.has_extra_body)
+        ? h('p', { class: 'cv-hint', text: '此服务商包含自定义请求头或额外请求体：出于安全不在此显示，保存时会原样保留；需要修改请直接编辑 providers.yaml。' })
+        : null,
+      h('div', { class: 'cv-actions' },
         h('button', {
-          class: 'btn', type: 'button', text: '发现模型',
+          class: 'y-btn', type: 'button', text: '发现模型',
           onclick: async () => {
             try {
               showResult('发现中…');
-              const data = await api('POST', '/api/config/models/discover', { provider: collectDraft(), provider_key: existing ? editing.key : undefined });
-              if (!data.ok) return showResult(`失败: ${data.error}`, true);
-              const area = document.getElementById('cv2m-models');
-              const have = new Set(textToModels(area.value).map((m) => m.id));
+              const data = await api('POST', '/api/config/models/discover', { provider: collect(), provider_key: existing ? editing.key : undefined });
+              if (!data.ok) return showResult(`失败：${data.error}`, true);
+              const have = new Set(textToModels(modelsArea.value).map((m) => m.id));
               const extra = data.models.map((m) => m.id).filter((id) => !have.has(id));
-              area.value = [area.value.trim(), ...extra].filter(Boolean).join('\n');
-              showResult(`发现 ${data.models.length} 个模型，新增 ${extra.length} 个到列表`);
-            } catch (err) { showResult(err.message, true); }
+              modelsArea.value = [modelsArea.value.trim(), ...extra].filter(Boolean).join('\n');
+              return showResult(`发现 ${data.models.length} 个模型，新增 ${extra.length} 个到列表`);
+            } catch (err) { return showResult(err.message, true); }
           }
         }),
         h('button', {
-          class: 'btn', type: 'button', text: '测试连接',
+          class: 'y-btn', type: 'button', text: '测试连接',
           onclick: async () => {
             try {
               showResult('测试中…');
-              const data = await api('POST', '/api/config/models/test', { provider: collectDraft(), provider_key: existing ? editing.key : undefined });
-              showResult(data.ok ? `连接成功，${data.latency_ms} ms` : `失败 (${data.status ?? 'n/a'}): ${data.error}`, !data.ok);
+              const data = await api('POST', '/api/config/models/test', { provider: collect(), provider_key: existing ? editing.key : undefined });
+              showResult(data.ok ? `连接成功，${data.latency_ms} ms` : `失败 (${data.status ?? '网络'})：${data.error}`, !data.ok);
             } catch (err) { showResult(err.message, true); }
           }
         }),
         h('button', {
-          class: 'btn btn-primary', type: 'button', text: '保存 provider',
+          class: 'y-btn y-btn--primary', type: 'button', text: '保存服务商',
           onclick: async () => {
             try {
-              const key = val('cv2m-key').trim();
+              const key = ids.key.value.trim();
               if (!key) throw new Error('Key 不能为空');
-              state = await api('PUT', `/api/config/models/providers/${encodeURIComponent(key)}`, collectDraft());
-              editing = null;
-              resetDraft();
-              renderAll();
-              setStatus('provider 已保存 ✓');
+              state = await api('PUT', `/api/config/models/providers/${encodeURIComponent(key)}`, collect());
+              editing = null; resetDraft(); rerender(); toast('服务商已保存');
             } catch (err) { showResult(err.message, true); }
           }
         }),
         !editing.isNew ? h('button', {
-          class: 'btn', type: 'button', text: '删除',
+          class: 'y-btn cv-danger', type: 'button', text: '删除',
           onclick: async () => {
-            if (!window.confirm(`删除 provider ${editing.key}？`)) return;
+            if (!window.confirm(`删除服务商 ${editing.key}？相关的启用、回退和用途引用会一并清理。`)) return;
             try {
               state = await api('DELETE', `/api/config/models/providers/${encodeURIComponent(editing.key)}`);
-              editing = null; resetDraft(); renderAll(); setStatus('已删除 ✓');
+              editing = null; resetDraft(); rerender(); toast('已删除');
             } catch (err) { showResult(err.message, true); }
           }
         }) : null,
-        h('button', { class: 'btn', type: 'button', text: '取消', onclick: () => { editing = null; renderAll(); } })),
-      result));
-    if (!editing.isNew) document.getElementById('cv2m-key').readOnly = true;
+        h('button', { class: 'y-btn y-btn--ghost', type: 'button', text: '取消', onclick: () => { editing = null; rerender(); } })),
+      result);
   }
 
-  function renderAll() {
-    pane.replaceChildren();
-    const head = h('div', { class: 'cv2m-head' },
-      h('span', { class: 'cv2-file-label', text: '模型配置 (providers.yaml v2)' }),
-      h('span', { id: 'cv2-models-status', class: 'status', role: 'status', 'aria-live': 'polite' }),
-      h('button', { class: 'btn', type: 'button', text: '重新加载', onclick: load }));
-    const body = h('div', { class: 'cv2m-body' });
-    pane.append(head, body);
-    renderSelection(body);
-    renderProviders(body);
-    if (editing) renderEditor(body);
-  }
-
-  async function load() {
+  // ---- selection ----
+  async function saveSelection() {
     try {
-      [state, presets] = await Promise.all([api('GET', '/api/config/models'), api('GET', '/api/config/models/presets')]);
-      resetDraft();
-      renderAll();
-      setStatus('已加载');
-    } catch (err) {
-      pane.replaceChildren(h('p', { class: 'status err', text: err.message }));
-    }
+      const enabled = state.models.map((m) => m.ref).filter((r) => draft.enabled.has(r));
+      state = await api('PUT', '/api/config/models/selection', {
+        active_model: draft.active,
+        enabled_models: enabled,
+        roles: draft.roles,
+        fallback_models: draft.fallback.filter(Boolean)
+      });
+      resetDraft(); rerender(); toast('模型选择已保存');
+    } catch (err) { toast(err.message, true); }
   }
 
-  window.CV2Models = { show: load };
+  function renderSelection() {
+    const byProvider = new Map();
+    for (const m of state.models) {
+      if (!byProvider.has(m.provider)) byProvider.set(m.provider, []);
+      byProvider.get(m.provider).push(m);
+    }
+    const groups = [];
+    for (const [provider, models] of byProvider) {
+      groups.push(h('div', { class: 'cv-group-label', text: state.providers[provider]?.display_name || provider }));
+      for (const m of models) {
+        groups.push(h('div', { class: 'cv-row cv-row--model' },
+          h('label', { class: 'cv-check', title: '启用后可在聊天窗口的模型选择器中切换' },
+            h('input', { type: 'checkbox', checked: draft.enabled.has(m.ref), onchange: (e) => { if (e.target.checked) draft.enabled.add(m.ref); else draft.enabled.delete(m.ref); } }),
+            h('span', { text: '启用' })),
+          h('label', { class: 'cv-check' },
+            h('input', { type: 'radio', name: 'cv-active', checked: draft.active === m.ref, onchange: () => { draft.active = m.ref; draft.enabled.add(m.ref); rerender(); } }),
+            h('span', { text: '默认' })),
+          h('div', { class: 'cv-row-main' }, h('strong', { text: m.name || m.id }), h('span', { class: 'cv-mono cv-dim', text: m.ref })),
+          h('div', { class: 'cv-row-meta' },
+            m.reasoning ? chip('推理') : null,
+            (m.input || []).includes('image') ? chip('看图') : null,
+            !m.has_api_key && state.providers[m.provider]?.requires_api_key ? chip('缺少密钥', 'warn') : null)));
+      }
+    }
+
+    const roles = h('div', { class: 'cv-grid' }, ROLES.map(([role, label]) => field(`${label}（${role}）`,
+      h('select', { class: 'y-input', onchange: (e) => { if (e.target.value) draft.roles[role] = e.target.value; else delete draft.roles[role]; } },
+        modelOptions(draft.roles[role], '使用默认模型')))));
+
+    const fallback = h('div', { class: 'cv-fallback' });
+    draft.fallback.forEach((ref, i) => fallback.append(h('div', { class: 'cv-actions' },
+      h('span', { class: 'cv-dim', text: `${i + 1}.` }),
+      h('select', { class: 'y-input', onchange: (e) => { draft.fallback[i] = e.target.value; } }, modelOptions(ref)),
+      h('button', { class: 'y-btn y-btn--ghost', type: 'button', text: '移除', onclick: () => { draft.fallback.splice(i, 1); rerender(); } }))));
+    fallback.append(h('button', {
+      class: 'y-btn', type: 'button', text: '添加回退模型', disabled: state.models.length === 0,
+      onclick: () => { draft.fallback.push(state.models[0].ref); rerender(); }
+    }));
+
+    return [
+      card('启用模型与默认模型',
+        h('p', { class: 'cv-hint', text: '勾选的模型会出现在聊天窗口的模型选择器里；「默认」是新会话使用的模型。' }),
+        state.models.length ? h('div', { class: 'cv-list' }, groups) : h('p', { class: 'cv-hint', text: '没有可用模型，请先添加服务商。' })),
+      card('按用途分配', h('p', { class: 'cv-hint', text: '看图、摘要等场景可以单独指定模型，未指定时使用默认模型。' }), roles),
+      card('回退链', h('p', { class: 'cv-hint', text: '默认模型遇到网络错误、429 或 5xx 时，按顺序尝试下列模型。' }), fallback),
+      h('div', { class: 'cv-savebar' },
+        h('span', { class: 'cv-hint', text: '修改模型选择后需点击保存。' }),
+        h('button', { class: 'y-btn y-btn--ghost', type: 'button', text: '还原', onclick: () => { resetDraft(); rerender(); } }),
+        h('button', { class: 'y-btn y-btn--primary', type: 'button', text: '保存选择', onclick: saveSelection }))
+    ];
+  }
+
+  register('models', {
+    async render(root, isCurrent) {
+      [state, presets] = await Promise.all([api('GET', '/api/config/models'), api('GET', '/api/config/models/presets')]);
+      if (!isCurrent()) return;
+      resetDraft();
+      rerender = () => {
+        root.replaceChildren(
+          h('header', { class: 'cv-page-head' }, h('h1', { text: '模型与路由' }), h('p', { class: 'cv-hint', text: '配置对话服务商、选择启用与默认模型，保存后新会话立即生效。' })),
+          ...[renderProviders(), editing ? renderEditor() : null, ...renderSelection()].filter(Boolean));
+      };
+      rerender();
+    }
+  });
 })();

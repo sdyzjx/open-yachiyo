@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws2
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-companion-contracts.md §C4, docs/plans/PLAN-android-ws2-llm-models.md, docs/testing/TC-llm-model-config-v2.md
+> 关联: docs/features/FEAT-gateway-config-webui.md, docs/plans/PLAN-android-companion-contracts.md §C4, docs/plans/PLAN-android-ws2-llm-models.md, docs/testing/TC-llm-model-config-v2.md
 
 ## 1. 概述
 
@@ -37,20 +37,26 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/config/models` | `{active, enabled, roles, fallback_models, models[], providers{}}`；`active`/`enabled` 为 ref 字符串；`models[]` 为描述符去掉 `api_key`，附 `has_api_key`、`enabled`；`providers` 为可编辑的 provider 概要（同样无 key） |
+| GET | `/api/config/models` | `{active, enabled, roles, fallback_models, models[], providers{}}`；`active`/`enabled` 为 ref 字符串；`models[]` 为描述符去掉 `api_key`/`headers`/`extra_body`，附 `has_api_key`、`has_custom_headers`、`has_extra_body`、`enabled`；`providers` 为安全快照（见 §3.3.1） |
 | PUT | `/api/config/models/selection` | `{active_model?, enabled_models?, roles?, fallback_models?}`，引用不存在返回 400；成功后写 `providers.yaml` 并 `commitConfigChange` |
 | GET | `/api/config/models/presets` | 预设列表 |
 | POST | `/api/config/models/test` | `{ref}` 或 `{provider: <key|临时配置>, provider_key?, model?, timeout_ms?}` → 发送最小请求，返回 `{ok, latency_ms, status, error}`（默认超时 15s，上限 60s；错误文本脱敏） |
 | POST | `/api/config/models/discover` | `{provider: <key|临时配置>, provider_key?}` → 调 `GET {base_url}/models`（anthropic 为 `/v1/models`，gemini 解析 `models[].name`），返回 `{ok, models:[{id,name}]}` |
-| PUT | `/api/config/models/providers/:key` | （增量，供配置页）新增/更新 provider；`api_key` 缺省或为空则保留原值，`clear_api_key:true` 清除 |
+| PUT | `/api/config/models/providers/:key` | （增量，供配置页）新增/更新 provider，**patch 语义**：未出现的字段保留（含 headers/extra_body/compat），值为 `null` 的字段删除；`api_key` 缺省或为空则保留原值，仅 `clear_api_key:true` 清除；`models[]` 按 id 合并，保留模型级隐藏字段 |
 | DELETE | `/api/config/models/providers/:key` | 删除 provider 并清理 enabled/fallback/roles/active 引用 |
 | PUT | `/api/sessions/:id/settings` | 路由层前置校验 `settings.model_ref`（null/空串清除；未知 ref → 400），随后由原有处理器持久化 |
+
+#### 3.3.1 访问控制与安全快照（2026-10-13）
+
+- 整个 `/api/config/**` 仅允许 `req.socket.remoteAddress` 为 loopback（`configLoopbackOnly`，`deviceHub/accessControl.js`，在 `server.js` 先于 `remoteApiAuth` 挂载）；不信任 `X-Forwarded-For`，pairing token 不放行；其他来源返回 403。Android appassets 的 CORS 白名单仅保留 `/api/device/**`，不再包含 `/api/config/models*`。
+- Provider 快照只含 `key,type,preset,display_name,base_url,api_key_env,has_api_key,requires_api_key,timeout_ms,models`，chat 附安全 `compat`（仅标量），语音 provider 附 `tts_*`/`model`/`format`；`headers`/`extra_body` 只以 `has_custom_headers`/`has_extra_body` 布尔值表示。旧接口 `GET /api/config/providers/config` 返回同样的安全快照；`/api/config/providers/raw` 仍返回脱敏 YAML，两者同受 loopback 限制。
+- 错误响应只返回首行消息并屏蔽已存储的 key。
 
 会话 `model_ref` 优先级：`runtime.run params.model_ref` > 会话设置 `model_ref` > `active_model`。
 
 ### 3.4 配置页
 
-`/config-v2.html` 新增 **models** 标签页（`config-v2-models.js/.css`）：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、headers/compat/extra_body JSON、发现模型、测试连接、保存/删除）。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。
+`/config-v2.html`（重构见 FEAT-gateway-config-webui）的「模型与路由」页：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、发现模型、测试连接、保存/删除）。安全快照不展示 headers/extra_body 内容，页面只提示这些隐藏字段存在且在 patch 保存时保留。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。概览页同时展示当前模型与已启用模型数量。
 
 ## 4. 配置项
 
@@ -64,4 +70,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。

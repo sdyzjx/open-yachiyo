@@ -189,3 +189,12 @@ HTTP（D2，均为 loopback-only）：
 | D2 | `agent/v2-config-webui` | 5201aa2（配置 API 安全）、77bb9fd（夜景外壳 + 模型/高级页） | a134579：语音路由与语音页 | 语音页按已合并的 V 接口联调、概览页、旧入口迁移、文档、截图 |
 | A | `agent/v2-android-ui` | 68de571（B1 presence）、86ea678（统一主题）、06c62f4（B6 竖屏对话面板） | 7aee801：B8 键盘（adjustNothing + ime 事件） | B8 完成与真机验证、HUD 迁移按钮、文档 |
 | T | `agent/v2-twitch` | — | fdd5085：逐帧 trace 采集脚本 | 复现、定位、修复、实验文档 |
+
+## D2 交付记录（Codex）
+
+- 提交：`5201aa2` 配置 API loopback-only、脱敏快照与 provider patch；`77bb9fd` 月读夜景设置外壳、模型页与高级页；`a134579` 为上一个 agent 的语音 WIP 检查点，已由 `9c36927` 审查并修复；`f2c41b2` 合并 `feature/android-companion` 的 V 语音抽象；`9c36927` 完成 C8 语音路由/页面、运行时接口收敛、概览聚合、测试与文档；`f389b59` 完成中文概览与 favicon 视觉收尾。
+- 完成：B2 / B7（D2 范围）；C8 全部本机 HTTP 路由；TTS/ASR 选择与结构化配置、TTS 试听、桌面 voice path/transport 只读展示；模型/TTS/ASR/Device Hub 概览与快捷入口；旧 `/config.html` 仅跳转；`/theme/` 共用统一 token。
+- 测试：`HOME/TMPDIR` 隔离环境 `npm run test:ci` 通过（699/699）；`npm run docs:lint` 通过；配置专项 `node --test test/gateway/{configSecurity,configUi,voiceConfig}.test.js` 通过（14/14）。
+- 视觉验收：隔离 `YACHIYO_HOME`、假 API Key、`PORT=3120`，Chromium 1100×760；截图：`/tmp/yachiyo-d2-visual.Vo9lNn/shots/overview-final.png`、`models-final.png`、`voice.png`、`voice-editor.png`、`advanced-stable.png`。验收结束已关闭浏览器与网关进程。
+- 未完成项：无。
+- 风险：未向真实供应商发起 TTS 试听（避免计费），真实端到端试听仍需统筹者使用自己的本机配置人工确认；截图位于临时目录，系统清理临时文件后不可用。

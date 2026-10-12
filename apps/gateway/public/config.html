@@ -2,57 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Provider Config</title>
-  <link rel="stylesheet" href="/system.css" />
-  <link rel="stylesheet" href="/config.css" />
+  <meta http-equiv="refresh" content="0; url=/config-v2.html" />
+  <title>设置 — 八千代</title>
 </head>
-<body>
-  <div class="config-shell">
-    <header class="config-header">
-      <div>
-        <h1>Provider Configuration</h1>
-        <p>图形化管理 `providers.yaml`，保存后新会话立即生效。</p>
-      </div>
-      <div class="header-actions">
-        <label class="theme-control" for="themeSelect">
-          <span>Theme</span>
-          <select id="themeSelect">
-            <option value="auto">auto</option>
-            <option value="light">light</option>
-            <option value="dark">dark</option>
-          </select>
-        </label>
-        <a class="btn" href="/">Back to Chat</a>
-        <button id="reloadBtn" class="btn">Reload</button>
-        <button id="saveBtn" class="btn btn-primary">Save Graph Config</button>
-      </div>
-    </header>
-
-    <section class="panel">
-      <div class="row">
-        <label for="activeProviderSelect">Active Provider</label>
-        <select id="activeProviderSelect"></select>
-      </div>
-      <div class="row">
-        <button id="addProviderBtn" class="btn">Add Provider</button>
-        <span id="statusText" class="status"></span>
-      </div>
-      <div id="providerCards" class="provider-cards"></div>
-    </section>
-
-    <section class="panel">
-      <div class="row">
-        <h2>Raw YAML</h2>
-        <div>
-          <button id="loadYamlBtn" class="btn">Load YAML</button>
-          <button id="saveYamlBtn" class="btn">Save YAML</button>
-        </div>
-      </div>
-      <textarea id="rawYaml" class="raw-yaml" placeholder="loading..."></textarea>
-    </section>
-  </div>
-
-  <script src="/config.js"></script>
+<body style="background:#090b20;color:#b9b4ce;font-family:system-ui,sans-serif">
+  <p>旧版配置页已合并，正在跳转到 <a href="/config-v2.html" style="color:#b6a1ff">新的设置页</a>…</p>
+  <script>location.replace('/config-v2.html');</script>
 </body>
 </html>

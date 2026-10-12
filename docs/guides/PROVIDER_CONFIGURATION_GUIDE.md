@@ -479,7 +479,7 @@ providers:
 
 ### 15.5 配置页与 API
 
-- 配置页 `/config-v2.html` 的 **models** 标签页：选择预设添加 provider、编辑 base_url / 密钥 / 模型列表 / headers / compat / extra_body，「发现模型」调用 `GET {base_url}/models`，「测试连接」发送最小请求，勾选启用、选择当前模型、按用途分配、编辑回退链。已保存的 API Key 不会回显，留空表示保持不变。
+- 配置页 `/config-v2.html` 的「模型与路由」页：选择预设添加 provider、编辑 Base URL / 密钥 / 模型列表，「发现模型」调用 `GET {base_url}/models`，「测试连接」发送最小请求，勾选启用、选择当前模型、按用途分配、编辑回退链。安全快照不返回 headers / extra_body 内容，页面只显示其存在状态并在 patch 保存时保留。已保存的 API Key 不会回显，留空表示保持不变。
 - HTTP：`GET /api/config/models`、`PUT /api/config/models/selection`、`GET /api/config/models/presets`、`POST /api/config/models/test`、`POST /api/config/models/discover`（详见 FEAT 文档）。保存后会提交到 config 目录的 git 仓库。
 
 ## 16. 语音 provider（TTS / ASR）与 `voice` 段
@@ -499,3 +499,10 @@ providers:
 - 校验：`voice.active_tts` 必须指向存在的 `tts_*` provider，`voice.active_asr` 必须指向存在的 `asr_*` provider，否则保存时给出明确错误。
 - 旧配置的 `qwen3_tts` key 无需迁移；本指南前文中对 `qwen3_tts` 的描述等价于「`voice.active_tts` 指向的 `tts_dashscope` provider」。
 - 完整行为、接口与错误码见 `docs/features/FEAT-voice-provider-config.md`。
+
+### 16.1 配置 WebUI 与本机 API
+
+- 在 `/config-v2.html#voice` 可添加/编辑 `tts_dashscope` 与 `tts_openai_compatible`，选择当前 TTS、试听已保存配置，并选择当前 ASR。桌面 `voice.path` / `voice.transport` 只读展示；需要修改时进入「高级」。
+- API：`GET /api/config/voice`、`PUT /api/config/voice/selection`、`PUT/DELETE /api/config/voice/providers/:key`、`POST /api/config/voice/test-tts`。这些接口与其余 `/api/config/**` 一样仅允许本机 loopback 访问。
+- provider 更新采用 patch 语义：未传字段保留；空 `api_key` 保留；只有 `clear_api_key:true` 清除。删除当前语音 provider 时会先清理相应 `voice.active_*` 引用。
+- 快照不返回 API Key、headers 或 extra_body 的值；`has_api_key`、`has_custom_headers`、`has_extra_body` 仅表示是否存在。试听直接复用 `apps/runtime/voice` 的 provider 选择与请求实现，不存在单独的 WebUI TTS 配置。

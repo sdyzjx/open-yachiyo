@@ -3,124 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Config v2 — Yachiyo</title>
-  <link rel="stylesheet" href="/system.css" />
+  <title>设置 — 八千代</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/theme/yachiyo-theme.css" />
   <link rel="stylesheet" href="/config-v2.css" />
-  <link rel="stylesheet" href="/config-v2-models.css" />
 </head>
 <body>
-  <div class="cv2-shell">
-
-    <!-- ── Header ── -->
-    <header class="cv2-header" role="banner">
-      <div class="cv2-header-left">
-        <h1 class="cv2-title">Config v2</h1>
-        <p class="cv2-subtitle">编辑所有配置文件，保存后新会话立即生效。</p>
+  <div class="cv-app">
+    <aside class="cv-side">
+      <div class="cv-brand">
+        <span class="cv-brand-name">八千代</span>
+        <span class="cv-brand-sub">设置</span>
       </div>
-      <div class="cv2-header-actions">
-        <label class="theme-control" for="themeSelect">
-          <span>Theme</span>
-          <select id="themeSelect" aria-label="切换主题">
-            <option value="auto">auto</option>
-            <option value="light">light</option>
-            <option value="dark">dark</option>
-          </select>
-        </label>
-        <a class="btn" href="/">Back to Chat</a>
-        <a class="btn" href="/config.html">Providers (v1)</a>
+      <nav class="cv-nav" aria-label="设置分页">
+        <a class="cv-nav-item" href="#overview" data-page="overview"><span class="cv-nav-ico" aria-hidden="true">◐</span>概览</a>
+        <a class="cv-nav-item" href="#models" data-page="models"><span class="cv-nav-ico" aria-hidden="true">✦</span>模型与路由</a>
+        <a class="cv-nav-item" href="#voice" data-page="voice"><span class="cv-nav-ico" aria-hidden="true">♪</span>语音</a>
+        <a class="cv-nav-item" href="#advanced" data-page="advanced"><span class="cv-nav-ico" aria-hidden="true">⚙</span>高级</a>
+      </nav>
+      <div class="cv-side-foot">
+        <a class="cv-link" href="/">返回聊天</a>
+        <span class="cv-hint">仅本机可修改配置</span>
       </div>
-    </header>
+    </aside>
+    <main class="cv-main y-scroll" id="cv-main" tabindex="-1"></main>
+  </div>
+  <div class="cv-toast" id="cv-toast" role="status" aria-live="polite" hidden></div>
 
-    <!-- ── Tab bar ── -->
-    <nav class="cv2-tabbar" role="tablist" aria-label="配置文件选择">
-      <!-- tabs injected by JS -->
-    </nav>
-
-    <!-- ── Main layout ── -->
-    <div class="cv2-main">
-
-      <!-- Models pane (tab "models"; see config-v2-models.js) -->
-      <section id="cv2-models-pane" class="cv2-editor-pane panel" aria-label="模型配置" hidden></section>
-
-      <!-- Editor pane -->
-      <section class="cv2-editor-pane panel" aria-label="YAML 编辑器">
-        <div class="cv2-editor-toolbar">
-          <span id="cv2-file-label" class="cv2-file-label" aria-live="polite"></span>
-          <span id="cv2-readonly-badge" class="cv2-readonly-badge" aria-label="只读文件" hidden>只读</span>
-          <div class="cv2-toolbar-actions">
-            <button class="btn" id="loadBtn" type="button">重新加载</button>
-            <button class="btn btn-primary" id="saveBtn" type="button">保存</button>
-          </div>
-        </div>
-
-        <div class="cv2-editor-wrap">
-          <textarea
-            id="editor"
-            class="cv2-editor"
-            spellcheck="false"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            aria-label="YAML 编辑器"
-            aria-describedby="cv2-status"
-            placeholder="loading..."
-          ></textarea>
-        </div>
-
-        <div class="cv2-editor-footer">
-          <span id="cv2-status" class="status" role="status" aria-live="polite"></span>
-        </div>
-
-        <!-- Git log panel -->
-        <section class="cv2-git-panel" aria-label="版本历史">
-          <div class="cv2-git-header">
-            <span class="cv2-git-title">版本历史</span>
-            <span id="cv2-dirty-badge" class="cv2-dirty-badge" hidden aria-label="有未提交的改动">● 未提交</span>
-            <div class="cv2-git-pagination" role="group" aria-label="版本历史翻页">
-              <button class="btn cv2-git-page-btn" id="gitPrevBtn" type="button" aria-label="上一页" disabled>‹</button>
-              <span id="gitPageInfo" class="cv2-git-page-info" aria-live="polite">1 / 1</span>
-              <button class="btn cv2-git-page-btn" id="gitNextBtn" type="button" aria-label="下一页" disabled>›</button>
-            </div>
-            <button class="btn cv2-git-refresh" id="gitRefreshBtn" type="button" aria-label="刷新版本历史">↻</button>
-          </div>
-          <ol id="cv2-git-log" class="cv2-git-log" aria-label="提交记录列表"></ol>
-        </section>
-      </section>
-
-      <!-- Agent pane -->
-      <aside class="cv2-agent-pane panel" aria-label="Agent 对话">
-        <div class="cv2-agent-header">
-          <span class="cv2-agent-title">Agent 对话</span>
-          <span class="cv2-agent-hint">当前文件内容自动注入为上下文</span>
-        </div>
-
-        <div
-          id="agentMessages"
-          class="cv2-agent-messages"
-          role="log"
-          aria-live="polite"
-          aria-label="对话记录"
-          aria-relevant="additions"
-        ></div>
-
-        <div class="cv2-agent-input-row">
-          <label for="agentInput" class="sr-only">向 Agent 提问</label>
-          <input
-            id="agentInput"
-            type="text"
-            class="cv2-agent-input"
-            placeholder="问 agent 如何修改配置…"
-            aria-label="向 Agent 提问"
-            autocomplete="off"
-          />
-          <button class="btn btn-primary" id="agentSendBtn" type="button" aria-label="发送消息">发送</button>
-        </div>
-      </aside>
-
-    </div><!-- /.cv2-main -->
-  </div><!-- /.cv2-shell -->
-
+  <script src="/config-v2-core.js"></script>
+  <script src="/config-v2-overview.js"></script>
   <script src="/config-v2-models.js"></script>
+  <script src="/config-v2-voice.js"></script>
+  <script src="/config-v2-advanced.js"></script>
   <script src="/config-v2.js"></script>
 </body>
 </html>

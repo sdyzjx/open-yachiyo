@@ -26,4 +26,4 @@ Responsibilities:
   - `GET /api/memory/search?q=<keyword>`
 - Serve front-end pages:
   - `/` chatbox UI with session sidebar
-  - `/config.html` provider YAML graphical management UI
+  - `/config-v2.html` settings WebUI (overview / models / voice / advanced; loopback-only writes); `/config.html` redirects there
