@@ -3538,6 +3538,13 @@
       }
       toggleChatPanelVisible();
     });
+    // Right click opens the native character menu (chat / hide / send to phone / settings).
+    live2dModel.on('rightclick', () => {
+      if (state.resizeModeEnabled) {
+        return;
+      }
+      bridge?.sendAvatarContextMenu?.();
+    });
   }
 
   function bindWindowDragGesture(targetElement) {

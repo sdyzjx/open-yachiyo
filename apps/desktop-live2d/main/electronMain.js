@@ -2,14 +2,16 @@ const path = require('node:path');
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
 
 const { startDesktopSuite } = require('./desktopSuite');
-const { createTrayController } = require('./trayController');
+const { createShellController } = require('./shellController');
+const { createSettingsWindowController } = require('./settingsWindow');
 const { resolveDesktopPathRoots } = require('./desktopPathRoots');
 
 const ONBOARDING_CHECK_INTERVAL_MS = 2500;
 const HTTP_TIMEOUT_MS = 5000;
 
 let suite = null;
-let trayController = null;
+let shellController = null;
+let settingsController = null;
 let shuttingDown = false;
 let bootstrapPromise = null;
 let onboardingWindow = null;
@@ -17,6 +19,50 @@ let onboardingCheckTimer = null;
 let onboardingCheckInFlight = false;
 let onboardingRequired = false;
 let openPathHandlerRegistered = false;
+
+const DISCONNECTED_INPUTS = Object.freeze({
+  hub: { connected: false, host: '', pending_target: '', devices: [] },
+  avatarVisible: false,
+  chatOpen: false
+});
+
+function getShellInputs() {
+  return suite?.getShellInputs?.() || DISCONNECTED_INPUTS;
+}
+
+function openSettings() {
+  if (!settingsController) {
+    settingsController = createSettingsWindowController({
+      BrowserWindow,
+      shell,
+      getGatewayUrl: () => suite?.summary?.gatewayUrl || suite?.config?.gatewayUrl || '',
+      logger: console
+    });
+  }
+  if (!suite?.summary?.gatewayUrl) return;
+  settingsController.open();
+}
+
+function runTransfer(target) {
+  return suite?.transferAvatar?.(target).catch((err) => {
+    console.warn('[device-hub] transfer failed', err?.message || err);
+  });
+}
+
+// One action table shared by menu bar, Dock and the avatar right-click menu.
+const shellActions = {
+  openChat: () => {
+    const result = suite?.openChat?.();
+    if (result && result.ok === false) console.warn('[desktop-shell] chat refused', result.reason);
+  },
+  closeChat: () => suite?.closeChat?.(),
+  showAvatar: () => showPetWindow(),
+  hideAvatar: () => hidePetWindow(),
+  recall: () => void runTransfer('desktop'),
+  sendToPhone: (deviceId) => void runTransfer(deviceId),
+  openSettings: () => openSettings(),
+  quit: () => app.quit()
+};
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -183,44 +229,25 @@ async function bootstrap() {
       shell,
       assetRoot: roots.assetRoot,
       workspaceRoot: roots.workspaceRoot,
-      onResizeModeChange: (enabled) => {
-        trayController?.setResizeModeEnabled(enabled);
-      },
+      onShellStateChange: () => shellController?.refresh(),
+      onAvatarContextMenu: () => shellController?.popupAvatarMenu(suite?.avatarWindow),
+      onOpenSettings: openSettings,
       logger: console
     });
 
-    if (!trayController) {
-      trayController = createTrayController({
+    if (!shellController) {
+      shellController = createShellController({
+        app,
         Tray,
         Menu,
         nativeImage,
         projectRoot: suite?.config?.assetRoot || roots.assetRoot,
-        onShow: () => {
-          showPetWindow();
-        },
-        onHide: () => {
-          hidePetWindow();
-        },
-        onToggleResizeMode: (enabled) => {
-          const nextEnabled = suite?.setResizeModeEnabled
-            ? suite.setResizeModeEnabled(enabled)
-            : Boolean(enabled);
-          trayController?.setResizeModeEnabled(nextEnabled);
-        },
-        isResizeModeEnabled: () => suite?.isResizeModeEnabled?.() || false,
-        onSendToPhone: () => {
-          const phone = suite?.deviceHubClient?.devices.find((device) => device.device_type === 'android');
-          if (phone) void suite.transferAvatar(phone.device_id).catch((err) => console.warn('[device-hub]', err.message));
-        },
-        onRecallAvatar: () => {
-          void suite?.transferAvatar('desktop').catch((err) => console.warn('[device-hub]', err.message));
-        },
-        onQuit: () => {
-          app.quit();
-        }
+        getInputs: getShellInputs,
+        actions: shellActions,
+        logger: console
       });
-    } else if (suite?.isResizeModeEnabled) {
-      trayController.setResizeModeEnabled(suite.isResizeModeEnabled());
+    } else {
+      shellController.refresh();
     }
 
     console.log('[desktop-live2d] up', {
@@ -284,9 +311,11 @@ async function teardown() {
   clearOnboardingPoller();
   closeOnboardingWindow();
 
-  if (trayController) {
-    trayController.destroy();
-    trayController = null;
+  settingsController?.close();
+  settingsController = null;
+  if (shellController) {
+    shellController.destroy();
+    shellController = null;
   }
   if (suite) {
     await suite.stop();
@@ -314,12 +343,13 @@ app.on('window-all-closed', () => {
   // Keep gateway/runtime alive when pet window is intentionally hidden or closed.
 });
 
-app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+app.on('activate', () => {
+  if (onboardingRequired) {
     showPetWindow();
     return;
   }
-  showPetWindow();
+  // Dock click: chat when the avatar is on this computer and visible, settings otherwise.
+  shellController?.handleActivate();
 });
 
 app.on('second-instance', () => {
@@ -332,16 +362,13 @@ app.on('second-instance', () => {
     return;
   }
 
-  if (suite?.window && !suite.window.isDestroyed()) {
-    if (suite.window.isMinimized?.()) {
-      suite.window.restore();
-    }
-    showPetWindow();
+  if (shellController) {
+    shellController.handleActivate({ force: true });
     return;
   }
 
   void bootstrap().then(() => {
-    showPetWindow();
+    shellController?.handleActivate({ force: true });
   }).catch((err) => {
     console.error('[desktop-live2d] second-instance bootstrap failed', err);
   });

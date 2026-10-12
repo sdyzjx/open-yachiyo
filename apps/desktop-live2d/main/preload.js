@@ -7,6 +7,7 @@ const CHANNELS = {
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
@@ -101,6 +102,9 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   modelConfigRequest(payload = {}) {
     return ipcRenderer.invoke(CHANNELS.modelConfigRequest, payload);
+  },
+  sendAvatarContextMenu() {
+    ipcRenderer.send(CHANNELS.avatarContextMenuRequest);
   },
   onVoicePlayMemory(handler) {
     const channel = 'desktop:voice:play-memory';

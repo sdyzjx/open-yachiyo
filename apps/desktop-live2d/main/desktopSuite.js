@@ -21,6 +21,7 @@ const { createDesktopCaptureService } = require('./desktopCaptureService');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
 const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
 const { createModelConfigClient } = require('./modelConfigClient');
+const { projectHubState, computeShellState } = require('./shellModel');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -34,6 +35,7 @@ const CHANNELS = Object.freeze({
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
@@ -1632,6 +1634,9 @@ async function startDesktopSuite({
   workspaceRoot = null,
   projectRoot = null,
   onResizeModeChange = null,
+  onShellStateChange = null,
+  onAvatarContextMenu = null,
+  onOpenSettings = null,
   logger = console,
   onChatInput = null
 } = {}) {
@@ -1729,6 +1734,7 @@ async function startDesktopSuite({
     bubbleWidth: bubbleRuntimeConfig.width,
     bubbleHeight: bubbleRuntimeConfig.height
   });
+  let deviceHubClient = null;
   const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
   ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
     if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
@@ -2090,9 +2096,37 @@ async function startDesktopSuite({
     return { ok: true, count: 0 };
   }
 
+  function getShellInputs() {
+    return {
+      hub: projectHubState(deviceHubClient),
+      avatarVisible: !avatarWindow.isDestroyed() && avatarWindow.isVisible(),
+      chatOpen: chatState.visible
+    };
+  }
+
+  function getChatGate() {
+    return computeShellState(getShellInputs()).chat;
+  }
+
+  // Single funnel for "something that menus/chat depend on changed".
+  function notifyShellChanged() {
+    if (chatState.visible && !getChatGate().canOpen) {
+      hideChatWindow();
+    }
+    onShellStateChange?.();
+  }
+
   function setChatPanelVisible(visible) {
     if (!chatState.enabled) {
       return { ok: false, visible: false };
+    }
+    if (visible) {
+      const gate = getChatGate();
+      if (!gate.canOpen) {
+        // The chat window may only exist while the avatar is on this computer and visible.
+        if (chatState.visible) hideChatWindow();
+        return { ok: false, visible: false, reason: gate.reason };
+      }
     }
     chatState.visible = Boolean(visible);
     syncChatStateToRenderer();
@@ -2102,6 +2136,7 @@ async function startDesktopSuite({
     } else {
       chatWindow.hide();
     }
+    onShellStateChange?.();
     return { ok: true, visible: chatState.visible };
   }
 
@@ -2703,9 +2738,14 @@ async function startDesktopSuite({
     if (!chatWindow.isDestroyed()) {
       chatWindow.hide();
     }
+    onShellStateChange?.();
   }
 
   function openWebUi() {
+    if (typeof onOpenSettings === 'function') {
+      onOpenSettings();
+      return;
+    }
     const gatewayUrl = String(config.gatewayUrl || '').trim();
     if (!gatewayUrl || typeof shell?.openExternal !== 'function') {
       return;
@@ -2763,7 +2803,16 @@ async function startDesktopSuite({
   });
   avatarWindow.on('hide', () => {
     hideBubbleWindow();
+    notifyShellChanged();
   });
+  avatarWindow.on('show', () => {
+    notifyShellChanged();
+  });
+  const avatarContextMenuListener = (event) => {
+    if (avatarWindow.isDestroyed() || event?.sender !== avatarWindow.webContents) return;
+    onAvatarContextMenu?.();
+  };
+  ipcMain.on(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
 
   const avatarUiConfig = {
     ...config.uiConfig,
@@ -2955,7 +3004,6 @@ async function startDesktopSuite({
   });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
-  let deviceHubClient = null;
   const gatewayRuntimeClient = new GatewayRuntimeClient({
     gatewayUrl: config.gatewayUrl,
     sessionId: 'desktop-live2d-chat',
@@ -3263,7 +3311,8 @@ async function startDesktopSuite({
   deviceHubClient = new DeviceHubClient({
     gatewayUrl: config.gatewayUrl,
     invokeRenderer: (method, params) => bridge.invoke({ method, params, timeoutMs: 4000 }),
-    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params })
+    onAction: (params) => bridge.invoke({ method: 'live2d.action.enqueue', params }),
+    onStateChange: notifyShellChanged
   });
   void deviceHubClient.start();
 
@@ -3330,6 +3379,7 @@ async function startDesktopSuite({
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.removeHandler(CHANNELS.modelConfigRequest);
+    ipcMain.off(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
     ipcMain.off(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
     ipcMain.off(CHANNELS.chatPanelToggle, chatPanelToggleListener);
@@ -3379,6 +3429,10 @@ async function startDesktopSuite({
     summary,
     deviceHubClient,
     transferAvatar: (to) => deviceHubClient.transfer(to),
+    getShellInputs,
+    getHubState: () => projectHubState(deviceHubClient),
+    openChat: () => setChatPanelVisible(true),
+    closeChat: () => setChatPanelVisible(false),
     window: avatarWindow,
     avatarWindow,
     chatWindow,
