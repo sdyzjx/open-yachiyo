@@ -12,7 +12,11 @@
 
 ## 2. 行为说明
 
-（随 UI 实现补充。）
+页面为 `apps/gateway/public/config-v2.html`（hash 路由 `#overview` `#models` `#voice` `#advanced`），样式只使用 `/theme/yachiyo-theme.css`（网关静态路由，指向 `apps/desktop-live2d/shared/theme/`）的 `--y-*` token。旧 `/config.html` 仅保留一个跳转页，旧 Provider 表单已删除。
+
+- **模型与路由**：服务商列表与编辑器（预设来自 `/api/config/models/presets`；API Key 为只写输入框，已设置时显示占位，留空保持不变，「清除已保存的密钥」勾选后发送 `clear_api_key:true`；发现模型、测试连接）；启用模型多选与默认模型单选；按用途（chat/vision/summary）分配；回退链；统一「保存选择」。含 headers/extra_body 的 provider 只提示“已保存，保留不变”，页面不显示其值。
+- **高级**：tools / skills / persona / voice-policy / desktop-live2d 原始编辑器、每个文件的版本历史（预览/恢复）、配置 Agent，全部默认折叠，展开时才加载。`providers.yaml` 无原始编辑入口（`/api/config/git/show` 对 providers.yaml 也返回脱敏内容）。
+- **概览 / 语音**：见后续章节。
 
 ## 3. 接口与协议
 
@@ -20,7 +24,7 @@
 
 ## 4. 配置项
 
-无新增配置项。
+无新增配置项。页面文案全部为中文，仅 API Key、Base URL 等专有名词保留英文。
 
 ## 5. 限制与已知问题
 
@@ -28,4 +32,4 @@
 
 ## 6. 测试用例
 
-TC-CFG-001 ~ TC-CFG-005，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-CFG-001 ~ TC-CFG-007，见 `docs/testing/TC-gateway-config-webui.md`。

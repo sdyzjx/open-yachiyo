@@ -74,6 +74,7 @@ app.use('/api/config', configLoopbackOnly);
 app.use('/api', remoteApiAuth(deviceHubConfig.pairing_token));
 app.use('/debug', remoteApiAuth(deviceHubConfig.pairing_token));
 app.use('/assets', express.static(path.join(__dirname, '..', '..', 'assets')));
+app.use('/theme', express.static(path.join(__dirname, '..', 'desktop-live2d', 'shared', 'theme')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const bus = new RuntimeEventBus();
@@ -1031,7 +1032,7 @@ app.get('/api/config/git/show', async (req, res) => {
   try {
     // 专属仓库里文件直接在根目录，用 hash:filename
     const content = await gitExec(['show', `${hash}:${file}`]);
-    res.json({ ok: true, content });
+    res.json({ ok: true, content: file === 'providers.yaml' ? redactProviderYaml(content) : content });
   } catch (err) {
     res.status(404).json({ ok: false, error: `file not found in commit ${hash}` });
   }
