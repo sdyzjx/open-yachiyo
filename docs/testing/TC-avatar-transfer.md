@@ -19,3 +19,5 @@
 | TC-AVT-006 | 桌面完整装配 | integration | Electron/网关依赖 mock | startDesktopSuite → transferAvatar → stop | 窗口先创建、Hub 正常启动、退出释放 | `test/gateway/deviceHub/desktopStartup.test.js` / Desktop suite starts and stops with Hub client after window setup |
 | TC-AVT-007 | 动画/语音取消竞态 | unit | 可延迟动画与 AudioContext mock | 在动画/音频恢复期间取消或失去 host | 旧动画不继续；失去 host 后音频不启动 | `test/gateway/deviceHub/desktopClient.test.js` / Desktop handoff cancellation cannot resume an obsolete animation；Realtime voice cannot start after host is lost during AudioContext resume |
 | TC-AVT-008 | 移交中断与并发 | integration | 两假设备 | prepare 后并发请求；exit 时目标离线 | 并发拒绝；原请求失败且 host 回滚，transfer_id 一致 | `test/gateway/deviceHub/avatarHost.test.js` / Avatar target disconnect during exit rolls back and concurrent transfers are rejected |
+
+| TC-AVT-009 | 真实桌面/手机往返 | manual-device | 合并 WS3/WS4/WS5；桌面与手机在线 | 从设备页/托盘双向移交；在播音时移交；中途断网 | 下蹲/滑出/进入动画符合 C1.5；非 host 不显示/发声；目标失败源恢复 | manual（统筹者待执行） |

@@ -35,4 +35,4 @@
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-009、010；自动化 `test/gateway/deviceHub/pluginStore.test.js`。
+[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-009、010、017；自动化 `test/gateway/deviceHub/pluginStore.test.js`。

@@ -38,4 +38,4 @@ RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/
 
 ## 测试用例
 
-[TC-avatar-transfer.md](../testing/TC-avatar-transfer.md)：TC-AVT-001～008，自动化 `test/gateway/deviceHub/avatarHost.test.js`。
+[TC-avatar-transfer.md](../testing/TC-avatar-transfer.md)：TC-AVT-001～009，自动化 `test/gateway/deviceHub/avatarHost.test.js`。

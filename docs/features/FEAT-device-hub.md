@@ -54,4 +54,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～015；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～018；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。

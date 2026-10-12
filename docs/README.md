@@ -96,6 +96,7 @@
 - [Live2D Action Pipeline Operation & Rollback Guide](modules/desktop-live2d/live2d-action-pipeline-operation-and-rollback.md)
 - [Live2D 模型 Motion/Expression 资产补全（Phase-2）](modules/desktop-live2d/model-motion-expression-assets.md)
 - [Desktop Live2D 模块级细粒度文档](modules/desktop-live2d/module-reference.md)
+- [Device Hub 模块参考](modules/gateway/device-hub.md)
 - [Persona Module Progress](modules/persona/README.md)
 - [Persona Phase 1 — Global Yachiyo Profile & Default Addressing](modules/persona/phase-1-global-profile.md)
 - [Persona Phase 2 — Missing-Name Guidance with Cooldown](modules/persona/phase-2-guidance-cooldown.md)
