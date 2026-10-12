@@ -8,7 +8,7 @@
 
 系统级架构与长期设计决策。
 
-- [Architecture (Native Runtime, Queue + EventBus)](architecture/ARCHITECTURE.md)
+- [Architecture (pi Runtime, Queue + EventBus)](architecture/ARCHITECTURE.md)
 - [Architecture & Module Documentation Index](architecture/ARCHITECTURE_MODULE_INDEX.md)
 
 ## 功能 Features

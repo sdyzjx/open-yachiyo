@@ -65,14 +65,10 @@
 
 - **统筹答复（2026-10-12）**：①锁文件由统筹合并时统一生成，同意。②`model_ref` 透传与 settings 持久化归 WS2，WS1 读取 `params.model_ref`（优先）与会话 settings 的 `model_ref` 即可。③Avatar 服务端 API 已写入契约 C5「Device Hub 服务端 API」：使用 `getDeviceHub().requestAvatarTransfer(to)`、`getAvatarHost()`、`listDevices()`、`invoke('avatar-host', ...)`，空实现已在 `apps/gateway/deviceHub/index.js` 提供；不需要另行注入 avatar 控制器（可保留注入点用于测试）。
 
-## 进度记录
+## 8. 进度记录
 
 - 开始前完整阅读四份约束文档；Node v24.10.0，分支 `agent/ws1-pi-core`，工作区干净。
 - 基线 `npm run test:ci`：509 / 509 通过；测试临时目录和 YACHIYO_HOME 隔离在本 worktree 的 node_modules 下。
-
-## 8. 交付记录
-
-（完成后追加：完成项、提交哈希、未完成项、风险）
 
 ### 任务 1
 
@@ -88,7 +84,7 @@ loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模�
 
 ### 任务 4
 
-设备快照动态刷新、总线前缀与 policy 检查、可注入 Avatar 控制器完成；`npm run test:ci` 518 / 518 通过。生产 Avatar transfer 装配仍等待统筹确认 WS3 服务端入口。
+设备快照动态刷新、总线前缀与 policy 检查、可注入 Avatar 控制器完成；`npm run test:ci` 518 / 518 通过。此时 Avatar API 待确认；任务 9 已按统筹补充契约解决。
 
 ### 任务 5
 
@@ -115,3 +111,7 @@ pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成�
 补充真实自动压缩与自定义 reasoning 字段的离线验证；修正 pi 1.1.0 的 compaction_start/end 事件名，保留 executor/Hub 的错误码。pi 默认只为 read/bash 添加技能提示，已用官方 formatter 显式添加通过过滤的技能列表，内置工具仍禁用。
 
 集成补查验证：`npm run test:ci` 535 / 535 通过，`git diff --check` 通过。
+
+### 任务 10
+
+功能文档六个必备章节、TC-PI-001…024、架构核心流程与 docs:index 索引完成；`npm run test:ci` 535 / 535 通过，`git diff --check` 通过。
