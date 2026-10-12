@@ -440,6 +440,21 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 
 `apps/gateway/deviceHub/index.js` 导出 `getDeviceHub()`；Device Hub 未启用时返回空实现（`listToolMethods()` → `[]`，`invoke` → 抛 `-32010`）。
 
+**Device Hub 服务端 API（统筹决策 2026-10-12，WS3 实现，WS1 / live2d adapter 调用）**：
+
+| 成员 | 签名 | 说明 |
+|---|---|---|
+| `enabled` | `boolean` | 空实现为 `false` |
+| `getAvatarHost()` | `() => 'desktop' \| device_id` | 当前 avatar host |
+| `listDevices()` | `() => [{ device_id, device_type, name, mode, alias, capabilities }]` | 在线设备 |
+| `listToolMethods()` | `() => [{ tool_name, device_id, method, description, params_schema }]` | 见 C1.6 |
+| `invoke(deviceId, method, params, { timeoutMs })` | `Promise<result>` | 设备 RPC；`deviceId` 可传 `'avatar-host'` 表示当前 host（host 为 desktop 时由调用方走原 17373 路径，hub 抛 `-32010`） |
+| `requestAvatarTransfer(to, { reason })` | `Promise<{ transfer_id, host, status: 'completed'\|'failed', reason? }>` | `to` 为 `'desktop'` 或 device_id；按 C1.5 编排，Promise 在 completed/failed 时 resolve |
+| `publish(topic, data, { target })` | `void` | 向设备投递事件（同时遵守 C1.4 桥接规则） |
+| 事件 | `'tools.changed'`、`'devices.changed'`、`'avatar.host.changed'` | `EventEmitter` 事件 |
+
+`model_ref`：`RuntimeRpcWorker` 透传 `params.model_ref` 与会话 settings 持久化 `model_ref` 由 WS2 实现；WS1 读取 run 参数中的 `model_ref`（优先）与会话 settings 中的 `model_ref`。`package-lock.json` 由统筹者在合并时统一重新生成。
+
 ---
 
 ## C6. Android 资源目录约定
