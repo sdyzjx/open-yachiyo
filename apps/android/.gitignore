@@ -1,0 +1,6 @@
+build/
+.gradle/
+local.properties
+.idea/
+*.iml
+app/src/main/assets/generated/
