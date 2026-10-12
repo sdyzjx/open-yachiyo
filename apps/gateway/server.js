@@ -58,9 +58,9 @@ const {
   DEFAULT_REALTIME_MODEL
 } = require('./onboardingService');
 const { loadConfig: loadDeviceHubConfig } = require('./deviceHub/config');
-const { appassetsCors, remoteApiAuth } = require('./deviceHub/accessControl');
+const { appassetsCors, configLoopbackOnly, remoteApiAuth } = require('./deviceHub/accessControl');
+const { safeLegacyProviderConfig } = require('./routes/configSecurity');
 const {
-  redactProviderConfig,
   redactProviderYaml,
   restoreProviderSecrets,
   restoreProviderYaml
@@ -70,6 +70,7 @@ const app = express();
 const deviceHubConfig = loadDeviceHubConfig();
 app.use(express.json({ limit: '1mb' }));
 app.use(appassetsCors);
+app.use('/api/config', configLoopbackOnly);
 app.use('/api', remoteApiAuth(deviceHubConfig.pairing_token));
 app.use('/debug', remoteApiAuth(deviceHubConfig.pairing_token));
 app.use('/assets', express.static(path.join(__dirname, '..', '..', 'assets')));
@@ -751,7 +752,7 @@ app.get('/api/config/providers', (_, res) => {
 
 app.get('/api/config/providers/config', (_, res) => {
   try {
-    res.json({ ok: true, data: redactProviderConfig(llmManager.getConfig()) });
+    res.json({ ok: true, data: safeLegacyProviderConfig(llmManager.getConfig()) });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
   }

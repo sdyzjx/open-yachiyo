@@ -1,10 +1,16 @@
 // Model configuration HTTP API — contract C4.4 (docs/plans/PLAN-android-companion-contracts.md).
 // Mounted from apps/gateway/server.js with a single app.use(...) line. api_key values are
-// never returned; responses only carry has_api_key.
+// never returned; responses only carry has_api_key / has_custom_headers / has_extra_body.
+// Access is restricted to loopback in server.js (configLoopbackOnly).
 const express = require('express');
 const { normalizeProviderConfig, CHAT_TYPES, splitModelRef } = require('../../runtime/config/providerConfigStore');
 const { loadModelCatalog } = require('../../runtime/config/modelCatalog');
 const { listPresets } = require('../../runtime/config/providerPresets');
+const {
+  applyProviderPatch,
+  safeModelDescriptor,
+  safeProviderSnapshot
+} = require('./configSecurity');
 
 const DEFAULT_TEST_TIMEOUT_MS = 15000;
 const MAX_TIMEOUT_MS = 60000;
@@ -12,15 +18,6 @@ const PROVIDER_KEY_RE = /^[A-Za-z0-9_.-]+$/;
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function publicDescriptor(descriptor, enabledRefs) {
-  const { api_key: apiKey, ...rest } = descriptor;
-  return {
-    ...rest,
-    has_api_key: Boolean(apiKey),
-    enabled: enabledRefs.has(descriptor.ref)
-  };
 }
 
 function redact(text, secret) {
@@ -52,7 +49,16 @@ function createModelConfigRouter({
   const store = llmManager.store;
 
   const ok = (res, data) => res.json({ ok: true, data });
-  const fail = (res, status, error) => res.status(status).json({ ok: false, error: error.message || String(error) });
+  // Errors can embed YAML source excerpts: keep the first line only and mask stored secrets.
+  const fail = (res, status, error) => {
+    let message = String(error.message || error).split('\n')[0];
+    try {
+      for (const p of Object.values(store.load().providers || {})) {
+        if (typeof p?.api_key === 'string' && p.api_key.length >= 4) message = message.split(p.api_key).join('***');
+      }
+    } catch { /* config may be the thing that is broken */ }
+    res.status(status).json({ ok: false, error: message });
+  };
 
   function snapshot() {
     const catalog = loadModelCatalog({ store });
@@ -60,28 +66,14 @@ function createModelConfigRouter({
     const enabledRefs = new Set(catalog.enabled.map((m) => m.ref));
     const providers = {};
     for (const [key, provider] of Object.entries(config.providers)) {
-      providers[key] = {
-        key,
-        type: provider.type,
-        preset: provider.preset || null,
-        display_name: provider.display_name || key,
-        base_url: provider.base_url || null,
-        api_key_env: provider.api_key_env || null,
-        has_api_key: Boolean(provider.api_key || (provider.api_key_env && process.env[provider.api_key_env])),
-        requires_api_key: !(provider.requires_api_key === false || provider.auth === 'none' || provider.preset === 'ollama'),
-        timeout_ms: provider.timeout_ms || null,
-        headers: provider.headers || {},
-        compat: provider.compat || {},
-        extra_body: provider.extra_body || {},
-        models: Array.isArray(provider.models) ? provider.models : []
-      };
+      providers[key] = safeProviderSnapshot(key, provider);
     }
     return {
       active: catalog.active ? catalog.active.ref : null,
       enabled: catalog.enabled.map((m) => m.ref),
       roles: config.roles,
       fallback_models: config.fallback_models,
-      models: catalog.models.map((m) => publicDescriptor(m, enabledRefs)),
+      models: catalog.models.map((m) => safeModelDescriptor(m, enabledRefs.has(m.ref))),
       providers
     };
   }
@@ -141,13 +133,7 @@ function createModelConfigRouter({
     try {
       const config = JSON.parse(JSON.stringify(store.load()));
       const previous = isObject(config.providers[key]) ? config.providers[key] : {};
-      const next = { ...input };
-      delete next.clear_api_key;
-      delete next.has_api_key;
-      if (typeof next.api_key !== 'string' || next.api_key === '') {
-        delete next.api_key;
-        if (previous.api_key && input.clear_api_key !== true) next.api_key = previous.api_key;
-      }
+      const next = applyProviderPatch(previous, input);
       config.providers[key] = next;
       config.version = 2;
       llmManager.saveConfig(config);
