@@ -20,6 +20,12 @@
 - 音频：仓库本地参考音频 `assets/reference/yachiyo_voice_ref_clone_18s.mp3`，没有调用外部 TTS 或付费模型。
 - 设备状态：媒体音量 17/25；测试结束恢复自动旋转 `1`、用户旋转 `0` 并释放设备锁。
 
+### Presence 操作局限
+
+为在 `avatar_host=desktop` 时只显示手机舞台，验收约 01:13 与 01:18 曾通过 CDP 直接调用 `YachiyoApp.onHubState({...S.hub, avatar_host: deviceId})`，随后调用 `stage.setVisible(true)` / `kick()`。该调用本身没有发送 `avatar.transfer`、Hub RPC 或 claim，但绕过了生产移交流程，因此仍不是允许复用的测试方法。后续服务端 owner 曾意外回到 Android；Hub 日志确认它是完整合法 transfer `f0820458…`（ready → exit → exited → host.changed → entered → completed），不是 `onHubState` 直接写服务端。现有日志没有 RPC caller，无法精确归因；设备/CDP 交互误触 away recall 按钮是更可能的来源。口型 hook 和截图仍来自同一已安装模型，但这段 owner 操作不作为 presence/移交验收证据。
+
+后续真机测试必须走完整生产 `avatar.transfer`，并在结束后恢复 desktop owner；或使用与用户活动 Hub 隔离的测试环境。测试结束后的 owner 必须从服务端再次读取确认，不能只看客户端本地状态。
+
 ## 方法
 
 1. 在舞台自己的 override hook 之后注册只读 `beforeModelUpdate` 采样器，从实际提交给 Cubism 的口型参数取样。
