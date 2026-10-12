@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: active
 > 负责人: sonnet-ws4
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: PLAN-android-companion-contracts.md §C1 §C2 §C3 §C6 §C7
 
 ## 1. 目标
@@ -108,3 +108,14 @@ WS5 的前端在 `app/src/main/assets/web/` 由另一个 agent 并行开发；�
 自动验证：仓库 Node 测试 `628/628` 通过；`./gradlew :app:testDebugUnitTest :app:assembleDebug` 通过。统筹者报告的真实网关（端口 3002）初验已覆盖 Wi-Fi 连接、示例 app/widget 安装与 `start_timer` RPC，均成功。
 
 待验证：C7 真机发现/丢失/超时与 multicast lock 系统行为；Main/Settings/Lockscreen 同时存在时的单次 RPC 应答、语音单播和插件隔离。上述项目仍按 `TC-AND-047/048/052` 标记为待真机，不据自动化结果判定通过。
+
+### 2026-10-13 真机验收（codex-android-integration）
+
+| 提交 | 内容 |
+|---|---|
+| `fcc7a75` | 兼容模型配置 API 的 `{ok,data}` 包装响应，避免设置页异常阻断发现候选渲染 |
+| `633b97c` | `requestDismissKeyguard` 成功、取消、异常或 ROM 不回调时均结束锁屏覆盖页，并恢复 normal mode |
+
+小米 6 / Android 15 真机已验证：C7 服务 `Yachiyo Acceptance Mac` 显示真实地址 `192.168.20.212:3002`，选择不同 endpoint 清空旧 token 并提示重新配对；Main、Settings、Lockscreen 共存时，锁屏 RPC 仅由 Lockscreen 接收（计数 1/0），插件列表和 iframe 均为空，插件 RPC 返回 -32006；`dismissKeyguard()` 后 2 秒内 Activity 销毁且 Hub mode 回到 `normal`。HOME role 切换到 Yachiyo 后 Home 键正确进入 MainActivity，测试后已恢复 Launcher3。DocumentsUI 的背景选图和 `.yplug` 选择安装也完成实测。
+
+修复后完整 Node 测试 **644/644** 通过，`./gradlew :app:testDebugUnitTest :app:assembleDebug` 成功。仍待直接验证：C7 服务丢失移除与 multicast lock 释放、锁屏 voice.play 单播、其他 ROM 的锁屏行为。60 FPS 属于 WS5 性能专项，当前优化版约 22.56 FPS，未通过。

@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: active
 > 负责人: sonnet-ws5
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: PLAN-android-companion-contracts.md §C1 §C2 §C3 §C6, EXP-20261012-android-live2d-webview-feasibility.md
 
 ## 1. 目标
@@ -68,3 +68,11 @@
 自动验证：仓库 Node 测试 `628/628` 通过；Android 单元测试与 Debug APK 构建通过。统筹者报告的真机初验已覆盖真实网关 3002 的 Wi-Fi 连接、竖横屏布局、示例 app/widget 安装以及 agent 调用 `start_timer` RPC，均成功。
 
 未验证：局域网发现 UI 与候选选择、同版本插件覆盖重载、锁屏和普通页面的语音/动作单宿主路由。真机还报告舞台动画帧率不足，60 fps 性能优化由独立专项继续处理，本交付不将性能用例标记为通过。
+
+### 2026-10-13 真机验收（codex-android-integration）
+
+真实网关的模型 API 返回 `{ok,data}` 包装，旧设置页在 `models.enabled.map` 处异常并连带阻断发现候选渲染。`fcc7a75` 增加纯函数归一化和 Node 回归后，真机同时显示 qwen/openai 模型项与 C7 候选。选择 `Yachiyo Acceptance Mac` 后 endpoint 写入 `192.168.20.212:3002`，旧 token 清空并显示重新配对提示。
+
+DocumentsUI 实测通过背景 PNG 复制/持久化和 `pomodoro.yplug` 覆盖安装（`installed_at` 更新）。锁屏页插件列表为空、iframe 为 0，插件 RPC 返回 -32006；锁屏 RPC 仅由 Lockscreen 接收，Main 未重复应答。WebGL vendor 为 Qualcomm、renderer 为 Adreno 540，确认使用硬件图形路径；Android 15 的 WebView UA 为 Chrome 153.0.8010.36。
+
+修复后完整 Node 测试 **644/644** 通过，Android 单测与 Debug APK 构建成功。性能专项优化版实测约 **22.56 FPS**，仍未达到 60 FPS，TC-AWB-025 保持未通过；锁屏 voice.play 单播仍待音频专项复测。

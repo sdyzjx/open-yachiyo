@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: sonnet-ws5
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/features/FEAT-plugin-system.md, docs/guides/PLUGIN_DEVELOPMENT_GUIDE.md, test/android-web/
 
 手工设备用例的通用准备：`npm run android:sync-assets -- --serve`（Mac 上 `:8790`，手机经局域网访问 `http://<mac-ip>:8790/web/index.html?debug=1`，或用 `adb reverse`）；真机在 org.lineageos.jelly 或 App 内 WebView 中执行，调试用 `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`。
@@ -186,7 +186,7 @@
 | 前置条件 | WS4 原生安装 |
 | 步骤 | 设置 → 导入插件 |
 | 期望结果 | 出现在列表与对应网格；启用/卸载有效 |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 小米 6 通过 DocumentsUI 选择 `pomodoro.yplug`，覆盖安装成功且 `installed_at` 更新 |
 
 ## TC-PLG-019 电脑端推送安装
 

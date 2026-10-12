@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: codex-android-integration
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/features/FEAT-android-server-discovery.md, docs/plans/PLAN-android-companion-contracts.md §C7
 
 ## TC-AND-044 DNS-SD 候选校验与地址选择
@@ -52,7 +52,7 @@
 | 前置条件 | 手机与网关同一 LAN，网关开启 C7 广播 |
 | 步骤 | 扫描；确认结果；停止/启动网关；重新扫描并等待 10 秒 |
 | 期望结果 | 列表显示友好名、host、port；服务丢失后移除；10 秒后状态为 timeout；页面不卡住 |
-| 自动化 | manual（待真机） |
+| 自动化 | manual；2026-10-13 小米 6 显示 `Yachiyo Acceptance Mac`、`192.168.20.212:3002` 并完成 timeout/stop；服务丢失移除未直接复测 |
 
 ## TC-AND-048 权限/网络不可用与生命周期清理
 
@@ -64,7 +64,7 @@
 | 前置条件 | 可禁用 Wi-Fi/multicast 或制造 NSD 不可用环境 |
 | 步骤 | 扫描后切后台；返回重试；在不可用网络扫描 |
 | 期望结果 | pause 后停止；重进可再次扫描；失败显示 permission_denied/unavailable，不持续占用 multicast lock |
-| 自动化 | `ServerDiscoveryTest.kt` — `discoverySessionStartsOnceAndReturnsListenerForCleanup`、`discoverySessionInvalidatesLateCallbacksBeforeRestart`；NSD/multicast 系统行为 manual（待真机） |
+| 自动化 | `ServerDiscoveryTest.kt` — `discoverySessionStartsOnceAndReturnsListenerForCleanup`、`discoverySessionInvalidatesLateCallbacksBeforeRestart`；2026-10-13 真机扫描可停止并重新进入，multicast lock 释放未直接测量 |
 
 ## TC-AND-049 配置页权限边界与手动输入回归
 
@@ -76,4 +76,4 @@
 | 前置条件 | 主页面、设置页、锁屏页 |
 | 步骤 | 设置页扫描与选择；锁屏页尝试调用；手动修改 host/port |
 | 期望结果 | 设置页可用；锁屏调用拒绝；手动输入保留；endpoint 改变时旧 token 清空并提示重新配对 |
-| 自动化 | native Bridge 单元逻辑 + manual（待真机） |
+| 自动化 | native Bridge 单元逻辑；2026-10-13 真机候选选择通过：不同 endpoint 清空 token 并提示重新配对；手动输入未在本轮逐字回归 |

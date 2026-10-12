@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: sonnet-ws5
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/features/FEAT-android-live2d-stage.md, docs/features/FEAT-android-gesture-layout.md, docs/features/FEAT-android-settings.md, test/android-web/
 
 手工设备用例的通用准备：`npm run android:sync-assets -- --serve`（Mac 上 `:8790`，手机经局域网访问 `http://<mac-ip>:8790/web/index.html?debug=1`，或用 `adb reverse`）；真机在 org.lineageos.jelly 或 App 内 WebView 中执行，调试用 `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`。
@@ -86,7 +86,7 @@
 | 前置条件 | App/浏览器竖屏 |
 | 步骤 | 打开主页；设置里改背景颜色/选图 |
 | 期望结果 | 人物全身居中、脚在底部留边；背景实时变化 |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 小米 6 通过 DocumentsUI 选择 PNG，文件复制到 `/user/backgrounds/` URL 并持久化 |
 
 ## TC-AWB-009 横屏聚焦与方向切换动效
 
@@ -236,7 +236,7 @@
 | 前置条件 | 网关含 /api/config/models（WS2） |
 | 步骤 | 分别让网关直出模型对象、返回 `{ok,data}` 包装；打开设置；切换当前模型、启用模型；断网重开 |
 | 期望结果 | 两种响应都正常渲染且不阻断其他设置区；PUT selection 生效；离线时区块隐藏 |
-| 自动化 | `test/android-web/settingsModels.test.js`（响应兼容）；真机交互 manual |
+| 自动化 | `test/android-web/settingsModels.test.js`（响应兼容）；2026-10-13 真机验证 `{ok,data}` 响应可同时渲染模型选项和发现候选 |
 
 ## TC-AWB-024 返回键优先级
 
@@ -256,7 +256,7 @@
 | 前置条件 | 小米 6，4096 纹理，resolution=2 |
 | 步骤 | 静止与交互动画期间用 rAF 计数或 CDP 测帧率 |
 | 期望结果 | 静止 ≥ 25 FPS；拖动/移交动画期间模型更新降频、交互帧率明显更高；结果记录在 EXP-20261012 第 6 节 |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 优化版实测约 22.56 FPS，未达到 60 FPS 目标，未通过 |
 
 ## TC-AWB-026 离线 mockNative 运行
 

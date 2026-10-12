@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: sonnet-ws4
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/features/FEAT-android-native-shell.md, docs/features/FEAT-android-launcher-lockscreen.md, docs/plans/PLAN-android-ws4-android-native.md
 
 执行：自动用例 `cd apps/android && ./gradlew :app:testDebugUnitTest`；真机用例见 `docs/guides/ANDROID_BUILD_GUIDE.md`（多传输时用 `adb -s <serial>`）。ID 范围 `TC-AND-001` … `TC-AND-043`。
@@ -356,7 +356,7 @@
 | 前置条件 | — |
 | 步骤 | 调 openHomeSettings 或在系统设置选 Yachiyo 为主屏幕应用；按 Home 键；在桌面按返回键 |
 | 期望结果 | Home 键回到 Yachiyo；返回键不退出；getDeviceInfo().is_default_launcher=true（切回原桌面后为 false） |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 小米 6 将 HOME role 设为 `com.yachiyo.companion` 后 Home 键进入 MainActivity；结束后恢复 `com.android.launcher3` |
 
 ### TC-AND-030 应用列表与图标
 
@@ -392,7 +392,7 @@
 | 前置条件 | 处于锁屏模式 |
 | 步骤 | 在锁屏页调用 listPlugins、hubSubscribe(['plugin.x.**'])、pickPluginPackage；请求 `/plugins/<id>/index.html`；网关推送 plugin.install |
 | 期望结果 | listPlugins 为 []；plugin.* 订阅被忽略；选择器返回错误；/plugins/ 返回 403；plugin.install 回 plugin.install_failed |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 锁屏页 `listPlugins()` 返回空数组、插件 iframe 为 0，插件 RPC 返回 -32006 |
 
 ### TC-AND-033 屏幕方向不重建
 
@@ -416,7 +416,7 @@
 | 前置条件 | 锁屏人物显示中（无安全锁） |
 | 步骤 | 按返回键；或解锁 |
 | 期望结果 | 返回键触发 requestDismissKeyguard 后 Activity 结束；ROM 未回调时 750 ms 后关闭人物覆盖页且系统认证仍保留；Hub 收到 mode=normal；解锁（USER_PRESENT）也会结束 |
-| 自动化 | manual |
+| 自动化 | manual；2026-10-13 调用 `dismissKeyguard()` 后 2 秒内 Activity 销毁，Hub mode 恢复 `normal`，未使用 force-stop |
 
 ### TC-AND-035 包名与图标路径校验
 
@@ -560,4 +560,4 @@
 | 前置条件 | Main 已加载插件且设备连接真实网关 |
 | 步骤 | 开启锁屏并息屏；网关发 voice.play、live2d RPC、调用插件工具；再解锁重复 |
 | 期望结果 | 锁屏时只有 Lockscreen 播放/应答，插件工具不可用；解锁后只有 Main 播放/应答且插件重新可用 |
-| 自动化 | manual（待真机） |
+| 自动化 | manual；2026-10-13 锁屏时 `hub.rpc.request` 计数 Lockscreen=1、Main=0，`state.get` 成功且插件 RPC 返回 -32006；voice.play 单播仍待音频专项复测 |
