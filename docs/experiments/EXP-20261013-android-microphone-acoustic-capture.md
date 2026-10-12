@@ -4,7 +4,7 @@
 > 状态: done
 > 负责人: codex（agent/realtime-tts）
 > 更新: 2026-10-13
-> 关联: ../testing/TC-android-companion-integration.md, ../testing/TC-device-hub.md, ../../apps/android/app/src/main/java/com/yachiyo/companion/audio/MicController.kt, ../../apps/gateway/deviceHub/audioInput.js
+> 关联: ../testing/TC-android-companion-integration.md, ../testing/TC-device-hub-bus.md, ../../apps/android/app/src/main/java/com/yachiyo/companion/audio/MicController.kt, ../../apps/gateway/deviceHub/audioInput.js
 
 ## 背景与假设
 

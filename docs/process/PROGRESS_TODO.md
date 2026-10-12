@@ -189,7 +189,7 @@ Do not add free-form items outside this format.
 - Impacted Modules:
   - `skills/test_skill_smoke/SKILL.md`
   - `test/runtime/skills/repoTestSkill.test.js`
-  - `docs/testing/TEST_SKILL_SMOKE_GUIDE.md`
+  - `docs/guides/TEST_SKILL_SMOKE_GUIDE.md`
 - Risks/Dependencies:
   - Depends on skills runtime being enabled and loaded.
 - Plan:

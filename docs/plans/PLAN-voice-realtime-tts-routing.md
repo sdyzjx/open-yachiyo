@@ -4,7 +4,7 @@
 > 状态: draft
 > 负责人: codex（agent/realtime-tts）
 > 更新: 2026-10-13
-> 关联: REALTIME_TTS_LIPSYNC_PHASED_PLAN.md, PLAN-android-companion-contracts.md, ../features/FEAT-device-hub.md, ../../apps/desktop-live2d/main/voice/qwenTtsRealtimeClient.js
+> 关联: REALTIME_TTS_LIPSYNC_PHASED_PLAN.md, PLAN-android-companion-contracts.md, ../features/FEAT-device-hub-bus.md, ../../apps/desktop-live2d/main/voice/qwenTtsRealtimeClient.js
 
 ## 目标
 

@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-12
-> 关联: ../../plans/PLAN-android-companion-contracts.md, ../../features/FEAT-device-hub.md, ../../features/FEAT-device-hub-avatar-transfer.md, ../../features/FEAT-plugin-push.md, ../../../apps/gateway/deviceHub/
+> 关联: ../../plans/PLAN-android-companion-contracts.md, ../../features/FEAT-device-hub-bus.md, ../../features/FEAT-device-hub-avatar-transfer.md, ../../features/FEAT-plugin-push.md, ../../../apps/gateway/deviceHub/
 
 ## 装配与生命周期
 
@@ -115,4 +115,4 @@ npm run test:ci
 npm run docs:index
 ```
 
-参见 [TC-device-hub.md](../../testing/TC-device-hub.md) 与 [TC-avatar-transfer.md](../../testing/TC-avatar-transfer.md)。桌面动画、真实音频与 Android 安装由统筹者执行跨端人工验收。
+参见 [TC-device-hub-bus.md](../../testing/TC-device-hub-bus.md) 与 [TC-device-hub-avatar-transfer.md](../../testing/TC-device-hub-avatar-transfer.md)。桌面动画、真实音频与 Android 安装由统筹者执行跨端人工验收。

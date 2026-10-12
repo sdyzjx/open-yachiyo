@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-12
-> 关联: ../plans/PLAN-android-companion-contracts.md §C1.5, ../testing/TC-avatar-transfer.md
+> 关联: ../plans/PLAN-android-companion-contracts.md §C1.5, ../testing/TC-device-hub-avatar-transfer.md
 
 ## 概述
 
@@ -38,4 +38,4 @@ RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/
 
 ## 测试用例
 
-[TC-avatar-transfer.md](../testing/TC-avatar-transfer.md)：TC-AVT-001～009，自动化 `test/gateway/deviceHub/avatarHost.test.js`。
+[TC-device-hub-avatar-transfer.md](../testing/TC-device-hub-avatar-transfer.md)：TC-AVT-001～009，自动化 `test/gateway/deviceHub/avatarHost.test.js`。

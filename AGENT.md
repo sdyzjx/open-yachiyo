@@ -35,21 +35,23 @@
 | `docs/research/` | 调研报告、方案对比、源码分析 | 自由，建议 `RESEARCH-<slug>.md` |
 | `docs/guides/` | 面向使用者/运维的配置、安装、打包指南 | `UPPER_SNAKE_GUIDE.md` |
 | `docs/modules/<module>/` | 代码模块参考（API、内部结构） | `kebab-case.md` |
-| `docs/testing/` | 测试策略、测试用例集 | `TC-<area>-<slug>.md` |
+| `docs/testing/` | 测试用例集（策略总览仅 `TESTING.md`） | `TC-<area>-<slug>.md` |
 | `docs/debug/` | 排障指南、问题调查记录 | 自由 |
-| `docs/process/` | 协作流程、SOP、阶段施工日志 | 自由 |
+| `docs/process/` | 协作流程、SOP、阶段施工日志、交接记录 | 自由；交接记录用 `HANDOFF-YYYYMMDD-<slug>.md` |
 | `docs/archive/` | 已废弃但需保留的文档 | 原名 |
 
 `<area>` 取值：`runtime` `gateway` `llm` `device-hub` `desktop` `android` `plugin` `voice` `live2d` `docs`。
 
-新增或移动文档后必须更新 `docs/README.md` 的索引。
+新增或移动文档后必须运行 `npm run docs:index` 更新 `docs/README.md` 索引，并运行 `npm run docs:lint`（CI 中 `test/docs/docsLint.test.js` 同样会检查：命名、文档头、FEAT/EXP 必备章节、TC 编号全局唯一、FEAT 引用的 TC 必须已定义）。
+
+`<slug>` 不能省略：`FEAT-device-hub.md` 不合规，应为 `FEAT-device-hub-bus.md`。新增用例编号前先 `grep -rn "TC-<AREA>-" docs/testing` 找到当前最大编号。
 
 ### 2.1 文档头（新文档必须带）
 
 ```markdown
 # <标题>
 
-> 类型: feature | plan | experiment | research | guide | module | testcase
+> 类型: feature | plan | experiment | research | guide | module | testcase | handoff
 > 状态: draft | active | done | deprecated
 > 负责人: <agent 名或人名>
 > 更新: YYYY-MM-DD

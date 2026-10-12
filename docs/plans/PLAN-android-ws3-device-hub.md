@@ -36,7 +36,7 @@
 | 6 | 麦克风上行：`audio.input.*` → WAV → ASR（`asr_openai_compatible`：`POST {base_url}/audio/transcriptions` multipart；`asr_dashscope`；回退 `voice.asr_aliyun` 工具）→ `audio.input.transcript` → 以设备会话执行 run |
 | 7 | 插件存储/推送：HTTP 接口（契约 C1.8）、`plugin.install` 事件、回执；`scripts/plugin-pack.js` / `plugin-push.js`；校验 manifest（契约 C3.1） |
 | 8 | 电脑端设备页 `devices.html`（含配对二维码：可用纯 JS 二维码库内联或简单显示 URL + token） |
-| 9 | 文档：`docs/features/FEAT-device-hub.md`、`FEAT-device-hub-avatar-transfer.md`、`FEAT-plugin-push.md`；`docs/modules/gateway/device-hub.md`；`docs/testing/TC-device-hub.md`（`TC-HUB-001…`）、`TC-avatar-transfer.md`（`TC-AVT-001…`）；`npm run docs:index` |
+| 9 | 文档：`docs/features/FEAT-device-hub-bus.md`、`FEAT-device-hub-avatar-transfer.md`、`FEAT-plugin-push.md`；`docs/modules/gateway/device-hub.md`；`docs/testing/TC-device-hub-bus.md`（`TC-HUB-001…`）、`TC-device-hub-avatar-transfer.md`（`TC-AVT-001…`）；`npm run docs:index` |
 
 每项完成即 commit。
 

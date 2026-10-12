@@ -4,7 +4,7 @@
 > 状态: done
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-13
-> 关联: ../features/FEAT-device-hub.md, ../testing/TC-device-hub.md, ../../apps/desktop-live2d/main/voice/qwenTtsClient.js, ../../apps/gateway/deviceHub/asrService.js
+> 关联: ../features/FEAT-device-hub-bus.md, ../testing/TC-device-hub-bus.md, ../../apps/desktop-live2d/main/voice/qwenTtsClient.js, ../../apps/gateway/deviceHub/asrService.js
 
 ## 背景与假设
 

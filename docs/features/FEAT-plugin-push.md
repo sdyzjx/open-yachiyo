@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-12
-> 关联: ../plans/PLAN-android-companion-contracts.md §C1.8 §C3, ../testing/TC-device-hub.md
+> 关联: ../plans/PLAN-android-companion-contracts.md §C1.8 §C3, ../testing/TC-device-hub-bus.md
 
 ## 概述
 
@@ -35,4 +35,4 @@
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-009、010、017；自动化 `test/gateway/deviceHub/pluginStore.test.js`。
+[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-009、010、017；自动化 `test/gateway/deviceHub/pluginStore.test.js`。

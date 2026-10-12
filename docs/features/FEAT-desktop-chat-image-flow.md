@@ -1,6 +1,12 @@
 # Chat 图片流转功能说明（WebUI + Gateway + Desktop）
 
-## 目标
+> 类型: feature
+> 状态: done
+> 负责人: 原项目（2026-10-13 统筹补齐文档头）
+> 更新: 2026-10-13
+> 关联: apps/gateway/public/chatImageUtils.js, apps/gateway/server.js
+
+## 1. 概述
 本次改动补齐了聊天图片在 WebUI、Gateway 持久化、Desktop Chat 三端的完整链路，覆盖以下能力：
 
 - WebUI 支持 Ctrl/Cmd+V 粘贴图片并复用现有上传流程。
@@ -9,7 +15,9 @@
 - Desktop Chat 按窗口宽度切换图片展示模式，小窗图标行、大窗缩略图卡片。
 - Desktop Chat 点击图片通过 IPC 打开独立预览窗口（可复用）。
 
-## WebUI 改动
+## 2. 行为说明
+
+### 2.1 WebUI
 文件：
 - `apps/gateway/public/chat.js`
 - `apps/gateway/public/chatImageUtils.js`
@@ -24,7 +32,7 @@
   - `buildSessionImageUrl`/`extensionFromMimeType`：统一 URL 和后缀逻辑。
 - `messageFromServer` 支持接收 `sessionId` 并映射 `metadata.input_images`，渲染时优先使用服务端返回的 `image.url`。
 
-## Gateway 持久化改动
+## 3. 接口与协议（Gateway 持久化）
 文件：
 - `apps/gateway/server.js`
 
@@ -38,7 +46,7 @@
   1. 先查 workspace 路径
   2. 找不到再查旧全局路径（历史兼容）
 
-## Desktop Chat 改动
+### 2.2 Desktop Chat
 文件：
 - `apps/desktop-live2d/renderer/chat.js`
 - `apps/desktop-live2d/renderer/chat.html`
@@ -53,12 +61,16 @@
 - 点击图片时，renderer 通过 IPC `live2d:chat:image-preview-open` 通知 main。
 - main 端创建/复用独立 `BrowserWindow` 打开图片预览页面。
 
-## 兼容性
+## 4. 配置项
+
+无独立配置项；图片数量与大小上限沿用网关环境变量 `MAX_INPUT_IMAGES`、`MAX_INPUT_IMAGE_BYTES`、`SESSION_IMAGE_STORE_DIR`。
+
+## 5. 限制与兼容性
 - 新数据默认存储在 workspace `.yachiyo/session-images`。
 - 旧会话图片仍可通过原 API 路径访问（路由自动回退到旧全局目录）。
 - WebUI 本地缓存消息和服务端会话消息都能渲染图片，避免“跨端/刷新后图片缺失”。
 
-## 测试覆盖
+### 测试覆盖（原记录）
 新增/更新测试：
 - `test/gateway/chatImageUtils.test.js`
   - 粘贴图片提取
@@ -84,3 +96,7 @@
 - Desktop：缩小窗口显示图标行，放大窗口显示缩略图。
 - Desktop：点击任意图片弹出独立预览窗口。
 - Legacy：对旧会话图片 URL 访问仍返回 200。
+
+## 6. 测试用例
+
+原项目未建立 `TC-*` 用例集（遗留文档）。自动化覆盖：`test/gateway/chatImageUtils.test.js`、`test/integration/gateway.e2e.test.js`（多模态图片上传与持久化 URL 读取）。后续修改本功能时须补建 `docs/testing/TC-desktop-chat-image-flow.md`。

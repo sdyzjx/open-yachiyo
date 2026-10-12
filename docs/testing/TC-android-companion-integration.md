@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: codex-coordinator
 > 更新: 2026-10-13
-> 关联: ../plans/PLAN-android-companion.md, ../features/FEAT-device-hub.md, ../features/FEAT-runtime-pi-agent-core.md, ../../test/integration/companion.e2e.test.js
+> 关联: ../plans/PLAN-android-companion.md, ../features/FEAT-device-hub-bus.md, ../features/FEAT-runtime-pi-agent-core.md, ../../test/integration/companion.e2e.test.js
 
 此处验证完整装配，模块单测不能替代这些用例。真实模型服务和模拟模型服务的结果分别记录。
 

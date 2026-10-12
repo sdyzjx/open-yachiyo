@@ -23,7 +23,7 @@
 
 - `docs/plans/SESSION_WORKSPACE_PERMISSION_IMPLEMENTATION.md`
 - `docs/plans/SKILLS_RUNTIME_IMPLEMENTATION.md`
-- `docs/testing/TEST_SKILL_SMOKE_GUIDE.md`
+- `docs/guides/TEST_SKILL_SMOKE_GUIDE.md`
 - `docs/guides/RUNTIME_FEATURE_USAGE_CASES.md`
 
 ## Process / SOP

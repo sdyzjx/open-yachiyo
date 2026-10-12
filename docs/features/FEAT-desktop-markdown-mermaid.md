@@ -1,10 +1,16 @@
 # 桌面端Markdown和Mermaid渲染功能文档
 
+> 类型: feature
+> 状态: done
+> 负责人: 原项目（2026-10-13 统筹补齐文档头）
+> 更新: 2026-10-13
+> 关联: apps/desktop-live2d/renderer/chat.js, apps/desktop-live2d/renderer/bubble.js
+
 ## 概述
 
 本文档描述桌面端对话框（Desktop Chat Panel）和气泡（Bubble）的Markdown、LaTeX公式和Mermaid流程图渲染功能，以及气泡消息智能截断功能。
 
-## 功能特性
+## 行为说明（功能特性）
 
 ### 1. ChatPanel Markdown渲染
 
@@ -129,7 +135,7 @@ gantt
 
 提示消息：`📊 内容包含图表或公式，请查看聊天面板`
 
-## 配置说明
+## 配置项
 
 ### 配置文件位置
 
@@ -211,7 +217,7 @@ graph LR
 | 截断 | ❌ | ✅ |
 ```
 
-## 技术实现
+## 接口与实现
 
 ### 渲染流程
 
@@ -249,7 +255,7 @@ graph LR
 2. **避免过多图表**：单个消息中避免超过3个Mermaid图表
 3. **使用截断**：气泡启用智能截断减少渲染负担
 
-## 故障排除
+## 限制与已知问题（故障排除）
 
 ### 问题1：Mermaid图表不显示
 
@@ -336,3 +342,7 @@ npm test -- test/desktop-live2d/bubbleTruncate.test.js
 ---
 
 **最后更新**：2026-03-02
+
+## 测试用例
+
+原项目未建立 `TC-*` 用例集（遗留文档）。自动化覆盖：`test/desktop-live2d/markdownRendering.test.js`、`test/desktop-live2d/mermaidRendering.test.js`。后续修改本功能时须补建 `docs/testing/TC-desktop-markdown-mermaid.md`。

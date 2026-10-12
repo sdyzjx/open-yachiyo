@@ -1,6 +1,6 @@
 # Android Companion 停止交接记录
 
-> 类型: plan
+> 类型: handoff
 > 状态: active
 > 负责人: ui_integration_review agent
 > 更新: 2026-10-13

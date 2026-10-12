@@ -21,7 +21,8 @@
     "test": "node --test \"test/**/*.test.js\"",
     "test:ci": "node --test $(find test -name '*.test.js' ! -name 'voiceAdapter.test.js')",
     "docs:index": "node scripts/docs-index.js",
-    "android:sync-assets": "node scripts/android-sync-assets.js"
+    "android:sync-assets": "node scripts/android-sync-assets.js",
+    "docs:lint": "node scripts/docs-lint.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.1.0",

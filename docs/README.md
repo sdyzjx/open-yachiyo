@@ -15,18 +15,18 @@
 
 功能级文档（FEAT-*），每个用户可见功能一份。
 
-- [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
-- [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
 - [Android 手势布局与取景](features/FEAT-android-gesture-layout.md)
 - [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 - [Android 局域网服务端自动发现](features/FEAT-android-server-discovery.md)
 - [Android 统一配置界面](features/FEAT-android-settings.md)
+- [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/FEAT-desktop-chat-image-flow.md)
+- [桌面端Markdown和Mermaid渲染功能文档](features/FEAT-desktop-markdown-mermaid.md)
 - [Desktop 夜景 UI 与模型切换器](features/FEAT-desktop-night-ui-model-switcher.md)
 - [Avatar 跨设备移交](features/FEAT-device-hub-avatar-transfer.md)
+- [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub-bus.md)
 - [Device Hub 局域网服务发现](features/FEAT-device-hub-discovery.md)
-- [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub.md)
 - [模型配置 v2（多 provider / 多模型）](features/FEAT-llm-model-config-v2.md)
 - [插件打包、存储与推送](features/FEAT-plugin-push.md)
 - [插件系统（Android 宿主与 SDK）](features/FEAT-plugin-system.md)
@@ -42,6 +42,7 @@
 - [插件开发指南](guides/PLUGIN_DEVELOPMENT_GUIDE.md)
 - [Provider 配置指南](guides/PROVIDER_CONFIGURATION_GUIDE.md)
 - [Runtime Feature Usage Cases](guides/RUNTIME_FEATURE_USAGE_CASES.md)
+- [Test Skill Smoke Guide](guides/TEST_SKILL_SMOKE_GUIDE.md)
 - [声线克隆与 TTS 配置指南](guides/TTS_VOICE_CLONE_GUIDE.md)
 - [Voice Clone HTTP SOP](guides/VOICE_CLONE_HTTP_SOP.md)
 - [Windows Packaging Guide](guides/WINDOWS_PACKAGING_GUIDE.md)
@@ -150,15 +151,14 @@
 - [Android 原生壳测试用例](testing/TC-android-native.md)
 - [Android 局域网服务端发现测试用例](testing/TC-android-server-discovery.md)
 - [Android Web 前端测试用例](testing/TC-android-web.md)
-- [Avatar 移交测试用例](testing/TC-avatar-transfer.md)
 - [Desktop UI 与模型切换测试用例](testing/TC-desktop-ui.md)
+- [Avatar 移交测试用例](testing/TC-device-hub-avatar-transfer.md)
+- [Device Hub 测试用例](testing/TC-device-hub-bus.md)
 - [Device Hub 局域网服务发现测试用例](testing/TC-device-hub-discovery.md)
-- [Device Hub 测试用例](testing/TC-device-hub.md)
 - [模型配置 v2 测试用例](testing/TC-llm-model-config-v2.md)
 - [插件系统测试用例](testing/TC-plugin-system.md)
 - [pi Agent 核心测试用例](testing/TC-runtime-pi-agent-core.md)
 - [Testing and CI](testing/TESTING.md)
-- [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 
 ## 排障 Debug
 

@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-13
-> 关联: ../plans/PLAN-android-companion-contracts.md §C1, ../../apps/gateway/deviceHub/, ../testing/TC-device-hub.md
+> 关联: ../plans/PLAN-android-companion-contracts.md §C1, ../../apps/gateway/deviceHub/, ../testing/TC-device-hub-bus.md
 
 ## 概述
 
@@ -62,4 +62,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～026；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-001～026；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
