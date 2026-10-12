@@ -6,6 +6,7 @@
   <title>Config v2 — Yachiyo</title>
   <link rel="stylesheet" href="/system.css" />
   <link rel="stylesheet" href="/config-v2.css" />
+  <link rel="stylesheet" href="/config-v2-models.css" />
 </head>
 <body>
   <div class="cv2-shell">
@@ -37,6 +38,9 @@
 
     <!-- ── Main layout ── -->
     <div class="cv2-main">
+
+      <!-- Models pane (tab "models"; see config-v2-models.js) -->
+      <section id="cv2-models-pane" class="cv2-editor-pane panel" aria-label="模型配置" hidden></section>
 
       <!-- Editor pane -->
       <section class="cv2-editor-pane panel" aria-label="YAML 编辑器">
@@ -116,6 +120,7 @@
     </div><!-- /.cv2-main -->
   </div><!-- /.cv2-shell -->
 
+  <script src="/config-v2-models.js"></script>
   <script src="/config-v2.js"></script>
 </body>
 </html>

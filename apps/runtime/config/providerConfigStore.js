@@ -21,27 +21,117 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-const SUPPORTED_TYPES = ['openai_compatible', 'tts_dashscope'];
+const CHAT_TYPES = ['openai_compatible', 'anthropic', 'google'];
+const ASR_TYPES = ['asr_openai_compatible', 'asr_dashscope'];
+const SUPPORTED_TYPES = [...CHAT_TYPES, 'tts_dashscope', ...ASR_TYPES];
+const DEFAULT_BASE_URLS = {
+  anthropic: 'https://api.anthropic.com',
+  google: 'https://generativelanguage.googleapis.com/v1beta'
+};
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+// Split "<provider_key>/<model_id>"; the model id may itself contain "/" (e.g. OpenRouter).
+function splitModelRef(ref, providers) {
+  const text = String(ref || '');
+  let best = null;
+  for (const key of Object.keys(providers || {})) {
+    if (text.startsWith(`${key}/`) && text.length > key.length + 1) {
+      if (!best || key.length > best.length) best = key;
+    }
+  }
+  return best ? { provider: best, id: text.slice(best.length + 1) } : null;
+}
+
+function normalizeModelEntry(entry, presetModels) {
+  const base = isObject(entry) ? { ...entry } : { id: entry };
+  const id = base.id === undefined || base.id === null ? '' : String(base.id);
+  const hint = presetModels.find((m) => m.id === id) || {};
+  return { ...hint, ...base, id };
+}
+
+function normalizeProvider(raw) {
+  if (!isObject(raw)) return raw;
+  // eslint-disable-next-line global-require
+  const preset = nonEmptyString(raw.preset) ? require('./providerPresets').getPreset(raw.preset) : null;
+  const provider = { ...raw };
+  if (preset) {
+    if (provider.type === undefined) provider.type = preset.type;
+    if (provider.base_url === undefined && preset.base_url) provider.base_url = preset.base_url;
+    if (provider.api_key_env === undefined && preset.api_key_env) provider.api_key_env = preset.api_key_env;
+    if (provider.display_name === undefined) provider.display_name = preset.name;
+    provider.compat = { ...preset.compat, ...(isObject(raw.compat) ? raw.compat : {}) };
+  }
+  if (provider.base_url === undefined && DEFAULT_BASE_URLS[provider.type]) {
+    provider.base_url = DEFAULT_BASE_URLS[provider.type];
+  }
+  if (!CHAT_TYPES.includes(provider.type)) return provider;
+
+  const presetModels = preset?.models || [];
+  let list = Array.isArray(raw.models) ? raw.models : null;
+  if (!list || list.length === 0) {
+    if (nonEmptyString(raw.model)) list = [{ id: raw.model }];
+    else list = presetModels;
+  }
+  provider.models = list.map((m) => normalizeModelEntry(m, presetModels));
+  if (!nonEmptyString(provider.model) && provider.models[0]?.id) provider.model = provider.models[0].id;
+  return provider;
+}
+
+// Returns a schema-v2 view of any (v1 or v2) config without mutating the input.
+// Safe on malformed input: validateConfig reports the problems.
+function normalizeProviderConfig(config) {
+  if (!isObject(config)) return config;
+  const providers = {};
+  for (const [key, raw] of Object.entries(isObject(config.providers) ? config.providers : {})) {
+    providers[key] = normalizeProvider(raw);
+  }
+
+  let activeModel = nonEmptyString(config.active_model) ? config.active_model : null;
+  const activeProviderV1 = nonEmptyString(config.active_provider) ? config.active_provider : null;
+  if (!activeModel && activeProviderV1 && isObject(providers[activeProviderV1])) {
+    const first = providers[activeProviderV1].model || providers[activeProviderV1].models?.[0]?.id;
+    if (first) activeModel = `${activeProviderV1}/${first}`;
+  }
+  const activeParts = activeModel ? splitModelRef(activeModel, providers) : null;
+
+  return {
+    ...config,
+    version: 2,
+    active_provider: activeParts ? activeParts.provider : activeProviderV1,
+    active_model: activeModel,
+    enabled_models: Array.isArray(config.enabled_models) ? [...config.enabled_models] : [],
+    roles: isObject(config.roles) ? { ...config.roles } : {},
+    fallback_models: Array.isArray(config.fallback_models) ? [...config.fallback_models] : [],
+    providers
+  };
+}
+
+function apiKeyOptional(provider) {
+  return provider.requires_api_key === false || provider.auth === 'none' || provider.preset === 'ollama';
+}
 
 function validateConfig(config) {
   if (!isObject(config)) {
     throw new Error('providers.yaml root must be an object');
   }
 
-  const providers = config.providers;
-  const activeProvider = config.active_provider;
-
-  if (!isObject(providers) || Object.keys(providers).length === 0) {
+  if (!isObject(config.providers) || Object.keys(config.providers).length === 0) {
     throw new Error('providers must be a non-empty map');
   }
 
-  if (typeof activeProvider !== 'string' || !activeProvider) {
+  const hasActiveModel = nonEmptyString(config.active_model);
+  if (!hasActiveModel && !nonEmptyString(config.active_provider)) {
     throw new Error('active_provider must be a non-empty string');
   }
-
-  if (!providers[activeProvider]) {
-    throw new Error(`active_provider not found in providers: ${activeProvider}`);
+  if (!hasActiveModel && !config.providers[config.active_provider]) {
+    throw new Error(`active_provider not found in providers: ${config.active_provider}`);
   }
+
+  const normalized = normalizeProviderConfig(config);
+  const providers = normalized.providers;
 
   for (const [name, provider] of Object.entries(providers)) {
     if (!isObject(provider)) {
@@ -53,33 +143,69 @@ function validateConfig(config) {
       throw new Error(`provider ${name} type must be one of: ${SUPPORTED_TYPES.join(', ')}`);
     }
 
-    // openai_compatible 需要 base_url + model
-    if (type === 'openai_compatible') {
-      if (typeof provider.base_url !== 'string' || !provider.base_url) {
+    if (CHAT_TYPES.includes(type) || type === 'asr_openai_compatible') {
+      if (!nonEmptyString(provider.base_url)) {
         throw new Error(`provider ${name} must define base_url`);
       }
-      if (typeof provider.model !== 'string' || !provider.model) {
+    }
+
+    if (CHAT_TYPES.includes(type)) {
+      if (!Array.isArray(provider.models) || provider.models.length === 0) {
         throw new Error(`provider ${name} must define model`);
       }
+      for (const model of provider.models) {
+        if (!nonEmptyString(model.id)) {
+          throw new Error(`provider ${name} models[].id must be a non-empty string`);
+        }
+      }
+    }
+
+    if (ASR_TYPES.includes(type) && !nonEmptyString(provider.model)) {
+      throw new Error(`provider ${name} must define model`);
     }
 
     // tts_dashscope 需要 tts_model + tts_voice + base_url
     if (type === 'tts_dashscope') {
-      if (typeof provider.tts_model !== 'string' || !provider.tts_model) {
+      if (!nonEmptyString(provider.tts_model)) {
         throw new Error(`provider ${name} must define tts_model`);
       }
-      if (typeof provider.tts_voice !== 'string' || !provider.tts_voice) {
+      if (!nonEmptyString(provider.tts_voice)) {
         throw new Error(`provider ${name} must define tts_voice`);
       }
-      if (typeof provider.base_url !== 'string' || !provider.base_url) {
+      if (!nonEmptyString(provider.base_url)) {
         throw new Error(`provider ${name} must define base_url`);
       }
     }
-    const hasInlineKey = typeof provider.api_key === 'string' && provider.api_key.length > 0;
-    const hasEnvKey = typeof provider.api_key_env === 'string' && provider.api_key_env.length > 0;
-    if (!hasInlineKey && !hasEnvKey) {
+    const hasInlineKey = nonEmptyString(provider.api_key);
+    const hasEnvKey = nonEmptyString(provider.api_key_env);
+    if (!hasInlineKey && !hasEnvKey && !apiKeyOptional(provider)) {
       throw new Error(`provider ${name} must define api_key or api_key_env`);
     }
+  }
+
+  const known = new Set();
+  for (const [name, provider] of Object.entries(providers)) {
+    if (CHAT_TYPES.includes(provider.type)) {
+      for (const model of provider.models) known.add(`${name}/${model.id}`);
+    }
+  }
+  const assertRef = (field, ref) => {
+    if (!known.has(String(ref))) {
+      throw new Error(`${field} references unknown model: ${ref}`);
+    }
+  };
+  if (hasActiveModel) assertRef('active_model', config.active_model);
+  if (config.enabled_models !== undefined) {
+    if (!Array.isArray(config.enabled_models)) throw new Error('enabled_models must be an array');
+    config.enabled_models.forEach((ref) => assertRef('enabled_models', ref));
+  }
+  if (config.fallback_models !== undefined) {
+    if (!Array.isArray(config.fallback_models)) throw new Error('fallback_models must be an array');
+    config.fallback_models.forEach((ref) => assertRef('fallback_models', ref));
+  }
+  if (config.roles !== undefined) {
+    if (!isObject(config.roles)) throw new Error('roles must be an object');
+    for (const ref of Object.values(config.roles)) assertRef('roles', ref);
   }
 }
 
@@ -102,6 +228,10 @@ class ProviderConfigStore {
     return fs.readFileSync(this.configPath, 'utf8');
   }
 
+  loadNormalized() {
+    return normalizeProviderConfig(this.load());
+  }
+
   load() {
     const raw = this.loadRawYaml();
     const parsed = YAML.parse(raw);
@@ -122,4 +252,12 @@ class ProviderConfigStore {
   }
 }
 
-module.exports = { ProviderConfigStore, validateConfig };
+module.exports = {
+  ProviderConfigStore,
+  validateConfig,
+  normalizeProviderConfig,
+  splitModelRef,
+  CHAT_TYPES,
+  ASR_TYPES,
+  SUPPORTED_TYPES
+};

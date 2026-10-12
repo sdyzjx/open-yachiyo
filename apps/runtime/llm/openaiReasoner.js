@@ -45,9 +45,16 @@ class OpenAIReasoner {
     model = 'gpt-4o-mini',
     timeoutMs = 20000,
     maxRetries = DEFAULT_MAX_RETRIES,
-    retryDelayMs = DEFAULT_RETRY_DELAY_MS
+    retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+    headers = {},
+    extraBody = {},
+    compat = {},
+    temperature = null,
+    maxTokens = null,
+    reasoning = false,
+    requireApiKey = true
   } = {}) {
-    if (!apiKey) {
+    if (!apiKey && requireApiKey) {
       throw new Error('LLM_API_KEY is required for real LLM mode');
     }
 
@@ -57,16 +64,66 @@ class OpenAIReasoner {
     this.timeoutMs = timeoutMs;
     this.maxRetries = Math.max(0, Number(maxRetries) || 0);
     this.retryDelayMs = Math.max(0, Number(retryDelayMs) || 0);
+    this.headers = headers && typeof headers === 'object' ? { ...headers } : {};
+    this.extraBody = extraBody && typeof extraBody === 'object' && !Array.isArray(extraBody) ? { ...extraBody } : {};
+    this.compat = compat && typeof compat === 'object' ? { ...compat } : {};
+    this.temperature = temperature === null || temperature === undefined || temperature === ''
+      ? null
+      : Number(temperature);
+    this.maxTokens = Number(maxTokens) > 0 ? Number(maxTokens) : null;
+    this.reasoning = Boolean(reasoning);
+  }
+
+  get reasoningField() {
+    return this.compat.reasoning_content_field || 'reasoning_content';
+  }
+
+  get stripReasoningInHistory() {
+    return this.compat.strip_reasoning_in_history !== false;
+  }
+
+  buildHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      ...this.headers
+    };
+  }
+
+  // Adapt history to provider quirks: developer->system when unsupported, and drop
+  // reasoning_content from replayed assistant messages (DeepSeek rejects it).
+  prepareMessages(messages) {
+    if (!Array.isArray(messages)) return messages;
+    const field = this.reasoningField;
+    return messages.map((message) => {
+      if (!message || typeof message !== 'object') return message;
+      let next = message;
+      if (next.role === 'developer' && this.compat.supports_developer_role === false) {
+        next = { ...next, role: 'system' };
+      }
+      if (next.role === 'assistant' && this.stripReasoningInHistory && field in next) {
+        next = { ...next };
+        delete next[field];
+      }
+      return next;
+    });
   }
 
   buildPayload({ messages, tools, stream = false }) {
     const normalizedTools = Array.isArray(tools) ? tools : [];
     const payload = {
       model: this.model,
-      temperature: 0.2,
       stream: Boolean(stream),
-      messages
+      messages: this.prepareMessages(messages)
     };
+    if (this.temperature !== null && Number.isFinite(this.temperature)) {
+      payload.temperature = this.temperature;
+    } else if (!this.reasoning) {
+      payload.temperature = 0.2;
+    }
+    if (this.maxTokens) {
+      payload[this.compat.max_tokens_field || 'max_tokens'] = this.maxTokens;
+    }
 
     if (normalizedTools.length > 0) {
       payload.tool_choice = 'auto';
@@ -80,17 +137,29 @@ class OpenAIReasoner {
       }));
     }
 
-    return payload;
+    return { ...payload, ...this.extraBody };
   }
 
-  buildDecisionFromAssistantMessage(message) {
+  buildDecisionFromAssistantMessage(rawMessage) {
+    // reasoning_content is never part of the visible output; it is kept on the message
+    // only when strip_reasoning_in_history is explicitly disabled.
+    const field = this.reasoningField;
+    const reasoningContent = typeof rawMessage?.[field] === 'string' ? rawMessage[field] : '';
+    let message = rawMessage;
+    if (rawMessage && typeof rawMessage === 'object' && field in rawMessage && this.stripReasoningInHistory) {
+      message = { ...rawMessage };
+      delete message[field];
+    }
+    const reasoningMeta = reasoningContent ? { reasoning_content: reasoningContent } : {};
+
     const toolCalls = normalizeToolCallsFromMessage(message);
     if (toolCalls.length > 0) {
       return {
         type: 'tool',
         assistantMessage: message,
         tool: toolCalls[0],
-        tools: toolCalls
+        tools: toolCalls,
+        ...reasoningMeta
       };
     }
 
@@ -98,7 +167,8 @@ class OpenAIReasoner {
     return {
       type: 'final',
       assistantMessage: message,
-      output: content || '模型未返回文本输出。'
+      output: content || '模型未返回文本输出。',
+      ...reasoningMeta
     };
   }
 
@@ -124,6 +194,19 @@ class OpenAIReasoner {
     );
   }
 
+  buildFinalError(lastError, totalAttempts) {
+    const message = lastError?.message || String(lastError || 'unknown error');
+    const error = new Error(
+      `LLM request failed after ${totalAttempts} attempt(s): ${message} (base_url=${this.baseUrl}, model=${this.model})`
+    );
+    error.status = lastError?.status ?? null;
+    // Callers (fallback chain) switch models only for transient failures.
+    error.retriable = Boolean(
+      (error.status && this.isRetriableStatus(error.status)) || this.isRetriableNetworkError(lastError)
+    );
+    return error;
+  }
+
   async waitBeforeRetry(attempt) {
     if (this.retryDelayMs <= 0) return;
     const backoffMs = this.retryDelayMs * (attempt + 1);
@@ -142,10 +225,7 @@ class OpenAIReasoner {
       try {
         const response = await fetch(`${this.baseUrl}/chat/completions`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`
-          },
+          headers: this.buildHeaders(),
           body: JSON.stringify(payload),
           signal: controller.signal
         });
@@ -156,7 +236,9 @@ class OpenAIReasoner {
             await this.waitBeforeRetry(attempt);
             continue;
           }
-          throw new Error(`LLM request failed: ${response.status} ${body}`);
+          const failure = new Error(`LLM request failed: ${response.status} ${body}`);
+          failure.status = response.status;
+          throw failure;
         }
 
         const data = await response.json();
@@ -177,10 +259,7 @@ class OpenAIReasoner {
       }
     }
 
-    const message = lastError?.message || String(lastError || 'unknown error');
-    throw new Error(
-      `LLM request failed after ${totalAttempts} attempt(s): ${message} (base_url=${this.baseUrl}, model=${this.model})`
-    );
+    throw this.buildFinalError(lastError, totalAttempts);
   }
 
   async decideStream({
@@ -189,7 +268,8 @@ class OpenAIReasoner {
     onDelta = null,
     onToolCallDelta = null,
     onToolCallStable = null,
-    onToolCallParseError = null
+    onToolCallParseError = null,
+    onReasoningDelta = null
   }) {
     const payload = this.buildPayload({ messages, tools, stream: true });
 
@@ -202,10 +282,7 @@ class OpenAIReasoner {
       try {
         const response = await fetch(`${this.baseUrl}/chat/completions`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`
-          },
+          headers: this.buildHeaders(),
           body: JSON.stringify(payload),
           signal: controller.signal
         });
@@ -216,7 +293,9 @@ class OpenAIReasoner {
             await this.waitBeforeRetry(attempt);
             continue;
           }
-          throw new Error(`LLM request failed: ${response.status} ${body}`);
+          const failure = new Error(`LLM request failed: ${response.status} ${body}`);
+          failure.status = response.status;
+          throw failure;
         }
 
         if (!response.body || typeof response.body[Symbol.asyncIterator] !== 'function') {
@@ -227,6 +306,7 @@ class OpenAIReasoner {
         let buffer = '';
         let sawDone = false;
         let textOutput = '';
+        let reasoningOutput = '';
         const accumulator = new ToolCallAccumulator({
           onDelta: onToolCallDelta,
           onStable: onToolCallStable,
@@ -249,6 +329,17 @@ class OpenAIReasoner {
           const choice = jsonPayload?.choices?.[0];
           if (!choice) return;
           const delta = choice.delta || {};
+          const reasoningDelta = delta[this.reasoningField];
+          if (typeof reasoningDelta === 'string' && reasoningDelta) {
+            reasoningOutput += reasoningDelta;
+            if (typeof onReasoningDelta === 'function') {
+              try {
+                onReasoningDelta(reasoningDelta);
+              } catch {
+                // Ignore callback failures to keep stream consumer robust.
+              }
+            }
+          }
           const contentDelta = extractTextContent(delta.content);
           if (contentDelta) {
             textOutput += contentDelta;
@@ -318,8 +409,10 @@ class OpenAIReasoner {
         const assistantMessage = {
           role: 'assistant',
           content: textOutput || '',
-          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
+          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          ...(reasoningOutput && !this.stripReasoningInHistory ? { [this.reasoningField]: reasoningOutput } : {})
         };
+        const reasoningMeta = reasoningOutput ? { reasoning_content: reasoningOutput } : {};
 
         if (resolvedToolCalls.length > 0) {
           const toolsDecision = resolvedToolCalls.map((item) => ({
@@ -332,6 +425,7 @@ class OpenAIReasoner {
             assistantMessage,
             tool: toolsDecision[0],
             tools: toolsDecision,
+            ...reasoningMeta,
             stream_meta: {
               tool_parse_errors: parseErrors.length,
               parse_errors: parseErrors
@@ -342,6 +436,7 @@ class OpenAIReasoner {
         const decision = this.buildDecisionFromAssistantMessage(assistantMessage);
         return {
           ...decision,
+          ...reasoningMeta,
           stream_meta: {
             tool_parse_errors: parseErrors.length,
             parse_errors: parseErrors
@@ -359,10 +454,7 @@ class OpenAIReasoner {
       }
     }
 
-    const message = lastError?.message || String(lastError || 'unknown error');
-    throw new Error(
-      `LLM request failed after ${totalAttempts} attempt(s): ${message} (base_url=${this.baseUrl}, model=${this.model})`
-    );
+    throw this.buildFinalError(lastError, totalAttempts);
   }
 }
 
