@@ -27,10 +27,34 @@ function fakeDom() {
 
 function load() {
   const raf = [];
+  let now = 0;
+  let nextTimer = 1;
+  const timers = new Map();
+  const setTimeoutFake = (fn, delay = 0) => {
+    const id = nextTimer++;
+    timers.set(id, { fn, at: now + Number(delay || 0) });
+    return id;
+  };
+  const clearTimeoutFake = (id) => timers.delete(id);
+  const advance = (ms) => {
+    const end = now + ms;
+    while (true) {
+      const due = [...timers.entries()]
+        .filter(([, timer]) => timer.at <= end)
+        .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+      if (!due) break;
+      now = due[1].at;
+      timers.delete(due[0]);
+      due[1].fn();
+    }
+    now = end;
+  };
   const g = { document: fakeDom(), requestAnimationFrame: (fn) => { raf.push(fn); return raf.length; }, YachiyoLayout: require(path.join(WEB, 'js/layout.js')) };
   const src = read('js/canvas.js');
-  new Function('window', 'document', 'requestAnimationFrame', src)(g, g.document, g.requestAnimationFrame);
-  return { api: g.YachiyoTaskCanvas, raf, flush: () => { while (raf.length) raf.shift()(); } };
+  new Function('window', 'document', 'requestAnimationFrame', 'setTimeout', 'clearTimeout', src)(
+    g, g.document, g.requestAnimationFrame, setTimeoutFake, clearTimeoutFake
+  );
+  return { api: g.YachiyoTaskCanvas, raf, advance, flush: () => { while (raf.length) raf.shift()(); } };
 }
 
 test('new messages pin the scroller to the bottom until the user scrolls up', () => {
@@ -90,6 +114,25 @@ test('assistant bubbles are trace-aware and duplicate final events are idempoten
   canvas.delta('二', { trace_id: 'trace-b' });
   canvas.final('乙二', { trace_id: 'trace-b' });
   assert.deepEqual(bubbles.children.map((node) => node.textContent), ['甲一', '乙二']);
+});
+
+test('a newer streamed reply does not cancel an older bubble fade timer', () => {
+  const { api, advance } = load();
+  const root = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root });
+  const bubbles = canvas.mergedScrollEl.children[0];
+
+  canvas.delta('旧', { trace_id: 'trace-old' });
+  canvas.final('旧', { trace_id: 'trace-old' });
+  const oldBubble = bubbles.children[0];
+  canvas.delta('新回答正在生成', { trace_id: 'trace-new' });
+
+  advance(16090);
+  assert.equal(oldBubble.classList.contains('tc-out'), true);
+  advance(420);
+  assert.equal(oldBubble.isConnected, false);
+  assert.equal(bubbles.children[1].isConnected, true);
+  assert.equal(root.classList.contains('has-content'), true);
 });
 
 test('chat panel is a bounded scroller that does not feed the stage swipe gestures', () => {

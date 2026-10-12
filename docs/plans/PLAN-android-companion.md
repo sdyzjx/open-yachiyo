@@ -223,3 +223,4 @@ flowchart TD
 - Realtime 原生 Agent 已取代临时“转写后再进入 Pi”的双模型链路：会话注册 ToolExecutor 工具并处理 Function Calling，复用人格、技能、历史、权限和工作区设置；`voice.tts_aliyun_vc` 在此通路中被排除，工具事件、界面文本和原生音频分别输出。
 - 使用 18 秒标准参考音频为 `qwen3.8-omni-flash-realtime` 创建 Yachiyo 复刻音色，并写入隔离与用户 Provider 配置。真实云端请求成功调用 `system.get_time`，工具结果续答为中文，收到 311040 bytes 24 kHz PCM；随后重启网关与手机 App，真机显示角色、Realtime 徽标及“电脑在线”。设备锁和临时 ADB forward 已释放。
 - 修复手机聊天框重复/交错：旧画布全局只保存一个 assistant 流，多个 Realtime trace 重叠或相同 final 重送时会互相终止并重复建卡。现按 `trace_id` 独立维护流式气泡，对完成 trace 做有界幂等记录；同时移除 Realtime 桌面文字路径与网关会话钩子的重复持久化。TC-AWB-041、Node 811/811、Android 单测与 Debug 构建通过；小米 6 注入交错 trace 和重复 final 后 DOM/截图仅保留“甲一”“乙二”两张气泡。
+- 修复手机聊天气泡不会自动消失：原实现复用单个全局淡出计时器，新回答的首个增量会取消上一条回答的计时且不再恢复。现将计时器绑定到每张气泡，新旧 trace 的展示周期互不干扰；新增 TC-AWB-042 覆盖“旧回答等待淡出时开始新回答”的回归场景。

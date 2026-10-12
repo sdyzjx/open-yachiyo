@@ -418,6 +418,16 @@
 | 期望结果 | 两个回答分别形成完整气泡且内容不交错；重复 final 不创建第二张气泡；后续新 trace 仍正常显示 |
 | 自动化 | `test/android-web/chatPanel.test.js`（assistant bubbles are trace-aware and duplicate final events are idempotent）+ manual-device |
 
+## TC-AWB-042 聊天气泡独立自动收起
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 可注入两个带不同 `trace_id` 的回答；首个回答已收到 `chat.final` |
+| 步骤 | 首个回答进入淡出等待后，立即让第二个回答持续发送 `chat.delta`；等待首个回答的展示时限与 420 ms 淡出动画 |
+| 期望结果 | 首个回答按时淡出并从 DOM 移除；第二个回答继续显示；画布在仍有内容时保持可见 |
+| 自动化 | `test/android-web/chatPanel.test.js`（a newer streamed reply does not cancel an older bubble fade timer）+ manual-device |
+
 ## TC-AND-053 手机聊天模型选择与音频模式
 
 | 字段 | 内容 |

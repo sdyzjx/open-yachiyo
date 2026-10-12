@@ -44,7 +44,6 @@
     let liveCount = 0;
     const assistants = new Map();
     const completedTraces = new Set();
-    let fadeTimer = null;
     const taskEls = new Map();
 
     function traceKey(meta) {
@@ -67,6 +66,8 @@
 
     function removeGroup(group) {
       if (!group || !group.alive) return;
+      clearTimeout(group.fadeTimer);
+      group.fadeTimer = 0;
       group.alive = false;
       for (const entry of group.nodes) entry.node.remove();
       liveCount = Math.max(0, liveCount - 1);
@@ -80,7 +81,7 @@
         view.bubbles.appendChild(node);
         return { view, node };
       });
-      const group = { kind: 'bubble', role, nodes, alive: true };
+      const group = { kind: 'bubble', role, nodes, alive: true, fadeTimer: 0 };
       groups.push(group);
       liveCount += 1;
       const bubbles = groups.filter((item) => item.kind === 'bubble' && item.alive);
@@ -91,11 +92,17 @@
     function fade(group) {
       if (!group || !group.alive) return;
       if (group.nodes.some(({ view }) => Date.now() - view.lastTouch < 4000)) {
-        setTimeout(() => fade(group), 2000);
+        scheduleFade(group, 2000);
         return;
       }
       for (const { node } of group.nodes) node.classList.add('tc-out');
-      setTimeout(() => removeGroup(group), 420);
+      group.fadeTimer = setTimeout(() => removeGroup(group), 420);
+    }
+
+    function scheduleFade(group, delay) {
+      if (!group || !group.alive) return;
+      clearTimeout(group.fadeTimer);
+      group.fadeTimer = setTimeout(() => fade(group), delay);
     }
 
     function showUser(text) {
@@ -104,12 +111,11 @@
       refreshVisibility();
       pin(userView, true);
       pin(mergedView, true);
-      setTimeout(() => fade(group), 12000);
+      scheduleFade(group, 12000);
     }
 
     function delta(text, meta) {
       if (!text) return;
-      clearTimeout(fadeTimer);
       const key = traceKey(meta);
       if (completedTraces.has(key)) return;
       let state = assistants.get(key);
@@ -117,6 +123,8 @@
         state = { group: makeBubble('assistant', ''), text: '' };
         assistants.set(key, state);
       }
+      clearTimeout(state.group.fadeTimer);
+      state.group.fadeTimer = 0;
       state.text += text;
       for (const { node } of state.group.nodes) node.textContent = state.text;
       refreshVisibility();
@@ -141,7 +149,7 @@
       pin(mergedView);
       if (group) {
         const length = group.nodes[0].node.textContent.length;
-        fadeTimer = setTimeout(() => fade(group), Math.min(60000, 16000 + length * 90));
+        scheduleFade(group, Math.min(60000, 16000 + length * 90));
       }
     }
 
