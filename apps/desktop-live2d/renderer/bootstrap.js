@@ -19,11 +19,12 @@
     resizeModeEnabled: false
   };
 
+  let avatarTransfer = null;
   let pixiApp = null;
   let live2dModel = null;
   let hideBubbleTimer = null;
   const systemAudio = new Audio();
-  systemAudio.autoplay = true;
+  systemAudio.autoplay = false;
   let currentVoiceObjectUrl = null;
   let dragPointerState = null;
   let suppressModelTapUntil = 0;
@@ -2288,6 +2289,7 @@
           output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
+        if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) throw new Error('Avatar host changed before playback');
         await systemAudio.play();
         emitLipsyncTelemetry('playback.started', {
           request_id: nextRequestId,
@@ -2528,6 +2530,7 @@
           output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
+        if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) throw new Error('Avatar host changed before playback');
         await systemAudio.play();
         console.log('[lipsync] Audio playback started');
         emitLipsyncTelemetry('playback.started', {
@@ -2722,12 +2725,17 @@
       };
 
       await player.startSession({
+        shouldPlay: () => Boolean(avatarTransfer?.isHost && activeVoiceRequestId === nextRequestId),
         requestId: nextRequestId,
         sampleRate,
         prebufferMs,
         outputDelayMs: playbackDelayMs,
         idleTimeoutMs,
         onFirstAudio: () => {
+          if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) {
+            player.interruptSession({ reason: 'avatar-transfer' });
+            return;
+          }
           void primeRealtimeLipsync().catch(() => {
             // Errors are already reported in primeRealtimeLipsync.
           });
@@ -2785,6 +2793,10 @@
         }
       });
 
+      if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) {
+        player.interruptSession({ reason: 'avatar-transfer' });
+        return;
+      }
       void primeRealtimeLipsync().catch(() => {
         // Errors are already reported in primeRealtimeLipsync.
       });
@@ -3929,7 +3941,9 @@
 
     try {
       let result;
-      if (method === 'state.get') {
+      if (method === 'avatar.hub.event') {
+        result = await avatarTransfer.handle(params);
+      } else if (method === 'state.get') {
         result = getState();
       } else if (method === 'debug.mouthOverride.set') {
         result = setExternalMouthOverride(params);
@@ -3964,7 +3978,7 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        if (name === 'voice.playback.electron') {
+        if (name === 'voice.playback.electron' && avatarTransfer?.isHost) {
           const audioUrl = normalizeLegacyVoiceAudioUrl(data?.audio_ref || data?.audioRef || '');
           if (!audioUrl) {
             throw createRpcError(-32602, 'voice.playback.electron requires audio_ref');
@@ -4048,6 +4062,20 @@
       await initPixi();
       await loadModel(runtimeConfig.modelRelativePath, runtimeConfig.modelName);
       ensureActionQueuePlayer();
+      avatarTransfer = window.AvatarTransfer.createAvatarTransfer({
+        element: pixiApp.view,
+        setVisible: (visible) => { live2dModel.visible = visible; },
+        stopVoice: () => {
+          systemAudio.pause();
+          activeVoiceRequestId = null;
+          stopLipsync('avatar-transfer');
+          interruptRealtimeVoicePlayer('avatar-transfer');
+        },
+        greet: async () => {
+          try { await ensureActionQueuePlayer().enqueue({ action_id: `greet-${Date.now()}`, action: { type: 'gesture', name: 'greet', args: { type: 'greet' } }, duration_sec: 2, queue_policy: 'append' }); } catch { /* Model may not provide greet. */ }
+        }
+      });
+      await avatarTransfer.handle({ topic: 'avatar.connection.lost' });
 
       bridge.onInvoke((payload) => {
         void handleInvoke(payload);
@@ -4058,6 +4086,7 @@
       });
 
       bridge.onVoicePlayMemory?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         const coarseBytes = coerceAudioBytes(payload?.audioBytes);
         emitRendererDebug('voice_memory.received', {
@@ -4083,6 +4112,7 @@
       }
 
       bridge.onVoicePlayRemote?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         emitRendererDebug('voice_remote.received', {
           request_id: requestId,
@@ -4112,6 +4142,7 @@
       }
 
       bridge.onVoiceStreamStart?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         const requestId = normalizeVoiceRequestId(payload?.requestId || payload?.request_id);
         emitRendererDebug('voice_stream.start_received', {
           request_id: requestId,
@@ -4130,6 +4161,7 @@
       }
 
       bridge.onVoiceStreamChunk?.((payload) => {
+        if (!avatarTransfer?.isHost) return;
         appendRealtimeVoiceChunk(payload);
       });
       if (typeof bridge.onVoiceStreamChunk !== 'function') {

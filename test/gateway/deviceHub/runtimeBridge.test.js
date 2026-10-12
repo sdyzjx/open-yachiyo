@@ -1,0 +1,38 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
+const { fixture } = require('./helpers');
+
+test('Runtime bridge maps chat, aggregates tools and prevents publication loops', async (t) => {
+  const bus = new RuntimeEventBus();
+  const runs = [];
+  const f = await fixture(t, { bus, enqueueRun: async (sink, request) => { runs.push(request); sink.send(JSON.stringify({ method: 'runtime.final', params: { session_id: request.params.session_id, trace_id: 'r', output: 'done' } })); } });
+  const a = await f.client('phone'); const b = await f.client('desktop-test', { device_type: 'desktop' });
+  a.send('sub', { topics: ['*'] }); b.send('sub', { topics: ['*'] }); await a.sync(); await b.sync();
+  bus.publish('ui.live2d.action', { action_id: 'one' });
+  await b.next((m) => m.topic === 'ui.live2d.action'); await a.sync();
+  assert.equal(a.inbox.some((m) => m.topic === 'ui.live2d.action'), false);
+  bus.publish('message.delta', { session_id: 'device-phone', trace_id: 'r', delta: 'hello' });
+  assert.equal((await a.next((m) => m.topic === 'chat.delta')).data.delta, 'hello');
+  const envelope = { session_id: 'device-phone', trace_id: 'r', seq: 1, event: 'llm.stream.delta', payload: { delta: 'world' } };
+  bus.publish('runtime.event', envelope); bus.publish('runtime.event', envelope);
+  await a.next((m) => m.topic === 'chat.delta'); await a.sync();
+  assert.equal(a.inbox.some((m) => m.topic === 'chat.delta'), false);
+  let count = 0; bus.subscribe('plugin.demo.tick', (data) => { count++; assert.equal(data.__from_device, 'phone'); });
+  a.send('pub', { value: 1 }, { topic: 'plugin.demo.tick' }); await a.sync();
+  assert.equal(count, 1);
+  assert.equal(a.inbox.filter((m) => m.topic === 'plugin.demo.tick').length, 1);
+  a.send('pub', { text: 'hi', session_id: 'another-session' }, { topic: 'chat.input' });
+  assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'done');
+  assert.equal(runs[0].params.session_id, 'device-phone');
+  bus.publish('runtime.event', { session_id: 'desktop', trace_id: 'legacy', seq: 3, event: 'done', payload: { output: 'complete' } });
+  bus.publish('runtime.final', { session_id: 'desktop', trace_id: 'legacy', output: 'complete' });
+  assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'complete');
+  await a.sync(); assert.equal(a.inbox.some((m) => m.topic === 'chat.final'), false);
+  bus.publish('tool_call.started', { trace_id: 'r', call_id: 'a', name: 'weather' });
+  assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'running');
+  bus.publish('tool_call.completed', { trace_id: 'r', call_id: 'a', name: 'weather' });
+  assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'done');
+  bus.publish('tool.call.result', { trace_id: 'r', call_id: 'a', name: 'weather', ok: false });
+  assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'failed');
+});

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备 · 八千代</title>
+  <link rel="stylesheet" href="/devices.css">
+  <script defer src="/devices.js"></script>
+</head>
+<body>
+  <main>
+    <header><a href="/">← 返回聊天</a><span class="eyebrow">YACHIYO / DEVICE HUB</span><h1>八千代，随你同行。</h1><p>连接手机，让人物、声音和插件在设备间接续。</p></header>
+    <p id="status" role="status" aria-live="polite">正在连接网关…</p>
+    <section id="authorization" hidden><h2>连接此网关</h2><p>在网关电脑打开设备页获取配对 token。</p><form id="auth-form"><label for="auth-token">配对 token</label><div class="inline"><input id="auth-token" type="password" autocomplete="off" required><button>连接</button></div></form></section>
+    <section><div class="section-title"><h2>01 · 配对手机</h2><span>同一局域网</span></div><p id="pairing-note">配对信息仅在网关电脑可见。</p><div id="pairing" hidden><label for="pairing-url">服务端地址</label><select id="pairing-url"></select><label for="pairing-token">配对 token</label><div class="inline"><input id="pairing-token" type="password" readonly autocomplete="off"><button id="show-token" type="button">显示</button><button id="copy-token" type="button">复制</button></div><p class="hint">在手机设置中填入地址对应的主机、端口和 token。</p></div></section>
+    <section><div class="section-title"><h2>02 · 在线设备</h2><button id="refresh" type="button" class="quiet">刷新</button></div><p>当前人物所在设备：<strong id="avatar-host">—</strong></p><div id="devices" class="devices"></div><p id="empty-devices" class="hint">暂无在线设备。连接手机后会自动显示在这里。</p><button id="recall" type="button">接回电脑</button></section>
+    <section><div class="section-title"><h2>03 · 插件</h2><span>.yplug / .zip</span></div><form id="upload-form"><label for="plugin-file">上传插件包</label><div class="inline"><input id="plugin-file" type="file" accept=".yplug,.zip,application/zip" required><button id="upload" type="submit">上传</button></div></form><label for="plugin-target">推送目标</label><select id="plugin-target"><option value="">全部未锁屏手机</option></select><div id="plugins" class="plugins"></div><p class="hint">推送后由手机安装。锁屏设备暂不接收插件。</p></section>
+    <footer>人物只在当前设备显示和发声。聊天和任务仍可在其他设备继续。</footer>
+  </main>
+</body>
+</html>

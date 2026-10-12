@@ -19,7 +19,10 @@
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
 - [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
+- [Avatar 跨设备移交](features/FEAT-device-hub-avatar-transfer.md)
+- [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub.md)
 - [模型配置 v2（多 provider / 多模型）](features/FEAT-llm-model-config-v2.md)
+- [插件打包、存储与推送](features/FEAT-plugin-push.md)
 - [pi Agent 核心](features/FEAT-runtime-pi-agent-core.md)
 
 ## 指南 Guides
@@ -99,6 +102,7 @@
 - [Live2D Action Pipeline Operation & Rollback Guide](modules/desktop-live2d/live2d-action-pipeline-operation-and-rollback.md)
 - [Live2D 模型 Motion/Expression 资产补全（Phase-2）](modules/desktop-live2d/model-motion-expression-assets.md)
 - [Desktop Live2D 模块级细粒度文档](modules/desktop-live2d/module-reference.md)
+- [Device Hub 模块参考](modules/gateway/device-hub.md)
 - [Persona Module Progress](modules/persona/README.md)
 - [Persona Phase 1 — Global Yachiyo Profile & Default Addressing](modules/persona/phase-1-global-profile.md)
 - [Persona Phase 2 — Missing-Name Guidance with Cooldown](modules/persona/phase-2-guidance-cooldown.md)
@@ -130,6 +134,8 @@
 测试策略与用例集（TC-*）。
 
 - [Android 原生壳测试用例](testing/TC-android-native.md)
+- [Avatar 移交测试用例](testing/TC-avatar-transfer.md)
+- [Device Hub 测试用例](testing/TC-device-hub.md)
 - [模型配置 v2 测试用例](testing/TC-llm-model-config-v2.md)
 - [pi Agent 核心测试用例](testing/TC-runtime-pi-agent-core.md)
 - [Testing and CI](testing/TESTING.md)
