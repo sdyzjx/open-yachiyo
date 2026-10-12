@@ -147,3 +147,10 @@ textarea.y-input { resize: vertical; line-height: 1.5; }
   body { overflow: auto; }
   .cv-grid, .cv-tiles { grid-template-columns: 1fr; }
 }
+
+.cv-row.is-active { background: rgba(182, 161, 255, 0.09); }
+.cv-subpanel { display: flex; flex-direction: column; gap: var(--y-sp-4); padding: var(--y-sp-4); border: 1px solid var(--y-line-strong); border-radius: var(--y-radius-m); background: rgba(8, 9, 26, 0.4); animation: cv-in var(--y-dur) var(--y-ease-out); }
+.cv-subhead { display: flex; align-items: center; gap: var(--y-sp-3); }
+.cv-key { width: 72px; flex-shrink: 0; }
+.cv-linkbtn { display: inline-flex; align-items: center; text-decoration: none; }
+.cv-linkbtn:hover { text-decoration: none; }

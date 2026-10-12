@@ -110,6 +110,7 @@ const voicePolicyPath = process.env.VOICE_POLICY_PATH
   || require('node:path').resolve(runtimePaths.configDir, 'voice-policy.yaml');
 const desktopLive2dConfigPath = process.env.DESKTOP_LIVE2D_CONFIG_PATH
   || require('node:path').resolve(runtimePaths.configDir, 'desktop-live2d.json');
+app.use(require('./routes/voiceConfig').createVoiceConfigRouter({ llmManager, commitConfigChange, desktopLive2dConfigPath }));
 const bundledReferenceAudioPath = path.resolve(
   __dirname,
   '..',
