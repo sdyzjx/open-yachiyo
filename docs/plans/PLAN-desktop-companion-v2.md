@@ -218,3 +218,13 @@ HTTP（D2，均为 loopback-only）：
 - 截图路径：无适用的静态截图；抽动验收依赖逐帧 JSON（低频截图无法证明连续性）。候选设备状态截图 `/tmp/yachiyo-live2d-t/after-idle-clean.png` 未作为结论证据。
 - 未完成项：无。未改用户 `127.0.0.1:3002` 网关配置、未触发 avatar 迁移、未调用真实计费 API。
 - 风险：trace 会增加采样开销，必须保持默认关闭；最终多工作流集成 APK 若修改舞台帧循环，应按 TC-AWB-029/030 重跑不少于 60 秒的离线 trace。60 FPS 目标仍按用户决定放弃，本提交未做性能优化，也未引入 Worker/VBO/physics/mask 历史实验。
+
+## D1 视觉打磨交付记录（Codex）
+
+- 提交：`425268b`（双行顶栏、模型完整名称 tooltip、无覆盖迁移状态、六行输入框、发送状态、带头像消息气泡与 360×480 响应式收尾）。
+- 打磨结果：标题区与红黄绿区域分离；操作行统一 32 px 高、8 px 间距；离线原因只进入原生 `title`/无障碍状态；输入占位精简并自增高至 6 行；八千代/用户气泡分别左/右对齐，最大宽度 78%，时间戳按 hover/focus 显示。
+- 新增用例：TC-DSK-017～019；`test/desktop-live2d/chatWindowMarkup.test.js` 专项 8/8 通过；隔离 `HOME/TMPDIR` 的 `npm run test:ci` 738/738 通过；`npm run docs:lint` 通过。全量首次运行遇到 `TC-COMP-001` 临时目录清理竞态，单项重跑与随后全量重跑均通过。
+- CDP 截图：420×640 空态与完整模型名 `/tmp/yachiyo-d1-polish.gHtXkD/screens/polish-420-final.png`；六行输入与启用发送 `/tmp/yachiyo-d1-polish.gHtXkD/screens/polish-420-input-six-lines.png`；双向气泡与八千代头像 `/tmp/yachiyo-d1-polish.gHtXkD/screens/polish-420-messages.png`；360×480 最小窗 `/tmp/yachiyo-d1-polish.gHtXkD/screens/polish-360-final.png`；360×480 多设备操作行 `/tmp/yachiyo-d1-polish.gHtXkD/screens/polish-360-multi-device.png`。
+- 最小窗量测：viewport/body 为 360/360 px，toolbar 与 composer 的 client/scroll 宽度均为 340/340 px；无横向溢出或按钮换行。
+- 未完成项：无。
+- 风险：截图位于临时目录，系统清理临时文件后不可用；高级排版 CDN 限制沿用上一轮交付说明。
