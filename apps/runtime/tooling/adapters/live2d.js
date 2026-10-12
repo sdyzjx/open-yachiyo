@@ -94,6 +94,13 @@ function invokeLive2dRpc({ method, params = {}, timeoutMs = DEFAULT_TIMEOUT_MS, 
     throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'live2d rpc method is required');
   }
 
+  const hub = require('../../../gateway/deviceHub').getDeviceHub();
+  if (hub.getAvatarHost() !== 'desktop') {
+    return hub.invoke(hub.getAvatarHost(), method, sanitizeRpcParams(params), { timeoutMs }).catch((err) => {
+      throw new ToolingError(mapRpcCodeToToolingCode(err.code), err.message, { rpcError: { code: err.code }, method, trace_id: traceId });
+    });
+  }
+
   const rpcUrl = normalizeRpcUrl({
     host: env.DESKTOP_LIVE2D_RPC_HOST || DEFAULT_RPC_HOST,
     port: env.DESKTOP_LIVE2D_RPC_PORT || DEFAULT_RPC_PORT,
