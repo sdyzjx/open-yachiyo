@@ -17,6 +17,7 @@
 
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
+- [pi Agent 核心](features/FEAT-runtime-pi-agent-core.md)
 
 ## 指南 Guides
 
@@ -74,6 +75,7 @@
 
 - [嘴形同步与表情动作冲突问题调查方案](research/LIPSYNC_EXPRESSION_CONFLICT_INVESTIGATION.md)
 - [Live2D Web端音频对口型 (Lip-Sync) 开源方案调研报告](research/LIVE2D_LIPSYNC_RESEARCH.md)
+- [pi 1.1.0 Agent 集成调研](research/RESEARCH-pi-agent-integration.md)
 - [Skills 接入调研报告（OpenClaw vs AstrBot）](research/SKILLS_INTEGRATION_RESEARCH_REPORT.md)
 - [OpenClaw 持久化记忆系统实现分析（基于代码）](research/openclaw-memory-system-analysis.md)
 
@@ -123,6 +125,7 @@
 
 测试策略与用例集（TC-*）。
 
+- [pi Agent 核心测试用例](testing/TC-runtime-pi-agent-core.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 

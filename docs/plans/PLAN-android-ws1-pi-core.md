@@ -59,8 +59,19 @@
 
 ## 7. 待统筹决策
 
-（执行中追加）
+- 范围说明：第 1、10 项明确列出的研究/功能/测试/架构文档、`docs/README.md` 索引及本文按任务要求维护；`package-lock.json` 未列入负责路径，本工作流只锁定 package.json 精确版本，合并时请统筹统一更新锁文件（安装使用 `--package-lock=false`）。
+- C4/C5：现有 `RuntimeRpcWorker` 不传递 `params.model_ref`，会话 settings 的规范化也不保留 `model_ref`。WS1 将在 agent 装配适配层转送每次请求覆盖；持久 settings 支持需要 WS2/统筹补齐，不修改只读 RPC/session 文件。
+- C5：Hub 契约只规定设备 `invoke(device_id, method, ...)`，未规定服务端 Avatar transfer API。WS1 将支持显式注入 avatar 控制器；请统筹与 WS3 确认生产装配接口，禁止将未定义的 gateway device_id 当成契约。
+
+## 进度记录
+
+- 开始前完整阅读四份约束文档；Node v24.10.0，分支 `agent/ws1-pi-core`，工作区干净。
+- 基线 `npm run test:ci`：509 / 509 通过；测试临时目录和 YACHIYO_HOME 隔离在本 worktree 的 node_modules 下。
 
 ## 8. 交付记录
 
 （完成后追加：完成项、提交哈希、未完成项、风险）
+
+### 任务 1
+
+研究文档、1.1.0 精确依赖与版本验证用例完成；`npm run test:ci` 510 / 510 通过。
