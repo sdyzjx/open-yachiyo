@@ -19,7 +19,7 @@
 
 | TC-HUB-006 | 手机语音中继 | integration | mock TTS、本机 Hub | 合成、下载、重复请求、过期、合成时切 host | 内容正确；带 token；只合成一次；过期 404；不播旧结果 | `test/gateway/deviceHub/voiceRelay.test.js` / Voice relay serves temporary audio, deduplicates and drops stale host output |
 
-| TC-HUB-007 | PCM/WAV、ASR 对话与录音竞态 | integration | 本机 mock ASR；受控 runtime Promise | 上传 PCM、结束、取消、乱序；ASR 后 runtime turn 挂起再录音；旧 stream 迟到帧；ASR busy 时再录；空识别 | 合法 WAV；transcript 和设备 run；runtime 排队不占录音；旧帧不清新流；被拒流仅报 active、不连锁 Unknown；空识别不创建 turn；取消无识别；乱序拒绝 | `test/gateway/deviceHub/audioInput.test.js` / Audio PCM becomes WAV…；ASR completion releases capture…；a late frame…；a rejected recording…；empty ASR result… |
+| TC-HUB-007 | PCM/WAV、ASR 对话与录音竞态 | integration | 本机 mock ASR；受控 runtime Promise | 上传 PCM、结束、取消、乱序；ASR 后 runtime turn 挂起再录音；旧 stream 迟到帧；缺失/空 stream_id 的畸形帧；ASR busy 时再录；空识别 | 合法 WAV；transcript 和设备 run；runtime 排队不占录音；旧帧和畸形帧不清新流；被拒流仅报 active、不连锁 Unknown；空识别不创建 turn；取消无识别；乱序拒绝 | `test/gateway/deviceHub/audioInput.test.js` / Audio PCM becomes WAV…；ASR completion releases capture…；a late frame…；a malformed chunk…；a rejected recording…；empty ASR result… |
 | TC-HUB-008 | DashScope 与无配置回退 | unit | fetch/fallback mock | 调两条识别路径 | Qwen inline WAV 格式正确；回退工具解析正确 | 同文件 / ASR DashScope inline WAV and legacy fallback are deterministic |
 
 | TC-HUB-009 | ZIP/manifest 校验 | unit | 内存包 | 确定性打包与读取；破坏路径/CRC/尺寸/类型 | 合法包一致；损坏/穿越/symlink/炸弹拒绝 | `test/gateway/deviceHub/pluginStore.test.js` / Plugin ZIP roundtrip is deterministic and rejects unsafe archives/manifests |

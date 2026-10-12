@@ -31,12 +31,16 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
     if (streamId) ids.delete(streamId); else ids.clear();
     if (!ids.size) rejected.delete(device);
   };
-  const clear = (device, expectedStreamId) => {
+  const clearCurrent = (device) => {
     const stream = streams.get(device);
-    if (stream && expectedStreamId && stream.stream_id !== expectedStreamId) return null;
     if (stream) clearTimeout(stream.timer);
     streams.delete(device);
     return stream;
+  };
+  const clear = (device, expectedStreamId) => {
+    const stream = streams.get(device);
+    if (!stream || typeof expectedStreamId !== 'string' || !expectedStreamId || stream.stream_id !== expectedStreamId) return null;
+    return clearCurrent(device);
   };
   const transcript = (device, streamId, text, error) => hub.publish('audio.input.transcript', { stream_id: streamId, text, final: true, ...(error ? { error } : {}) }, { target: device.device_id, direct: true });
   const handle = async ({ topic, data, device }) => {
@@ -96,9 +100,9 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
     }
   };
   const listener = (event) => { void handle(event); };
-  const offline = (device) => { clear(device); forgetRejected(device); };
+  const offline = (device) => { clearCurrent(device); forgetRejected(device); };
   hub.on('publication', listener); hub.on('offline', offline);
-  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clear(device); rejected.clear(); });
+  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clearCurrent(device); rejected.clear(); });
   return { handle, streams };
 }
 module.exports = { pcmToWav, attachAudioInput };

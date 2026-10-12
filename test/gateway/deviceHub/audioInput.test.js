@@ -118,6 +118,28 @@ test('a late frame from an ended stream cannot clear its replacement', async (t)
   assert.equal(audio.streams.get(device)?.nextSeq, 1);
 });
 
+test('a malformed chunk without a stream id cannot clear the active recording', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-malformed-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish() {},
+    async runInput() {}
+  });
+  const audio = attachAudioInput({ hub, directory, transcribe: async () => ({ text: 'ok' }) });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 1).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('current')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { seq: 0, data_b64: pcm }));
+  assert.equal(audio.streams.get(device)?.stream_id, 'current');
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: '', seq: 0, data_b64: pcm }));
+  assert.equal(audio.streams.get(device)?.stream_id, 'current');
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'current', seq: 0, data_b64: pcm }));
+  assert.equal(audio.streams.get(device)?.nextSeq, 1);
+});
+
 test('empty ASR result reports once and never enqueues a user turn', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-empty-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
