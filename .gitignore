@@ -8,3 +8,11 @@ dist/
 .DS_Store
 coverage/
 data/
+
+# Android
+apps/android/**/build/
+apps/android/.gradle/
+apps/android/local.properties
+apps/android/app/src/main/assets/generated/
+*.apk
+*.yplug

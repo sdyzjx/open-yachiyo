@@ -45,6 +45,13 @@
 - [Onboarding 一体化实施计划（Windows 一键安装场景）](plans/ONBOARDING_IMPLEMENTATION_PLAN.md)
 - [Persona/Soul 系统执行步骤（实施中）](plans/PERSONA_EXECUTION_STEPS.md)
 - [Persona × Memory Integration 施工方案（详尽版）](plans/PERSONA_MEMORY_INTEGRATION_PLAN.md)
+- [Android Companion 接口契约（唯一事实来源）](plans/PLAN-android-companion-contracts.md)
+- [Yachiyo Android Companion + pi Agent Core 总体施工计划](plans/PLAN-android-companion.md)
+- [WS1 施工文档：Agent 核心迁移到 pi](plans/PLAN-android-ws1-pi-core.md)
+- [WS2 施工文档：模型配置 v2（多 provider / 多模型 / DeepSeek 等）](plans/PLAN-android-ws2-llm-models.md)
+- [WS3 施工文档：Device Hub（双工事件总线）+ 桌面移交 + 语音/麦克风路由 + 插件推送](plans/PLAN-android-ws3-device-hub.md)
+- [WS4 施工文档：Android 原生壳（Kotlin）](plans/PLAN-android-ws4-android-native.md)
+- [WS5 施工文档：Android Web 前端（Live2D 舞台 / 手势布局 / 插件宿主 / 配置界面）](plans/PLAN-android-ws5-web-ui.md)
 - [Real-time TTS + LipSync 分阶段施工方案（主线基线）](plans/REALTIME_TTS_LIPSYNC_PHASED_PLAN.md)
 - [Session Context Isolation + Workspace Isolation + Permission Levels](plans/SESSION_WORKSPACE_PERMISSION_IMPLEMENTATION.md)
 - [Skills Runtime Implementation](plans/SKILLS_RUNTIME_IMPLEMENTATION.md)
@@ -59,7 +66,7 @@
 
 实验记录（EXP-*）。
 
-_（暂无）_
+- [Android 端 Live2D WebView 渲染可行性实验](experiments/EXP-20261012-android-live2d-webview-feasibility.md)
 
 ## 调研 Research
 
