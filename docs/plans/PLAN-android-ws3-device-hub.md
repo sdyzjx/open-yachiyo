@@ -89,6 +89,8 @@
 
 2026-10-12～13 在 `agent/ws3-integration` 上完成跨工作流收尾：局域网远程鉴权与凭据脱敏、C1.7 音频上下文、pi 流式别名去重、动态设备工具默认授权，以及 C7 局域网服务发现。所有提交均未操作 Android 设备。
 
+2026-10-13 完成真实服务端语音验收：真实 pi 经 `qwen35_plus` 约 1,999 ms 返回非空答复；`QwenTtsClient` 使用 `qwen3-tts-flash` 生成 24 kHz 单声道 WAV，转为 16 kHz 单声道后由 `createAsrService` / `qwen3-asr-flash` 精确识别为原测试句。配置的 `qwen3-tts-instruct-flash` 及其官方快照对当前凭据均返回 `Model not exist`，隔离验收配置已改用成功模型并保留备份。完整方法与限制见 [真实 pi、TTS 与 ASR 服务验收](../experiments/EXP-20261013-real-voice-services.md)；未使用手机或用户录音。
+
 - 工作目录：`/Volumes/data/Users/Programming/yachiyo-wt/ws3-device-hub`；分支：`agent/ws3-device-hub`。
 - `server.js` 仅修改原 wss 创建附近两行；package.json/package-lock.json 均未修改，新增依赖为零。
 - 未 push、未合并其他分支、未修改其他 worktree，未使用 Android 设备，未提交密钥或构建产物。
@@ -122,17 +124,19 @@
 | 动态设备工具显式授权 | `400969a` | 595/595 |
 | C7 DNS-SD 服务广播 | `e976ec3` | 599/599；bonjour-service 1.4.4 API smoke |
 | 在线 WS 优雅退出、PORT=0 与 mDNS 异步错误 | `64ca3ca` | 601/601；真实网关子进程 + 在线设备 WS + SIGTERM |
+| TTS provider 默认模型透传 | `cb8fc3f` | `test/runtime/voiceAdapter.test.js`；消费者读取 qwen3_tts 默认模型/音色 |
+| 真实 pi、TTS 与 ASR 服务验收 | 本轮 `docs(voice)` 提交 | pi 非空答复；24 kHz WAV；16 kHz ASR 精确回读 |
 
 本交付记录作为最后的 `docs(device-hub)` 提交；其提交号可用 `git log -1 --format=%h -- docs/plans/PLAN-android-ws3-device-hub.md` 查询，避免在提交内容中自引用尚不存在的哈希。
 
 ### 未完成项与待集成
 
 - WS3 与本轮集成收尾负责的实现任务无剩余。统筹需在汇合分支生成并提交包含 `bonjour-service` 1.4.4 的 lockfile，再执行跨工作流 companion e2e。
-- 真机/真实云端验收未执行：TC-AVT-009、TC-HUB-016、TC-HUB-017 由统筹者在合并 WS1/WS2/WS4/WS5 后执行。
+- 真实云端的 pi、TTS、ASR 服务端闭环已执行并记录；手机播放、口型、麦克风以及 TC-AVT-009、TC-HUB-016、TC-HUB-017 的真机部分仍由统筹者执行。
 
 ### 已知风险与限制
 
-- Electron 动画时长、回执和装配经过离线测试；透明窗口视觉效果、真实 TTS 口型、Android 安装行为仍需实机联调。浏览器设备页已用假设备验证来回移交。
+- Electron 动画时长、回执和装配经过离线测试；真实 TTS 服务端合成和 ASR 回读已通过，手机扬声器播放、口型、透明窗口视觉效果与 Android 安装行为仍需实机联调。浏览器设备页已用假设备验证来回移交。
 - 单桌面假设；离线 host 不自动回桌面；损坏的 state.json 需要运维处理。桌面现在依赖 Hub 握手确定可见性，无法连接 Hub 时保持隐藏/静音。
 - ASR DashScope 支持 Qwen inline WAV 短音频接口；不支持 Paraformer 的异步 URL 任务。录音文件与插件包无自动保留上限，运维需清理；TTS 媒体 10 分钟自动过期。
 - 默认 HTTP/WS 与 pairing token 面向可信局域网；公网部署需 TLS。插件细粒度权限/安装由 Android 插件宿主执行。

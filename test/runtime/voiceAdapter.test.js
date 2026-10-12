@@ -380,10 +380,71 @@ test('voice adapter chooses electron_native mode and returns accepted payload', 
 
     assert.equal(result.status, 'accepted');
     assert.equal(result.route, 'electron_native');
-    assert.equal(events.some((item) => item.topic === 'voice.requested'), true);
+    const requested = events.find((item) => item.topic === 'voice.requested');
+    assert.ok(requested);
+    assert.equal(requested.payload.model, 'qwen3-tts-vc-2026-01-22');
+    assert.equal(requested.payload.voiceId, 'voice-A');
   } finally {
     if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
     else delete process.env.VOICE_PATH_MODE;
+  }
+});
+
+test('voice adapter lets electron_native consumers resolve configured model and voice defaults', async () => {
+  const { ttsAliyunVc, cooldownStore, idempotencyStore } = voiceAdapters.__internal;
+  cooldownStore.calls.clear();
+  idempotencyStore.clear();
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-provider-defaults-'));
+  const configPath = path.join(tmp, 'providers.yaml');
+  await fs.writeFile(configPath, `
+active_provider: chat
+providers:
+  chat:
+    type: openai_compatible
+    base_url: https://example.invalid/v1
+    model: mock-chat
+    api_key: test
+  qwen3_tts:
+    type: tts_dashscope
+    base_url: https://dashscope.example.invalid/api/v1
+    api_key: test
+    tts_model: qwen3-tts-flash
+    tts_voice: Cherry
+`, 'utf8');
+
+  const prevMode = process.env.VOICE_PATH_MODE;
+  const prevProviderPath = process.env.PROVIDER_CONFIG_PATH;
+  process.env.VOICE_PATH_MODE = 'electron_native';
+  process.env.PROVIDER_CONFIG_PATH = configPath;
+  const events = [];
+
+  try {
+    await ttsAliyunVc(
+      {
+        text: 'provider defaults',
+        voiceTag: 'zh',
+        replyMeta: { inputType: 'audio', sentenceCount: 1 }
+      },
+      {
+        session_id: 'session-electron-provider-defaults',
+        publishEvent: (topic, payload) => events.push({ topic, payload })
+      }
+    );
+
+    const started = events.find((item) => item.topic === 'voice.job.started');
+    const requested = events.find((item) => item.topic === 'voice.requested');
+    assert.ok(started);
+    assert.equal(started.payload.model, 'qwen3-tts-flash');
+    assert.equal(started.payload.voice_id, 'Cherry');
+    assert.ok(requested);
+    assert.equal(Object.hasOwn(requested.payload, 'model'), false);
+    assert.equal(Object.hasOwn(requested.payload, 'voiceId'), false);
+  } finally {
+    if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
+    else delete process.env.VOICE_PATH_MODE;
+    if (prevProviderPath !== undefined) process.env.PROVIDER_CONFIG_PATH = prevProviderPath;
+    else delete process.env.PROVIDER_CONFIG_PATH;
   }
 });
 

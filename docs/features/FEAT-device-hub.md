@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-companion-contracts.md §C1, ../../apps/gateway/deviceHub/, ../testing/TC-device-hub.md
 
 ## 概述
@@ -36,6 +36,8 @@ Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源�
 
 手机为 host 时，网关消费 `voice.requested`，复用 `QwenTtsClient.synthesizeNonStreaming`，将音频保存到 `data/device-media/`，定向发送含带 token 下载 URL 的 `voice.play`。`GET /api/device/media/:id` 提供音频，10 分钟后返回 404 并清理文件。request_id 去重；合成期间 host 切换时丢弃旧结果。播放回执桥接回 bus。桌面 host 不由网关再次合成；实时 `voice.stream.*` 已由普通桥接转发。
 
+语音工具没有显式模型或音色参数时，`voice.requested` 不携带 `model` / `voiceId` 覆盖值；手机中继与桌面消费者都由 `QwenTtsClient` 读取当前 `qwen3_tts.tts_model` / `tts_voice`。内部调用显式提供覆盖值时才随事件传递，任务日志记录实际配置或覆盖后的模型与音色。
+
 ### 麦克风上行
 
 接收 C1.7 的 16 kHz/单声道 PCM，严格校验 stream_id、base64 和从 0 开始的连续 seq；每设备只允许一个录音或识别任务，最长 120 秒数据、130 秒接收期限。cancel 不识别；断线清理接收缓存。WAV 以独占创建方式保存到 `data/device-audio/<stream_id>.wav`，同名拒绝覆盖。
@@ -60,4 +62,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～025；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～026；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。

@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../features/FEAT-device-hub.md, ../../test/gateway/deviceHub/
 
 所有自动化仅连接本机随机端口，使用固定测试 token，不调用外部服务。
@@ -42,3 +42,4 @@
 | TC-HUB-023 | 预转录音频上下文 | integration | runtime.run 可执行 | 提交非空 input + input_audio.transcribed_text/confidence | 不重复 ASR；runtime context 与会话历史保留音频元数据 | `test/runtime/runtimeRpcWorker.test.js` / RuntimeRpcWorker preserves pre-transcribed…；`test/integration/gateway.e2e.test.js` |
 | TC-HUB-024 | pi 流式别名去重与失败任务状态 | integration | 真实 EventBridge + Hub 假手机 | 发 text_delta；发失败工具执行 | 每个 delta 只收一次；task.update 有 running/failed 且无瞬时 done | `test/gateway/deviceHub/runtimeBridge.test.js` / Runtime bridge relays real pi deltas once… |
 | TC-HUB-025 | 设备工具显式授权与发现边界 | integration | 默认 tools.yaml、已配对在线设备 | 注册公开与非公开 RPC 方法；加载工具策略 | 仅 expose_as_tool 方法成为候选；默认模板只允许 device/plugin 命名模式且保留全局授权 | `test/gateway/deviceHub/hub.test.js` / Hub RPC registration…；`test/runtime/tooling.test.js` / ToolConfigStore loads yaml… |
+| TC-HUB-026 | TTS provider 默认模型透传 | unit | electron_native 语音路径；qwen3_tts 配置 | 不带 model/voiceId 调用语音工具并检查 job 与 voice.requested | job 记录 provider 模型/音色；voice.requested 不注入硬编码覆盖，消费者读取 provider 默认值 | `test/runtime/voiceAdapter.test.js` / voice adapter lets electron_native consumers resolve configured model and voice defaults |

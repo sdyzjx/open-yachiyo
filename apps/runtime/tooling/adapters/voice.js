@@ -332,6 +332,11 @@ async function ttsAliyunVc(args = {}, context = {}) {
   const voiceTag = resolveVoiceTag(args);
   const text = String(args.text || '').trim();
   const normalizedText = normalizeTtsInputText(text, voiceTag);
+  const requestedModel = String(args.model || '').trim();
+  const requestedVoiceId = String(args.voiceId || '').trim();
+  const providerCfg = (!requestedModel || !requestedVoiceId) ? loadTtsProviderConfig() : null;
+  const effectiveModel = requestedModel || String(providerCfg?.tts_model || '').trim();
+  const effectiveVoiceId = requestedVoiceId || String(providerCfg?.tts_voice || '').trim();
 
   const policyResult = evaluateVoicePolicy({ ...args, text: normalizedText }, context, policy);
   publishVoiceEvent(context, 'voice.policy.checked', {
@@ -366,8 +371,8 @@ async function ttsAliyunVc(args = {}, context = {}) {
 
   publishVoiceEvent(context, 'voice.job.started', {
     session_id: sessionId,
-    model: String(args.model || 'qwen3-tts-vc-2026-01-22'),
-    voice_id: String(args.voiceId || ''),
+    model: effectiveModel || null,
+    voice_id: effectiveVoiceId || null,
     voice_tag: voiceTag,
     idempotency_key: idempotencyKey || null,
     job_id: jobId
@@ -377,8 +382,8 @@ async function ttsAliyunVc(args = {}, context = {}) {
     enforceRateLimit({ sessionId, nowMs, policy });
 
     checkModelVoiceCompatibility({
-      model: args.model,
-      voiceId: args.voiceId,
+      model: effectiveModel,
+      voiceId: effectiveVoiceId,
       registry: context.voiceRegistry || {}
     });
 
@@ -389,8 +394,8 @@ async function ttsAliyunVc(args = {}, context = {}) {
         session_id: sessionId,
         text: normalizedText,
         voiceTag,
-        model: String(args.model || 'qwen3-tts-vc-2026-01-22'),
-        voiceId: String(args.voiceId || ''),
+        ...(requestedModel ? { model: requestedModel } : {}),
+        ...(requestedVoiceId ? { voiceId: requestedVoiceId } : {}),
         policyReason: policyResult.reason,
         idempotencyKey: idempotencyKey || null,
         turnId: args.turnId ? String(args.turnId) : null,
@@ -475,8 +480,8 @@ async function ttsAliyunVc(args = {}, context = {}) {
       audioRef: `${audioPath}`,
       format: 'ogg',
       voiceTag,
-      model: String(args.model || 'qwen3-tts-vc-2026-01-22'),
-      voiceId: String(args.voiceId || ''),
+      model: effectiveModel,
+      voiceId: effectiveVoiceId,
       policyReason: policyResult.reason,
       idempotencyKey: idempotencyKey || null,
       turnId: args.turnId ? String(args.turnId) : null
