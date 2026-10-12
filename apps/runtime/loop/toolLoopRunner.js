@@ -154,6 +154,8 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
     return [
       'Voice auto-reply force mode is enabled for this session.',
       'For every user-facing assistant reply with non-empty text, you MUST call voice.tts_aliyun_vc in the same turn before returning the final answer.',
+      'The TTS tool call MUST be the first assistant action of the turn, before any Live2D, search, capture, or other tool call.',
+      'Speak a concise useful reply immediately. If the request needs more tools or research, first speak a brief acknowledgement of what you will do, then continue the work after TTS succeeds.',
       'Do not skip the TTS call even for short replies.',
       'For voice.tts_aliyun_vc args, use text/voiceTag only; do not use durationSec or duration_sec.',
       'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
@@ -161,9 +163,11 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   }
   return [
     'Voice auto-reply mode is enabled for this turn.',
-    'Before long text response, first call voice.tts_aliyun_vc to produce a short spoken message.',
+    `The current user input type is ${runtimeContext?.input_type === 'audio' ? 'audio' : 'text'}.`,
+    'Decide whether speech improves this reply. Give high priority to audio input, short conversational answers, greetings, confirmations, and emotional responses; avoid speech for code, tables, link-heavy content, or detailed troubleshooting.',
+    'If speech is appropriate, voice.tts_aliyun_vc MUST be the first assistant action, before any Live2D, search, capture, other tool call, or final text.',
+    'Do not wait for the full written answer. Speak the direct short answer immediately, or speak a brief acknowledgement first when more tools or research are required, then continue after TTS succeeds.',
     'For voice.tts_aliyun_vc args, use text/voiceTag only; do not use durationSec or duration_sec.',
-    'The voice text can be either: (1) summary of your long reply, or (2) brief commentary on current context.',
     'Voice text constraints: plain text only, no markdown, no code block, and no more than 5 sentences.'
   ].join(' ');
 }

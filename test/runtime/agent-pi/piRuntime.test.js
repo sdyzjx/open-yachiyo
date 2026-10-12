@@ -117,8 +117,14 @@ test('TC-PI-016 real session resume, image input and audio transcription', async
   assert.equal(result.state, 'DONE', result.output);
   assert.ok(f.requests.at(-1).messages.some((m) => m.role === 'user' && m.content === 'first'), JSON.stringify(f.requests.at(-1).messages));
   assert.ok(f.requests.at(-1).messages.at(-1).content.some((part) => part.type === 'image_url'));
-  assert.equal((await restored.run({ sessionId: 'audio', inputAudio: { audio_ref: 'local.wav', format: 'wav' } })).state, 'DONE');
+  assert.equal((await restored.run({
+    sessionId: 'audio',
+    inputAudio: { audio_ref: 'local.wav', format: 'wav' },
+    runtimeContext: { voice_auto_reply_enabled: true, voice_auto_reply_mode: 'policy' }
+  })).state, 'DONE');
   assert.equal(f.requests.at(-1).messages.at(-1).content, 'transcribed');
+  assert.ok(f.requests.at(-1).messages.some((message) => message.role === 'system'
+    && /current user input type is audio/i.test(String(message.content || ''))));
 });
 
 test('TC-PI-017 transient fallback and per-run model override use actual provider requests', async (t) => {

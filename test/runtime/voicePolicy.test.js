@@ -37,6 +37,24 @@ test('voice policy allows short conversational content', () => {
   assert.equal(result.code, 'OK');
 });
 
+test('TC-PI-028 voice policy recognizes pi input_type audio context', () => {
+  const result = evaluateVoicePolicy(
+    { text: '收到，我马上处理。', replyMeta: { sentenceCount: 1 } },
+    { input_type: 'audio' },
+    defaultPolicy()
+  );
+  assert.equal(result.allow, true);
+  assert.equal(result.reason, 'must-speak matched');
+  assert.equal(defaultPolicy().limits.cooldown_sec_per_session, 0.5);
+  assert.equal(defaultPolicy().limits.max_tts_calls_per_minute, 12);
+});
+
+test('TC-PI-028 missing voice policy keeps conversational auto reply enabled', () => {
+  const missingPolicyPath = path.join(os.tmpdir(), `missing-voice-policy-${Date.now()}.yaml`);
+  const policy = loadVoicePolicy({ policyPath: missingPolicyPath });
+  assert.equal(policy.auto_reply.enabled, true);
+});
+
 test('voice policy rejects code/troubleshooting content', () => {
   const policy = defaultPolicy();
   const result = evaluateVoicePolicy(

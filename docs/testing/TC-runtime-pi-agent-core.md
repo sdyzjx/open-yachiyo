@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: Codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../features/FEAT-runtime-pi-agent-core.md, ../../test/runtime/agent-pi/
 
 所有用例离线执行，mock 服务仅监听 127.0.0.1；运行 `npm run test:ci`。
@@ -37,3 +37,4 @@
 | TC-PI-025 | 多 provider 工具名编码 | integration | 含点、冲突候选、超长名称的工具，本地 SSE mock | 发送工具 schema、由模型调用含点工具 | 线上名称合法无碰撞；executor、Live2D 控制与所有兼容事件使用原名 | piRuntime.test.js: TC-PI-025 provider-safe tool names execute and emit their original names without collisions |
 | TC-PI-026 | 需要审批的工具返回审批 ID 而不是错误 | unit | `shell.exec` 抛 `APPROVAL_REQUIRED`（含 approval_id） | 经 pi 工具桥执行 | 工具结果为普通观察：含 code、details.approval_id、指向 `shell__approve` 的 next_step；不计入工具错误次数 | `test/runtime/agent-pi/toolBridge.test.js` / TC-PI-026 |
 | TC-PI-027 | 其他工具失败保留错误码与详情 | unit | 工具抛带 details 的 ToolingError | 经 pi 工具桥执行 | 抛出的错误文本包含错误码与 details JSON | `test/runtime/agent-pi/toolBridge.test.js` / TC-PI-027 |
+| TC-PI-028 | 语音回复以 TTS 为首动作 | integration | voice policy/force_on；文字与音频输入 | 构造 pi prompt；检查 voice policy；把音频输入送入实际 pi session | 模型判断需语音时 TTS 先于 Live2D、搜索及其他工具；音频输入标记进入 system prompt；缺失策略文件仍默认启用；默认冷却 0.5 秒且每分钟 12 次 | `test/runtime/agent-pi/promptBuilder.test.js`, `test/runtime/agent-pi/piRuntime.test.js`, `test/runtime/voicePolicy.test.js` |

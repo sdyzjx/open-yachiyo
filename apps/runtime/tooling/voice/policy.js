@@ -20,13 +20,13 @@ function parseNum(v, fallback) {
 function defaultPolicy() {
   return {
     auto_reply: {
-      enabled: false
+      enabled: true
     },
     limits: {
       max_chars: 220,
       max_duration_sec: 45,
-      cooldown_sec_per_session: 20,
-      max_tts_calls_per_minute: 3
+      cooldown_sec_per_session: 0.5,
+      max_tts_calls_per_minute: 12
     }
   };
 }
@@ -48,8 +48,8 @@ function loadVoicePolicy({ policyPath } = {}) {
     limits: {
       max_chars: parseNum(limits.max_chars, 220),
       max_duration_sec: parseNum(limits.max_duration_sec, 45),
-      cooldown_sec_per_session: parseNum(limits.cooldown_sec_per_session, 20),
-      max_tts_calls_per_minute: parseNum(limits.max_tts_calls_per_minute, 3)
+      cooldown_sec_per_session: parseNum(limits.cooldown_sec_per_session, 0.5),
+      max_tts_calls_per_minute: parseNum(limits.max_tts_calls_per_minute, 12)
     }
   };
 }
@@ -57,7 +57,7 @@ function loadVoicePolicy({ policyPath } = {}) {
 function evaluateVoicePolicy(args, context, policy) {
   const text = String(args.text || '');
   const meta = args.replyMeta || {};
-  const inputType = String(meta.inputType || context.inputType || 'text');
+  const inputType = String(meta.inputType || context.inputType || context.input_type || 'text');
   const containsCode = parseBool(meta.containsCode, false);
   const containsTable = parseBool(meta.containsTable, false);
   const containsManyLinks = parseBool(meta.containsManyLinks, false);

@@ -41,6 +41,7 @@ async function createPiRuntime(deps) {
         let result;
         try {
           const inputAudio = args.inputAudio || runtimeContext.input_audio;
+          runtimeContext.input_type = inputAudio ? 'audio' : 'text';
           if (!input.trim() && inputAudio) {
             const transcription = inputAudio.transcribed_text
               ? { text: inputAudio.transcribed_text }
