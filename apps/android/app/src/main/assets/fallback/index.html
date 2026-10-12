@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Yachiyo Native Shell</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:24px; font:14px/1.5 system-ui,sans-serif; background:#1d2233; color:#e8ecf5; }
+  h1 { font-size:18px; margin:0 0 8px; }
+  button { margin:4px 4px 4px 0; padding:8px 12px; border:0; border-radius:8px; background:#3b4a7a; color:#fff; font-size:14px; }
+  pre { background:#12151f; padding:10px; border-radius:8px; white-space:pre-wrap; word-break:break-all; max-height:36vh; overflow:auto; }
+</style>
+</head>
+<body>
+<h1>Yachiyo Native Shell (fallback page)</h1>
+<p>assets/web/index.html not found. This page exercises the native bridge.</p>
+<div>
+  <button onclick="call('getDeviceInfo')">deviceInfo</button>
+  <button onclick="call('getConfig')">getConfig</button>
+  <button onclick="call('hubState')">hubState</button>
+  <button onclick="N('hubConnect')">connect</button>
+  <button onclick="N('hubDisconnect')">disconnect</button>
+  <button onclick="N('vibrate',80)">vibrate</button>
+  <button onclick="N('micStart','{&quot;mode&quot;:&quot;push_to_talk&quot;}')">micStart</button>
+  <button onclick="N('micStop','released')">micStop</button>
+  <button onclick="call('listPlugins')">plugins</button>
+  <button onclick="N('pickPluginPackage')">pickPlugin</button>
+  <button onclick="N('pickBackground')">pickBg</button>
+  <button onclick="call('listLaunchableApps')">apps</button>
+  <button onclick="N('openHomeSettings')">homeSettings</button>
+  <button onclick="N('setOrientation','landscape')">landscape</button>
+  <button onclick="N('setOrientation','auto')">auto</button>
+  <button onclick="N('setLockscreenEnabled',true)">lockscreen on</button>
+</div>
+<pre id="out"></pre>
+<script>
+  var out = document.getElementById('out');
+  function log(s) { out.textContent = s + '\n' + out.textContent; }
+  // C2.0: first script on the page takes the one-time token and keeps it in a closure.
+  var bridgeToken = window.__YachiyoBridge ? window.__YachiyoBridge.handshake() : '';
+  function inv(m, args) { return window.__YachiyoBridge.invoke(bridgeToken, m, JSON.stringify(args || [])); }
+  function N(m) { try { var r = inv(m, Array.prototype.slice.call(arguments, 1)); if (r) log(m + ' => ' + r); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  function call(m) { try { log(m + ' -> ' + inv(m, [])); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  window.__yachiyoNative = { dispatch: function (msg) { log('EVT ' + JSON.stringify(msg).slice(0, 300)); } };
+  log('mode=' + location.search + ' token=' + (bridgeToken ? 'ok' : 'EMPTY'));
+  // Isolation probe: a sandboxed iframe (like a plugin) must not get a working bridge.
+  {
+    window.addEventListener('message', function (e) { log('IFRAME PROBE: ' + JSON.stringify(e.data)); N('log', 'info', 'IFRAME_PROBE ' + JSON.stringify(e.data)); });
+    var f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts');
+    f.srcdoc = '<script>var r={bridge:typeof window.__YachiyoBridge};try{var b=window.__YachiyoBridge;r.handshake=b.handshake();r.invokeGuess=b.invoke("",\"getConfig\",\"[]\");r.invokeBad=b.invoke("0000",\"getConfig\",\"[]\");}catch(x){r.err=String(x)}parent.postMessage(r,"*")<\/script>';
+    document.body.appendChild(f);
+  }
+</script>
+</body>
+</html>

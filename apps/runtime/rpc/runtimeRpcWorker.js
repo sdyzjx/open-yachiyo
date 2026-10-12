@@ -350,6 +350,12 @@ class RuntimeRpcWorker {
       session_id: sessionId
     });
 
+    // Per-run model override (contract C4.4); falls back to the session-level model_ref.
+    const modelRef = typeof params.model_ref === 'string' && params.model_ref.trim()
+      ? params.model_ref.trim()
+      : (runtimeContext?.model_ref || null);
+    if (modelRef) runtimeContext = { ...runtimeContext, model_ref: modelRef };
+
     publishChainEvent(this.bus, 'worker.runner.start', {
       request_id: request?.id ?? null,
       session_id: sessionId,
@@ -362,6 +368,7 @@ class RuntimeRpcWorker {
       inputImages,
       seedMessages,
       runtimeContext,
+      modelRef,
       onEvent: (event) => {
         if (shouldPublishRuntimeEventToDebugBus(event)) {
           this.bus.publish('runtime.event', event);

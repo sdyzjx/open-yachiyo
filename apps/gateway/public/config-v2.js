@@ -1,6 +1,7 @@
 // config-v2.js — Config v2 前端逻辑
 
 const TABS = [
+  { id: 'models',         label: 'models',         custom: true },
   { id: 'providers',      label: 'providers',      getUrl: '/api/config/providers/raw',    putUrl: '/api/config/providers/raw',    bodyKey: 'yaml' },
   { id: 'tools',          label: 'tools',          getUrl: '/api/config/tools/raw',        putUrl: '/api/config/tools/raw',        bodyKey: 'yaml' },
   { id: 'skills',         label: 'skills',         getUrl: '/api/config/skills/raw',       putUrl: '/api/config/skills/raw',       bodyKey: 'yaml' },
@@ -110,6 +111,14 @@ function switchTab(id) {
   activeTabId = id;
   const tab = TABS.find(t => t.id === id);
 
+  // Custom tabs render their own pane (no YAML editor / git history).
+  const editorPane = document.querySelector('.cv2-editor-pane:not(#cv2-models-pane)');
+  const modelsPane = document.getElementById('cv2-models-pane');
+  if (editorPane && modelsPane) {
+    editorPane.hidden = Boolean(tab.custom);
+    modelsPane.hidden = tab.id !== 'models';
+  }
+
   el.tabBar.querySelectorAll('.cv2-tab').forEach(b => {
     b.setAttribute('aria-selected', b.dataset.tabId === id ? 'true' : 'false');
   });
@@ -128,6 +137,11 @@ function switchTab(id) {
     el.saveBtn.removeAttribute('aria-disabled');
     el.editor.readOnly = false;
     el.editor.setAttribute('aria-readonly', 'false');
+  }
+
+  if (tab.custom) {
+    if (tab.id === 'models' && window.CV2Models) window.CV2Models.show();
+    return;
   }
 
   loadTab();
@@ -378,7 +392,7 @@ function sendAgentMessage() {
   appendMsg('user', userText);
 
   const tab = TABS.find(t => t.id === activeTabId);
-  const contextPrefix = `[当前编辑的 ${tab.label} 文件内容]\n\`\`\`\n${el.editor.value}\n\`\`\`\n\n`;
+  const contextPrefix = tab.custom ? '' : `[当前编辑的 ${tab.label} 文件内容]\n\`\`\`\n${el.editor.value}\n\`\`\`\n\n`;
 
   streamingText = '';
   streamingEl = appendMsg('agent', '…');

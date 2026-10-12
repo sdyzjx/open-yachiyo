@@ -18,14 +18,18 @@
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
 - [Android 手势布局与取景](features/FEAT-android-gesture-layout.md)
+- [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
+- [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 - [Android 统一配置界面](features/FEAT-android-settings.md)
+- [模型配置 v2（多 provider / 多模型）](features/FEAT-llm-model-config-v2.md)
 - [插件系统（Android 宿主与 SDK）](features/FEAT-plugin-system.md)
 
 ## 指南 Guides
 
 配置、安装、打包等使用指南。
 
+- [Android 客户端构建与真机调试指南](guides/ANDROID_BUILD_GUIDE.md)
 - [macOS Packaging Guide](guides/MAC_PACKAGING_GUIDE.md)
 - [Onboarding API Guide](guides/ONBOARDING_API_GUIDE.md)
 - [插件开发指南](guides/PLUGIN_DEVELOPMENT_GUIDE.md)
@@ -128,7 +132,9 @@
 
 测试策略与用例集（TC-*）。
 
+- [Android 原生壳测试用例](testing/TC-android-native.md)
 - [Android Web 前端测试用例](testing/TC-android-web.md)
+- [模型配置 v2 测试用例](testing/TC-llm-model-config-v2.md)
 - [插件系统测试用例](testing/TC-plugin-system.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)

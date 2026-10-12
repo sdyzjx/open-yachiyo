@@ -27,6 +27,10 @@ class NullDeviceHub extends EventEmitter {
     throw err;
   }
 
+  async requestAvatarTransfer(to) {
+    return { transfer_id: null, host: 'desktop', status: 'failed', reason: `device hub disabled (to=${to})` };
+  }
+
   publish() {}
 }
 

@@ -48,3 +48,69 @@ test('getDeviceHub returns a null hub until a real hub is installed', async () =
   setDeviceHub(null);
   assert.equal(getDeviceHub().getAvatarHost(), 'desktop');
 });
+
+test('catalog v2: multi-model, enabled order, roles, fallback chain, tts/asr, key resolution', () => {
+  process.env.CATALOG_TEST_KEY = 'env-secret';
+  try {
+    const catalog = loadModelCatalog({ store: storeWith(`
+version: 2
+active_model: deepseek/deepseek-reasoner
+enabled_models: [qwen/qwen3.5-plus, deepseek/deepseek-reasoner]
+roles: { vision: qwen/qwen3.5-plus }
+fallback_models: [qwen/qwen3.5-plus, deepseek/deepseek-reasoner]
+providers:
+  deepseek:
+    preset: deepseek
+    api_key_env: CATALOG_TEST_KEY
+    headers: { X-Org: acme }
+    extra_body: { foo: 1 }
+  qwen:
+    preset: qwen
+    api_key: sk-q
+  openrouter:
+    preset: openrouter
+    api_key: sk-o
+    models:
+      - id: openai/gpt-4o-mini
+  asr1:
+    type: asr_openai_compatible
+    base_url: http://x
+    model: whisper-1
+    api_key: sk-a
+`) });
+    assert.equal(catalog.models.length, 5);
+    assert.equal(catalog.active.ref, 'deepseek/deepseek-reasoner');
+    assert.equal(catalog.active.reasoning, true);
+    assert.equal(catalog.active.api_key, 'env-secret');
+    assert.equal(catalog.active.api_key_env, 'CATALOG_TEST_KEY');
+    assert.deepEqual(catalog.active.headers, { 'X-Org': 'acme' });
+    assert.deepEqual(catalog.active.extra_body, { foo: 1 });
+    assert.equal(catalog.active.compat.strip_reasoning_in_history, true);
+    assert.deepEqual(catalog.enabled.map((m) => m.ref), ['qwen/qwen3.5-plus', 'deepseek/deepseek-reasoner']);
+    assert.equal(catalog.forRole('vision').ref, 'qwen/qwen3.5-plus');
+    assert.equal(catalog.forRole('summary').ref, 'deepseek/deepseek-reasoner');
+    assert.deepEqual(catalog.fallbackChain().map((m) => m.ref), ['deepseek/deepseek-reasoner', 'qwen/qwen3.5-plus']);
+    assert.equal(catalog.resolve('openrouter/openai/gpt-4o-mini').id, 'openai/gpt-4o-mini');
+    assert.equal(catalog.resolve('nope/x'), null);
+    assert.equal(catalog.asr.key, 'asr1');
+    assert.equal(catalog.asr.api_key, 'sk-a');
+    assert.equal(catalog.tts, null);
+  } finally {
+    delete process.env.CATALOG_TEST_KEY;
+  }
+});
+
+test('catalog maps anthropic/google api ids and ollama without key', () => {
+  const catalog = loadModelCatalog({ store: storeWith(`
+active_model: ant/claude-sonnet-4-5
+providers:
+  ant: { preset: anthropic, api_key: k }
+  gem: { preset: gemini, api_key: k }
+  local: { preset: ollama }
+`) });
+  assert.equal(catalog.resolve('ant/claude-sonnet-4-5').api, 'anthropic-messages');
+  assert.equal(catalog.resolve('gem/gemini-2.5-flash').api, 'google-generative-ai');
+  const local = catalog.resolve('local/qwen2.5:7b');
+  assert.equal(local.api, 'openai-completions');
+  assert.equal(local.api_key, null);
+});

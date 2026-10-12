@@ -1,4 +1,16 @@
-active_provider: qwen35_plus
+# providers.yaml — schema v2 (v1 files with active_provider + model keep working).
+# 运行时实际读取 ~/yachiyo/config/providers.yaml；API Key 请用环境变量，不要写进仓库。
+version: 2
+active_model: qwen35_plus/qwen3.5-plus      # "<provider_key>/<model_id>"
+enabled_models:                              # 切换器中出现的模型
+  - qwen35_plus/qwen3.5-plus
+  - deepseek/deepseek-chat
+  - deepseek/deepseek-reasoner
+roles:                                       # 可选：按用途指定模型（缺省用 active_model）
+  vision: qwen35_plus/qwen3.5-plus
+  summary: deepseek/deepseek-chat
+fallback_models:                             # 主模型遇到网络错误 / 429 / 5xx 时依次尝试
+  - deepseek/deepseek-chat
 providers:
   qwen35_plus:
     type: openai_compatible
@@ -8,6 +20,12 @@ providers:
     # api_key is intentionally omitted; use DASHSCOPE_API_KEY env var
     api_key_env: DASHSCOPE_API_KEY
     timeout_ms: 20000
+  deepseek:
+    preset: deepseek                         # 继承 base_url / models / compat，见 providerPresets.js
+    display_name: DeepSeek
+    api_key_env: DEEPSEEK_API_KEY
+    timeout_ms: 60000
+    max_retries: 2
   openai:
     type: openai_compatible
     display_name: OpenAI

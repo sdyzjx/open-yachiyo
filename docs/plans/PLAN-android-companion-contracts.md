@@ -181,7 +181,22 @@ pub audio.input.end   {stream_id, reason:"released"|"vad"|"cancel"}
 
 宿主页：`https://appassets.androidplatform.net/web/index.html`（主界面）与 `.../web/settings.html`（配置界面），由 `WebViewAssetLoader` 提供。
 
-### C2.1 Web → 原生：`window.YachiyoNative`（`@JavascriptInterface`，参数与返回值均为字符串）
+### C2.0 注入方式与防插件越权（统筹决策 2026-10-12）
+
+Android 的 `addJavascriptInterface` 会把对象注入到页面**所有 frame**（含插件沙箱 iframe）。因此原生**只注入** `window.__YachiyoBridge`，它只有两个方法：
+
+| 方法 | 说明 |
+|---|---|
+| `handshake()` | 每次页面加载（`onPageStarted` 重置）**只有第一次调用**返回随机 token（32 字节 hex），之后调用返回空串并记录告警 |
+| `invoke(token, method, argsJson)` | `argsJson` 为参数数组的 JSON（如 `["avatar.*"]`）；token 不匹配返回 `{"error":{"code":-32006}}` 的 JSON 字符串；否则调用 C2.1 中同名方法并返回其字符串结果 |
+
+Web 前端 `js/nativeShim.js` 必须是宿主页**第一个执行的脚本**（在任何 iframe 创建之前）：调用 `handshake()` 取得 token 并保存在闭包中，然后定义 `window.YachiyoNative`，其 C2.1 方法都转发到 `invoke(token, name, JSON.stringify(args))`。token 不得写入全局变量、不得通过 postMessage 发给插件。插件 iframe 是 opaque origin，无法读取宿主闭包，因此即使能看到 `__YachiyoBridge` 也无法调用。
+
+其他：WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（宿主源为 `https://appassets…`，网关为局域网 `http://`）；导航仍限制在 `appassets.androidplatform.net`。网关对 `/api/device/*`、`/api/config/models*` 返回 CORS 头允许源 `https://appassets.androidplatform.net`。
+
+WS4 实现细节（统筹确认）：`dispatch` 参数为对象 `{type, data}`（Web 端同时兼容字符串）；页面定义 `__yachiyoNative` 之前的消息进入 `window.__yachiyoQueue` 数组，前端定义后须清空处理；`plugins.changed` 的 data 为插件数组；`setConfig` 为深合并（数组整体替换）；新增 `dismissKeyguard()`（仅锁屏模式）；配置页由独立 `SettingsActivity` 加载 `/web/settings.html`。
+
+### C2.1 Web → 原生：`window.YachiyoNative`（由 `nativeShim.js` 基于 C2.0 构造；参数与返回值均为字符串）
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
@@ -418,6 +433,11 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 | POST | `/api/config/models/test` | `{ref}` 或临时 provider 配置 → 发送一条最小请求，返回延迟与错误 |
 | POST | `/api/config/models/discover` | `{provider}` → 调 `GET {base_url}/models` 列出可用模型 |
 
+| PUT | `/api/config/models/providers/:key` | 新增/更新 provider（`api_key` 留空表示保留原值，`clear_api_key: true` 清除） |
+| DELETE | `/api/config/models/providers/:key` | 删除 provider（被引用时 400） |
+
+响应补充（WS2 实现，2026-10-12 统筹确认）：`GET /api/config/models` 中 `active` / `enabled` 为 ref 字符串，另含 `providers{}`（无密钥）；`/test` 返回 `{ok, latency_ms, status, error}`、`/discover` 返回 `{ok, models[]}`，上游失败时 HTTP 200 + `ok:false`；草稿 provider 只有在 `base_url` 与已存储 provider 一致时才继承其凭据。Descriptor `name` 为 `model.name || id`；`timeout_ms` 缺省 20000。
+
 运行时切换模型：`runtime.run` 的 `params.model_ref`（可选）覆盖本次使用的模型；会话设置 `PUT /api/sessions/:id/settings {model_ref}` 持久覆盖。
 
 ---
@@ -439,6 +459,21 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 - **模型**：通过 C4.2 Model Catalog 生成 pi 模型（按 `api` 映射到 pi-ai 实现），支持 `fallbackChain()` 与 `params.model_ref`。
 
 `apps/gateway/deviceHub/index.js` 导出 `getDeviceHub()`；Device Hub 未启用时返回空实现（`listToolMethods()` → `[]`，`invoke` → 抛 `-32010`）。
+
+**Device Hub 服务端 API（统筹决策 2026-10-12，WS3 实现，WS1 / live2d adapter 调用）**：
+
+| 成员 | 签名 | 说明 |
+|---|---|---|
+| `enabled` | `boolean` | 空实现为 `false` |
+| `getAvatarHost()` | `() => 'desktop' \| device_id` | 当前 avatar host |
+| `listDevices()` | `() => [{ device_id, device_type, name, mode, alias, capabilities }]` | 在线设备 |
+| `listToolMethods()` | `() => [{ tool_name, device_id, method, description, params_schema }]` | 见 C1.6 |
+| `invoke(deviceId, method, params, { timeoutMs })` | `Promise<result>` | 设备 RPC；`deviceId` 可传 `'avatar-host'` 表示当前 host（host 为 desktop 时由调用方走原 17373 路径，hub 抛 `-32010`） |
+| `requestAvatarTransfer(to, { reason })` | `Promise<{ transfer_id, host, status: 'completed'\|'failed', reason? }>` | `to` 为 `'desktop'` 或 device_id；按 C1.5 编排，Promise 在 completed/failed 时 resolve |
+| `publish(topic, data, { target })` | `void` | 向设备投递事件（同时遵守 C1.4 桥接规则） |
+| 事件 | `'tools.changed'`、`'devices.changed'`、`'avatar.host.changed'` | `EventEmitter` 事件 |
+
+`model_ref`：`RuntimeRpcWorker` 透传 `params.model_ref` 与会话 settings 持久化 `model_ref` 由 WS2 实现；WS1 读取 run 参数中的 `model_ref`（优先）与会话 settings 中的 `model_ref`。`package-lock.json` 由统筹者在合并时统一重新生成。
 
 ---
 

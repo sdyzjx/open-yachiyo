@@ -37,6 +37,10 @@ function normalizeVoiceAutoReplyMode(value, { fallback = DEFAULT_SESSION_VOICE_A
   return fallback;
 }
 
+function normalizeModelRef(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function buildDefaultSessionSettings() {
   return {
     permission_level: DEFAULT_SESSION_PERMISSION_LEVEL,
@@ -47,11 +51,13 @@ function buildDefaultSessionSettings() {
 }
 
 function normalizeSessionSettings(settings = {}) {
+  const modelRef = normalizeModelRef(settings.model_ref);
   return {
     permission_level: normalizeSessionPermissionLevel(settings.permission_level),
     workspace: normalizeWorkspaceSettings(settings.workspace),
     voice_auto_reply_enabled: normalizeVoiceAutoReplyEnabled(settings.voice_auto_reply_enabled),
-    voice_auto_reply_mode: normalizeVoiceAutoReplyMode(settings.voice_auto_reply_mode)
+    voice_auto_reply_mode: normalizeVoiceAutoReplyMode(settings.voice_auto_reply_mode),
+    ...(modelRef ? { model_ref: modelRef } : {})
   };
 }
 
@@ -84,6 +90,12 @@ function mergeSessionSettings(currentSettings = {}, patch = {}) {
       patch.voice_auto_reply_mode,
       { fallback: current.voice_auto_reply_mode }
     );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'model_ref')) {
+    const modelRef = normalizeModelRef(patch.model_ref);
+    if (modelRef) next.model_ref = modelRef;
+    else delete next.model_ref;
   }
 
   return next;

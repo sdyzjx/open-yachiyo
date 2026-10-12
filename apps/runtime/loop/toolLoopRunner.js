@@ -373,7 +373,7 @@ class ToolLoopRunner {
     this.maxParallelTools = normalizePositiveInt(maxParallelTools, 3);
   }
 
-  async run({ sessionId, input, inputImages = [], seedMessages = [], runtimeContext = {}, onEvent }) {
+  async run({ sessionId, input, inputImages = [], seedMessages = [], runtimeContext = {}, modelRef = null, onEvent }) {
     const sm = new RuntimeStateMachine();
     const traceId = uuidv4();
     const runStartedAtMs = Date.now();
@@ -558,7 +558,14 @@ class ToolLoopRunner {
     });
 
     try {
-      const reasoner = this.getReasoner();
+      const reasoner = this.getReasoner({
+        sessionId,
+        modelRef: modelRef || runtimeContext?.model_ref || null,
+        onFallback: (info) => {
+          emit('llm.fallback', info);
+          this.bus.publish('llm.fallback', { session_id: sessionId, trace_id: traceId, ...info });
+        }
+      });
       const schemaAjv = new Ajv({ allErrors: true, strict: false });
       const schemaValidatorCache = new Map();
       let toolErrorRetryCount = 0;
