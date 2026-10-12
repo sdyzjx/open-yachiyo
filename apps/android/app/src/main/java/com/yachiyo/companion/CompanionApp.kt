@@ -28,6 +28,8 @@ class CompanionApp : Application() {
     val plugins: com.yachiyo.companion.plugins.PluginManager by lazy { com.yachiyo.companion.plugins.PluginManager(filesDir) }
     private val pushHandler by lazy { com.yachiyo.companion.plugins.PluginPushHandler(hub, plugins, config) }
 
+    val apps: com.yachiyo.companion.launcher.AppCatalog by lazy { com.yachiyo.companion.launcher.AppCatalog(this) }
+
     override fun onCreate() {
         super.onCreate()
         instance = this

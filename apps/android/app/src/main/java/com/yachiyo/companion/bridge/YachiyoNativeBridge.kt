@@ -204,8 +204,8 @@ class YachiyoNativeBridge(
     @JavascriptInterface fun pluginStorageGet(pluginId: String, key: String): String = host.features.pluginStorageGet(lockscreen, pluginId, key)
     @JavascriptInterface fun pluginStorageSet(pluginId: String, key: String, valueJson: String) { host.features.pluginStorageSet(lockscreen, pluginId, key, valueJson) }
     @JavascriptInterface fun openHomeSettings() { main.post { host.openHomeSettings() } }
-    @JavascriptInterface fun listLaunchableApps(): String = host.features.listLaunchableApps()
-    @JavascriptInterface fun launchApp(pkg: String) { main.post { host.launchApp(pkg) } }
+    @JavascriptInterface fun listLaunchableApps(): String = host.features.listLaunchableApps(lockscreen)
+    @JavascriptInterface fun launchApp(pkg: String) { if (!lockscreen) main.post { host.launchApp(pkg) } }
     @JavascriptInterface fun setLockscreenEnabled(enabled: Boolean) { host.features.setLockscreenEnabled(enabled) }
     @JavascriptInterface fun setOrientation(mode: String) { main.post { host.applyOrientation(mode, persist = true) } }
 

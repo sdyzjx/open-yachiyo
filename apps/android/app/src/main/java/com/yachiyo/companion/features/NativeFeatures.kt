@@ -161,7 +161,7 @@ class NativeFeatures(private val host: WebHostActivity) {
         if (!lockscreen) try { app.plugins.storageSet(pluginId, key, valueJson) } catch (e: Exception) { Log.w("NativeFeatures", e.message ?: "") }
     }
 
-    fun listLaunchableApps(): String = JSONArray().toString()
+    fun listLaunchableApps(lockscreen: Boolean): String = if (lockscreen) "[]" else app.apps.list().toString()
     fun setLockscreenEnabled(enabled: Boolean) {}
 
     companion object { const val REQ_MIC = 100; const val REQ_BG = 201; const val REQ_PLUGIN = 202 }
