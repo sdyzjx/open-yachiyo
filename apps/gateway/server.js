@@ -82,6 +82,7 @@ const executor = new ToolExecutor(toolRuntime.registry, { policy: toolRuntime.po
 const providerStore = new ProviderConfigStore();
 const llmManager = new LlmProviderManager({ store: providerStore });
 const sessionStore = new FileSessionStore();
+app.use(require('./routes/modelConfig').createModelConfigRouter({ llmManager, sessionStore, commitConfigChange }));
 const longTermMemoryStore = getDefaultLongTermMemoryStore();
 const workspaceManager = getDefaultSessionWorkspaceManager();
 const skillRuntimeManager = new SkillRuntimeManager({ workspaceDir: process.cwd() });
@@ -1280,7 +1281,8 @@ async function enqueueRpc(ws, rpcPayload, mode) {
         permission_level: permissionLevel,
         workspace_root: normalizedWorkspace.root_dir,
         voice_auto_reply_enabled: voiceAutoReplyEnabled,
-        voice_auto_reply_mode: voiceAutoReplyMode
+        voice_auto_reply_mode: voiceAutoReplyMode,
+        model_ref: existingSettings?.model_ref || null
       };
     },
     transcribeAudio: async ({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext }) => {

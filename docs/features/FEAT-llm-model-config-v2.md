@@ -33,6 +33,21 @@
 - `runtime.run` 的 `params.model_ref` → `RuntimeRpcWorker` → `runtimeContext.model_ref` 与 `runner.run({modelRef})`（pi 路径读取同一字段）。
 - legacy 循环仅能调用 `openai-completions`；anthropic/google 模型在 legacy 下会报明确错误。
 
+### 3.3 HTTP（`apps/gateway/routes/modelConfig.js`，响应均为 `{ok, data}`）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/config/models` | `{active, enabled, roles, fallback_models, models[], providers{}}`；`active`/`enabled` 为 ref 字符串；`models[]` 为描述符去掉 `api_key`，附 `has_api_key`、`enabled`；`providers` 为可编辑的 provider 概要（同样无 key） |
+| PUT | `/api/config/models/selection` | `{active_model?, enabled_models?, roles?, fallback_models?}`，引用不存在返回 400；成功后写 `providers.yaml` 并 `commitConfigChange` |
+| GET | `/api/config/models/presets` | 预设列表 |
+| POST | `/api/config/models/test` | `{ref}` 或 `{provider: <key|临时配置>, provider_key?, model?, timeout_ms?}` → 发送最小请求，返回 `{ok, latency_ms, status, error}`（默认超时 15s，上限 60s；错误文本脱敏） |
+| POST | `/api/config/models/discover` | `{provider: <key|临时配置>, provider_key?}` → 调 `GET {base_url}/models`（anthropic 为 `/v1/models`，gemini 解析 `models[].name`），返回 `{ok, models:[{id,name}]}` |
+| PUT | `/api/config/models/providers/:key` | （增量，供配置页）新增/更新 provider；`api_key` 缺省或为空则保留原值，`clear_api_key:true` 清除 |
+| DELETE | `/api/config/models/providers/:key` | 删除 provider 并清理 enabled/fallback/roles/active 引用 |
+| PUT | `/api/sessions/:id/settings` | 路由层前置校验 `settings.model_ref`（null/空串清除；未知 ref → 400），随后由原有处理器持久化 |
+
+会话 `model_ref` 优先级：`runtime.run params.model_ref` > 会话设置 `model_ref` > `active_model`。
+
 ## 4. 配置项
 
 支持的 `type`：`openai_compatible`、`anthropic`、`google`、`tts_dashscope`、`asr_openai_compatible`、`asr_dashscope`。完整 schema 见契约 C4.1。
@@ -43,4 +58,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-017，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-025，见 `docs/testing/TC-llm-model-config-v2.md`。

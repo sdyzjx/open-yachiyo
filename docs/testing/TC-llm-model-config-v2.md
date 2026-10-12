@@ -25,3 +25,11 @@
 | TC-LLM-015 | 不可重试错误（401）不触发回退 | integration | 同上 | `decide` | 抛出 401，次模型零请求 | 同上「fallback does not trigger…」 |
 | TC-LLM-016 | `model_ref` 覆盖与未知 ref 报错；provider 选项进入请求 | integration | 两个 mock | `getReasoner({modelRef})` | 使用指定模型；未知 ref 抛 `Unknown model_ref` | 同上「model_ref override…」 |
 | TC-LLM-017 | Runner 透传 modelRef 并在 bus 发布 `llm.fallback` | unit | stub reasoner | `ToolLoopRunner.run({modelRef})` | getReasoner 收到 modelRef/sessionId；bus 收到 llm.fallback | 同上「ToolLoopRunner forwards modelRef…」 |
+| TC-LLM-018 | `GET /api/config/models` 不泄露 api_key，返回 has_api_key | integration | 含内联 key 的配置 | GET | 响应不含 key 字符串；`has_api_key` 正确；`enabled` 标记 | test/runtime/config/modelConfigRoutes.test.js「GET /api/config/models never leaks…」 |
+| TC-LLM-019 | `PUT /selection` 未知 ref 返回 400；成功则持久化并提交 config git | integration | 同上 | PUT 非法/合法选择 | 400 且无提交；成功后 GET 反映新选择，key 未丢失，`commitConfigChange('providers.yaml')` 被调用 | 同上「PUT selection validates refs…」 |
+| TC-LLM-020 | `GET /presets` | integration | — | GET | 至少 11 个预设 | 同上「GET presets…」 |
+| TC-LLM-021 | provider 增删改：省略 api_key 保留原值；删除清理引用 | integration | 同上 | PUT/DELETE `/providers/:key` | 保留 key；非法 key 400；删除后 fallback/roles 清理；重复删除 404 | 同上「provider upsert…」 |
+| TC-LLM-022 | `POST /test` 成功/失败/草稿继承 key，错误中 key 被脱敏 | integration | mock 上游 | POST | 成功含 latency；401 时 `ok:false,status:401` 且不含 key；未知 ref 400 | 同上「POST test: success…」 |
+| TC-LLM-023 | `POST /test` 超时不挂起 | integration | 永不响应的上游 | POST `timeout_ms:150` | 返回 `ok:false`，error 含 timeout | 同上「POST test times out…」 |
+| TC-LLM-024 | `POST /discover`（openai 风格与 gemini 风格） | integration | mock 上游 | POST | 返回模型 id 列表；未知 provider 400 | 同上「POST discover…」 |
+| TC-LLM-025 | 会话级 `model_ref`：未知 ref 400；合法/清除/缺省放行；merge 持久化 | integration | — | `PUT /api/sessions/:id/settings` | 400 / 放行；`mergeSessionSettings` 保留与清除 model_ref | 同上「session settings…」 |
