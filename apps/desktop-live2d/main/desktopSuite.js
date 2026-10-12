@@ -2806,8 +2806,6 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowDrag, windowDragListener);
   const chatPanelVisibilityListener = createChatPanelVisibilityListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     windowMetrics,
     screen,
@@ -2815,8 +2813,6 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
   const chatPanelToggleListener = createChatPanelToggleListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onToggle: () => {
       toggleChatPanelVisible();
@@ -2835,8 +2831,6 @@ async function startDesktopSuite({
   };
   ipcMain.on(CHANNELS.chatImagePreviewOpen, chatImagePreviewListener);
   const modelBoundsListener = createModelBoundsListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onModelBounds: (modelBounds) => {
       applyAvatarFitBounds(modelBounds);
@@ -2855,15 +2849,11 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.bubbleMetricsUpdate, bubbleMetricsListener);
   const actionTelemetryListener = createActionTelemetryListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onTelemetry: publishLive2dActionTelemetry
   });
   ipcMain.on(CHANNELS.actionTelemetry, actionTelemetryListener);
   const lipsyncTelemetryListener = createLipsyncTelemetryListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     onTelemetry: publishLipsyncTelemetry
   });
@@ -2887,8 +2877,6 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowControl, windowControlListener);
   const windowResizeListener = createWindowResizeListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     windowMetrics,
     screen,
@@ -2899,8 +2887,6 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.windowResizeRequest, windowResizeListener);
   const windowInteractivityListener = createWindowInteractivityListener({
-    deviceHubClient,
-    transferAvatar: (to) => deviceHubClient.transfer(to),
     window: avatarWindow,
     isResizeModeEnabled: () => resizeModeEnabled
   });

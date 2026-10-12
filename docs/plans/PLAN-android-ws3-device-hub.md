@@ -68,6 +68,8 @@
 
 - 任务 8 完成：设备页 `/devices.html`，配对 URL/token、在线状态、移交、插件上传/推送与错误提示。Chrome 离线假设备验证手机/桌面往返，页面 host 与按钮状态正确；全量 526/526 通过。
 
+- 收尾回归：修复桌面装配初始化顺序，补充完整启动/停止、动画/语音取消竞态、锁屏在途 RPC、远程 HTTP 权限；补齐旧 runtime done → chat.final 去重。
+
 ## 5. 待统筹决策
 
 - C1.7 transcribed_text 透传：现有 `server.js::normalizeInputAudio` 与 `runtimeRpcWorker.js::normalizeInputAudio` 会移除此字段，非空 input 路径也未注入 runtime_context.input_audio。WS3 已按契约传入该字段并以识别文本作 input，保证不重复识别；请 WS1/统筹者保留该字段并注入 context/历史元数据。受负责路径限制未修改这些规范化段。

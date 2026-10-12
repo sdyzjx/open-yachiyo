@@ -28,9 +28,10 @@ class DeviceHubClient {
       const url = new URL('/ws/device', this.gatewayUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('token', this.token);
-      const ws = this.ws = new WebSocket(url);
+      const ws = this.ws = new WebSocket(url, { handshakeTimeout: 5000 });
       ws.on('open', () => this.send('hello', { device_id: this.deviceId, device_type: 'desktop', name: os.hostname(), mode: 'normal', capabilities: ['live2d', 'audio.play'], app_version: '0.1.1' }));
       ws.on('message', (raw) => {
+        this.lastMessage = Date.now();
         try { void this.receive(JSON.parse(raw)).catch(() => {}); } catch { /* Malformed frames are ignored. */ }
       });
       ws.on('error', () => {});
@@ -55,7 +56,10 @@ class DeviceHubClient {
       this.host = msg.data.avatar_host; this.devices = msg.data.devices;
       this.send('sub', { topics: ['avatar.**', 'sys.device.*', 'ui.live2d.action'] });
       clearInterval(this.heartbeat);
-      this.heartbeat = setInterval(() => this.send('ping', {}), msg.data.heartbeat_ms);
+      this.heartbeat = setInterval(() => {
+        if (Date.now() - this.lastMessage >= msg.data.heartbeat_ms * 2) this.ws.terminate();
+        else this.send('ping', {});
+      }, msg.data.heartbeat_ms);
       await this.invokeRenderer('avatar.hub.event', { topic: 'avatar.welcome', data: { host: this.host, device_id: this.deviceId } });
     } else if (msg.type === 'rpc.req') {
       try { this.send('rpc.res', { result: await this.invokeRenderer(msg.data.method, msg.data.params) }, { id: msg.id }); }

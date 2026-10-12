@@ -15,3 +15,7 @@
 | TC-AVT-004 | 桌面动画控制器 | unit | mock 元素/动画 | 退出、准备、进入、断线 | 120/480/520 ms；非 host 隐藏并停声；进入 greet | 同文件 / Desktop avatar animation follows timing and hides/stops voice off host |
 
 | TC-AVT-005 | 统筹新增 Hub API | integration | 本机 Hub | 查询 alias、观察设备事件、失败移交、avatar-host RPC | alias 和事件正确；失败 resolve；desktop 别名 -32010 | `test/gateway/deviceHub/avatarHost.test.js` / Coordinator Hub API resolves failed transfers and avatar-host alias |
+
+| TC-AVT-006 | 桌面完整装配 | integration | Electron/网关依赖 mock | startDesktopSuite → transferAvatar → stop | 窗口先创建、Hub 正常启动、退出释放 | `test/gateway/deviceHub/desktopStartup.test.js` / Desktop suite starts and stops with Hub client after window setup |
+| TC-AVT-007 | 动画/语音取消竞态 | unit | 可延迟动画与 AudioContext mock | 在动画/音频恢复期间取消或失去 host | 旧动画不继续；失去 host 后音频不启动 | `test/gateway/deviceHub/desktopClient.test.js` / Desktop handoff cancellation cannot resume an obsolete animation；Realtime voice cannot start after host is lost during AudioContext resume |
+| TC-AVT-008 | 移交中断与并发 | integration | 两假设备 | prepare 后并发请求；exit 时目标离线 | 并发拒绝；原请求失败且 host 回滚，transfer_id 一致 | `test/gateway/deviceHub/avatarHost.test.js` / Avatar target disconnect during exit rolls back and concurrent transfers are rejected |

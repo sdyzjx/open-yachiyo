@@ -26,13 +26,14 @@ function attachRuntimeBridge({ hub, bus, enqueueRun }) {
     hub.publish('task.update', { task_id: taskId, title: task.title, status: steps.some((s) => s.status === 'failed') ? 'failed' : steps.some((s) => s.status === 'running') ? 'running' : 'done', steps, updated_at: Date.now() });
   };
   const handle = (topic, data = {}) => {
-    if (data.__from_device) return; // Publications were already delivered by the Hub.
+    if (!data || typeof data !== 'object' || data.__from_device) return; // Publications were already delivered by the Hub.
     if (/^(ui|client|voice|avatar|task|plugin|sys)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
     if (topic === 'message.delta') sendChat('chat.delta', { session_id: data.session_id, trace_id: data.trace_id, delta: data.delta });
-    if (topic === 'runtime.final') sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
+    if (topic === 'runtime.final' && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
     if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(topic)) aggregate(topic, data);
     if (topic === 'runtime.event') {
       if (data.seq != null && !mark(`${data.session_id}:${data.trace_id}:${data.seq}`)) return;
+      if (data.event === 'done') handle('runtime.final', { ...data, output: data.payload?.output || '' });
       if (data.event === 'llm.stream.delta') handle('message.delta', { ...data, delta: data.payload?.delta || '' });
       if (data.event === 'llm.final' && !data.payload?.streamed && data.payload?.decision?.type === 'final') handle('message.delta', { ...data, delta: data.payload.decision.preview || '' });
       if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(data.event || '') || data.event === 'tool.result') aggregate(data.event, data);

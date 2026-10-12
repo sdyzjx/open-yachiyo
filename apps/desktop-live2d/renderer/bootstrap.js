@@ -24,7 +24,7 @@
   let live2dModel = null;
   let hideBubbleTimer = null;
   const systemAudio = new Audio();
-  systemAudio.autoplay = true;
+  systemAudio.autoplay = false;
   let currentVoiceObjectUrl = null;
   let dragPointerState = null;
   let suppressModelTapUntil = 0;
@@ -2289,6 +2289,7 @@
           output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
+        if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) throw new Error('Avatar host changed before playback');
         await systemAudio.play();
         emitLipsyncTelemetry('playback.started', {
           request_id: nextRequestId,
@@ -2529,6 +2530,7 @@
           output_delay_ms: playbackDelayMs,
           ...snapshotSystemAudioState()
         });
+        if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) throw new Error('Avatar host changed before playback');
         await systemAudio.play();
         console.log('[lipsync] Audio playback started');
         emitLipsyncTelemetry('playback.started', {
@@ -2723,12 +2725,17 @@
       };
 
       await player.startSession({
+        shouldPlay: () => Boolean(avatarTransfer?.isHost && activeVoiceRequestId === nextRequestId),
         requestId: nextRequestId,
         sampleRate,
         prebufferMs,
         outputDelayMs: playbackDelayMs,
         idleTimeoutMs,
         onFirstAudio: () => {
+          if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) {
+            player.interruptSession({ reason: 'avatar-transfer' });
+            return;
+          }
           void primeRealtimeLipsync().catch(() => {
             // Errors are already reported in primeRealtimeLipsync.
           });
@@ -2786,6 +2793,10 @@
         }
       });
 
+      if (!avatarTransfer?.isHost || activeVoiceRequestId !== nextRequestId) {
+        player.interruptSession({ reason: 'avatar-transfer' });
+        return;
+      }
       void primeRealtimeLipsync().catch(() => {
         // Errors are already reported in primeRealtimeLipsync.
       });
@@ -4054,7 +4065,12 @@
       avatarTransfer = window.AvatarTransfer.createAvatarTransfer({
         element: pixiApp.view,
         setVisible: (visible) => { live2dModel.visible = visible; },
-        stopVoice: () => { systemAudio.pause(); interruptRealtimeVoicePlayer('avatar-transfer'); },
+        stopVoice: () => {
+          systemAudio.pause();
+          activeVoiceRequestId = null;
+          stopLipsync('avatar-transfer');
+          interruptRealtimeVoicePlayer('avatar-transfer');
+        },
         greet: async () => {
           try { await ensureActionQueuePlayer().enqueue({ action_id: `greet-${Date.now()}`, action: { type: 'gesture', name: 'greet', args: { type: 'greet' } }, duration_sec: 2, queue_policy: 'append' }); } catch { /* Model may not provide greet. */ }
         }

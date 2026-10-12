@@ -56,3 +56,18 @@ test('Coordinator Hub API resolves failed transfers and avatar-host alias', asyn
   assert.equal((await f.hub.requestAvatarTransfer('missing')).status, 'failed');
   await assert.rejects(f.hub.invoke('avatar-host', 'state.get'), { code: -32010 });
 });
+
+test('Avatar target disconnect during exit rolls back and concurrent transfers are rejected', async (t) => {
+  const f = await fixture(t, { avatar: { stepTimeoutMs: 100 } });
+  const desktop = await f.client('desk', { device_type: 'desktop' }); const phone = await f.client('phone');
+  const transfer = f.hub.requestAvatarTransfer('phone');
+  const prepare = await phone.next((m) => m.topic === 'avatar.transfer.prepare');
+  assert.equal((await f.hub.requestAvatarTransfer('phone')).status, 'failed');
+  phone.send('pub', { transfer_id: prepare.data.transfer_id }, { topic: 'avatar.transfer.ready' });
+  const exit = await desktop.next((m) => m.topic === 'avatar.transfer.exit');
+  const offline = require('node:events').once(f.hub, 'offline'); phone.ws.close(); await offline;
+  desktop.send('pub', { transfer_id: exit.data.transfer_id }, { topic: 'avatar.transfer.exited' });
+  const result = await transfer;
+  assert.equal(result.status, 'failed'); assert.equal(result.host, 'desktop');
+  assert.equal(result.transfer_id, prepare.data.transfer_id);
+});

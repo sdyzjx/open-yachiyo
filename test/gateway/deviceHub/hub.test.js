@@ -71,3 +71,17 @@ test('Hub heartbeat disconnects silent peers and handshake is required', async (
   await Promise.all([once(c.ws, 'close'), once(f.hub, 'offline')]);
   assert.equal(f.hub.listDevices().length, 0);
 });
+
+test('Lockscreen hides tools and cancels pending plugin RPC; disconnect rejects pending calls', async (t) => {
+  const f = await fixture(t); const phone = await f.client('phone');
+  phone.send('rpc.register', { methods: [{ name: 'plugin.demo.read', expose_as_tool: true }] }); await phone.sync();
+  const pending = f.hub.invoke('phone', 'plugin.demo.read');
+  const denied = assert.rejects(pending, { code: -32006 });
+  await phone.next((m) => m.type === 'rpc.req');
+  phone.send('pub', { mode: 'lockscreen' }, { topic: 'sys.device.mode' }); await denied;
+  assert.equal(f.hub.listToolMethods().length, 0);
+  phone.send('pub', { mode: 'normal' }, { topic: 'sys.device.mode' }); await phone.sync();
+  assert.equal(f.hub.listToolMethods().length, 1);
+  const offline = assert.rejects(f.hub.invoke('phone', 'state.get'), { code: -32010 });
+  await phone.next((m) => m.type === 'rpc.req'); phone.ws.close(); await offline;
+});

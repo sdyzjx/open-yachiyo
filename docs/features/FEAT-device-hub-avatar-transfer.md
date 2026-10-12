@@ -18,7 +18,7 @@ host 原子写入 `~/yachiyo/data/device-hub/state.json`，重启恢复；`deskt
 
 ### 桌面客户端
 
-Electron 主进程从本机 pairing 接口取得 token，远程网关可通过 `DEVICE_HUB_TOKEN` 提供；以 `desktop-<hostname>` 连接，1～30 秒指数退避重连。welcome 恢复 host；连接丢失时隐藏人物并停止语音。准备/退出/进入通过现有 RPC IPC 送到渲染器，渲染器完成动画后回执。
+Electron 主进程从本机 pairing 接口取得 token，远程网关可通过 `DEVICE_HUB_TOKEN` 提供；以 `desktop-<hostname>` 连接，1～30 秒指数退避重连。welcome 恢复 host；连接丢失时隐藏人物并停止语音。准备/退出/进入通过现有 RPC IPC 送到渲染器，渲染器完成动画后回执。取消/断线会使正在等待的动画失效，旧动画不能再次隐藏恢复后的 host。语音在播放前和 AudioContext 恢复后再次校验归属。
 
 退出动画先下蹲屏幕高度 2%（120 ms），再向下滑出（480 ms）；进入 520 ms 回弹并尝试 greet。只隐藏模型，保留聊天/窗口。主进程跳过非 host 语音请求，渲染器再次校验，拒绝迟到的合成音频。托盘可送到第一台在线 Android 或接回电脑；多手机精确选择使用设备页。
 
@@ -38,4 +38,4 @@ RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/
 
 ## 测试用例
 
-[TC-avatar-transfer.md](../testing/TC-avatar-transfer.md)：TC-AVT-001～004，自动化 `test/gateway/deviceHub/avatarHost.test.js`。
+[TC-avatar-transfer.md](../testing/TC-avatar-transfer.md)：TC-AVT-001～008，自动化 `test/gateway/deviceHub/avatarHost.test.js`。

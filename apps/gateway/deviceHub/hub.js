@@ -104,6 +104,11 @@ class DeviceHub extends EventEmitter {
         if (msg.topic === 'sys.device.mode') {
           if (!['normal', 'lockscreen'].includes(data.mode)) throw fault(-32602, 'Invalid mode');
           device.mode = data.mode;
+          if (device.mode === 'lockscreen') {
+            for (const [id, pending] of this.pending) {
+              if (pending.device === device && pending.method.startsWith('plugin.')) this.settle(id, fault(-32006, 'Plugins unavailable while locked'));
+            }
+          }
           this.emit('devices.changed');
           this.emit('tools.changed');
         }
@@ -179,7 +184,7 @@ class DeviceHub extends EventEmitter {
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.settle(id, fault(-32003, 'RPC timeout')), timeoutMs);
-      this.pending.set(id, { device, resolve, reject, timer });
+      this.pending.set(id, { device, method, resolve, reject, timer });
       this.send(device.ws, 'rpc.req', { method, params }, { id });
     });
   }

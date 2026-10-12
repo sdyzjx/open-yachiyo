@@ -84,7 +84,8 @@
       onFirstAudio = null,
       onEnded = null,
       onError = null,
-      onInterrupted = null
+      onInterrupted = null,
+      shouldPlay = () => true
     } = {}) {
       const nextRequestId = String(requestId || '').trim();
       if (!nextRequestId) {
@@ -96,6 +97,7 @@
         await this.audioContext.resume();
       }
 
+      if (!shouldPlay()) return;
       this.session = {
         requestId: nextRequestId,
         sampleRate: clampNumber(sampleRate, this.defaultSampleRate, 8000, 96000),

@@ -14,7 +14,7 @@
 
 连接先校验 token，再要求 hello；welcome 返回设备列表、host 和设备会话。重复在线 ID 拒绝连接。客户端每个心跳周期发送 ping，两个周期无心跳则断开并撤销设备方法。订阅支持单段 `*`、多段 `**` 和全部可见主题 `*`；定向发布同时遵守订阅与权限。
 
-锁屏时禁止插件发布、显式插件订阅、插件 RPC 和插件事件投递；已注册插件工具暂时从工具列表隐藏。设备不能伪造网关控制事件。RPC 响应必须来自被调用设备。
+锁屏时禁止插件发布、显式插件订阅、插件 RPC 和插件事件投递；已注册插件工具暂时从工具列表隐藏，进行中的插件 RPC 以 -32006 取消。设备不能伪造网关控制事件。RPC 响应必须来自被调用设备。
 
 ## 接口与协议
 
@@ -24,7 +24,7 @@
 
 ### 运行时桥接
 
-订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，内存最多保存 128 个任务。
+订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重；旧 done 事件同样映射 chat.final，并与新 runtime.final/入队回调按 trace 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，内存最多保存 128 个任务。
 
 `chat.input` 固定使用 `device-<device_id>` 会话，通过现有网关入队入口执行，复用权限、历史记录与 workspace；设备提交的其他 session_id 不覆盖设备会话。TC-HUB-005 对应 `test/gateway/deviceHub/runtimeBridge.test.js`。
 
@@ -54,4 +54,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～004；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～015；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。

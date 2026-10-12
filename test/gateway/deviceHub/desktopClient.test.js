@@ -46,3 +46,32 @@ test('Desktop avatar animation follows timing and hides/stops voice off host', a
   assert.equal(visibility.at(-1), false);
   assert.ok(stopped > 0);
 });
+
+test('Desktop handoff cancellation cannot resume an obsolete animation', async () => {
+  let cancelFrame; let visible = false; let animations = 0;
+  const element = { style: {}, getBoundingClientRect: () => ({ height: 200 }), animate() {
+    animations++;
+    const finished = new Promise((resolve, reject) => { cancelFrame = reject; });
+    return { finished, cancel() { cancelFrame(new Error('cancelled')); } };
+  } };
+  const controller = createAvatarTransfer({ element, height: () => 800, setVisible: (v) => { visible = v; }, stopVoice() {}, async greet() {} });
+  await controller.handle({ topic: 'avatar.welcome', data: { host: 'desktop' } });
+  const exit = controller.handle({ topic: 'avatar.transfer.exit' });
+  assert.equal(controller.isHost, false);
+  await controller.handle({ topic: 'avatar.transfer.cancel' });
+  await exit;
+  assert.equal(visible, true); assert.equal(animations, 1);
+  assert.equal(controller.isHost, true);
+});
+
+test('Realtime voice cannot start after host is lost during AudioContext resume', async () => {
+  let finishResume; let host = true;
+  const vm = require('node:vm'); const fs = require('node:fs'); const path = require('node:path');
+  const audioContext = { state: 'suspended', resume: () => new Promise((resolve) => { finishResume = resolve; }), createAnalyser: () => ({ connect() {} }), createGain: () => ({ gain: {}, connect() {} }) };
+  const context = { window: { AudioContext: class {} }, module: { exports: {} }, setTimeout, clearTimeout };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../../apps/desktop-live2d/renderer/realtimeVoicePlayer.js'), 'utf8'), context);
+  const player = new context.module.exports.RealtimeVoicePlayer({ audioContext });
+  const start = player.startSession({ requestId: 'voice', shouldPlay: () => host });
+  host = false; finishResume(); await start;
+  assert.equal(player.session, null);
+});

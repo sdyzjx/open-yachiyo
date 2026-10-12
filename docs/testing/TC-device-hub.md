@@ -27,3 +27,7 @@
 
 | TC-HUB-011 | 设备页与 API | integration | 本机静态页 + Hub | 获取页面、pairing、列表、移交 | 本地资源；配对和 host 正确；错误可读 | `test/gateway/deviceHub/devicesPage.test.js` / Devices page serves offline assets and API reports pairing, host and errors |
 | TC-HUB-012 | 设备页授权与写请求 | unit | fetch mock | transfer/push/upload | Bearer、JSON target 与 ZIP Content-Type 正确 | 同文件 / Devices page client uses Bearer authorization and encodes write requests |
+
+| TC-HUB-013 | 锁屏与断线的在途调用 | integration | 注册插件方法的设备 | 发起调用后锁屏；解锁；发起调用后断线 | 工具隐藏/恢复；在途请求 -32006/-32010 | `test/gateway/deviceHub/hub.test.js` / Lockscreen hides tools and cancels pending plugin RPC; disconnect rejects pending calls |
+| TC-HUB-014 | 配对配置持久化 | unit | 临时目录 | 首次/二次加载 | 24 随机字节；0600 文件；仅首次打印 | `test/gateway/deviceHub/configAuth.test.js` / Pairing config persists a private random token and does not log it twice |
+| TC-HUB-015 | HTTP 远程权限 | integration | 模拟远程 socket 的本机 HTTP | 伪造代理头、Bearer/query token、pairing | 代理头不能绕过；token 授权有效；pairing 仍拒绝远程 | 同文件 / Remote HTTP auth rejects proxy spoofing and pairing remains localhost-only |

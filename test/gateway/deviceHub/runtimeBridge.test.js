@@ -25,6 +25,10 @@ test('Runtime bridge maps chat, aggregates tools and prevents publication loops'
   a.send('pub', { text: 'hi', session_id: 'another-session' }, { topic: 'chat.input' });
   assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'done');
   assert.equal(runs[0].params.session_id, 'device-phone');
+  bus.publish('runtime.event', { session_id: 'desktop', trace_id: 'legacy', seq: 3, event: 'done', payload: { output: 'complete' } });
+  bus.publish('runtime.final', { session_id: 'desktop', trace_id: 'legacy', output: 'complete' });
+  assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'complete');
+  await a.sync(); assert.equal(a.inbox.some((m) => m.topic === 'chat.final'), false);
   bus.publish('tool_call.started', { trace_id: 'r', call_id: 'a', name: 'weather' });
   assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'running');
   bus.publish('tool_call.completed', { trace_id: 'r', call_id: 'a', name: 'weather' });
