@@ -39,3 +39,4 @@
 | TC-LLM-040 | 手机只读取已启用模型安全目录 | unit | provider 含 key/headers/extra_body 与音频能力 | 调用 `model.catalog.get` | 只返回 active、已启用模型与安全能力字段，不含任何凭据 | `test/gateway/deviceHub/modelControl.test.js` |
 | TC-LLM-041 | Realtime 模型接受键盘文字 | unit | 假 Realtime WebSocket | 选择 realtime 模型并发送文字 | 使用 session.update + conversation.item.create + response.create，增量与最终文本正常返回 | `test/gateway/deviceHub/omniAudio.test.js` |
 | TC-LLM-042 | 模型能力与音频路由配置校验 | unit | 带 input/output/transport/audio 的模型配置 | 调用 `validateConfig` | 合法 Realtime Omni 通过；未知能力、缺少 audio 输入、Realtime mode 与 transport 不匹配均被拒绝 | `test/runtime/config/providerConfigSchemaV2.test.js` |
+| TC-LLM-043 | 旧发现记录迁移 Omni 权威能力 | unit | 自定义 Provider 中已保存 text/request 形式的已知 Omni 型号 | 调用 `normalizeProviderConfig` | 按内置型号资料恢复 input/output、Realtime transport 与 audio mode | `test/runtime/config/providerConfigSchemaV2.test.js` |

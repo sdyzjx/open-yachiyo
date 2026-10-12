@@ -122,6 +122,25 @@ test('TC-LLM-042 validates model capability and audio routing metadata', () => {
   );
 });
 
+test('TC-LLM-043 discovered known Omni models migrate from text-only capability metadata', () => {
+  const normalized = normalizeProviderConfig({
+    active_model: 'custom/qwen3.8-omni-flash-realtime',
+    providers: {
+      custom: {
+        type: 'openai_compatible', base_url: 'https://example.invalid/v1', api_key: 'k',
+        models: [{
+          id: 'qwen3.8-omni-flash-realtime', input: ['text'], output: ['text'], transport: 'request'
+        }]
+      }
+    }
+  });
+  const [model] = normalized.providers.custom.models;
+  assert.deepEqual(model.input, ['text', 'audio', 'video']);
+  assert.deepEqual(model.output, ['text', 'audio']);
+  assert.equal(model.transport, 'realtime');
+  assert.equal(model.audio.mode, 'realtime');
+});
+
 test('TC-LLM-036 ChatGPT plan type is restricted to its service-owned provider key', () => {
   const provider = {
     type: 'openai_chatgpt_plan',

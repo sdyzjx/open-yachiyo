@@ -73,4 +73,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-028、TC-LLM-040 ~ TC-LLM-042，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-LLM-001 ~ TC-LLM-028、TC-LLM-040 ~ TC-LLM-043，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-018，见 `docs/testing/TC-gateway-config-webui.md`。

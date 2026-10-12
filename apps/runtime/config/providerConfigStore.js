@@ -51,11 +51,37 @@ function splitModelRef(ref, providers) {
   return best ? { provider: best, id: text.slice(best.length + 1) } : null;
 }
 
+let canonicalModelHints = null;
+
+function getCanonicalModelHint(id) {
+  if (!canonicalModelHints) {
+    canonicalModelHints = new Map();
+    for (const preset of require('./providerPresets').listPresets()) {
+      for (const model of preset.models || []) {
+        if (!model.audio || canonicalModelHints.has(model.id)) continue;
+        canonicalModelHints.set(model.id, {
+          input: model.input,
+          output: model.output,
+          transport: model.transport,
+          audio: model.audio
+        });
+      }
+    }
+  }
+  return canonicalModelHints.get(id) || null;
+}
+
 function normalizeModelEntry(entry, presetModels) {
   const base = isObject(entry) ? { ...entry } : { id: entry };
   const id = base.id === undefined || base.id === null ? '' : String(base.id);
-  const hint = presetModels.find((m) => m.id === id) || {};
-  return { ...hint, ...base, id };
+  const hint = presetModels.find((m) => m.id === id) || getCanonicalModelHint(id) || {};
+  const normalized = { ...hint, ...base, id };
+  // Capability fields describe the upstream model itself. Keep known models canonical
+  // even when an older discovery result persisted the former text-only defaults.
+  for (const field of ['input', 'output', 'transport', 'audio']) {
+    if (hint[field] !== undefined) normalized[field] = structuredClone(hint[field]);
+  }
+  return normalized;
 }
 
 function normalizeProvider(raw) {

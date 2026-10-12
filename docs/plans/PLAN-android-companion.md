@@ -214,3 +214,4 @@ flowchart TD
 - Desktop Chat 与 Android Chat 均把 `model_ref` 随本次输入发送，不再因聊天切换而修改全局 `active_model`。手机目录通过 Device Hub RPC `model.catalog.get` 提供，明确排除 URL、环境变量名、headers、extra_body 与凭据。
 - Qwen 预设新增 `qwen3.8-omni-flash`（整段 WAV 音频直通）和 `qwen3.8-omni-flash-realtime`（16 kHz PCM 输入、24 kHz PCM 输出）。普通 Omni 先提取原话再进入 Pi 工具循环；Realtime 文字与音频直接流回手机，当前不桥接 Pi 工具调用。
 - 模型配置 schema 新增能力校验，拒绝未知 input/output/transport、缺失 audio 输入以及 Realtime mode/transport 不匹配。自动化覆盖 TC-LLM-040 ~ 042、TC-VOC-024/025、TC-AND-053、TC-DESKTOP-005。
+- 启动新网关读取既有验收配置时发现，历史「发现模型」条目会把已知 Omni 型号保留为 text/request；新增规范化迁移，以内置型号资料恢复其权威音频能力，覆盖 TC-LLM-043。
