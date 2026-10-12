@@ -45,11 +45,16 @@ function requestOptions(descriptor, options = {}) {
     headers: { ...descriptor.headers, ...options.headers },
     onPayload: async (payload, model) => {
       const next = { ...payload, ...descriptor.extra_body };
-      if (descriptor.compat?.strip_reasoning_in_history && Array.isArray(next.messages)) {
+      if (Array.isArray(next.messages)) {
         next.messages = next.messages.map((message) => {
           const copy = { ...message };
-          for (const field of ['reasoning', 'reasoning_content', 'reasoning_text', descriptor.compat.reasoning_content_field]) {
-            if (field) delete copy[field];
+          if (Array.isArray(copy.content) && copy.content.every((part) => part.type === 'text')) {
+            copy.content = copy.content.map((part) => part.text).join('');
+          }
+          if (descriptor.compat?.strip_reasoning_in_history) {
+            for (const field of ['reasoning', 'reasoning_content', 'reasoning_text', descriptor.compat.reasoning_content_field]) {
+              if (field) delete copy[field];
+            }
           }
           return copy;
         });

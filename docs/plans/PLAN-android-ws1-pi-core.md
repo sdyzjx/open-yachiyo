@@ -101,3 +101,7 @@ SessionManager 持久化、稳定安全路径、旧历史单次导入、同会�
 ### 任务 7
 
 pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成；`npm run test:ci` 523 / 523 通过。
+
+### 任务 8
+
+实际 pi AgentSession 循环、旧事件映射、图片/音频、恢复、无副作用回退与步数上限完成；`npm run test:ci` 529 / 529 通过。本地 SSE mock 验证真实 provider 请求。为兼容旧端点，纯文本 content 数组归一化为字符串，关闭 pi 图片自动缩放，保留网关已校验的原始图片。

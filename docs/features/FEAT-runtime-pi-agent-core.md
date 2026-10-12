@@ -41,3 +41,5 @@ Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system 
 会话由 SessionManager 写入 pi-sessions 的 SHA-256(session_id).jsonl，同一会话串行处理；首次恢复导入旧 UI 历史，后续不重复 seed。支持独立模式镜像 FileSessionStore；网关模式关闭镜像并继续使用原 hooks。压缩默认 enabled=true/reserveTokens=16384/keepRecentTokens=20000，可由工厂 compaction 覆盖。
 
 技能由 pi DefaultResourceLoader 管理，先使用已有 skills.yaml 来源优先级、enabled 和 eligibility 过滤，再由 pi 解析实际 SKILL.md。每轮重新加载；禁止额外发现用户 pi 扩展、模板和开发仓库 AGENTS 上下文。
+
+实际 pi 循环已接通：图片保留原始上传内容（网关执行尺寸上限检查，pi 自动缩放关闭），音频复用 transcribeAudio/预填 transcript；每轮重建会话服务并从 pi JSONL 恢复。流式与工具事件保留旧信封，增加 C5 要求的 requested/started/completed/failed；无重复 dispatcher 调用。仅未输出文本、未执行工具的瞬态模型失败可回退，401 和已执行工具后的失败不会重放。

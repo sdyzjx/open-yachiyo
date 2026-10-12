@@ -24,3 +24,9 @@
 | TC-PI-012 | pi JSONL 恢复与路径隔离 | integration | 临时目录、实际 SessionManager | 写入并重建 bridge | 第一轮上下文可恢复，seed 不重复，路径安全 | sessionBridge.test.js: TC-PI-012 stable pi sessions restore history and do not duplicate seeds |
 | TC-PI-013 | 串行与 UI 镜像 | integration | 真 FileSessionStore | 并发同 session、写历史 | 顺序稳定、关闭镜像不重复写 | sessionBridge.test.js: TC-PI-013 session serialization and optional UI history mirror |
 | TC-PI-014 | 技能来源与禁用规则 | integration | 临时 workspace/global 技能 | pi loader 加载并禁用后 reload | workspace 覆盖 global，禁用项消失，不加载扩展 | skillBridge.test.js: TC-PI-014 pi skills honor configured roots, disable rules, precedence and reload |
+| TC-PI-015 | 真实 pi 循环与事件 | integration | 本地 SSE mock | 工具 add 后流式回复 | 输出 42，全部兼容事件与 trace/seq 字段正确，无内置工具 | piRuntime.test.js: TC-PI-015 real pi loop executes tools and maps legacy events |
+| TC-PI-016 | 第二轮、图片、音频 | integration | 本地 mock 与 pi JSONL | 重建 runtime，图片/ASR 请求 | 历史恢复、图片发送、转录入 prompt | piRuntime.test.js: TC-PI-016 real session resume, image input and audio transcription |
+| TC-PI-017 | 实际模型回退和覆盖 | integration | 503 主模型、本地备用 | 请求并覆盖 modelRef | 按顺序回退且 user 输入不重复 | piRuntime.test.js: TC-PI-017 transient fallback and per-run model override use actual provider requests |
+| TC-PI-018 | pi 执行权限拒绝 | integration | low 与 memory_write | 模型请求写入 | 工具未执行，模型收到失败 | piRuntime.test.js: TC-PI-018 tool denial is visible to pi and does not bypass permissions |
+| TC-PI-019 | 副作用后禁止回退 | integration | 工具后 503、401 | 执行两种错误 | 不重放工具，不回退鉴权失败 | piRuntime.test.js: TC-PI-019 never fall back after tools or on authentication failures |
+| TC-PI-020 | 循环步数上限 | integration | 无限工具 mock | maxStep=2 | 有限请求后 ERROR | piRuntime.test.js: TC-PI-020 endless tools stop at configured step limit |

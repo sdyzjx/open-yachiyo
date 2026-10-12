@@ -64,7 +64,7 @@ class SessionBridge {
     if (systemSeeds.length) manager.appendCustomEntry('yachiyo.prompt-seeds', systemSeeds);
     const savedSeeds = [...manager.getEntries()].reverse().find((entry) => entry.type === 'custom' && entry.customType === 'yachiyo.prompt-seeds');
     return { manager, systemSeeds: systemSeeds.length ? systemSeeds : savedSeeds?.data || [],
-      settingsManager: sdk.SettingsManager.inMemory({ compaction: this.compaction, retry: { enabled: false } }) };
+      settingsManager: sdk.SettingsManager.inMemory({ compaction: this.compaction, retry: { enabled: false }, images: { autoResize: false } }) };
   }
 
   async start(sessionId, input, metadata = {}) {
