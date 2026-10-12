@@ -167,9 +167,10 @@ flowchart TD
 - 统筹决策：采用官网 `character_bg.jpg` 宫殿夜景；素材不复制进仓库或默认发布包，真机通过现有系统选图 → `NativeFeatures` 私有目录导入，以保证离线持久化。设置页保留带来源链接的网络预设，加载失败时以 `#090b20` 回退色显示。
 - Android `08f3198`：主舞台、HUD、横屏面板、抽屉和设置页统一深蓝紫夜景、暖金/淡紫强调色。侧面板使用内部静态高斯预模糊装饰层，不对 Live2D 使用大型 `backdrop-filter`，因此不新增每帧人物离屏滤镜；未修改 `stage.js`、Live2D core、渲染优化器或人物动作逻辑。
 - Desktop：透明人物窗口保持透明；聊天、气泡、布局/口型/拖拽区浮层统一夜景视觉。聊天窗模型选择经 main process 精确 allowlist 调用现有 `GET /api/config/models`、`PUT /api/config/models/selection`、`POST /api/config/models/discover`；renderer 不接收 token/API key，错误在 main 截断并脱敏。
-- 自动验证：Node `npm run test:ci` 663/663；Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
-- 尚待验收：安装移除手机模型入口后的最终 UI APK，确认设置页职责边界；完成桌面启动截图及模型选择/拉取的成功、空列表、离线与保存重开实测。A15 继续未达标，不能用旧 host clock 或历史约 59 FPS 数据标记完成。
+- 自动验证：最终 Node `npm run test:ci` 664/664；Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
+- 尚待验收：手机因电量耗尽关机，重启后由性能验收工作流安装 `1169fd3` 构建的最终 UI APK，确认设置页职责边界、背景持久化并恢复临时旋转设置。Desktop 启动、模型保存重开及成功/空/离线状态已完成。
 - 真机已通过系统 DocumentsUI 把官网 2400×1440 夜景复制到应用私有 `files/user/backgrounds/`；强停重启后背景保持。竖屏人物、横屏插件抽屉与设置页截图已留存；背景素材未进入发布包。
 - 用户明确手机是客户端：Android 已移除模型目录拉取、模型选择、Provider 与 Provider API key UI/调用。桌面继续提供模型选择和 Provider 列表拉取；ChatGPT 登录与模型资料也只在电脑端。
-- 本轮分支交付为 Android `08f3198`、Desktop `2958a90`；音频文档 `251b1b2` 由统筹待合并。以上均为隔离分支提交，尚未等同主分支集成。A15 的 60 FPS/人物抽动仍由性能验收工作流验证，当前未达标。
+- 本轮隔离分支提交顺序为 Android `08f3198`、Desktop `2958a90`、手机客户端职责调整 `1169fd3`、Desktop 首启竞态修复 `05eebd3`；音频文档 `251b1b2` 由统筹待合并。以上尚未等同主分支集成。
+- 性能候选 `48a574b` 在关机前采到 idle 54.12 FPS、swipe 52.18 FPS，A15 未达标。该样本临近用户确认的电量耗尽，只能说明本次验收未达到 60 FPS，不能单独用于判定交错 VBO 优化发生性能回退；人物抽动仍需最终融合包独立复验。
 - Desktop Electron 已连接隔离网关 `127.0.0.1:3002` 实测：首次打开直接加载 2 个模型/4 个 Provider；对当前模型执行保存后刷新 renderer，仍恢复同一 active ref。模型浮层截图为 `/tmp/ui-refresh-desktop-chat-models.png`。状态化本地网关自动覆盖 discover 成功、空列表、服务离线与保存后重开。实测同时发现并修复了 chat renderer 早于模型 IPC 注册的首次启动竞态。
