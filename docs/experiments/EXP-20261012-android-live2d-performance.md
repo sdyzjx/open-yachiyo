@@ -80,8 +80,6 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 首次 `48a574b` 真机采样时，静止页内 rAF/draw 为 54.12 FPS（帧间隔平均 18.48 ms、P95 23.1 ms；draw 平均 16.51 ms、P95 20.6 ms；Worker 17.74 Hz），连续滑动为 52.18 FPS（帧间隔平均 19.16 ms、P95 24.3 ms；draw 平均 16.70 ms、P95 21.7 ms；Worker 16.08 Hz）。每显示帧仍有约 399 次真实 draw，截图中的模型、遮罩、背景和分屏完整。采样后用户确认设备因电量耗尽关机，因此该轮只能证明实现未用低频贴图冒充人物帧率，不能用于判定交错 VBO 相对 `02cf3f6` 的稳定收益；须在恢复充电和相同温控条件后重测。
 
-离线检查发现 Worker 插值在每个显示帧对全部 409 drawable 强制设置 vertex-changed bit，并且插值完成后没有像同步 Core 路径那样清除该位。Cubism clipping manager 以这个位决定是否重画 mask source，因此无变化 drawable 和已经到达目标的网格仍会重复 mask pass。下一候选改为逐 drawable 比较当前/目标顶点：只在屏幕顶点本帧实际前进时设置 bit，最终插值绘制后的下一帧清除。该改动不省略任何可见 drawable draw，也不缓存正在变化的 mask；单测覆盖移动/静止 drawable 和最终一次 mask 刷新。真实 draw 数、mask 完整性和性能收益仍须在降温后的真机验证。
-
 ## 结论与决策
 
 分辨率不是本模型在小米 6 上的首要瓶颈。当前候选采用以下方案：
@@ -90,7 +88,6 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 - 主线程保留逐帧 motion、表情、口型、呼吸、physics、相机和 WebGL draw；相邻 Worker 网格逐显示帧插值。
 - 把 position/UV 打包为一个交错 dynamic VBO、index 打包为一个 static EBO，保留 drawable 顺序与 mask 语义，减少逐 drawable 上传和 ARRAY_BUFFER 切换。
 - 在单个模型 pass 内去重值相同的 WebGL 状态调用，同时保留每个 drawable 的真实 draw。
-- clipping mask 只在对应 source drawable 的屏幕顶点变化时刷新；最终插值步仍刷新一次，稳定后清除一次性 dirty bit。
 - 6 GiB 及以下设备的自动纹理为 2048，降低加载和显存压力；显式画质设置仍生效。
 - Worker 失败立即回退同步 Core；renderer 优化无法安装时回退原绘制路径。
 

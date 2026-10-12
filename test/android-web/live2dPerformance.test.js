@@ -88,9 +88,6 @@ test('TC-AWB-027 bridge falls back until a worker frame then applies drawable st
   time = 120;
   bridge.update();
   assert.deepEqual(Array.from(raw.drawables.renderOrders), [1, 0], 'draw order remains stable after its bounded switch');
-  time = 121;
-  bridge.update();
-  assert.equal(raw.drawables.dynamicFlags[0] & 32, 0, 'settled display vertices clear the one-draw mask dirty bit');
   bridge.destroy();
   assert.equal(instance.sent.at(-1).data.type, 'destroy');
   const finalVertices = Array.from(raw.drawables.vertexPositions[0]);
@@ -102,48 +99,6 @@ test('TC-AWB-027 bridge falls back until a worker frame then applies drawable st
   assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), finalVertices, 'late frame cannot mutate a destroyed model');
   instance.emit({ type: 'destroyed' });
   assert.equal(instance.terminated, true);
-});
-
-test('TC-AWB-027 bridge dirties clipping masks only for drawables whose displayed vertices move', () => {
-  let instance;
-  class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
-  let time = 0;
-  const raw = {
-    parameters: { values: new Float32Array(0) }, parts: { opacities: new Float32Array(0) },
-    drawables: {
-      vertexPositions: [new Float32Array([0, 0]), new Float32Array([5, 5])],
-      opacities: new Float32Array([1, 1]), renderOrders: new Int32Array([0, 1]),
-      dynamicFlags: new Uint8Array([0, 0])
-    }
-  };
-  const bridge = Bridge.create({
-    model: { getModel: () => raw, update() {} },
-    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
-    now: () => time
-  });
-  instance.emit({ type: 'ready', drawables: 2, vertexValues: 4 });
-  bridge.update();
-  instance.emit({
-    type: 'frame', vertices: new Float32Array([0, 0, 5, 5]), opacities: new Float32Array([1, 1]),
-    renderOrders: new Int32Array([0, 1]), dynamicFlags: new Uint8Array([32, 32]), workerMs: 1
-  });
-  bridge.update();
-  time = 60;
-  instance.emit({
-    type: 'frame', vertices: new Float32Array([4, 4, 5, 5]), opacities: new Float32Array([1, 1]),
-    renderOrders: new Int32Array([0, 1]), dynamicFlags: new Uint8Array([32, 32]), workerMs: 1
-  });
-  time = 90;
-  bridge.update();
-  assert.equal(raw.drawables.dynamicFlags[0] & 32, 32, 'moving drawable refreshes its clipping mask');
-  assert.equal(raw.drawables.dynamicFlags[1] & 32, 0, 'unchanged drawable does not redraw its clipping mask');
-  time = 120;
-  bridge.update();
-  assert.equal(raw.drawables.dynamicFlags[0] & 32, 32, 'final interpolation step refreshes the mask once');
-  time = 121;
-  bridge.update();
-  assert.deepEqual(Array.from(raw.drawables.dynamicFlags), [0, 0], 'settled frame clears mask dirtiness');
-  bridge.destroy();
 });
 
 test('TC-AWB-028 worker evaluates Cubism and returns transferable drawable arrays', async () => {

@@ -12,7 +12,7 @@ Android WebView 把 Cubism Core 网格求值移到专用 Worker，并在真实�
 
 ## 2. 行为说明
 
-加载模型后，主线程先走同步 Cubism 路径生成首帧。Worker 加载同一份 Core 与 moc，接收当前参数和部件透明度，异步计算下一份 drawable 状态。第一份 Worker 结果只用于完成预热并回收 buffer，主线程继续同步求值；第二份结果到达时从屏幕当前网格开始平滑接管，不在消息回调中改动画面。相邻 Worker 网格按实际到达间隔在每个显示帧线性插值，透明度同步插值；只有屏幕顶点确实变化的 drawable 才在该显示帧标记 mask dirty，插值到达目标后的下一帧清除该一次性标志，避免无变化时重复生成全部 clipping mask。离散的 render order 在对应网格插值越过 50% 时切换，若更快的新结果提前到达则先提交上一代 order，避免层级长期冻结。motion、表情、口型、呼吸、physics、pose、相机和 WebGL draw 都仍在每个显示帧执行。
+加载模型后，主线程先走同步 Cubism 路径生成首帧。Worker 加载同一份 Core 与 moc，接收当前参数和部件透明度，异步计算下一份 drawable 状态。第一份 Worker 结果只用于完成预热并回收 buffer，主线程继续同步求值；第二份结果到达时从屏幕当前网格开始平滑接管，不在消息回调中改动画面。相邻 Worker 网格按实际到达间隔在每个显示帧线性插值，透明度同步插值，并持续标记顶点变化以刷新 clipping mask；离散的 render order 在对应网格插值越过 50% 时切换，若更快的新结果提前到达则先提交上一代 order，避免层级长期冻结。motion、表情、口型、呼吸、physics、pose、相机和 WebGL draw 都仍在每个显示帧执行。
 
 ```mermaid
 sequenceDiagram
@@ -68,7 +68,7 @@ physics 保持原库逐显示帧求值。不得直接跳过 physics 帧；Cubism
 ## 6. 测试用例
 
 - `TC-AWB-025`：小米 6 真机 rAF、真实 draw、Worker 求值和连续动作验收。
-- `TC-AWB-027`：Worker 桥接、逐帧网格/透明度插值、按 drawable 的一次性 mask dirty 与 buffer 循环复用。
+- `TC-AWB-027`：Worker 桥接、逐帧网格/透明度插值、mask dirty 与 buffer 循环复用。
 - `TC-AWB-028`：Worker Core 初始化、求值、64 MiB heap 和资源释放。
 - `TC-AWB-029`：packed buffer offset、原顺序 draw、透明裁剪、异常和资源释放。
 - `TC-AWB-030`：异步模型加载跨越 stage 重建时的 generation 隔离与资源释放。

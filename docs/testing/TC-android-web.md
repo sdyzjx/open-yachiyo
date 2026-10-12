@@ -274,8 +274,8 @@
 |---|---|
 | 类型 | unit |
 | 前置条件 | fake Worker、typed-array drawable 模型 |
-| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；构造一个顶点变化和一个未变化的 drawable 并检查 mask dirty；模拟构造/发送异常、启动/单帧无响应及页面后台恢复；销毁后发送迟到 frame |
-| 期望结果 | ready 前同步回退；首个 Worker frame 仅预热且不改当前网格，第二帧从当前网格平滑接管；显示帧生成中间顶点与透明度，只有屏幕顶点变化的 drawable 保持 mask vertex-changed，最终插值绘制后下一帧清除该标志；render order 在目标中点有界切换且快速连续 frame 不会令上一代层级永久拖延；上一组 typed array 返回 Worker 池；可见页面异常/超时回退同步 Core，后台时间不误判且恢复后重置截止期；失败或销毁后忽略迟到结果并释放 Worker |
+| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；模拟构造/发送异常、启动/单帧无响应及页面后台恢复；销毁后发送迟到 frame |
+| 期望结果 | ready 前同步回退；首个 Worker frame 仅预热且不改当前网格，第二帧从当前网格平滑接管；显示帧生成中间顶点与透明度并保持 mask vertex-changed，render order 在目标中点有界切换且快速连续 frame 不会令上一代层级永久拖延；上一组 typed array 返回 Worker 池；可见页面异常/超时回退同步 Core，后台时间不误判且恢复后重置截止期；失败或销毁后忽略迟到结果并释放 Worker |
 | 自动化 | `test/android-web/live2dPerformance.test.js`（TC-AWB-027） |
 
 ## TC-AWB-028 Cubism Worker 求值协议
