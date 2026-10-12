@@ -166,11 +166,19 @@ flowchart TD
 
 - 统筹决策：采用官网 `character_bg.jpg` 宫殿夜景；素材不复制进仓库或默认发布包，真机通过现有系统选图 → `NativeFeatures` 私有目录导入，以保证离线持久化。设置页保留带来源链接的网络预设，加载失败时以 `#090b20` 回退色显示。
 - Android `08f3198`：主舞台、HUD、横屏面板、抽屉和设置页统一深蓝紫夜景、暖金/淡紫强调色。侧面板使用内部静态高斯预模糊装饰层，不对 Live2D 使用大型 `backdrop-filter`，因此不新增每帧人物离屏滤镜；未修改 `stage.js`、Live2D core、渲染优化器或人物动作逻辑。
-- Desktop：透明人物窗口保持透明；聊天、气泡、布局/口型/拖拽区浮层统一夜景视觉。聊天窗模型选择经 main process 精确 allowlist 调用现有 `GET /api/config/models`、`PUT /api/config/models/selection`、`POST /api/config/models/discover`；renderer 不接收 token/API key，错误在 main 截断并脱敏。
-- 自动验证：最终 Node `npm run test:ci` 664/664；Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
+- Desktop：透明人物窗口保持透明；聊天、气泡、布局/口型/拖拽区浮层统一夜景视觉。聊天窗模型选择经 main process 精确 allowlist 调用现有 `GET /api/config/models`、`PUT /api/config/models/selection`、`POST /api/config/models/discover`；请求体按操作投影，成功响应再次投影掉 `headers`、`extra_body`、`base_url`、`api_key_env` 等配置字段，错误和网络异常统一脱敏，renderer 不接收 token/API key。
+- 自动验证：候选分支 Node `npm run test:ci` 664/664；独立审查修复后隔离 `HOME`/`TMPDIR` 全量 Node 665/665。Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
 - 尚待验收：手机因电量耗尽关机，重启后由性能验收工作流安装 `1169fd3` 构建的最终 UI APK，确认设置页职责边界、背景持久化并恢复临时旋转设置。Desktop 启动、模型保存重开及成功/空/离线状态已完成。
 - 真机已通过系统 DocumentsUI 把官网 2400×1440 夜景复制到应用私有 `files/user/backgrounds/`；强停重启后背景保持。竖屏人物、横屏插件抽屉与设置页截图已留存；背景素材未进入发布包。
 - 用户明确手机是客户端：Android 已移除模型目录拉取、模型选择、Provider 与 Provider API key UI/调用。桌面继续提供模型选择和 Provider 列表拉取；ChatGPT 登录与模型资料也只在电脑端。
-- 本轮隔离分支提交顺序为 Android `08f3198`、Desktop `2958a90`、手机客户端职责调整 `1169fd3`、Desktop 首启竞态修复 `05eebd3`；音频文档 `251b1b2` 由统筹待合并。以上尚未等同主分支集成。
+- 本轮原候选提交顺序为 Android `08f3198`、Desktop `2958a90`、手机客户端职责调整 `1169fd3`、Desktop 首启竞态修复 `05eebd3`、验收记录 `7e99c43`；独立审查分支对应提交为 `74aae6e`、`03c1828`、`4c2401e`、`6150bf6`、`d367287`。审查发现并以 `8ad8b31` 修复 Desktop 模型 IPC 成功响应可暴露 Provider headers/extra_body 等字段的问题；音频证据与实时 TTS checkpoint `251b1b2` 对应集成提交为 `f344cc2`。
 - 性能候选 `48a574b` 在关机前采到 idle 54.12 FPS、swipe 52.18 FPS，A15 未达标。该样本临近用户确认的电量耗尽，只能说明本次验收未达到 60 FPS，不能单独用于判定交错 VBO 优化发生性能回退；人物抽动仍需最终融合包独立复验。
 - Desktop Electron 已连接隔离网关 `127.0.0.1:3002` 实测：首次打开直接加载 2 个模型/4 个 Provider；对当前模型执行保存后刷新 renderer，仍恢复同一 active ref。模型浮层截图为 `/tmp/ui-refresh-desktop-chat-models.png`。状态化本地网关自动覆盖 discover 成功、空列表、服务离线与保存后重开。实测同时发现并修复了 chat renderer 早于模型 IPC 注册的首次启动竞态。
+
+### UI 独立审查与主线集成（2026-10-13）
+
+- 代码与截图审查通过：Android 无模型、Provider 或 API key 入口；官网背景保留来源链接，系统选图会复制到 App 私有目录并由配置保存；横屏侧面板只模糊自己的静态伪元素，不对 Live2D 每帧做大面积 `backdrop-filter`；Desktop 首启 IPC 注册顺序、成功/空/离线及保存重开路径均有证据。
+- Desktop IPC 原候选只限制 method/path，但网关成功快照仍含 Provider `headers`、`extra_body`、`base_url`、`api_key_env`。审查修复后，选择请求仅允许 `active_model`/`enabled_models`，发现请求仅允许 Provider key；返回只保留模型展示字段和 Provider key/display name/凭据存在性布尔值。
+- UI 与音频文档批次已通过独立工作树验证，允许合入 `feature/android-companion`；最终手机安装、背景重启持久化和竖横屏观感仍由设备验收工作流通过 USB 执行，不能用历史截图替代本轮验收。
+- A15 仍未通过：最终 UI 包此前采样未达到 60 FPS，人物抽动也没有验收通过。用户最新报告空闲时人物持续张嘴且嘴形异常；最终 UI 包已复现静音后 `mouth form` 残留，此问题由独立口型修复工作流处理，未把任何 Worker/VBO/physics 候选并入本批次。
+- ChatGPT 认证/模型资料工作仍在独立计划分支，尚未审查合并。实时 TTS 仅完成设计 checkpoint；物理扬声器在系统音量 17/25、应用音量 1 下由用户确认正常，真实讲话 ASR→pi 回复仍未完成。

@@ -39,7 +39,7 @@
 | 7 | 任务画布 / 聊天气泡：订阅 `chat.delta`、`chat.final`、`task.update`；位置按配置 `task_canvas.position`（top/bottom/left/right/hidden）；文本输入框发送 `chat.input` |
 | 8 | 插件宿主 `js/pluginHost.js`：app 入口网格（左滑区域）、app 打开（在空出区域内全屏/半屏 iframe，可关闭），widget 网格（右滑区域，按 `widget_layout` 布局，可长按拖动调整并保存）；iframe `sandbox`（契约 C3.2）；postMessage 协议（C3.3）与权限校验（C3.1 permissions）；锁屏模式不加载插件 |
 | 9 | 插件 SDK `web/sdk/yachiyo-plugin-sdk.js`（契约 C3.4 全部 API）+ `docs/guides/PLUGIN_DEVELOPMENT_GUIDE.md`；示例插件：`sample-plugins/pomodoro`（app：番茄钟，结束时让八千代做动作，注册 `start_timer` 工具暴露给 agent）、`sample-plugins/clock-widget`（widget：时钟 + 订阅 `task.update` 显示当前任务） |
-| 10 | 配置界面 `settings.html`：服务器地址/端口/token（含连接测试与状态）、背景（颜色/选图）、模型画质、任务画布位置、麦克风模式、屏幕方向、插件管理（导入 `pickPluginPackage`、列表、启用、卸载）、默认桌面（状态 + 跳转设置）、锁屏人物开关；**模型配置**：读取 `GET http://<server>/api/config/models`（契约 C4.4），可切换 active 模型与启用模型（`PUT /api/config/models/selection`），离线时隐藏该区块 |
+| 10 | 配置界面 `settings.html`：服务器地址/端口/token（含连接测试与状态）、背景（颜色/选图）、模型画质、任务画布位置、麦克风模式、屏幕方向、插件管理（导入 `pickPluginPackage`、列表、启用、卸载）、默认桌面（状态 + 跳转设置）、锁屏人物开关。模型选择、Provider 与服务凭据只在电脑端管理，Android 不调用 `/api/config/models*` |
 | 11 | 锁屏模式（`?mode=lockscreen`）：仅人物 + 麦克风 + 语音 + 时间，无插件区与设置入口 |
 | 12 | Node 单测：手势状态机（阈值、速度吸附）、相机取景计算、主题通配匹配、SDK 消息校验与权限判断；`npm run test:ci` 需包含（文件放 `test/android-web/*.test.js`） |
 | 13 | 文档：`docs/features/FEAT-android-live2d-stage.md`、`FEAT-android-gesture-layout.md`、`FEAT-plugin-system.md`、`FEAT-android-settings.md`；`docs/testing/TC-android-web.md`（`TC-AWB-001…`，含真机手工用例）、`TC-plugin-system.md`（`TC-PLG-001…`）；实验文档第 6 节追加 App 内复测结果（如可测）；`npm run docs:index` |
@@ -76,3 +76,9 @@
 DocumentsUI 实测通过背景 PNG 复制/持久化和 `pomodoro.yplug` 覆盖安装（`installed_at` 更新）。锁屏页插件列表为空、iframe 为 0，插件 RPC 返回 -32006；锁屏 RPC 仅由 Lockscreen 接收，Main 未重复应答。WebGL vendor 为 Qualcomm、renderer 为 Adreno 540，确认使用硬件图形路径；Android 15 的 WebView UA 为 Chrome 153.0.8010.36。
 
 修复后完整 Node 测试 **644/644** 通过，Android 单测与 Debug APK 构建成功。性能专项优化版实测约 **22.56 FPS**，仍未达到 60 FPS，TC-AWB-025 保持未通过；锁屏 voice.play 单播仍待音频专项复测。
+
+### 2026-10-13 UI 职责调整与独立审查（codex-ui-review）
+
+Android 夜景 UI 与设置职责调整对应原提交 `08f3198`、`1169fd3`。手机设置已删除模型目录、模型选择、Provider 和 API key UI/调用，保留服务连接、设备外观与音频设置；模型配置集中在电脑端。官网夜景提供来源链接和在线预设，离线持久化继续使用系统选图复制到 `files/user/backgrounds/` 的既有链路。
+
+审查确认侧面板高斯效果只作用于内部静态伪元素，未修改 `stage.js`、Live2D core 或动作逻辑。隔离全量 Node 665/665、Android JDK17 单测与 Debug APK 构建通过。最终手机 USB 安装复验、60 FPS、人物抽动和静音后嘴形归零仍未通过；渲染/口型候选不属于本批次。
