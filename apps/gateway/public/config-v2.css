@@ -128,6 +128,11 @@ textarea.y-input { resize: vertical; line-height: 1.5; }
 .cv-quick { display: flex; flex-wrap: wrap; gap: var(--y-sp-2); }
 .cv-quick .y-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .cv-device { display: flex; align-items: center; gap: var(--y-sp-3); padding: var(--y-sp-2) 0; font-size: var(--y-fs-s); }
+.cv-overview-head { display: flex; align-items: center; justify-content: space-between; gap: var(--y-sp-5); }
+.cv-eyebrow { display: block; margin-bottom: var(--y-sp-2); color: var(--y-gold); font-size: var(--y-fs-xs); letter-spacing: 0.16em; }
+.cv-moon { display: grid; place-items: center; width: 68px; height: 68px; flex: 0 0 68px; border: 1px solid var(--y-gold-line); border-radius: 50%; color: var(--y-gold); font-size: 36px; box-shadow: var(--y-glow); background: var(--y-surface); }
+.cv-device-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--y-sp-4); }
+.cv-device-count { margin-right: var(--y-sp-2); color: var(--y-gold); font-size: 30px; font-weight: 500; }
 
 /* ---- 提示 ---- */
 .cv-toast {

@@ -1,8 +1,8 @@
 # 网关配置 WebUI
 
 > 类型: feature
-> 状态: draft
-> 负责人: sonnet-d2
+> 状态: done
+> 负责人: Codex (D2)
 > 更新: 2026-10-13
 > 关联: docs/features/FEAT-llm-model-config-v2.md, docs/plans/PLAN-desktop-companion-v2.md, docs/testing/TC-gateway-config-webui.md
 
@@ -16,11 +16,22 @@
 
 - **模型与路由**：服务商列表与编辑器（预设来自 `/api/config/models/presets`；API Key 为只写输入框，已设置时显示占位，留空保持不变，「清除已保存的密钥」勾选后发送 `clear_api_key:true`；发现模型、测试连接）；启用模型多选与默认模型单选；按用途（chat/vision/summary）分配；回退链；统一「保存选择」。含 headers/extra_body 的 provider 只提示“已保存，保留不变”，页面不显示其值。
 - **高级**：tools / skills / persona / voice-policy / desktop-live2d 原始编辑器、每个文件的版本历史（预览/恢复）、配置 Agent，全部默认折叠，展开时才加载。`providers.yaml` 无原始编辑入口（`/api/config/git/show` 对 providers.yaml 也返回脱敏内容）。
-- **概览 / 语音**：见后续章节。
+- **概览**：并行读取模型、语音和 Device Hub 状态，展示当前模型、TTS、ASR、在线设备数与角色位置，并提供模型、语音、高级配置快捷入口。
+- **语音**：分别列出 TTS / ASR provider 并切换 `voice.active_tts` / `voice.active_asr`。`tts_dashscope` 与 `tts_openai_compatible` 使用结构化表单；API Key 只写不读；TTS 可用已保存配置试听。桌面 `voice.path` / `voice.transport` 只读展示，不提供与运行时不一致的 realtime 开关。
 
 ## 3. 接口与协议
 
 访问控制：整个 `/api/config/**` 仅 `req.socket.remoteAddress` 为 `127.0.0.1` / `::1` / `::ffff:127.0.0.1` 时放行，其余 403；不信任 `X-Forwarded-For`，pairing token 不放行；Android appassets 来源不获得 `/api/config/**` 的 CORS 头。快照与 patch 语义见 FEAT-llm-model-config-v2 §3.3.1。
+
+| 方法 | 路径 | 行为 |
+|---|---|---|
+| GET | `/api/config/voice` | 返回运行时 `describeVoiceConfig` 的安全快照及只读桌面语音通路；无 API Key、headers、extra_body 值 |
+| PUT | `/api/config/voice/selection` | 增量设置 `active_tts?` / `active_asr?`，校验 provider 类型 |
+| PUT | `/api/config/voice/providers/:key` | 结构化 provider patch；缺省字段与空 `api_key` 保留，仅 `clear_api_key:true` 清除 |
+| DELETE | `/api/config/voice/providers/:key` | 删除语音 provider；若被 `voice.active_*` 引用则同时清除引用 |
+| POST | `/api/config/voice/test-tts` | `{key?,text}`；通过运行时 `createTtsClient({providerKey,fetchImpl})` 返回 `audio/*` |
+
+旧 `/config.html` 不再含写入口，只跳转到 `/config-v2.html`。概览读取 `/api/device/devices` 仅用于状态展示。
 
 ## 4. 配置项
 
@@ -29,7 +40,8 @@
 ## 5. 限制与已知问题
 
 - 局域网内的设备（含手机）不能再通过 `/api/config/**` 读取或修改配置；手机端模型选择若需要，须经 Device Hub 通道另行提供。
+- TTS 试听会调用所选 provider，但不会保存试听文本；页面不提供 ASR 录音测试。
 
 ## 6. 测试用例
 
-TC-CFG-001 ~ TC-CFG-007，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。

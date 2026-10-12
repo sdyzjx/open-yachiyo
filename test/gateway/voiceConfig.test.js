@@ -19,6 +19,9 @@ providers:
     type: tts_dashscope
     base_url: https://dash.example.invalid/api/v1
     api_key: sk-TTS-SECRET
+    api_key_env: TEST_DASHSCOPE_API_KEY
+    headers: { X-Voice-Secret: voice-header-secret }
+    extra_body: { private: voice-body-secret }
     tts_model: qwen3-tts-flash
     tts_voice: Cherry
   aliyun_asr:
@@ -28,7 +31,7 @@ providers:
     model: paraformer-v2
 `;
 
-async function setup(t, { fetchImpl, remoteAddress, desktopJson, voiceRuntime = null } = {}) {
+async function setup(t, { fetchImpl, remoteAddress, desktopJson, createTtsClientImpl } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-cfg-'));
   const configPath = path.join(dir, 'providers.yaml');
   fs.writeFileSync(configPath, YAML_TEXT);
@@ -42,7 +45,13 @@ async function setup(t, { fetchImpl, remoteAddress, desktopJson, voiceRuntime = 
   const app = express();
   app.use(express.json());
   app.use('/api/config', configLoopbackOnly);
-  app.use(createVoiceConfigRouter({ llmManager, commitConfigChange: (f) => commits.push(f), desktopLive2dConfigPath, fetchImpl, voiceRuntime }));
+  app.use(createVoiceConfigRouter({
+    llmManager,
+    commitConfigChange: (f) => commits.push(f),
+    desktopLive2dConfigPath,
+    fetchImpl,
+    ...(createTtsClientImpl ? { createTtsClientImpl } : {})
+  }));
   const server = http.createServer(app);
   if (remoteAddress) {
     server.prependListener('request', (req) => Object.defineProperty(req.socket, 'remoteAddress', { configurable: true, value: remoteAddress }));
@@ -70,10 +79,16 @@ test('TC-CFG-010 GET /api/config/voice returns redacted voice providers, active 
   assert.deepEqual(d.desktop, { path: 'runtime_legacy', transport: 'realtime' });
   assert.deepEqual(d.providers.map((p) => p.key).sort(), ['aliyun_asr', 'qwen_tts']);
   assert.equal(JSON.stringify(r.json).includes('SECRET'), false);
+  assert.equal(JSON.stringify(r.json).includes('voice-header-secret'), false);
+  assert.equal(JSON.stringify(r.json).includes('voice-body-secret'), false);
   const tts = d.providers.find((p) => p.key === 'qwen_tts');
   assert.equal(tts.has_api_key, true);
+  assert.equal(tts.has_custom_headers, true);
+  assert.equal(tts.has_extra_body, true);
+  assert.equal('headers' in tts, false);
+  assert.equal('extra_body' in tts, false);
   assert.equal(tts.tts_voice, 'Cherry');
-  assert.equal(tts.supports_realtime, true);
+  assert.equal(tts.supports_realtime, false);
   assert.equal(d.providers.find((p) => p.key === 'aliyun_asr').model, 'paraformer-v2');
 });
 
@@ -97,6 +112,8 @@ test('TC-CFG-012 voice provider PUT is a patch and DELETE cleans selection', asy
   assert.match(stored(), /tts_voice: Ethan/);
   assert.ok(stored().includes('sk-TTS-SECRET'));
   assert.ok(stored().includes('qwen3-tts-flash'));
+  assert.ok(stored().includes('voice-header-secret'));
+  assert.ok(stored().includes('voice-body-secret'));
   r = await f.call('PUT', '/api/config/voice/providers/aliyun_asr', { model: 'paraformer-v3' });
   assert.equal(r.status, 200);
   assert.equal(stored().includes('asr_model'), false);
@@ -137,20 +154,21 @@ test('TC-CFG-013 test-tts returns audio from a mocked provider and redacts failu
   assert.equal((await f.call('POST', '/api/config/voice/test-tts', { text: 'hi', key: 'aliyun_asr' })).status, 400);
 });
 
-test('TC-CFG-014 test-tts prefers the voice runtime (createTtsClient) when present', async (t) => {
-  let seenView = null;
-  const voiceRuntime = {
-    createTtsClient: ({ store }) => {
-      seenView = store.load();
-      return { synthesize: async ({ text }) => ({ buffer: Buffer.from(`audio:${text}`), mime: 'audio/mpeg' }) };
-    }
+test('TC-CFG-014 test-tts delegates to runtime createTtsClient with providerKey and fetchImpl', async (t) => {
+  let seen = null;
+  const createTtsClientImpl = (options) => {
+    seen = options;
+    return { synthesize: async ({ text }) => ({ buffer: Buffer.from(`audio:${text}`), mime: 'audio/mpeg' }) };
   };
-  const f = await setup(t, { voiceRuntime });
+  const fetchImpl = async () => { throw new Error('runtime client owns fetch'); };
+  const f = await setup(t, { createTtsClientImpl, fetchImpl });
   const r = await f.call('POST', '/api/config/voice/test-tts', { text: 'hello', key: 'qwen_tts' });
   assert.equal(r.status, 200);
   assert.equal(r.type, 'audio/mpeg');
   assert.equal(r.buf.toString(), 'audio:hello');
-  assert.equal(seenView.voice.active_tts, 'qwen_tts');
+  assert.equal(seen.providerKey, 'qwen_tts');
+  assert.equal(seen.fetchImpl, fetchImpl);
+  assert.equal(typeof seen.store.load, 'function');
 });
 
 test('TC-CFG-015 voice routes are loopback-only', async (t) => {
@@ -158,4 +176,6 @@ test('TC-CFG-015 voice routes are loopback-only', async (t) => {
   assert.equal((await f.call('GET', '/api/config/voice')).status, 403);
   assert.equal((await f.call('PUT', '/api/config/voice/selection', { active_tts: 'qwen_tts' })).status, 403);
   assert.equal((await f.call('POST', '/api/config/voice/test-tts', { text: 'x' })).status, 403);
+  assert.equal((await f.call('PUT', '/api/config/voice/providers/qwen_tts', { tts_voice: 'Ethan' })).status, 403);
+  assert.equal((await f.call('DELETE', '/api/config/voice/providers/qwen_tts')).status, 403);
 });

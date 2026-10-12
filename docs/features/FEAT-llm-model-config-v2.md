@@ -56,7 +56,7 @@
 
 ### 3.4 配置页
 
-`/config-v2.html`（重构见 FEAT-gateway-config-webui）的「模型与路由」页：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、headers/compat/extra_body JSON、发现模型、测试连接、保存/删除）。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。
+`/config-v2.html`（重构见 FEAT-gateway-config-webui）的「模型与路由」页：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、发现模型、测试连接、保存/删除）。安全快照不展示 headers/extra_body 内容，页面只提示这些隐藏字段存在且在 patch 保存时保留。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。概览页同时展示当前模型与已启用模型数量。
 
 ## 4. 配置项
 
@@ -70,4 +70,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制与脱敏 TC-CFG-001 ~ TC-CFG-005，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。

@@ -29,3 +29,12 @@ test('TC-CFG-007 legacy config.html only redirects; providers.yaml has no raw ed
   assert.doesNotMatch(advanced, /providers\/(raw|config)/);
   assert.doesNotMatch(advanced, /id: 'providers'/);
 });
+
+test('TC-CFG-016 overview loads model, voice and device status with quick links', () => {
+  const overview = read('config-v2-overview.js');
+  for (const endpoint of ['/api/config/models', '/api/config/voice', '/api/device/devices']) {
+    assert.match(overview, new RegExp(endpoint.replaceAll('/', '\\/')));
+  }
+  for (const page of ['#models', '#voice', '#advanced']) assert.match(overview, new RegExp(page));
+  for (const label of ['当前模型', '语音合成', '语音识别', '设备连接']) assert.match(overview, new RegExp(label));
+});

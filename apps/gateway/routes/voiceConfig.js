@@ -2,11 +2,8 @@
 // Mounted from apps/gateway/server.js; the whole /api/config/** tree is loopback-only
 // (configLoopbackOnly). Responses are `{ok, data}` and never contain api_key values.
 //
-// Runtime adapter: when workstream V's `apps/runtime/voice` exists it is preferred for
-// synthesis (createTtsClient / describeVoiceConfig); otherwise providers.yaml is read
-// directly and a minimal non-streaming client is used, so the routes work before and
-// after V merges.
 const express = require('express');
+const { createTtsClient, describeVoiceConfig } = require('../../runtime/voice');
 const { applyProviderPatch, isObject, safeProviderSnapshot } = require('./configSecurity');
 
 const TTS_TYPES = ['tts_dashscope', 'tts_openai_compatible'];
@@ -18,36 +15,17 @@ const PATCH_FIELDS = [
   'tts_realtime_model', 'tts_realtime_voice', 'model', 'format', 'api_key', 'clear_api_key'
 ];
 const MAX_TEST_TEXT = 300;
-const TEST_TIMEOUT_MS = 30000;
-
-function loadVoiceRuntime() {
-  try {
-    // eslint-disable-next-line global-require
-    return require('../../runtime/voice');
-  } catch (err) {
-    if (err && err.code === 'MODULE_NOT_FOUND' && /runtime\/voice/.test(String(err.message))) return null;
-    throw err;
-  }
-}
-
-function inferMime(url, fallback = 'audio/mpeg') {
-  const lower = String(url || '').toLowerCase();
-  if (lower.includes('.mp3')) return 'audio/mpeg';
-  if (lower.includes('.wav')) return 'audio/wav';
-  if (lower.includes('.ogg')) return 'audio/ogg';
-  return fallback;
-}
 
 function createVoiceConfigRouter({
   llmManager,
   commitConfigChange = () => {},
   desktopLive2dConfigPath = null,
   fetchImpl = (...args) => fetch(...args),
-  voiceRuntime = undefined // undefined: auto-detect; null: force legacy adapter; object: inject
+  createTtsClientImpl = createTtsClient,
+  describeVoiceConfigImpl = describeVoiceConfig
 }) {
   const router = express.Router();
   const store = llmManager.store;
-  const runtime = voiceRuntime === undefined ? loadVoiceRuntime() : voiceRuntime;
 
   const ok = (res, data) => res.json({ ok: true, data });
   const fail = (res, status, error) => {
@@ -61,21 +39,6 @@ function createVoiceConfigRouter({
   };
 
   const loadConfig = () => JSON.parse(JSON.stringify(store.load()));
-
-  function firstOfTypes(config, types) {
-    return Object.entries(config.providers || {}).find(([, p]) => isObject(p) && types.includes(p.type))?.[0] || null;
-  }
-
-  function resolveActive(config) {
-    const voice = isObject(config.voice) ? config.voice : {};
-    const valid = (key, types) => (key && isObject(config.providers[key]) && types.includes(config.providers[key].type) ? key : null);
-    return {
-      active_tts: valid(voice.active_tts, TTS_TYPES)
-        || valid(process.env.TTS_PROVIDER_KEY, TTS_TYPES)
-        || firstOfTypes(config, TTS_TYPES),
-      active_asr: valid(voice.active_asr, ASR_TYPES) || firstOfTypes(config, ASR_TYPES)
-    };
-  }
 
   function desktopVoice() {
     const fallback = { path: 'electron_native', transport: 'non_streaming' };
@@ -93,15 +56,18 @@ function createVoiceConfigRouter({
 
   function snapshot() {
     const config = store.load();
-    const active = resolveActive(config);
-    const providers = Object.entries(config.providers)
-      .filter(([, p]) => isObject(p) && VOICE_TYPES.includes(p.type))
-      .map(([key, p]) => ({
-        ...safeProviderSnapshot(key, p),
-        kind: TTS_TYPES.includes(p.type) ? 'tts' : 'asr',
-        supports_realtime: p.type === 'tts_dashscope'
-      }));
-    return { ...active, providers, desktop: desktopVoice(), runtime: runtime ? 'voice-module' : 'providers-yaml' };
+    const described = describeVoiceConfigImpl({ store });
+    const providers = described.providers.map((provider) => {
+      const safe = safeProviderSnapshot(provider.key, config.providers[provider.key]);
+      return {
+        ...provider,
+        preset: safe.preset,
+        requires_api_key: safe.requires_api_key,
+        has_custom_headers: safe.has_custom_headers,
+        has_extra_body: safe.has_extra_body
+      };
+    });
+    return { ...described, providers, desktop: desktopVoice() };
   }
 
   function saveConfig(config) {
@@ -185,85 +151,30 @@ function createVoiceConfigRouter({
     }
   });
 
-  // ---- synthesis for the 试听 button
-  function resolveApiKey(provider) {
-    if (typeof provider.api_key === 'string' && provider.api_key) return provider.api_key;
-    if (provider.api_key_env && process.env[provider.api_key_env]) return process.env[provider.api_key_env];
-    return '';
-  }
-
-  async function timedFetch(url, init) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
-    try {
-      return await fetchImpl(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  async function legacySynthesize(provider, text) {
-    const apiKey = resolveApiKey(provider);
-    if (!apiKey) throw new Error('该服务商缺少 API Key');
-    const base = String(provider.base_url || '').replace(/\/+$/, '');
-    if (provider.type === 'tts_openai_compatible') {
-      const response = await timedFetch(`${base}/audio/speech`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: provider.tts_model, voice: provider.tts_voice, input: text, response_format: provider.format || 'mp3'
-        })
-      });
-      if (!response.ok) throw new Error(`TTS 服务返回 HTTP ${response.status}`);
-      const mime = response.headers.get('content-type') || (provider.format === 'wav' ? 'audio/wav' : 'audio/mpeg');
-      return { buffer: Buffer.from(await response.arrayBuffer()), mime };
-    }
-    const response = await timedFetch(`${base || 'https://dashscope.aliyuncs.com/api/v1'}/services/aigc/multimodal-generation/generation`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: provider.tts_model, input: { text, voice: provider.tts_voice, language_type: 'Chinese' } })
-    });
-    const bodyText = await response.text();
-    if (!response.ok) throw new Error(`TTS 服务返回 HTTP ${response.status}`);
-    let body = null;
-    try { body = JSON.parse(bodyText); } catch { /* handled below */ }
-    const audioUrl = body?.output?.audio?.url || body?.output?.audio_url || '';
-    if (!/^https?:\/\//i.test(audioUrl)) throw new Error('TTS 响应缺少音频地址');
-    const audio = await timedFetch(audioUrl, {});
-    if (!audio.ok) throw new Error(`音频下载失败 HTTP ${audio.status}`);
-    return { buffer: Buffer.from(await audio.arrayBuffer()), mime: inferMime(audioUrl, 'audio/ogg') };
-  }
-
   router.post('/api/config/voice/test-tts', async (req, res) => {
     const body = req.body;
     if (!isObject(body)) return fail(res, 400, new Error('body must be an object'));
     const text = String(body.text || '').trim();
     if (!text) return fail(res, 400, new Error('text is required'));
     if (text.length > MAX_TEST_TEXT) return fail(res, 400, new Error(`text must be at most ${MAX_TEST_TEXT} characters`));
-    let config;
-    try { config = loadConfig(); } catch (err) { return fail(res, 500, err); }
-    const key = typeof body.key === 'string' && body.key ? body.key : resolveActive(config).active_tts;
-    const provider = key ? config.providers[key] : null;
-    if (!isObject(provider) || !TTS_TYPES.includes(provider.type)) {
-      return fail(res, 400, new Error('没有可用的 TTS 服务商'));
+    const key = typeof body.key === 'string' && body.key ? body.key : undefined;
+    if (key) {
+      try {
+        const provider = store.load().providers[key];
+        if (!isObject(provider) || !TTS_TYPES.includes(provider.type)) {
+          return fail(res, 400, new Error('key must reference a TTS provider'));
+        }
+      } catch (err) {
+        return fail(res, 500, err);
+      }
     }
     try {
-      let result;
-      if (runtime && typeof runtime.createTtsClient === 'function') {
-        // Present the requested provider as the active one without touching the file.
-        const view = { load: () => ({ ...config, voice: { ...(config.voice || {}), active_tts: key } }) };
-        result = await runtime.createTtsClient({ store: view, fetchImpl }).synthesize({ text });
-      } else {
-        result = await legacySynthesize(provider, text);
-      }
+      const result = await createTtsClientImpl({ store, providerKey: key, fetchImpl }).synthesize({ text });
       if (!result || !result.buffer || !result.buffer.length) throw new Error('TTS 未返回音频');
       res.set({ 'Content-Type': result.mime || 'audio/mpeg', 'Cache-Control': 'no-store' });
       return res.send(Buffer.from(result.buffer));
     } catch (err) {
-      const apiKey = resolveApiKey(provider);
-      let message = err?.name === 'AbortError' ? 'TTS 请求超时' : String(err.message || err).split('\n')[0];
-      if (apiKey) message = message.split(apiKey).join('***');
-      return fail(res, 502, new Error(message));
+      return fail(res, 502, err);
     }
   });
 
