@@ -26,6 +26,7 @@
   const modelDiscoveryResultsElement = document.getElementById('model-discovery-results');
   const MAX_UPLOAD_IMAGES = 4;
   const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
+  const MAX_COMPOSER_HEIGHT = 142;
   const COMPACT_CHAT_WIDTH = 520;
 
   const state = {
@@ -91,7 +92,7 @@
       modelActiveElement.append(option);
     }
     const active = snapshot.models.find((model) => model.ref === snapshot.active);
-    modelActiveElement.title = active ? `当前模型：${active.ref}` : '选择对话模型';
+    modelActiveElement.title = active ? `当前模型：${modelLabel(active)}` : '选择对话模型';
     setModelControlsDisabled(false);
   }
 
@@ -287,6 +288,50 @@
     }
   }
 
+  function resizeComposerInput() {
+    if (!chatInputElement) return;
+    chatInputElement.style.height = 'auto';
+    const nextHeight = Math.min(MAX_COMPOSER_HEIGHT, chatInputElement.scrollHeight);
+    chatInputElement.style.height = `${nextHeight}px`;
+    chatInputElement.style.overflowY = chatInputElement.scrollHeight > MAX_COMPOSER_HEIGHT ? 'auto' : 'hidden';
+  }
+
+  function formatMessageTime(timestamp) {
+    const date = new Date(Number(timestamp));
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(date);
+  }
+
+  function createMessageFrame(role, timestamp) {
+    const normalizedRole = normalizeRole(role);
+    const row = document.createElement('div');
+    row.className = `chat-message-row ${normalizedRole}`;
+    if (normalizedRole === 'assistant') {
+      const avatar = document.createElement('span');
+      avatar.className = 'chat-message-avatar';
+      avatar.textContent = '八';
+      avatar.setAttribute('aria-hidden', 'true');
+      row.appendChild(avatar);
+    }
+    const bubble = document.createElement('div');
+    bubble.className = `chat-message ${normalizedRole}`;
+    row.appendChild(bubble);
+    const timeText = formatMessageTime(timestamp);
+    let time = null;
+    if (timeText) {
+      time = document.createElement('time');
+      time.className = 'chat-message-time';
+      time.dateTime = new Date(Number(timestamp)).toISOString();
+      time.textContent = timeText;
+      bubble.appendChild(time);
+    }
+    return { row, bubble, time };
+  }
+
   function clearStreamingPreviewNode() {
     const { previewNode } = state.stream;
     if (previewNode && previewNode.parentNode) {
@@ -317,11 +362,11 @@
     if (state.stream.previewBody && state.stream.previewBody.isConnected) {
       return state.stream.previewBody;
     }
-    const node = document.createElement('div');
-    node.className = 'chat-message assistant streaming';
+    const { row: node, bubble } = createMessageFrame('assistant', Date.now());
+    bubble.classList.add('streaming');
     const body = document.createElement('div');
     body.className = 'chat-streaming-body';
-    node.appendChild(body);
+    bubble.prepend(body);
     messagesElement.appendChild(node);
     state.stream.previewNode = node;
     state.stream.previewBody = body;
@@ -481,7 +526,7 @@
           <div class="chat-upload-name">${escapeHtml(upload.name)}</div>
           <div class="chat-upload-size">${escapeHtml(upload.mimeType)} · ${escapeHtml(formatBytes(upload.sizeBytes))}</div>
         </div>
-        <button class="chat-upload-remove" type="button" data-upload-id="${escapeHtml(upload.id)}">Remove</button>
+        <button class="chat-upload-remove" type="button" data-upload-id="${escapeHtml(upload.id)}" aria-label="移除图片">移除</button>
       `;
       chatUploadPreviewElement.appendChild(item);
     }
@@ -761,8 +806,7 @@
     messagesElement.innerHTML = '';
     const fragment = document.createDocumentFragment();
     for (const message of state.messages) {
-      const node = document.createElement('div');
-      node.className = `chat-message ${normalizeRole(message.role)}`;
+      const { row, bubble: node, time } = createMessageFrame(message.role, message.timestamp);
 
       let content = String(message.text || '');
 
@@ -778,8 +822,9 @@
       if (Array.isArray(message.images) && message.images.length > 0) {
         node.appendChild(buildMessageImages(message.images));
       }
+      if (time) node.appendChild(time);
 
-      fragment.appendChild(node);
+      fragment.appendChild(row);
     }
     messagesElement.appendChild(fragment);
 
@@ -791,7 +836,9 @@
 
   function renderShellState(next) {
     if (next && typeof next === 'object') state.shell = next;
-    if (presenceLabelElement) presenceLabelElement.textContent = state.shell.statusLabel || '在电脑上';
+    if (presenceLabelElement) {
+      presenceLabelElement.textContent = String(state.shell.statusLabel || '在电脑上').replace(/^八千代/, '').trim();
+    }
     const view = window.DesktopChatState?.resolveTransferView?.(state.shell, state.selectedTransferTarget) || {
       disabled: true, label: '送到手机', reason: '状态同步中', phones: []
     };
@@ -805,6 +852,8 @@
     if (transferStatusElement) transferStatusElement.textContent = view.reason || '';
     if (transferSelectElement) {
       transferSelectElement.hidden = !view.requiresSelection;
+      transferSelectElement.disabled = Boolean(view.pending);
+      transferSelectElement.title = view.requiresSelection ? (view.reason || '选择要接收八千代的手机') : '';
       if (view.requiresSelection) {
         const stillOnline = view.phones.some((phone) => phone.device_id === state.selectedTransferTarget);
         if (!stillOnline) state.selectedTransferTarget = '';
@@ -869,6 +918,7 @@
     if (chatInputElement) {
       chatInputElement.value = '';
       chatInputElement.focus();
+      resizeComposerInput();
     }
     clearPendingUploads();
     updateComposerState();
@@ -929,10 +979,7 @@
     });
   });
   chatInputElement?.addEventListener('input', () => {
-    chatInputElement.style.height = 'auto';
-    const nextHeight = Math.min(132, chatInputElement.scrollHeight);
-    chatInputElement.style.height = `${nextHeight}px`;
-    chatInputElement.style.overflowY = chatInputElement.scrollHeight > 132 ? 'auto' : 'hidden';
+    resizeComposerInput();
     updateComposerState();
   });
   chatInputElement?.addEventListener('compositionstart', () => {
@@ -1015,6 +1062,7 @@
     });
   }
   updateComposerState();
+  resizeComposerInput();
   renderUploadPreview();
   renderShellState(state.shell);
   Promise.resolve(bridge?.getShellState?.()).then((next) => renderShellState(next)).catch((err) => {

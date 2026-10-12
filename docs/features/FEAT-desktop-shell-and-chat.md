@@ -32,9 +32,11 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 
 ### Desktop Chat
 
-- 顶栏仅列出已启用模型，选择后立即保存；手机迁移按钮依在线设备显示单目标或多目标选择，离线、不可迁移和 pending 均给出中文原因。
+- 顶栏分为标题行和 32 px 操作行：模型选择器占据左侧弹性空间并以原生 tooltip 展示完整模型名；右侧迁移、新对话、设置控件保持 8 px 间距，在 360 px 最小宽度下不换行。
+- 手机迁移按钮依在线设备显示单目标或多目标选择；离线、不可迁移和 pending 时按钮禁用，原因通过原生 `title` 与无障碍状态播报，不覆盖消息区。
 - 「新对话」调用现有 `/new` 会话切换，「设置」打开设置窗。输入框支持多行，Enter 发送、Shift+Enter 换行，可选择或粘贴最多 4 张图片。
-- 消息区渲染 Markdown、Mermaid 和图片缩略图；在底部时跟随流式输出，用户上滑阅读后停止强制滚动。
+- 输入框占位文案为「对八千代说点什么…」，随内容自动增长至 6 行；空内容时发送按钮保持清晰的禁用态，有内容时使用主题主按钮渐变。
+- 消息区渲染 Markdown、Mermaid 和图片缩略图；八千代消息左侧带金色描边小头像，用户消息右对齐，气泡最大宽度 78%，时间戳在 hover/focus 时显示；在底部时跟随流式输出，用户上滑阅读后停止强制滚动。
 
 ### 设置与气泡
 
@@ -58,4 +60,4 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 
 ## 测试用例
 
-TC-DSK-001 ～ TC-DSK-008、TC-DSK-010 ～ TC-DSK-016、TC-DSK-020 ～ TC-DSK-025，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。
+TC-DSK-001 ～ TC-DSK-008、TC-DSK-010 ～ TC-DSK-025，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。

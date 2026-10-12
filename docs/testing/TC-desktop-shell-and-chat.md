@@ -32,6 +32,9 @@
 | TC-DSK-014 | 中文顶栏与多行图片输入 | unit | Chat HTML/JS | 静态检查文案、textarea、键盘分支和 file input | 无 Send/Type message 混杂，按钮不换行，Enter/Shift+Enter 符合规格 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-014 |
 | TC-DSK-015 | 消息滚动跟随 | unit | 用户在底部或已上滑 | 计算距底距离 | 仅近底部时自动滚动 | `test/desktop-live2d/desktopChatState.test.js` / TC-DSK-015 |
 | TC-DSK-016 | 长气泡截断与 Chat 入口 | unit | >180 Unicode 字符 | 生成气泡展示数据 | 文本截断且标记需显示「在聊天中查看」 | `test/desktop-live2d/bubblePresentation.test.js` / TC-DSK-016 |
+| TC-DSK-017 | 顶栏双行与迁移原因不遮挡 | unit / e2e | Desktop Chat 420×640、无手机在线 | 检查标题行、操作行、模型 tooltip 与迁移禁用态；用 CDP 截图 | 模型控件获得弹性宽度；控件统一 32 px/8 px；迁移原因仅由原生 tooltip/无障碍状态承载 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-017；CDP 截图 |
+| TC-DSK-018 | 输入框自增高与发送状态 | unit / e2e | 空输入及 1～7 行输入 | 输入多行文字并观察附件、输入框、发送按钮 | 占位文案精简；输入框最多增长 6 行；两侧按钮垂直居中；空/有内容按钮状态清晰 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-018；CDP 截图 |
+| TC-DSK-019 | 消息气泡身份与最小窗口布局 | unit / e2e | 同时存在八千代/用户消息；窗口 360×480 | hover 消息并缩放到最小尺寸 | 八千代头像金色描边、用户右对齐、气泡 ≤78%、时间戳按需显示；全部控件无溢出或换行 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-019；CDP 截图 |
 
 ## Hub 客户端状态（020–029）
 
