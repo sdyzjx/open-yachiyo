@@ -385,7 +385,6 @@ function createOmniAudioService({
         }).catch((error) => finish(error));
       } else if (event.type === 'session.updated' && !ready) {
         ready = true;
-        void sessionStore?.appendMessage?.(sessionId, { role: 'user', content: text, trace_id: traceId, metadata: { input_type: 'text', model_ref: modelRef } });
         send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
         send({ type: 'response.create' });
       } else if (event.type === 'response.text.delta') {
@@ -402,7 +401,6 @@ function createOmniAudioService({
         responseDone = true;
         if (Array.isArray(event.response?.output) && event.response.output.some((item) => item?.type === 'function_call')) responseHadTools = true;
         if (responseHadTools) { continueAfterTools(); return; }
-        void sessionStore?.appendMessage?.(sessionId, { role: 'assistant', content: output, trace_id: traceId, metadata: { output_type: 'text', model_ref: modelRef } });
         finish();
       }
     });

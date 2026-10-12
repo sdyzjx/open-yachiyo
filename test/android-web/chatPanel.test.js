@@ -77,6 +77,21 @@ test('landscape agent and user lanes scroll and pin independently', () => {
   assert.equal(canvas.userStuck, true);
 });
 
+test('assistant bubbles are trace-aware and duplicate final events are idempotent', () => {
+  const { api } = load();
+  const root = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root });
+  const bubbles = canvas.mergedScrollEl.children[0];
+  canvas.delta('甲', { trace_id: 'trace-a' });
+  canvas.delta('乙', { trace_id: 'trace-b' });
+  canvas.delta('一', { trace_id: 'trace-a' });
+  canvas.final('甲一', { trace_id: 'trace-a' });
+  canvas.final('甲一', { trace_id: 'trace-a' });
+  canvas.delta('二', { trace_id: 'trace-b' });
+  canvas.final('乙二', { trace_id: 'trace-b' });
+  assert.deepEqual(bubbles.children.map((node) => node.textContent), ['甲一', '乙二']);
+});
+
 test('chat panel is a bounded scroller that does not feed the stage swipe gestures', () => {
   const css = read('css/app.css');
   assert.match(css, /\.chat-scroll\s*\{[^}]*overflow-y:\s*auto/s);

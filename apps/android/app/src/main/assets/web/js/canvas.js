@@ -42,10 +42,20 @@
 
     const groups = [];
     let liveCount = 0;
-    let assistant = null;
-    let assistantText = '';
+    const assistants = new Map();
+    const completedTraces = new Set();
     let fadeTimer = null;
     const taskEls = new Map();
+
+    function traceKey(meta) {
+      return meta && typeof meta.trace_id === 'string' && meta.trace_id ? meta.trace_id : '__default__';
+    }
+
+    function rememberCompleted(key) {
+      if (key === '__default__') return;
+      completedTraces.add(key);
+      while (completedTraces.size > 128) completedTraces.delete(completedTraces.values().next().value);
+    }
 
     function refreshVisibility() {
       const has = liveCount > 0;
@@ -91,33 +101,41 @@
     function showUser(text) {
       if (!text) return;
       const group = makeBubble('user', text);
-      assistant = null;
-      assistantText = '';
       refreshVisibility();
       pin(userView, true);
       pin(mergedView, true);
       setTimeout(() => fade(group), 12000);
     }
 
-    function delta(text) {
+    function delta(text, meta) {
       if (!text) return;
       clearTimeout(fadeTimer);
-      if (!assistant) { assistant = makeBubble('assistant', ''); assistantText = ''; }
-      assistantText += text;
-      for (const { node } of assistant.nodes) node.textContent = assistantText;
+      const key = traceKey(meta);
+      if (completedTraces.has(key)) return;
+      let state = assistants.get(key);
+      if (!state) {
+        state = { group: makeBubble('assistant', ''), text: '' };
+        assistants.set(key, state);
+      }
+      state.text += text;
+      for (const { node } of state.group.nodes) node.textContent = state.text;
       refreshVisibility();
       pin(agentView);
       pin(mergedView);
     }
 
-    function final(text) {
+    function final(text, meta) {
+      const key = traceKey(meta);
+      if (completedTraces.has(key)) return;
+      let state = assistants.get(key);
       if (text) {
-        if (!assistant) assistant = makeBubble('assistant', '');
-        for (const { node } of assistant.nodes) node.textContent = String(text);
+        if (!state) state = { group: makeBubble('assistant', ''), text: '' };
+        state.text = String(text);
+        for (const { node } of state.group.nodes) node.textContent = state.text;
       }
-      const group = assistant;
-      assistant = null;
-      assistantText = '';
+      const group = state && state.group;
+      assistants.delete(key);
+      rememberCompleted(key);
       refreshVisibility();
       pin(agentView);
       pin(mergedView);

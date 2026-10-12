@@ -886,8 +886,8 @@
     updateChatLayout();
     voice = window.YachiyoVoice.createVoice({ bridge: B, lipsync, getConfig: () => cfg, log });
 
-    B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta));
-    B.subscribe('chat.final', (d) => taskCanvasApi.final(d && d.output));
+    B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta, d));
+    B.subscribe('chat.final', (d) => taskCanvasApi.final(d && d.output, d));
     B.subscribe('task.update', (d) => taskCanvasApi.updateTask(d));
     B.subscribe('audio.input.transcript', (d) => {
       if (d && d.final && d.text) taskCanvasApi.showUser(d.text);

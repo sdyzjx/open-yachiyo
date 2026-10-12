@@ -408,6 +408,16 @@
 | 期望结果 | 双列内侧距完整模型 bounds 约 16 px，消息不覆盖头发、袖子或身体，单列不超过 420 px且宽屏额外空间留在外侧；任一侧栏终态齿轮均在面板内容外，右侧插件栏展开过程中齿轮与面板同步移动 |
 | 自动化 | `test/android-web/layout.test.js`（full model bounds / lane max width / settings shift）+ manual-device |
 
+## TC-AWB-041 Realtime 对话 trace 隔离与最终事件幂等
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 可注入带不同 `trace_id` 的 `chat.delta/chat.final`；Realtime 模型可用 |
+| 步骤 | 交错发送两个 trace 的增量；对其中一个 trace 连续发送两次相同 final；再完成另一个 trace |
+| 期望结果 | 两个回答分别形成完整气泡且内容不交错；重复 final 不创建第二张气泡；后续新 trace 仍正常显示 |
+| 自动化 | `test/android-web/chatPanel.test.js`（assistant bubbles are trace-aware and duplicate final events are idempotent）+ manual-device |
+
 ## TC-AND-053 手机聊天模型选择与音频模式
 
 | 字段 | 内容 |
