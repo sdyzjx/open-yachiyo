@@ -17,6 +17,7 @@
 
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
+- [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub.md)
 
 ## 指南 Guides
 
@@ -123,6 +124,7 @@
 
 测试策略与用例集（TC-*）。
 
+- [Device Hub 测试用例](testing/TC-device-hub.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 

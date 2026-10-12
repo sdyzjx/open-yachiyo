@@ -1,6 +1,3 @@
-// Device Hub entry — contracts C1 and C5 in docs/plans/PLAN-android-companion-contracts.md.
-// Placeholder until WS3 lands: getDeviceHub() returns a hub with no devices so that
-// consumers (agent core, live2d adapter) can code against the final interface.
 const { EventEmitter } = require('node:events');
 
 class NullDeviceHub extends EventEmitter {
@@ -41,4 +38,27 @@ function setDeviceHub(hub) {
   return activeHub;
 }
 
-module.exports = { getDeviceHub, setDeviceHub, NullDeviceHub };
+function attachDeviceHub({ server, app, wss, config, ...options }) {
+  const { loadConfig } = require('./config');
+  const { DeviceHub } = require('./hub');
+  const { attachHttpRoutes } = require('./httpRoutes');
+  const settings = config || loadConfig();
+  const hub = setDeviceHub(new DeviceHub(settings));
+  const upgrade = (req, socket, head) => {
+    let pathname;
+    try { pathname = new URL(req.url, 'http://localhost').pathname; } catch { socket.destroy(); return; }
+    const target = pathname === '/ws/device' ? hub.wss : pathname === '/ws' ? wss : null;
+    if (!target) { socket.destroy(); return; }
+    target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
+  };
+  server.on('upgrade', upgrade);
+  attachHttpRoutes({ app, server, hub, ...options });
+  server.once('close', () => {
+    hub.close();
+    server.off('upgrade', upgrade);
+    if (getDeviceHub() === hub) setDeviceHub(null);
+  });
+  return hub;
+}
+
+module.exports = { getDeviceHub, setDeviceHub, NullDeviceHub, attachDeviceHub };
