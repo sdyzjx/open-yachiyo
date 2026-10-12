@@ -51,23 +51,103 @@ test('TC-VOC-025 realtime Omni relays text/audio deltas to one device', async ()
   const descriptor = {
     ref: 'qwen/rt', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime', input: ['text', 'audio'],
     output: ['text', 'audio'], transport: 'realtime', api_key: 'secret', headers: {},
+    realtime_output: 'native', realtime_voice: 'qwen-omni-vc-yachiyo-test',
     base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
   };
   const service = createOmniAudioService({ hub, llmManager: manager(descriptor), WebSocketImpl: FakeWs, timeoutMs: 1000 });
   const stream = service.startRealtime({ device: { device_id: 'phone' }, streamId: 'mic', modelRef: descriptor.ref });
   const ws = FakeWs.instance;
   ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  assert.equal(ws.sent[0].session.audio.output.voice, 'qwen-omni-vc-yachiyo-test');
   ws.emit('message', JSON.stringify({ type: 'session.updated' }));
   stream.append('AQI=');
   const finishing = stream.finish();
+  ws.emit('message', JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', transcript: '你好' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
   ws.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '你好' }));
   ws.emit('message', JSON.stringify({ type: 'response.audio.delta', delta: 'AwQ=' }));
   ws.emit('message', JSON.stringify({ type: 'response.done' }));
-  assert.deepEqual(await finishing, { text: '', output: '你好' });
-  assert.deepEqual(ws.sent.slice(-3).map((event) => event.type), ['input_audio_buffer.append', 'input_audio_buffer.commit', 'response.create']);
+  assert.deepEqual(await finishing, { text: '你好', output: '你好', route: 'native' });
+  assert.deepEqual(ws.sent.slice(-4).map((event) => event.type), ['input_audio_buffer.append', 'input_audio_buffer.commit', 'session.update', 'response.create']);
   assert.ok(published.some((event) => event.topic === 'chat.delta'));
   assert.ok(published.some((event) => event.topic === 'voice.stream.chunk'));
   assert.ok(published.some((event) => event.topic === 'voice.stream.end'));
+});
+
+test('TC-VOC-027 realtime Omni executes tools while text and cloned audio remain independent', async () => {
+  class FakeWs extends EventEmitter {
+    constructor() { super(); this.sent = []; FakeWs.instance = this; }
+    send(raw) { this.sent.push(JSON.parse(raw)); }
+    close() {}
+  }
+  const published = [];
+  const busEvents = [];
+  const hub = { publish: (topic, data) => published.push({ topic, data }) };
+  const bus = { publish: (topic, data) => busEvents.push({ topic, data }) };
+  let releaseTool;
+  const executor = {
+    listTools: () => [
+      { name: 'desktop.capture.screen', description: 'Capture screen', input_schema: { type: 'object', properties: {} } },
+      { name: 'voice.tts_aliyun_vc', description: 'Speak twice', input_schema: { type: 'object', properties: {} } }
+    ],
+    execute: async (call, context) => {
+      await new Promise((resolve) => { releaseTool = resolve; });
+      assert.equal(call.name, 'desktop.capture.screen');
+      assert.equal(context.permission_level, 'high');
+      return { ok: true, result: '{"capture_id":"screen-1"}' };
+    }
+  };
+  const stored = [];
+  const sessionStore = {
+    getSession: async () => ({ messages: [{ role: 'assistant', content: '上次内容' }] }),
+    getSessionSettings: async () => ({ permission_level: 'high', workspace: { root_dir: '/tmp' } }),
+    appendMessage: async (_id, message) => stored.push(message)
+  };
+  const descriptor = {
+    ref: 'qwen/rt', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime', input: ['text', 'audio'],
+    output: ['text', 'audio'], transport: 'realtime', api_key: 'secret', headers: {},
+    realtime_output: 'native', realtime_voice: 'qwen-omni-vc-yachiyo-test',
+    base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
+  };
+  const service = createOmniAudioService({
+    hub, bus, executor, sessionStore,
+    resolvePersonaContext: async () => ({ prompt: 'Yachiyo persona' }),
+    resolveSkillsContext: async () => ({ prompt: 'Selected skill' }),
+    llmManager: manager(descriptor), WebSocketImpl: FakeWs, timeoutMs: 1000
+  });
+  const stream = service.startRealtime({ device: { device_id: 'phone' }, streamId: 'mic', modelRef: descriptor.ref });
+  const ws = FakeWs.instance;
+  ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  assert.deepEqual(ws.sent[0].session.modalities, ['text', 'audio']);
+  assert.equal(ws.sent[0].session.audio.output.voice, 'qwen-omni-vc-yachiyo-test');
+  assert.deepEqual(ws.sent[0].session.tools.map((tool) => tool.function.name), ['desktop__capture__screen']);
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  const finishing = stream.finish();
+  ws.emit('message', JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', transcript: '打开电脑设置' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(ws.sent.at(-1).session.instructions, /Yachiyo persona/);
+  assert.match(ws.sent.at(-1).session.instructions, /Selected skill/);
+  assert.match(ws.sent.at(-1).session.instructions, /上次内容/);
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  ws.emit('message', JSON.stringify({ type: 'response.function_call_arguments.done', call_id: 'call-1', name: 'desktop__capture__screen', arguments: '{}' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done', response: { output: [{ type: 'function_call' }] } }));
+  assert.equal(ws.sent.filter((event) => event.type === 'response.create').length, 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseTool();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ws.sent.filter((event) => event.type === 'conversation.item.create' && event.item.type === 'function_call_output').length, 1);
+  assert.equal(ws.sent.filter((event) => event.type === 'response.create').length, 2);
+  ws.emit('message', JSON.stringify({ type: 'response.created' }));
+  ws.emit('message', JSON.stringify({ type: 'response.audio.delta', delta: 'AwQ=' }));
+  ws.emit('message', JSON.stringify({ type: 'response.audio_transcript.delta', delta: '已经打开' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done', response: { output: [{ type: 'message' }] } }));
+  assert.deepEqual(await finishing, { text: '打开电脑设置', output: '已经打开', route: 'native' });
+  assert.ok(published.some(({ topic }) => topic === 'voice.stream.chunk'));
+  assert.ok(published.some(({ topic, data }) => topic === 'chat.delta' && data.channel === 'audio_transcript'));
+  assert.ok(busEvents.some(({ topic }) => topic === 'tool_call.started'));
+  assert.ok(busEvents.some(({ topic }) => topic === 'tool_call.completed'));
+  assert.equal(stored[0].role, 'user');
 });
 
 test('TC-LLM-041 realtime model accepts keyboard text over its WebSocket transport', async () => {

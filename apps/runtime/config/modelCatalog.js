@@ -43,6 +43,8 @@ function toDescriptor(providerKey, provider, model = {}, {
     input: Array.isArray(model.input) ? model.input : ['text'],
     output: Array.isArray(model.output) ? model.output : ['text'],
     transport: String(model.transport || 'request'),
+    realtime_output: String(model.realtime_output || 'tts'),
+    realtime_voice: String(model.realtime_voice || ''),
     audio: model.audio && typeof model.audio === 'object' && !Array.isArray(model.audio)
       ? { ...model.audio }
       : null,

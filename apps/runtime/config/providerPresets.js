@@ -60,6 +60,8 @@ const PRESETS = [
         input: ['text', 'audio', 'video'],
         output: ['text', 'audio'],
         transport: 'realtime',
+        realtime_output: 'native',
+        realtime_voice: 'Tina',
         audio: { mode: 'realtime', input_format: 'pcm_s16le', input_sample_rate: 16000, output_format: 'pcm_s16le', output_sample_rate: 24000 }
       },
       { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', context_window: 131072, max_tokens: 8192, input: ['text', 'image'] },

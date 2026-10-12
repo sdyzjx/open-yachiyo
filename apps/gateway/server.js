@@ -1124,7 +1124,11 @@ const server = app.listen(port, host, () => {
 const discovery = attachGatewayDiscovery({ server });
 
 const wss = new WebSocketServer({ noServer: true });
-const deviceHub = require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, llmManager, config: deviceHubConfig });
+const deviceHub = require('./deviceHub').attachDeviceHub({
+  server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, llmManager, config: deviceHubConfig,
+  resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
+  resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input })
+});
 
 let shutdownPromise = null;
 function shutdownGateway() {

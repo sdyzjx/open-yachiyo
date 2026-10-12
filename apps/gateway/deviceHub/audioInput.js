@@ -88,7 +88,8 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
           }
           if (!stream.bytes) throw fault(-32602, 'Empty recording');
           if (stream.audio_mode === 'realtime') {
-            await stream.realtime.finish();
+            busy.add(device);
+            try { await stream.realtime.finish(); } finally { busy.delete(device); }
             return;
           }
           const wav = pcmToWav(Buffer.concat(stream.chunks));

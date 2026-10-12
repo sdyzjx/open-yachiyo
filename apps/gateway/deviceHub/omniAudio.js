@@ -1,5 +1,9 @@
 const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
+const { allocateToolName } = require('../../runtime/agent-pi/toolBridge');
+const { buildRecentContextMessages } = require('../../runtime/session/contextBuilder');
+
+const REALTIME_TTS_TOOL = 'voice.tts_aliyun_vc';
 
 function contentText(payload) {
   const content = payload?.choices?.[0]?.message?.content;
@@ -34,7 +38,52 @@ function realtimeUrl(descriptor) {
   return base.toString();
 }
 
-function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetch(...args), WebSocketImpl = WebSocket, timeoutMs = 120000 }) {
+function buildRealtimeTools(executor) {
+  const names = new Map();
+  const tools = [];
+  for (const definition of executor?.listTools?.() || []) {
+    if (!definition?.name || definition.name === REALTIME_TTS_TOOL) continue;
+    const onlineName = allocateToolName(definition.name, names);
+    tools.push({
+      type: 'function',
+      function: {
+        name: onlineName,
+        description: definition.description || definition.name,
+        parameters: definition.input_schema || { type: 'object', properties: {}, additionalProperties: true }
+      }
+    });
+  }
+  return { tools, names };
+}
+
+function baseRealtimeInstructions() {
+  return [
+    'You are Yachiyo, a realtime voice agent running on the user\'s own computer.',
+    'Reply naturally and concisely in the user\'s language.',
+    'Use registered tools whenever the request needs computer access, current local state, or an external action.',
+    'Tool calls, visible text, and native audio are independent channels. A tool call never replaces the final answer.',
+    'After receiving tool output, continue the same answer using the result.',
+    'Native realtime audio already uses Yachiyo\'s cloned voice. Never request a second TTS playback.'
+  ].join(' ');
+}
+
+function historyPrompt(messages) {
+  if (!messages.length) return '';
+  return `Recent conversation:\n${messages.map((message) => `${message.role}: ${message.content}`).join('\n')}`;
+}
+
+function createOmniAudioService({
+  hub,
+  llmManager,
+  executor = null,
+  bus = null,
+  sessionStore = null,
+  resolvePersonaContext = null,
+  resolveSkillsContext = null,
+  fetchImpl = (...args) => fetch(...args),
+  WebSocketImpl = WebSocket,
+  timeoutMs = 120000
+}) {
   const resolve = (modelRef, mode) => {
     const descriptor = llmManager.getCatalog().resolve(modelRef);
     if (!descriptor) throw configurationError(`Unknown model_ref: ${modelRef}`);
@@ -51,8 +100,7 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
     const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, descriptor.timeout_ms || timeoutMs));
     try {
       const response = await fetchImpl(`${descriptor.base_url}/chat/completions`, {
-        method: 'POST',
-        signal: controller.signal,
+        method: 'POST', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${descriptor.api_key}`, ...descriptor.headers },
         body: JSON.stringify({
           model: descriptor.id,
@@ -74,14 +122,34 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
     }
   }
 
+  async function buildInstructions({ sessionId, input }) {
+    const [persona, skills, session] = await Promise.all([
+      resolvePersonaContext?.({ sessionId, input }),
+      resolveSkillsContext?.({ sessionId, input }),
+      sessionStore?.getSession?.(sessionId)
+    ]);
+    const recent = buildRecentContextMessages(session, { maxMessages: 10, maxChars: 8000 });
+    return [baseRealtimeInstructions(), persona?.prompt, skills?.prompt, historyPrompt(recent)].filter(Boolean).join('\n\n');
+  }
+
   function startRealtime({ device, streamId, modelRef }) {
     const descriptor = resolve(modelRef, 'realtime');
+    const sessionId = `device-${device.device_id}`;
     const requestId = `omni-${randomUUID()}`;
+    const { tools, names } = buildRealtimeTools(executor);
     const pending = [];
+    const toolPromises = new Set();
     let ready = false;
+    let inputCommitted = false;
+    let awaitingInstructionUpdate = false;
     let startedAudio = false;
-    let output = '';
+    let textOutput = '';
+    let audioTranscript = '';
+    let visibleTextChannel = null;
     let transcript = '';
+    let responseDone = false;
+    let responseHadTools = false;
+    let continuationSent = false;
     let settled = false;
     let timer;
     let resolveDone;
@@ -89,61 +157,133 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
     const done = new Promise((resolvePromise, rejectPromise) => { resolveDone = resolvePromise; rejectDone = rejectPromise; });
     done.catch(() => {});
     const ws = new WebSocketImpl(realtimeUrl(descriptor), { headers: { Authorization: `Bearer ${descriptor.api_key}`, ...descriptor.headers } });
-    const send = (event) => {
-      if (!ready) pending.push(event);
-      else ws.send(JSON.stringify(event));
-    };
+    const sendNow = (event) => ws.send(JSON.stringify(event));
+    const send = (event) => { if (!ready) pending.push(event); else sendNow(event); };
+    const publish = (topic, data) => hub.publish(topic, data, { target: device.device_id, direct: true });
+    const publishTool = (topic, payload) => bus?.publish(topic, { session_id: sessionId, trace_id: requestId, ...payload });
+    const finalOutput = () => (textOutput.trim() || audioTranscript.trim());
     const finish = (error = null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (startedAudio) hub.publish(error ? 'voice.stream.error' : 'voice.stream.end', {
-        request_id: requestId,
-        ...(error ? { message: error.message } : {})
-      }, { target: device.device_id, direct: true });
+      if (startedAudio) publish(error ? 'voice.stream.error' : 'voice.stream.end', {
+        request_id: requestId, ...(error ? { message: error.message } : {})
+      });
       try { ws.close(); } catch { /* already closed */ }
       if (error) rejectDone(error);
-      else resolveDone({ text: transcript.trim(), output: output.trim() });
+      else resolveDone({ text: transcript.trim(), output: finalOutput(), route: 'native' });
     };
+    const continueAfterTools = () => {
+      if (!responseDone || !responseHadTools || toolPromises.size || continuationSent || settled) return;
+      continuationSent = true;
+      responseDone = false;
+      responseHadTools = false;
+      sendNow({ type: 'response.create' });
+    };
+    const executeTool = (event) => {
+      responseHadTools = true;
+      const callId = String(event.call_id || event.item_id || randomUUID());
+      const originalName = names.get(String(event.name || ''));
+      const execution = (async () => {
+        let result;
+        let args = {};
+        try {
+          if (!originalName) throw new Error(`Unknown realtime tool: ${event.name || ''}`);
+          args = event.arguments ? JSON.parse(event.arguments) : {};
+          const settings = await sessionStore?.getSessionSettings?.(sessionId);
+          const common = { call_id: callId, name: originalName, args };
+          publishTool('tool.call', common);
+          publishTool('tool_call.started', common);
+          result = await executor.execute({ name: originalName, args }, {
+            permission_level: settings?.permission_level || 'high',
+            workspaceRoot: settings?.workspace?.root_dir || process.cwd(),
+            meta: { session_id: sessionId, trace_id: requestId, call_id: callId, permission_level: settings?.permission_level || 'high' },
+            bus,
+            publishEvent: (topic, payload = {}) => bus?.publish(topic, {
+              ...payload, session_id: sessionId, trace_id: requestId, call_id: callId, tool_name: originalName
+            })
+          });
+        } catch (error) {
+          result = { ok: false, code: error.code || 'INVALID_TOOL_CALL', error: error.message || String(error) };
+        }
+        const output = JSON.stringify(result?.ok
+          ? { ok: true, result: result.result }
+          : { ok: false, code: result?.code || 'TOOL_ERROR', error: result?.error || 'Tool execution failed', details: result?.details || null });
+        sendNow({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output } });
+        const payload = { call_id: callId, name: originalName || String(event.name || ''), args, ok: Boolean(result?.ok), result: result?.result, error: result?.error, code: result?.code };
+        publishTool('tool.result', payload);
+        publishTool(result?.ok ? 'tool_call.completed' : 'tool_call.failed', payload);
+      })();
+      toolPromises.add(execution);
+      execution.catch((error) => finish(error)).finally(() => { toolPromises.delete(execution); continueAfterTools(); });
+    };
+    const updateInstructions = async () => {
+      try {
+        await sessionStore?.appendMessage?.(sessionId, { role: 'user', content: transcript, trace_id: requestId, metadata: { input_type: 'voice', model_ref: modelRef } });
+        const instructions = await buildInstructions({ sessionId, input: transcript });
+        awaitingInstructionUpdate = true;
+        send({ type: 'session.update', session: { instructions } });
+      } catch (error) {
+        finish(error);
+      }
+    };
+
     timer = setTimeout(() => finish(new Error('Realtime Omni timed out')), timeoutMs);
     ws.on('message', (raw) => {
       let event;
       try { event = JSON.parse(raw.toString()); } catch { return; }
       if (event.type === 'session.created') {
-        ws.send(JSON.stringify({
+        sendNow({
           type: 'session.update',
           session: {
-            modalities: ['text', 'audio'],
-            turn_detection: null,
+            modalities: ['text', 'audio'], instructions: baseRealtimeInstructions(), tools, tool_choice: 'auto', turn_detection: null,
             input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
             audio: {
               input: { format: { type: 'pcm', sample_rate: 16000, sample_format: 's16le', channels: 1, packing: 'interleaved', channel_layout: 'mono' } },
-              output: { voice: 'Tina', format: { type: 'pcm', sample_rate: 24000 } }
+              output: { voice: descriptor.realtime_voice || 'Tina', format: { type: 'pcm', sample_rate: 24000 } }
             }
           }
-        }));
+        });
       } else if (event.type === 'session.updated') {
-        ready = true;
-        for (const item of pending.splice(0)) ws.send(JSON.stringify(item));
+        if (!ready) {
+          ready = true;
+          for (const item of pending.splice(0)) sendNow(item);
+        } else if (awaitingInstructionUpdate) {
+          awaitingInstructionUpdate = false;
+          sendNow({ type: 'response.create' });
+        }
       } else if (event.type === 'response.audio.delta' && event.delta) {
         if (!startedAudio) {
           startedAudio = true;
-          hub.publish('voice.stream.start', { request_id: requestId, sample_rate: 24000, format: 'pcm_s16le' }, { target: device.device_id, direct: true });
+          publish('voice.stream.start', { request_id: requestId, sample_rate: 24000, format: 'pcm_s16le' });
         }
-        hub.publish('voice.stream.chunk', { request_id: requestId, data_b64: event.delta }, { target: device.device_id, direct: true });
+        publish('voice.stream.chunk', { request_id: requestId, data_b64: event.delta });
       } else if (event.type === 'response.text.delta' || event.type === 'response.audio_transcript.delta') {
+        const channel = event.type === 'response.text.delta' ? 'text' : 'audio_transcript';
         const delta = String(event.delta || '');
-        if (delta) {
-          output += delta;
-          hub.publish('chat.delta', { session_id: `device-${device.device_id}`, trace_id: requestId, delta }, { target: device.device_id, direct: true });
+        if (channel === 'text') textOutput += delta; else audioTranscript += delta;
+        if (delta && (!visibleTextChannel || visibleTextChannel === channel)) {
+          visibleTextChannel = channel;
+          publish('chat.delta', { session_id: sessionId, trace_id: requestId, delta, channel });
         }
       } else if (event.type === 'conversation.item.input_audio_transcription.completed') {
-        transcript = String(event.transcript || event.text || '');
+        transcript = String(event.transcript || event.text || '').trim();
+        if (!transcript) finish(configurationError('Realtime Omni returned an empty transcription'));
+        else if (inputCommitted) void updateInstructions();
+      } else if (event.type === 'response.function_call_arguments.done') {
+        executeTool(event);
+      } else if (event.type === 'response.created') {
+        continuationSent = false;
       } else if (event.type === 'error') {
         finish(new Error(event.error?.message || 'Realtime Omni failed'));
       } else if (event.type === 'response.done') {
-        if (transcript) hub.publish('audio.input.transcript', { stream_id: streamId, text: transcript, final: true }, { target: device.device_id, direct: true });
-        if (output) hub.publish('chat.final', { session_id: `device-${device.device_id}`, trace_id: requestId, output }, { target: device.device_id, direct: true });
+        responseDone = true;
+        if (Array.isArray(event.response?.output) && event.response.output.some((item) => item?.type === 'function_call')) responseHadTools = true;
+        if (responseHadTools) { continueAfterTools(); return; }
+        const output = finalOutput();
+        if (transcript) publish('audio.input.transcript', { stream_id: streamId, text: transcript, final: true });
+        if (output) publish('chat.final', { session_id: sessionId, trace_id: requestId, output });
+        void sessionStore?.appendMessage?.(sessionId, { role: 'assistant', content: output, trace_id: requestId, metadata: { output_type: 'realtime_audio_text', model_ref: modelRef } });
         finish();
       }
     });
@@ -153,8 +293,9 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
     return {
       append(dataB64) { send({ type: 'input_audio_buffer.append', audio: dataB64 }); },
       finish() {
+        inputCommitted = true;
         send({ type: 'input_audio_buffer.commit' });
-        send({ type: 'response.create' });
+        if (transcript) void updateInstructions();
         return done;
       },
       cancel() { finish(new Error('Realtime audio cancelled')); }
@@ -209,4 +350,7 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
   return { resolve, transcribe, startRealtime, generateText };
 }
 
-module.exports = { configurationError, contentText, createOmniAudioService, realtimeUrl };
+module.exports = {
+  REALTIME_TTS_TOOL, baseRealtimeInstructions, buildRealtimeTools,
+  configurationError, contentText, createOmniAudioService, realtimeUrl
+};

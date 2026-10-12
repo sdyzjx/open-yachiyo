@@ -71,7 +71,15 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   if (options.bus && (settings.home || options.audio)) {
     const { createAsrService } = require('./asrService');
     const omniAudio = options.llmManager
-      ? require('./omniAudio').createOmniAudioService({ hub, llmManager: options.llmManager })
+      ? require('./omniAudio').createOmniAudioService({
+        hub,
+        llmManager: options.llmManager,
+        executor: options.executor,
+        bus: options.bus,
+        sessionStore: options.sessionStore,
+        resolvePersonaContext: options.resolvePersonaContext,
+        resolveSkillsContext: options.resolveSkillsContext
+      })
       : null;
     require('./audioInput').attachAudioInput({
       hub,

@@ -217,3 +217,8 @@ flowchart TD
 - 启动新网关读取既有验收配置时发现，历史「发现模型」条目会把已知 Omni 型号保留为 text/request；新增规范化迁移，以内置型号资料恢复其权威音频能力，覆盖 TC-LLM-043。
 - 运行态验收：停止旧主线网关后从 `agent/v2-config-webui` 在 3002 启动新网关；健康检查、配置页六列编辑器和真实 Device Hub `model.catalog.get` 通过。小米 6 经 Wi-Fi ADB 安装 Debug APK，WebView 显示 10 个已启用模型，Realtime/Direct Omni 分别标注“实时语音/音频直通”；切换 Realtime 后状态徽标变为“实时”，随后恢复默认模型并释放设备锁。未向模型上游发送请求。
 - Realtime 录音失败根因确认：现有 `qwen3.8-omni-flash-realtime` 继承公共 `dashscope.aliyuncs.com` 地址，但该型号要求工作空间专属 `wss://*.maas.aliyuncs.com`，当前配置中没有可推导的 Workspace ID。网关现保留 `-32602` 具体错误，电脑配置页拒绝保存无效组合，两端选择器显示并禁用不可用模型。Node 804/804、Android 单测与 Debug 构建通过；小米 6 重装后通过 WebView CDP 验证 Realtime 项显示“不可用”，当前自动回退到可用的 `qwen3.8-omni-flash` 直通模式。
+- 本机阿里云 CLI 的 Model Studio 扩展已查询北京地域默认工作空间与目标模型推理权限；工作空间专属 Realtime 地址已写入隔离验收配置和 `~/yachiyo/config/providers.yaml`，原配置备份为 `providers.yaml.before-omni-realtime`，全程未记录密钥。真实云端文本握手、16 kHz PCM 输入、转写、文字回复与 24 kHz PCM 输出均通过。
+- 小米 6 实际长按录音完成手机麦克风 → 网关 → Qwen Realtime → 手机流式播放。测试音源受环境低频声干扰而得到英文机械声描述，结论为链路通过、声学内容识别待真人近讲复验。Realtime 原生音色原先硬编码为 `Tina`，已改成统一默认 `Cherry` 并允许模型级覆盖。
+- Pi 语音策略提高音频输入、短对话、问候与确认的语音优先级；需要语音时 TTS 是本轮首个动作。真实 `/ws` 策略模式调用顺序已验证为 `voice.tts_aliyun_vc` → `live2d.expression.set`，并修复缺失 `voice-policy.yaml` 时自动语音被静默关闭的问题。
+- Realtime 原生 Agent 已取代临时“转写后再进入 Pi”的双模型链路：会话注册 ToolExecutor 工具并处理 Function Calling，复用人格、技能、历史、权限和工作区设置；`voice.tts_aliyun_vc` 在此通路中被排除，工具事件、界面文本和原生音频分别输出。
+- 使用 18 秒标准参考音频为 `qwen3.8-omni-flash-realtime` 创建 Yachiyo 复刻音色，并写入隔离与用户 Provider 配置。真实云端请求成功调用 `system.get_time`，工具结果续答为中文，收到 311040 bytes 24 kHz PCM；随后重启网关与手机 App，真机显示角色、Realtime 徽标及“电脑在线”。设备锁和临时 ADB forward 已释放。
