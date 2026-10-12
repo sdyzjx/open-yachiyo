@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: active
 > 负责人: codex-coordinator
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: PLAN-android-companion-contracts.md, EXP-20261012-android-live2d-webview-feasibility.md, 各 PLAN-android-ws*.md
 
 ## 1. 目标
@@ -95,13 +95,15 @@ flowchart TD
 | A11 | DeepSeek 等 provider 配置、多模型选择、回退生效；配置页可切换 | 自动 + 手工 |
 | A12 | `AGENT_CORE=pi` 下全部原有 e2e 测试通过；`AGENT_CORE=legacy` 可回滚 | 自动 |
 | A13 | 每个功能均有 `FEAT-*` 文档与 `TC-*` 用例，`docs/README.md` 索引更新 | 审查 |
+| A14 | 配置页自动发现同一局域网服务端，选择端点并配对 | 真机 |
+| A15 | 小米 6 连续人物动画及滑动达到 60 FPS 目标，报告真实帧间隔和画质 | 真机性能采样 |
 
 ## 6. 统筹待办
 
-- [ ] **网关局域网加固**（WS3 合并后，统筹执行）：网关监听 `0.0.0.0`，`/api/config/*`、`/api/sessions*`、`/api/memory*` 等管理接口目前对局域网无鉴权，且既有 `GET /api/config/providers/config` 会返回内联 api_key。方案：非 loopback 请求必须携带 Device Hub `pairing_token`；`/api/config/providers/config` 与 `/raw` 对外脱敏。
-- [ ] **WS3 合并审查必查**：设备 `pub` 不得发布网关保留主题（`plugin.install`、`avatar.host.changed`、`avatar.transfer.*`（除 ready/exited/entered）、`sys.device.online/offline`、`voice.play`、`chat.delta/final`、`task.update`）；`/api/device/*`、`/api/config/models*` 增加 CORS（源 `https://appassets.androidplatform.net`）。
-- [ ] **工具名线上编码（阻塞多 provider）**：`config/tools.yaml` 工具名含 `.`（如 `live2d.motion.play`），OpenAI/Anthropic/DeepSeek 要求 `^[a-zA-Z0-9_-]{1,64}$`。在 `apps/runtime/agent-pi/toolBridge.js` 中把名称编码为线上名（`.`→`__`），执行时映射回原名；`piRuntime.js` 中 `toolName.startsWith('live2d.')` 等判断与 eventBridge 发出的 `tool_call.*` 事件需使用原名；补测试。
-- [ ] WS1 遗留：`attachModelContext` 与 WS2 的 worker `model_ref` 透传重复，可删除。
+- [x] **网关局域网加固**（WS3 合并后，统筹执行）：网关监听 `0.0.0.0`，`/api/config/*`、`/api/sessions*`、`/api/memory*` 等管理接口目前对局域网无鉴权，且既有 `GET /api/config/providers/config` 会返回内联 api_key。方案：非 loopback 请求必须携带 Device Hub `pairing_token`；`/api/config/providers/config` 与 `/raw` 对外脱敏。
+- [x] **WS3 合并审查必查**：设备 `pub` 不得发布网关保留主题（`plugin.install`、`avatar.host.changed`、`avatar.transfer.*`（除 ready/exited/entered）、`sys.device.online/offline`、`voice.play`、`chat.delta/final`、`task.update`）；`/api/device/*`、`/api/config/models*` 增加 CORS（源 `https://appassets.androidplatform.net`）。
+- [x] **工具名线上编码（阻塞多 provider）**：`config/tools.yaml` 工具名含 `.`（如 `live2d.motion.play`），OpenAI/Anthropic/DeepSeek 要求 `^[a-zA-Z0-9_-]{1,64}$`。在 `apps/runtime/agent-pi/toolBridge.js` 中把名称编码为线上名（`.`→`__`），执行时映射回原名；`piRuntime.js` 中 `toolName.startsWith('live2d.')` 等判断与 eventBridge 发出的 `tool_call.*` 事件需使用原名；补测试。
+- [x] WS1 遗留：`attachModelContext` 与 WS2 的 worker `model_ref` 透传重复，可删除。
 - [x] 合并时统一重新生成 `package-lock.json`（WS1 合并时已 `npm i`）（WS1 新增 pi 依赖）。
 
 ## 7. 进度
@@ -132,3 +134,14 @@ flowchart TD
 - 全量 Node 642/642 通过，Android 单测/assembleDebug 通过；新增完整 pi → Hub → 手机插件 RPC 离线 e2e 通过。
 - 真机竖横屏、两侧面板、插件推送/安装和 start_timer RPC 已通过，详见集成实验与 TC-COMP。
 - 新增用户目标 A15：小米 6 60 FPS。初始横屏仅20.34 FPS；耗时主要在 Cubism 求值，正在性能专项优化，不标记验收完成。
+
+### 集成批次 3（2026-10-13）
+
+- `c524618` 修复带在线 WebSocket 的网关退出及广播失败降级，Node 644/644。
+- `38cbb2a` 修复 Android 模型响应包装造成设置渲染中断，以及锁屏覆盖页无法退出；Node 646/646、Android 单测和构建通过。
+- 原真实模型配置复制到权限受限的隔离目录，pi 联网调用 Qwen 返回“模型连接正常”，约 1999 ms；未更改用户原运行目录。
+- 真实 Electron 渲染器已显示移交人物；双向 transfer API 均成功。手机返回截图因休眠全黑，待唤醒后的视觉确认，不把 API 成功替代画面验收。
+- NSD 已在小米 6 发现真实广播名称/IP/3002 端口；候选点击流程在设置修复后复验。
+- 默认 Launcher 已实际切换并恢复；锁屏无插件、单次 RPC 路由、插件拒绝已验证，退出修复待复验。
+- TTS/ASR 真实服务验证通过，手机播放、口型、录音仍需独立设备验收。
+- 性能继续作为阻塞项：基线瓶颈为 Cubism core 与物理求值，Worker 优化版正在独占设备复测。

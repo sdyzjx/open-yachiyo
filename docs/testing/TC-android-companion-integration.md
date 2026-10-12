@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: codex-coordinator
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-companion.md, ../features/FEAT-device-hub.md, ../features/FEAT-runtime-pi-agent-core.md, ../../test/integration/companion.e2e.test.js
 
 此处验证完整装配，模块单测不能替代这些用例。真实模型服务和模拟模型服务的结果分别记录。
@@ -15,5 +15,8 @@
 | TC-COMP-003 | 电脑推送示例包和实际插件 RPC | manual-device | 手机已连接且解锁；真实网关 | 用 plugin-push 推送 pomodoro/clock-widget；打开番茄钟；通过另一个已配对客户端调用 plugin.com.yachiyo.pomodoro.start_timer | 两包安装成功；组件显示；start_timer 返回 `{ok:true,minutes:1}` | manual；2026-10-12 已通过（调用者为配对测试客户端，pi 调用见 TC-COMP-001） |
 | TC-COMP-004 | 局域网自动发现完整链路 | manual-device | 网关发布 C7 服务；手机同一 Wi-Fi | 配置页扫描；选中真实网关；停止/重试；切换到其他服务端 | 发现真实名称、IP、实际端口；更换端点清除旧令牌；手动配置仍可用；退出停止扫描 | manual；待完整发现广播与 APK 集成后执行 |
 | TC-COMP-005 | 小米 6 连续动画性能 | manual-device | 已配对且手机为 host；当前版本模型和 APK；无调试覆盖 UI | 暖机；分别采样竖屏、横屏、左右滑动和方向切换；记录 rAF 间隔与模型渲染耗时、画质、分辨率 | 目标 60 FPS；报告实测均值/p95、掉帧和画质，不以请求 rAF 或冻结人物替代渲染验收 | manual；初始横屏 20.34 FPS，优化与复测进行中 |
+| TC-COMP-006 | 真实 Electron 与手机人物移交 | manual-device | 真实网关、Electron modelLoaded=true、已配对手机、设备锁 | 手机移交 desktop；检查电脑人物出现、手机退出；移回手机并唤醒检查；确认 host 状态 | 两端下方出入动画；始终仅 host 显示/发声；手机休眠不视作返回显示成功 | manual；双向 API 成功、电脑人物出现已验证；手机唤醒返回待复核 |
+| TC-COMP-007 | 真实模型经 pi 回复 | integration | 独立测试 HOME 配置用户已有模型，凭据文件权限 600 | 通过真实 /ws 发 runtime.run，要求只回复“模型连接正常”，不调用工具；观察 runtime 结果 | 实际模型输出正确、状态 DONE，无重复回复；不改原 HOME | manual；2026-10-13 Qwen 成功，端到端约 1999 ms |
+| TC-COMP-008 | 真机语音播放与录音入口 | manual-device | 有效 TTS/ASR 配置、手机 host、设备锁 | pi 调用语音工具；检查 playback started/ended、口型和错误；按住录音并释放，检查音频流/识别/回复 | 手机完成实际解码播放且口型随音频变化；录音开始/停止正确；识别交给 pi、回复回到手机 | manual；真实服务独立通过，真机链路待执行 |
 
 每次占用真机不超过 10 分钟。编码/构建释放设备锁，测试结束恢复系统旋转与其他临时设置。自动化只使用本地离线模型，不消耗真实 API 额度。
