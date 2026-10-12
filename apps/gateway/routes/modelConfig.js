@@ -11,6 +11,7 @@ const {
   safeModelDescriptor,
   safeProviderSnapshot
 } = require('./configSecurity');
+const { configLoopbackOnly } = require('../deviceHub/accessControl');
 
 const DEFAULT_TEST_TIMEOUT_MS = 15000;
 const MAX_TIMEOUT_MS = 60000;
@@ -46,6 +47,9 @@ function createModelConfigRouter({
   fetchImpl = (...args) => fetch(...args)
 }) {
   const router = express.Router();
+  // Keep this boundary on the router as well as the gateway-wide /api/config
+  // middleware so embedding the router cannot accidentally expose model state.
+  router.use('/api/config/models', configLoopbackOnly);
   const store = llmManager.store;
 
   const ok = (res, data) => res.json({ ok: true, data });
@@ -130,7 +134,9 @@ function createModelConfigRouter({
     const input = req.body;
     if (!PROVIDER_KEY_RE.test(key)) return fail(res, 400, new Error('invalid provider key'));
     if (!isObject(input)) return fail(res, 400, new Error('body must be an object'));
-    if (key === 'chatgpt') return fail(res, 400, new Error('chatgpt provider is managed by the ChatGPT connection'));
+    if (key === 'chatgpt' || input.type === 'openai_chatgpt_plan') {
+      return fail(res, 400, new Error('ChatGPT plan providers are managed by the ChatGPT connection'));
+    }
     try {
       const config = JSON.parse(JSON.stringify(store.load()));
       const previous = isObject(config.providers[key]) ? config.providers[key] : {};
@@ -368,18 +374,19 @@ function createModelConfigRouter({
   router.put('/api/sessions/:sessionId/settings', (req, res, next) => {
     const settings = req.body?.settings;
     if (!isObject(settings) || !Object.prototype.hasOwnProperty.call(settings, 'model_ref')) return next();
-    if (!isLocal(req)) return fail(res, 403, new Error('Model settings are only available on this computer'));
-    const ref = settings.model_ref;
-    if (ref === null || ref === '') return next();
-    if (typeof ref !== 'string') return fail(res, 400, new Error('settings.model_ref must be a string or null'));
-    try {
-      if (!loadModelCatalog({ store }).resolve(ref)) {
-        return fail(res, 400, new Error(`settings.model_ref references unknown model: ${ref}`));
+    return configLoopbackOnly(req, res, () => {
+      const ref = settings.model_ref;
+      if (ref === null || ref === '') return next();
+      if (typeof ref !== 'string') return fail(res, 400, new Error('settings.model_ref must be a string or null'));
+      try {
+        if (!loadModelCatalog({ store }).resolve(ref)) {
+          return fail(res, 400, new Error(`settings.model_ref references unknown model: ${ref}`));
+        }
+      } catch (err) {
+        return fail(res, 500, err);
       }
-    } catch (err) {
-      return fail(res, 500, err);
-    }
-    return next();
+      return next();
+    });
   });
 
   return router;

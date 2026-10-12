@@ -130,6 +130,21 @@ test('provider upsert keeps stored key when omitted; delete cleans references', 
   } finally { t.server.close(); }
 });
 
+test('TC-LLM-036 ChatGPT plan providers cannot be created through the generic provider editor', async () => {
+  const t = await setup(BASE_YAML);
+  try {
+    const reserved = await t.call('PUT', '/api/config/models/providers/chatgpt', {
+      type: 'openai_chatgpt_plan', models: [{ id: 'gpt-test' }]
+    });
+    assert.equal(reserved.status, 400);
+    const alias = await t.call('PUT', '/api/config/models/providers/plan-alias', {
+      type: 'openai_chatgpt_plan', models: [{ id: 'gpt-test' }]
+    });
+    assert.equal(alias.status, 400);
+    assert.doesNotMatch(fs.readFileSync(t.configPath, 'utf8'), /openai_chatgpt_plan|plan-alias/);
+  } finally { t.server.close(); }
+});
+
 function mockUpstream(handler) {
   return (async () => {
     const requests = [];

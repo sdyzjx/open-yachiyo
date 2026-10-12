@@ -287,15 +287,15 @@ async function loadRuntimeModelCatalog({ modelRef } = {}) {
   const selected = modelRef ? catalog.resolve(modelRef) : catalog.active;
   const chain = [selected, ...catalog.fallbackChain()].filter(Boolean);
   if (!chain.some((model) => model.chatgpt_plan)) return catalog;
-  const accessToken = await chatgptAuthService.getAccessToken();
+  // Bind both the initial credential and the one-shot 401 refresh to the same
+  // profile so an account switch cannot mix a model catalog with another account's token.
+  const profile = chatgptCredentialStore.getActiveProfile();
+  if (!profile) throw new Error('ChatGPT is not connected');
+  const accessToken = await chatgptAuthService.getAccessToken({ profileId: profile.id });
   return loadModelCatalog({
     store: providerStore,
     chatgptAccessToken: accessToken,
-    chatgptRefreshAccessToken: async () => {
-      const profile = chatgptCredentialStore.getActiveProfile();
-      if (!profile) throw new Error('ChatGPT is not connected');
-      return chatgptAuthService.refreshAccessToken(profile.id);
-    }
+    chatgptRefreshAccessToken: () => chatgptAuthService.refreshAccessToken(profile.id)
   });
 }
 const runner = createGatewayRunner({

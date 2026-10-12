@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { ProviderConfigStore } = require('../../../apps/runtime/config/providerConfigStore');
-const { loadModelCatalog } = require('../../../apps/runtime/config/modelCatalog');
+const { loadModelCatalog, toDescriptor } = require('../../../apps/runtime/config/modelCatalog');
 
 function storeWith(yaml) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-'));
@@ -133,6 +133,14 @@ providers:
   assert.equal(model.api_key, 'runtime-oauth-token');
   assert.equal(model.chatgpt_plan, true);
   assert.equal(model.refresh_access_token, refresh);
+  const hardened = toDescriptor('chatgpt', {
+    type: 'openai_chatgpt_plan', base_url: 'https://api.openai.com/v1',
+    headers: { authorization: 'Bearer config-override' }, extra_body: { metadata: { unsafe: true } }
+  }, { id: 'gpt-test', headers: { 'x-model': 'unsafe' }, extra_body: { user: 'unsafe' } }, {
+    chatgptAccessToken: 'runtime-oauth-token', chatgptRefreshAccessToken: refresh
+  });
+  assert.deepEqual(hardened.headers, {});
+  assert.deepEqual(hardened.extra_body, {});
   assert.doesNotMatch(JSON.stringify(store.loadNormalized()), /runtime-oauth-token|rotated-oauth-token/);
   const unsafe = storeWith(`
 active_model: chatgpt/gpt-test

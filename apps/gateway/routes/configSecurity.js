@@ -71,6 +71,7 @@ function safeProviderSnapshot(key, provider) {
 // Descriptor (modelCatalog.toDescriptor) -> public view without credentials or free-form objects.
 function safeModelDescriptor(descriptor, enabled) {
   const { api_key: apiKey, headers, extra_body: extraBody, compat, ...rest } = descriptor;
+  delete rest.refresh_access_token;
   return {
     ...rest,
     compat: safeCompat(compat),

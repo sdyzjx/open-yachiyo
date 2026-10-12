@@ -41,3 +41,4 @@
 - 未完成：桌面 Continue with ChatGPT UI 与真实账户 OAuth / Responses 手工验收，留给后续 UI/验收工作流。
 - 已知限制：官方尚未在公开 npm registry 发布 `@siwc/local` / `@siwc/core`，因此按官方协议用 Node 标准库实现。
 - 独立审查修复：authorization URL token 泄漏、loopback CSRF/Host、并发 start listener、refresh ID token 与 OIDC azp；另补 Responses namespace 工具两轮回放测试。
+- 主线整合审查：保留 D2 的 `/api/config/**` loopback/DNS-rebinding 门禁、provider 脱敏与 V 的 voice schema；补齐独立 router 的模型配置门禁、固定 `chatgpt` provider 所有权、拒绝配置级 header/body 覆盖、移除公开 descriptor 的 refresh callback，并把单次推理的初始/刷新 token 固定到同一 profile。

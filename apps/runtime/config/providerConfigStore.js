@@ -57,11 +57,13 @@ function normalizeModelEntry(entry, presetModels) {
 function normalizeProvider(raw) {
   if (!isObject(raw)) return raw;
   // eslint-disable-next-line global-require
-  const preset = nonEmptyString(raw.preset) ? require('./providerPresets').getPreset(raw.preset) : null;
+  const isChatGPTPlan = raw.type === 'openai_chatgpt_plan';
+  const preset = !isChatGPTPlan && nonEmptyString(raw.preset) ? require('./providerPresets').getPreset(raw.preset) : null;
   const provider = { ...raw };
-  if (provider.type === 'openai_chatgpt_plan') {
+  if (isChatGPTPlan) {
     provider.base_url = 'https://api.openai.com/v1';
     provider.requires_api_key = false;
+    delete provider.preset;
     delete provider.api_key;
     delete provider.api_key_env;
     delete provider.headers;
@@ -89,6 +91,12 @@ function normalizeProvider(raw) {
     else list = presetModels;
   }
   provider.models = list.map((m) => normalizeModelEntry(m, presetModels));
+  if (isChatGPTPlan) {
+    provider.models = provider.models.map((model) => ({
+      id: model.id,
+      ...(nonEmptyString(model.name) ? { name: model.name } : {})
+    }));
+  }
   if (!nonEmptyString(provider.model) && provider.models[0]?.id) provider.model = provider.models[0].id;
   return provider;
 }
@@ -155,12 +163,26 @@ function validateConfig(config) {
 
   for (const [name, provider] of Object.entries(config.providers)) {
     if (isObject(provider) && provider.type === 'openai_chatgpt_plan') {
+      if (name !== 'chatgpt') {
+        throw new Error('openai_chatgpt_plan must use the reserved provider key chatgpt');
+      }
       if (provider.base_url !== undefined && provider.base_url !== 'https://api.openai.com/v1') {
         throw new Error(`provider ${name} must use https://api.openai.com/v1`);
       }
       for (const field of ['api_key', 'api_key_env', 'headers', 'extra_body']) {
         if (Object.prototype.hasOwnProperty.call(provider, field)) {
           throw new Error(`provider ${name} cannot define ${field}`);
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(provider, 'preset')) {
+        throw new Error(`provider ${name} cannot define preset`);
+      }
+      for (const model of Array.isArray(provider.models) ? provider.models : []) {
+        if (!isObject(model)) continue;
+        for (const field of ['headers', 'extra_body', 'api_key', 'api_key_env']) {
+          if (Object.prototype.hasOwnProperty.call(model, field)) {
+            throw new Error(`provider ${name} models[] cannot define ${field}`);
+          }
         }
       }
     }

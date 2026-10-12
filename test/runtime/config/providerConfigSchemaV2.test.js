@@ -89,6 +89,26 @@ test('validation rejects unknown refs, empty models and missing keys', () => {
   assert.throws(() => validateConfig(bad), /type must be one of/);
 });
 
+test('TC-LLM-036 ChatGPT plan type is restricted to its service-owned provider key', () => {
+  const provider = {
+    type: 'openai_chatgpt_plan',
+    base_url: 'https://api.openai.com/v1',
+    models: [{ id: 'gpt-test' }]
+  };
+  validateConfig({ active_model: 'chatgpt/gpt-test', providers: { chatgpt: provider } });
+  assert.throws(() => validateConfig({
+    active_model: 'alternate/gpt-test', providers: { alternate: provider }
+  }), /reserved provider key chatgpt/);
+  assert.throws(() => validateConfig({
+    active_model: 'chatgpt/gpt-test',
+    providers: { chatgpt: { ...provider, preset: 'deepseek' } }
+  }), /cannot define preset/);
+  assert.throws(() => validateConfig({
+    active_model: 'chatgpt/gpt-test',
+    providers: { chatgpt: { ...provider, models: [{ id: 'gpt-test', headers: { authorization: 'Bearer override' } }] } }
+  }), /models\[\] cannot define headers/);
+});
+
 test('splitModelRef handles model ids containing slashes', () => {
   const providers = { openrouter: {}, open: {} };
   assert.deepEqual(splitModelRef('openrouter/openai/gpt-4o', providers), { provider: 'openrouter', id: 'openai/gpt-4o' });

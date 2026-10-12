@@ -23,6 +23,7 @@ function toDescriptor(providerKey, provider, model = {}, {
   chatgptRefreshAccessToken = null
 } = {}) {
   const id = String(model.id || provider.model || '');
+  const chatgptPlan = provider.type === 'openai_chatgpt_plan';
   return {
     ref: `${providerKey}/${id}`,
     provider: providerKey,
@@ -30,9 +31,9 @@ function toDescriptor(providerKey, provider, model = {}, {
     name: model.name || id,
     api: CHAT_TYPES.get(provider.type),
     base_url: String(provider.base_url || '').replace(/\/$/, ''),
-    api_key: provider.type === 'openai_chatgpt_plan' ? chatgptAccessToken : resolveApiKey(provider),
+    api_key: chatgptPlan ? chatgptAccessToken : resolveApiKey(provider),
     api_key_env: provider.api_key_env || null,
-    headers: { ...(provider.headers || {}), ...(model.headers || {}) },
+    headers: chatgptPlan ? {} : { ...(provider.headers || {}), ...(model.headers || {}) },
     timeout_ms: Number(provider.timeout_ms) || 20000,
     max_retries: provider.max_retries !== undefined ? Number(provider.max_retries) : null,
     context_window: Number(model.context_window) || null,
@@ -40,9 +41,9 @@ function toDescriptor(providerKey, provider, model = {}, {
     reasoning: Boolean(model.reasoning),
     input: Array.isArray(model.input) ? model.input : ['text'],
     compat: { ...(provider.compat || {}), ...(model.compat || {}) },
-    extra_body: { ...(provider.extra_body || {}), ...(model.extra_body || {}) },
-    chatgpt_plan: provider.type === 'openai_chatgpt_plan',
-    refresh_access_token: provider.type === 'openai_chatgpt_plan' ? chatgptRefreshAccessToken : null,
+    extra_body: chatgptPlan ? {} : { ...(provider.extra_body || {}), ...(model.extra_body || {}) },
+    chatgpt_plan: chatgptPlan,
+    refresh_access_token: chatgptPlan ? chatgptRefreshAccessToken : null,
     temperature: model.temperature !== undefined
       ? Number(model.temperature)
       : (provider.temperature !== undefined ? Number(provider.temperature) : null)

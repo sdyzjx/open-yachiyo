@@ -9,7 +9,7 @@ const express = require('express');
 const { ProviderConfigStore } = require('../../apps/runtime/config/providerConfigStore');
 const { LlmProviderManager } = require('../../apps/runtime/config/llmProviderManager');
 const { createModelConfigRouter } = require('../../apps/gateway/routes/modelConfig');
-const { safeLegacyProviderConfig } = require('../../apps/gateway/routes/configSecurity');
+const { safeLegacyProviderConfig, safeModelDescriptor } = require('../../apps/gateway/routes/configSecurity');
 const {
   APPASSETS_ORIGIN, appassetsCors, configLoopbackOnly, remoteApiAuth
 } = require('../../apps/gateway/deviceHub/accessControl');
@@ -95,6 +95,13 @@ test('TC-CFG-003 provider snapshots never expose key, headers or extra_body valu
   assert.equal(model.has_custom_headers, true);
   assert.equal('headers' in model, false);
   assert.equal('extra_body' in model, false);
+  const runtimeModel = safeModelDescriptor({
+    ...model,
+    api_key: 'runtime-access-token',
+    refresh_access_token: async () => 'runtime-refresh-token'
+  }, true);
+  assert.equal('api_key' in runtimeModel, false);
+  assert.equal('refresh_access_token' in runtimeModel, false);
 });
 
 test('TC-CFG-004 provider PUT is a patch: absent fields and empty api_key are kept', async (t) => {
