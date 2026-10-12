@@ -19,3 +19,5 @@
 | TC-PI-007 | 截图附件 | unit | 临时离线图像 | 调 capture bridge | 返回 text + image | toolBridge.test.js: TC-PI-007 desktop capture result includes an actual image block |
 | TC-PI-008 | 设备工具动态刷新 | unit | 假 EventEmitter Hub | 注册后变更、取下一快照 | 新快照撤销工具、旧快照路由稳定、释放订阅 | deviceTools.test.js: TC-PI-008 device tools refresh next snapshot and preserve in-flight definitions |
 | TC-PI-009 | 总线与 Avatar 权限 | unit | 假 Hub/controller | 发布合法/非法主题、移交、deny | 非法发布拒绝，移交参数保留 | deviceTools.test.js: TC-PI-009 bus namespace, schema, policy and avatar routing are enforced |
+| TC-PI-010 | Prompt 与旧核心逐段比对 | integration | 离线假 reasoner | 捕获旧循环 system messages，对比新 builder | 每个原有段落存在 | promptBuilder.test.js: TC-PI-010 prompt migration preserves each legacy system paragraph |
+| TC-PI-011 | 低权限和语音关闭 | unit | low、voice off | 构造 prompt | 不含 memory seed 与语音强制规则 | promptBuilder.test.js: TC-PI-011 low permission omits memory seeds and voice force-off instructions |

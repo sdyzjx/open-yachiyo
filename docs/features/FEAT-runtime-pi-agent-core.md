@@ -35,3 +35,5 @@
 工具桥已实现：所有注册表工具经 executor.execute 执行，参数 JSON Schema、权限、workspace、trace 与 publishEvent 上下文保留；失败抛给 pi，截图附加 image 内容块。
 
 设备工具在请求边界刷新，支持 tools.changed 通知和显式释放订阅。bus_publish 仅接受 plugin./avatar./ui./task.；avatar_status 查询 host/devices，avatar_transfer 经注入的服务端控制器执行，未装配时明确失败。
+
+Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system seeds、语音强制/自动回复、persona 修改和截图规则逐段保留，并附会话权限说明。low 权限过滤传入的 memory seeds。

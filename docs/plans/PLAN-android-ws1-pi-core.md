@@ -87,3 +87,7 @@ loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模�
 ### 任务 4
 
 设备快照动态刷新、总线前缀与 policy 检查、可注入 Avatar 控制器完成；`npm run test:ci` 518 / 518 通过。生产 Avatar transfer 装配仍等待统筹确认 WS3 服务端入口。
+
+### 任务 5
+
+提示词迁移完成，与真实旧 ToolLoopRunner 生成的 system 段落逐段比对；`npm run test:ci` 520 / 520 通过。
