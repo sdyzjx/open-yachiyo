@@ -55,9 +55,9 @@ ffprobe -v error -print_format json -show_format -show_streams ./yachiyo_voice_r
 先区分两个概念：
 
 - 百炼通用 API Key：通常以 `sk-` 开头，适用于百炼常规模型与 DashScope 接口
-- Coding Plan 专属 API Key：通常以 `sk-sp-` 开头，必须配合 Coding Plan 专属 Base URL 使用
+- Coding Plan / Token Plan 专属 API Key：面向套餐允许的编程和 Agent 工具交互场景；专属 Key 与 Base URL 配套并不代表允许用于应用后端。
 
-对当前仓库来说，`providers.yaml` 和 TTS 脚本默认都在走百炼通用链路，因此应优先使用通用 API Key。
+对当前仓库来说，`providers.yaml`、电脑端 Agent 后端及 TTS 脚本需要使用允许应用后端调用的百炼通用 API Key，不能使用上述套餐专属 Key。将 pi SDK 嵌入后端不会自动改变适用范围。
 
 ### 3.1 获取入口
 
@@ -94,7 +94,7 @@ ffprobe -v error -print_format json -show_format -show_streams ./yachiyo_voice_r
 
 ### 3.3 与本项目有关的注意事项
 
-1. 本项目默认使用 DashScope / 百炼通用接口，所以不要把 Coding Plan 的 `sk-sp-...` Key 填到当前 `providers.yaml`，除非你同时把 Base URL 全部切到 Coding Plan 专属地址。
+1. 不要把 Coding Plan / Token Plan 专属 Key 填到本项目后端或自动化脚本中；即使更换成套餐 Base URL，也不改变调用场景限制。官方将自定义应用后端、自动化脚本列为不支持的工具类型，个人版和团队版均受此限制，见[官方接入范围](https://help.aliyun.com/zh/model-studio/more-tools)（2026-10-13核对）。开发本项目时，在官方允许的编程工具内交互式使用套餐属于另一种场景。
 2. API Key 是按地域和接口地址配套使用的。如果 Key 属于新加坡地域，就不要继续使用北京地域的 Base URL。
 3. 阿里云官方文档说明，API Key 默认是长期有效的，只有手动删除后才失效。
 

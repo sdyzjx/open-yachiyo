@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: sonnet-ws2
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/plans/PLAN-android-companion-contracts.md §C4, docs/plans/PLAN-android-ws2-llm-models.md, docs/testing/TC-llm-model-config-v2.md
 
 ## 1. 概述
@@ -57,6 +57,8 @@
 支持的 `type`：`openai_compatible`、`anthropic`、`google`、`tts_dashscope`、`asr_openai_compatible`、`asr_dashscope`。完整 schema 见契约 C4.1。
 
 ## 5. 限制与已知问题
+
+- 协议兼容不代表套餐授权：Yachiyo 的网关和 pi SDK 是自定义应用后端，应使用允许该场景的 API 服务或本地模型。阿里云 Token Plan / Coding Plan 专属 Key 不适用于本后端或自动化验收脚本；仅改 Base URL 或嵌入 pi SDK 不改变范围。详见[官方不支持的工具类型](https://help.aliyun.com/zh/model-studio/more-tools)（2026-10-13核对）。个人 Token Plan 另有输入/输出用于服务改进与模型优化的数据条款，见[个人版订阅须知](https://help.aliyun.com/zh/model-studio/token-plan-personal-overview)。
 
 - `anthropic`/`google` 类型当前仅由 Model Catalog 描述，legacy 循环尚不直接调用，由 pi 核心（WS1）消费。
 
