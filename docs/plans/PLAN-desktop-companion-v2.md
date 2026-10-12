@@ -188,3 +188,14 @@ HTTP（D2，均为 loopback-only）：
 | D2 | `agent/v2-config-webui` | 5201aa2（配置 API 安全）、77bb9fd（夜景外壳 + 模型/高级页） | a134579：语音路由与语音页 | 语音页按已合并的 V 接口联调、概览页、旧入口迁移、文档、截图 |
 | A | `agent/v2-android-ui` | 68de571（B1 presence）、86ea678（统一主题）、06c62f4（B6 竖屏对话面板） | 7aee801：B8 键盘（adjustNothing + ime 事件） | B8 完成与真机验证、HUD 迁移按钮、文档 |
 | T | `agent/v2-twitch` | — | fdd5085：逐帧 trace 采集脚本 | 复现、定位、修复、实验文档 |
+
+## D1 交付记录（Codex）
+
+- 完成：菜单栏 Template 图标与状态菜单、Dock 点击/菜单、角色左下默认几何与升起动画、>4 px 拖拽判定、角色右键菜单与聊天可用性门禁。
+- 完成：原生 `hiddenInset` Desktop Chat（420×640，最小 360×480，位置尺寸持久化）；顶栏已启用模型选择、多设备迁移/离线原因/pending、新对话、设置；流式/Markdown/Mermaid/图片消息区；多行中文输入与图片附件。
+- 完成：模型 IPC 精确 allowlist 与响应投影脱敏；1100×760 设置窗加载 `/config-v2.html`，网关失败显示夜景错误页与重试；夜景气泡长文截断与「在聊天中查看」。B4/B5 已修复。
+- 提交：`d6785e3` Hub pending/取消竞态；`15006eb` 前任 WIP 检查点；`8b7b53f` 原生聊天窗与角色几何；`94aa6fb` Desktop Chat 控件、夜景 UI、气泡与设置错误页。
+- 验证：隔离 `HOME/TMPDIR` 执行 `npm run test:ci`，720/720 通过；`npm run docs:lint` 通过；假 Android WebSocket 客户端完成 `prepare → host.changed → enter → completed`，迁移后 Chat 自动关闭并拒绝再打开。
+- CDP 截图：`/tmp/yachiyo-d1.d9CDM4/screens/avatar.png`、`chat-v2.png`、`chat-messages.png`、`chat-phone-online.png`、`settings.png`、`settings-error.png`。
+- 未完成项：无。
+- 风险：Markdown/Mermaid/KaTeX 增强脚本仍沿用既有 CDN 加载方式；离线时文本与图片仍可显示，但高级排版会降级。截图在临时目录，统筹验收前请保留该路径。
