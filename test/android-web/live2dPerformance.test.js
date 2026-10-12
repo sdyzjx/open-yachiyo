@@ -57,14 +57,15 @@ test('TC-AWB-027 bridge falls back until a worker frame then applies drawable st
     opacities: new Float32Array([0.8, 0.9]), renderOrders: new Int32Array([1, 0]),
     dynamicFlags: new Uint8Array([2, 3]), workerMs: 12.5
   });
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [0, 0], 'warm-up frame does not replace the current mesh');
+  assert.equal(bridge.state.warmed, true);
+  assert.equal(bridge.state.active, false);
+  raw.drawables.vertexPositions[0].set([4, 5]);
+  raw.drawables.vertexPositions[1].set([6, 7, 8, 9]);
+  raw.drawables.opacities.set([0.9, 1]);
   bridge.update();
-  assert.equal(synchronousUpdates, 1);
+  assert.equal(synchronousUpdates, 2, 'synchronous Core remains active through the warm-up result');
   assert.equal(resets, 0);
-  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [3, 4]);
-  assert.deepEqual(Array.from(raw.drawables.vertexPositions[1]), [5, 6, 7, 8]);
-  assert.ok(Math.abs(raw.drawables.opacities[0] - 0.8) < 1e-6);
-  assert.ok(Math.abs(raw.drawables.opacities[1] - 0.9) < 1e-6);
-  assert.equal(bridge.state.active, true);
   assert.equal(bridge.state.lastWorkerMs, 12.5);
 
   time = 60;
@@ -73,16 +74,29 @@ test('TC-AWB-027 bridge falls back until a worker frame then applies drawable st
     opacities: new Float32Array([0.7, 0.8]), renderOrders: new Int32Array([1, 0]),
     dynamicFlags: new Uint8Array([2, 3]), workerMs: 11
   });
-  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [3, 4], 'worker arrival does not jump the mesh');
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [4, 5], 'worker handoff does not jump the mesh');
+  assert.deepEqual(Array.from(raw.drawables.renderOrders), [0, 1], 'discrete draw order waits for an interpolation boundary');
+  assert.equal(bridge.state.active, true);
   time = 90;
   bridge.update();
-  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [8, 9], 'display frame interpolates a new mesh');
-  assert.ok(Math.abs(raw.drawables.opacities[0] - 0.75) < 1e-6, 'opacity follows the vertex interpolation');
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), [8.5, 9.5], 'display frame interpolates a new mesh');
+  assert.ok(Math.abs(raw.drawables.opacities[0] - 0.8) < 1e-6, 'opacity follows the vertex interpolation');
   assert.equal(raw.drawables.dynamicFlags[0] & 32, 32, 'interpolated vertices keep clipping masks dirty');
   assert.equal(bridge.state.interpolationProgress, 0.5);
+  assert.deepEqual(Array.from(raw.drawables.renderOrders), [0, 1]);
   assert.equal(instance.sent.at(-1).transfer.length, 6, 'previous drawable payload is returned to the worker pool');
+  time = 120;
+  bridge.update();
+  assert.deepEqual(Array.from(raw.drawables.renderOrders), [1, 0], 'draw order switches only when the target mesh is complete');
   bridge.destroy();
   assert.equal(instance.sent.at(-1).data.type, 'destroy');
+  const finalVertices = Array.from(raw.drawables.vertexPositions[0]);
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([99, 99, 99, 99, 99, 99]),
+    opacities: new Float32Array([0, 0]), renderOrders: new Int32Array([0, 1]),
+    dynamicFlags: new Uint8Array([0, 0]), workerMs: 1
+  });
+  assert.deepEqual(Array.from(raw.drawables.vertexPositions[0]), finalVertices, 'late frame cannot mutate a destroyed model');
   instance.emit({ type: 'destroyed' });
   assert.equal(instance.terminated, true);
 });
@@ -185,6 +199,20 @@ test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async
     }
   };
   let syncUpdates = 0;
+  assert.equal(Bridge.create({
+    model: { getModel: () => raw, update() {} }, workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json',
+    WorkerClass: class { constructor() { throw new Error('constructor failed'); } }
+  }), null, 'Worker constructor failures preserve the synchronous path');
+
+  class InitThrowWorker extends FakeWorker { postMessage() { throw new Error('init send failed'); } }
+  const initSend = Bridge.create({
+    model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: InitThrowWorker
+  });
+  assert.equal(initSend.state.failed, true);
+  initSend.update();
+  assert.equal(syncUpdates, 1, 'init send failure restores synchronous Core updates');
+
   const startup = Bridge.create({
     model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
     workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
@@ -194,7 +222,7 @@ test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async
   assert.equal(startup.state.failed, true);
   assert.equal(instance.terminated, true);
   startup.update();
-  assert.equal(syncUpdates, 1, 'startup timeout restores synchronous Core updates');
+  assert.equal(syncUpdates, 2, 'startup timeout restores synchronous Core updates');
 
   const stalled = Bridge.create({
     model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
@@ -206,6 +234,20 @@ test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async
   await wait(30);
   assert.equal(stalled.state.failed, true);
   assert.equal(instance.terminated, true);
+
+  class UpdateThrowWorker extends FakeWorker {
+    postMessage(data, transfer) {
+      if (data.type === 'update') throw new Error('update send failed');
+      super.postMessage(data, transfer);
+    }
+  }
+  const updateSend = Bridge.create({
+    model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: UpdateThrowWorker
+  });
+  updateSend.state.ready = true;
+  assert.doesNotThrow(() => updateSend.update());
+  assert.equal(updateSend.state.failed, true);
 });
 
 test('TC-AWB-027 background time resets the pending frame deadline', async () => {

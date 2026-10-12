@@ -80,7 +80,7 @@
 
   async function ensureModel() {
     if (S.modelPromise) return S.modelPromise;
-    S.modelPromise = (async () => {
+    const loadPromise = (async () => {
       manifest = manifest || await loadJson('/generated/manifest.json');
       if (!manifest || !manifest.model) throw new Error('generated/manifest.json missing - run npm run android:sync-assets');
       presets = presets && Object.keys(presets).length ? presets : (await loadJson('/generated/config/live2d-presets.json')) || {};
@@ -94,7 +94,16 @@
       actions = window.YachiyoActions.createActions({ stage, bridge: B, presets, log, getHostInfo: () => ({ avatar_host: S.hub.avatar_host, is_host: isHost(), landscape: S.landscape, panel: S.panelState }) });
       retargetCamera(true);
       return true;
-    })().catch((err) => { S.modelPromise = null; log('error', `model load failed: ${err.message}`); toast(`模型加载失败：${err.message}`); throw err; });
+    })();
+    const trackedPromise = loadPromise.catch((err) => {
+      if (S.modelPromise === trackedPromise) S.modelPromise = null;
+      if (err && err.code !== 'STALE_STAGE_LOAD') {
+        log('error', `model load failed: ${err.message}`);
+        toast(`模型加载失败：${err.message}`);
+      }
+      throw err;
+    });
+    S.modelPromise = trackedPromise;
     return S.modelPromise;
   }
 

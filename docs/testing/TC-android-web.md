@@ -274,8 +274,8 @@
 |---|---|
 | 类型 | unit |
 | 前置条件 | fake Worker、typed-array drawable 模型 |
-| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；模拟启动/单帧无响应及页面后台恢复；再次 update；销毁 |
-| 期望结果 | ready 前同步回退；首帧后不再同步 Core；worker 到达不跳网格；显示帧生成中间顶点与透明度并保持 mask vertex-changed；上一组 typed array 返回 Worker 池；可见页面超时回退同步 Core，后台时间不误判且恢复后重置截止期；Worker 释放 |
+| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；模拟构造/发送异常、启动/单帧无响应及页面后台恢复；销毁后发送迟到 frame |
+| 期望结果 | ready 前同步回退；首个 Worker frame 仅预热且不改当前网格，第二帧从当前网格平滑接管；显示帧生成中间顶点与透明度并保持 mask vertex-changed，render order 只在插值边界切换；上一组 typed array 返回 Worker 池；可见页面异常/超时回退同步 Core，后台时间不误判且恢复后重置截止期；销毁后忽略迟到结果并释放 Worker |
 | 自动化 | `test/android-web/live2dPerformance.test.js`（TC-AWB-027） |
 
 ## TC-AWB-028 Cubism Worker 求值协议
@@ -297,3 +297,13 @@
 | 步骤 | 安装 optimizer；绘制两帧；检查 attrib/index offset、上传次数和 program；触发 draw 异常；detach |
 | 期望结果 | UV/index 只上传一次、position 每模型帧一次；draw 顺序不变；透明非 mask drawable 可跳过；真实 draw 异常不重试；GL 方法、原 `_bufferData` 和自有 buffer 正确恢复/释放 |
 | 自动化 | `test/android-web/live2dRendererOptimizer.test.js` |
+
+## TC-AWB-030 Stage 异步加载 generation 隔离
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | fake `Live2DModel.from` 延迟返回，旧 stage 已开始加载 |
+| 步骤 | 发起模型加载；在 Promise 完成前销毁 stage；随后让旧模型返回 |
+| 期望结果 | 旧模型不加入新 Pixi app，不覆盖新 stage 状态；旧模型立即 destroy；旧 Promise 只清理自身且以可识别 stale 错误结束 |
+| 自动化 | `test/android-web/stageLifecycle.test.js`（TC-AWB-030） |

@@ -27,6 +27,7 @@
       this.coreBridge = null;
       this.rendererOptimization = null;
       this.metrics = { rafFrames: 0, drawFrames: 0, frameIntervals: [], drawSamples: [], lastFrameAt: 0, workerFrameBase: 0 };
+      this.generation = 0;
     }
 
     async init() {
@@ -64,9 +65,17 @@
     async load({ url, quality, name }) {
       const Live2DModel = global.PIXI.live2d.Live2DModel;
       const t0 = performance.now();
+      const generation = this.generation;
+      const app = this.app;
       const model = await Live2DModel.from(url, { autoInteract: false, autoUpdate: false });
+      if (!app || this.app !== app || this.generation !== generation) {
+        try { model.destroy({ children: true, texture: true, baseTexture: true }); } catch { /* ignore */ }
+        const error = new Error('model load superseded');
+        error.code = 'STALE_STAGE_LOAD';
+        throw error;
+      }
       model.visible = false;
-      this.app.stage.addChild(model);
+      app.stage.addChild(model);
       this.model = model;
       this.quality = quality;
       this.modelName = name || '';
@@ -251,6 +260,7 @@
     }
 
     destroy() {
+      this.generation += 1;
       try { if (this.hookDetach) this.hookDetach(); } catch { /* ignore */ }
       try { if (this.coreBridge) this.coreBridge.destroy(); } catch { /* ignore */ }
       try { if (this.rendererOptimization) this.rendererOptimization.detach(); } catch { /* ignore */ }

@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws5
 > 更新: 2026-10-12
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/features/FEAT-android-live2d-performance.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-029
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/features/FEAT-android-live2d-performance.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-030
 
 ## 1. 概述
 
@@ -112,4 +112,4 @@ sequenceDiagram
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-029（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`。
+TC-AWB-001..TC-AWB-030（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`。

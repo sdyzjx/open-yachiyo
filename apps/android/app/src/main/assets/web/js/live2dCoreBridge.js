@@ -18,9 +18,13 @@
     if (!model || typeof model.getModel !== 'function' || typeof WorkerClass !== 'function') return null;
     const raw = model.getModel();
     const originalUpdate = model.update.bind(model);
-    const worker = new WorkerClass(workerUrl);
+    let worker;
+    try { worker = new WorkerClass(workerUrl); } catch (err) {
+      log('warn', `Cubism worker unavailable: ${err.message}`);
+      return null;
+    }
     const state = {
-      ready: false, active: false, pending: false, failed: false, destroyed: false,
+      ready: false, warmed: false, active: false, pending: false, failed: false, destroyed: false,
       jobs: 0, frames: 0, lastWorkerMs: 0, workerSamples: [], interpolationProgress: 1
     };
     let fromVertices = null;
@@ -32,6 +36,7 @@
     let targetOpacities = null;
     let fromDynamicFlags = null;
     let targetDynamicFlags = null;
+    let targetRenderOrders = null;
     let parameterPool = null;
     let partPool = null;
     let previousPayload = null;
@@ -107,27 +112,12 @@
     function applyFrame(data) {
       const drawables = raw.drawables;
       const receivedAt = now();
-      if (!state.active) {
-        copyVertices(data.vertices);
-        fromVertices = Float32Array.from(data.vertices);
-        targetVertices = Float32Array.from(data.vertices);
-        copyTyped(drawables.opacities, data.opacities, 'opacity');
-        copyTyped(drawables.dynamicFlags, data.dynamicFlags, 'dynamic flags');
-        state.interpolationProgress = 1;
-      } else {
-        fromVertices = flattenVertices();
-        if (data.vertices.length !== fromVertices.length) throw new Error('vertex payload shape changed');
-        if (data.opacities.length !== drawables.opacities.length) throw new Error('opacity shape changed');
-        if (data.dynamicFlags.length !== drawables.dynamicFlags.length) throw new Error('dynamic flags shape changed');
-        targetVertices = data.vertices;
-        fromOpacities = Float32Array.from(drawables.opacities);
-        targetOpacities = data.opacities;
-        fromDynamicFlags = Uint8Array.from(drawables.dynamicFlags);
-        targetDynamicFlags = data.dynamicFlags;
-        if (previousReceivedAt) interpolationMs = Math.min(100, Math.max(33, receivedAt - previousReceivedAt));
-        targetReceivedAt = receivedAt;
-        state.interpolationProgress = 0;
-      }
+      const priorReceivedAt = previousReceivedAt;
+      const currentVertices = flattenVertices();
+      if (!data.vertices || data.vertices.length !== currentVertices.length) throw new Error('vertex payload shape changed');
+      if (!data.opacities || data.opacities.length !== drawables.opacities.length) throw new Error('opacity shape changed');
+      if (!data.dynamicFlags || data.dynamicFlags.length !== drawables.dynamicFlags.length) throw new Error('dynamic flags shape changed');
+      if (!data.renderOrders || data.renderOrders.length !== drawables.renderOrders.length) throw new Error('render order shape changed');
       previousReceivedAt = receivedAt;
       parameterPool = data.parameterBuffer || null;
       partPool = data.partsBuffer || null;
@@ -138,8 +128,23 @@
         renderOrders: data.renderOrders,
         dynamicFlags: data.dynamicFlags
       };
-      copyTyped(drawables.renderOrders, data.renderOrders, 'render order');
-      state.active = true;
+      if (!state.warmed) {
+        // Discard the stale startup result. The synchronous Core remains authoritative while the
+        // second job evaluates the latest parameters, avoiding an immediate backwards mesh jump.
+        state.warmed = true;
+      } else {
+        fromVertices = currentVertices;
+        targetVertices = data.vertices;
+        fromOpacities = Float32Array.from(drawables.opacities);
+        targetOpacities = data.opacities;
+        fromDynamicFlags = Uint8Array.from(drawables.dynamicFlags);
+        targetDynamicFlags = data.dynamicFlags;
+        targetRenderOrders = data.renderOrders;
+        interpolationMs = Math.min(100, Math.max(33, receivedAt - priorReceivedAt || 60));
+        targetReceivedAt = receivedAt;
+        state.interpolationProgress = 0;
+        state.active = true;
+      }
       state.frames += 1;
       state.lastWorkerMs = Number(data.workerMs) || 0;
       state.workerSamples.push(state.lastWorkerMs);
@@ -158,10 +163,15 @@
         raw.drawables.dynamicFlags[i] = flags;
       }
       state.interpolationProgress = progress;
+      if (progress >= 1) copyTyped(raw.drawables.renderOrders, targetRenderOrders, 'render order');
     }
 
     worker.onmessage = (event) => {
       const data = event && event.data || {};
+      if (state.destroyed) {
+        if (data.type === 'destroyed') { try { worker.terminate(); } catch { /* ignore */ } }
+        return;
+      }
       if (data.type === 'ready') {
         clearTimer('init');
         state.ready = true;
@@ -177,7 +187,7 @@
       if (data.type === 'destroyed') { try { worker.terminate(); } catch { /* ignore */ } return; }
       if (data.type === 'error') fail(data.message || 'unknown worker error');
     };
-    worker.onerror = (event) => fail((event && event.message) || 'worker error');
+    worker.onerror = (event) => { if (!state.destroyed) fail((event && event.message) || 'worker error'); };
     if (visibilityTarget && typeof visibilityTarget.addEventListener === 'function') {
       visibilityTarget.addEventListener('visibilitychange', onVisibilityChange);
     }
