@@ -56,10 +56,25 @@ async function createPiRuntime(deps) {
           const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
           const context = () => ({ ...runtimeContext, trace_id: events.traceId, session_id: sessionId, step_index: events.step,
             reportToolError: (callId, failure) => events.toolFailures.set(callId, failure) });
-          const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context });
+          const onlineNames = new Map();
+          const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames });
           devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
             bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });
-          const tools = [...localTools, ...devices.snapshot(context, localTools.map((tool) => tool.name))];
+          const tools = [...localTools, ...devices.snapshot(context, localTools.map((tool) => tool.originalName), onlineNames)];
+          const toolNames = new Map();
+          for (const tool of tools) {
+            if (toolNames.has(tool.name)) throw new Error(`Tool name encoding collision: ${toolNames.get(tool.name)} and ${tool.originalName}`);
+            toolNames.set(tool.name, tool.originalName);
+          }
+          // Keep legacy/mock providers that return the prompt's original dotted
+          // name callable without declaring that invalid name to the provider.
+          const onlineNameSet = new Set(tools.map((tool) => tool.name));
+          const aliases = tools.filter((tool) => tool.name !== tool.originalName && !onlineNameSet.has(tool.originalName)).map((tool) => ({
+            ...tool,
+            name: tool.originalName,
+            prepareLoadout: () => ({ hiddenDeclarations: [tool.originalName] })
+          }));
+          events.setToolNameResolver((name) => toolNames.get(name) || name);
           const opened = await sessions.open({ sessionId, cwd, seedMessages, model: chain[0] });
           const { systemPrompt, persona, skills } = await buildPrompt({ ...deps, sessionId, input, tools, runtimeContext,
             seedMessages: opened.systemSeeds, toolErrorMaxRetries });
@@ -76,19 +91,25 @@ async function createPiRuntime(deps) {
           for (let index = 0; index < chain.length; index += 1) {
             let model = models.getModel(chain[index].provider, chain[index].id);
             // v1 catalog metadata defaults to text-only; preserve explicit user image input.
-            if (images.length || tools.some((tool) => tool.name.startsWith('desktop.capture.'))) model = { ...model, input: ['text', 'image'] };
+            if (images.length || tools.some((tool) => tool.originalName.startsWith('desktop.capture.'))) model = { ...model, input: ['text', 'image'] };
             const startLeaf = opened.manager.getLeafId();
             let limited = false;
             ({ session } = await sdk.createAgentSession({ cwd, agentDir: path.join(sessions.rootDir, '.agent'), modelRuntime: models, model,
               thinkingLevel: model.reasoning ? 'medium' : 'off', resourceLoader: loader, sessionManager: opened.manager,
-              settingsManager: opened.settingsManager, noTools: 'builtin', tools: tools.map((tool) => tool.name), customTools: tools }));
+              settingsManager: opened.settingsManager, noTools: 'builtin',
+              tools: [...tools.map((tool) => tool.name), ...aliases.map((tool) => tool.name)], customTools: [...tools, ...aliases] }));
             session.subscribe((event) => {
               events.accept(event);
               if (event.type === 'tool_execution_end') {
                 if (event.isError) failures += 1;
-                else if (event.toolName.startsWith('live2d.') || event.toolName === 'voice.tts_aliyun_vc') {
-                  session.setActiveToolsByName(session.getActiveToolNames().filter((name) =>
-                    event.toolName.startsWith('live2d.') ? !name.startsWith('live2d.') : name !== event.toolName));
+                else {
+                  const originalName = events.toolName(event.toolName);
+                  if (originalName.startsWith('live2d.') || originalName === 'voice.tts_aliyun_vc') {
+                    session.setActiveToolsByName(session.getActiveToolNames().filter((name) =>
+                      originalName.startsWith('live2d.')
+                        ? !events.toolName(name).startsWith('live2d.')
+                        : events.toolName(name) !== originalName));
+                  }
                 }
               }
               if (events.step > maxStep || failures > toolErrorMaxRetries) {

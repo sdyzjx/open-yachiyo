@@ -172,3 +172,21 @@ git diff --check
 ```
 
 最终结果：**535 / 535 通过，0 失败、0 跳过**（基线 509，新增 26）；其中 gatewayModes.test.js 子进程分别完整执行 pi 和 legacy 的既有 gateway.e2e 五用例。TC-PI-001…024 记录每个用例的步骤、期望和自动化名称。真实 SDK、本地 SSE mock 覆盖二轮会话恢复、自动压缩持久化、图片/ASR、权限拒绝、工具错误码、回退和循环上限。
+
+## 10. pi 核心收尾交付（2026-10-12）
+
+### 完成项
+
+- provider 工具名编码：点号、非法字符、超长名称与编码候选碰撞均产生合法唯一线上名；executor、publishEvent、兼容事件和 Live2D/TTS 控制反向使用原名。
+- 旧 provider 兼容：pi 内部注册不向 provider 声明的原名别名，已有 mock/兼容端返回点号名时仍执行同一个受控工具。
+- 动态 Hub 工具授权：`policy.deviceHub.allow/deny` 显式 opt-in，默认不暴露；通过规则的实际方法名加入本次精确 allow，全局/provider deny 与会话权限保持优先。
+- `model_ref` 重复适配删除：`attachModelContext` 退化为无操作兼容导出，真实 `RuntimeRpcWorker` 原生透传用例覆盖；待网关移除旧 import/call 后可删除导出。
+- 同步功能文档与 TC-PI-008、TC-PI-022、TC-PI-025。
+
+### 验证
+
+`npm run test:ci`：566 / 566 通过，0 失败、0 跳过；包含 pi/legacy 各五项 gateway e2e。`git diff --check` 通过。未使用 Android 真机。
+
+### 提交
+
+功能提交：见 `fix(pi): encode provider tool names safely`。最终提交哈希由交付消息记录。

@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { createGatewayRunner, attachModelContext } = require('../../../apps/runtime/agent-pi/gatewayAssembly');
+const { RuntimeRpcWorker } = require('../../../apps/runtime/rpc/runtimeRpcWorker');
 
 for (const core of ['pi', 'legacy']) {
   test(`TC-PI-021 existing gateway e2e suite passes with AGENT_CORE=${core}`, { timeout: 90000 }, async (t) => {
@@ -25,12 +26,20 @@ for (const core of ['pi', 'legacy']) {
   });
 }
 
-test('TC-PI-022 core rollback and RPC model_ref assembly preserve existing context', async () => {
+test('TC-PI-022 core rollback and native worker model_ref forwarding preserve existing context', async () => {
   const legacy = {};
   assert.equal(createGatewayRunner({ core: 'legacy', legacyFactory: () => legacy }), legacy);
   assert.throws(() => createGatewayRunner({ core: 'typo' }), /Invalid AGENT_CORE/);
   let received;
-  const worker = attachModelContext({ processEnvelope: async ({ context }) => { received = await context.buildRunContext({}); } });
-  await worker.processEnvelope({ request: { params: { model_ref: 'mock/other' } }, context: { buildRunContext: async () => ({ permission_level: 'low' }) } });
-  assert.deepEqual(received, { permission_level: 'low', model_ref: 'mock/other' });
+  const worker = new RuntimeRpcWorker({ queue: {}, bus: { publish: () => {} }, runner: { run: async (args) => {
+    received = args;
+    return { output: 'ok', traceId: 'trace', state: 'DONE', metrics: {} };
+  } } });
+  assert.equal(attachModelContext(worker), worker);
+  await worker.processEnvelope({
+    request: { id: 'request', method: 'runtime.run', params: { session_id: 'session', input: 'hello', model_ref: ' mock/other ' } },
+    context: { buildRunContext: async () => ({ permission_level: 'low' }) }
+  });
+  assert.equal(received.modelRef, 'mock/other');
+  assert.deepEqual(received.runtimeContext, { permission_level: 'low', model_ref: 'mock/other' });
 });

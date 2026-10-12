@@ -4,6 +4,30 @@ const { bridgeTools } = require('./toolBridge');
 
 const EMPTY_SCHEMA = { type: 'object', properties: {}, additionalProperties: false };
 
+function matchesPattern(name, pattern) {
+  if (typeof pattern !== 'string' || !pattern) return false;
+  const source = pattern.split('*').map((part) => part.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')).join('.*');
+  return new RegExp(`^${source}$`).test(name);
+}
+
+function filterHubMethods(methods, policy = {}) {
+  const config = policy.deviceHub || {};
+  const allow = Array.isArray(config.allow) ? config.allow : [];
+  const deny = Array.isArray(config.deny) ? config.deny : [];
+  if (!allow.length) return [];
+  return methods.filter((method) => {
+    const name = method?.tool_name;
+    return typeof name === 'string'
+      && !deny.some((pattern) => matchesPattern(name, pattern))
+      && allow.some((pattern) => matchesPattern(name, pattern));
+  });
+}
+
+function withAllowedHubTools(policy = {}, names = []) {
+  const allow = Array.isArray(policy.allow) ? policy.allow : [];
+  return allow.length ? { ...policy, allow: [...new Set([...allow, ...names])] } : policy;
+}
+
 class DeviceTools {
   constructor({ deviceHub, bus, avatar, policy, timeoutMs = 8000 }) {
     this.hub = deviceHub;
@@ -17,9 +41,9 @@ class DeviceTools {
     deviceHub?.on?.('tools.changed', this.changed);
   }
 
-  snapshot(context, reservedNames = []) {
+  snapshot(context, reservedNames = [], onlineNames) {
     if (this.dirty) {
-      this.methods = (this.hub?.listToolMethods() || []).map((method) => ({ ...method }));
+      this.methods = filterHubMethods(this.hub?.listToolMethods() || [], this.policy).map((method) => ({ ...method }));
       this.dirty = false;
     }
     const definitions = new Map();
@@ -61,7 +85,8 @@ class DeviceTools {
       });
     }
     const registry = { list: () => [...definitions.values()], get: (name) => definitions.get(name) };
-    return bridgeTools({ executor: new ToolExecutor(registry, { policy: this.policy }), bus: this.bus, context });
+    const policy = withAllowedHubTools(this.policy, this.methods.map((method) => method.tool_name));
+    return bridgeTools({ executor: new ToolExecutor(registry, { policy }), bus: this.bus, context, onlineNames });
   }
 
   dispose() {
@@ -69,4 +94,4 @@ class DeviceTools {
   }
 }
 
-module.exports = { DeviceTools };
+module.exports = { DeviceTools, matchesPattern, filterHubMethods, withAllowedHubTools };

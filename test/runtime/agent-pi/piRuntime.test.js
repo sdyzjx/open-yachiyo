@@ -100,3 +100,35 @@ test('TC-PI-023 automatic compaction persists a summary and resumes through pi',
   assert.ok(entries.some((entry) => entry.type === 'compaction'), JSON.stringify({ events: events.map((e) => [e.event, e.payload.reason]), usage: entries.filter((e) => e.type === 'message').map((e) => e.message.usage), requests: f.requests.length }));
   assert.ok(events.some((event) => event.event === 'pi.compaction_end'));
 });
+
+test('TC-PI-025 provider-safe tool names execute and emit their original names without collisions', async (t) => {
+  const executed = [];
+  const dotted = 'live2d.motion.play';
+  const colliding = 'live2d__motion__play';
+  const long = `provider.${'tool'.repeat(20)}`;
+  const executor = new ToolExecutor({
+    [dotted]: { description: 'dotted tool', run: () => { executed.push(dotted); return 'played'; } },
+    [colliding]: { description: 'colliding tool', run: () => { executed.push(colliding); return 'wrong'; } },
+    [long]: { description: 'long tool', run: () => { executed.push(long); return 'wrong'; } }
+  });
+  const f = await fixture(t, (body) => {
+    if (body.messages.at(-1).role === 'tool') return { text: 'done' };
+    return { tool: body.tools.find((tool) => tool.function.description === 'dotted tool').function.name };
+  }, { executor });
+  const events = [];
+  const result = await f.runtime.run({ sessionId: 'safe-tools', input: 'act', onEvent: (event) => events.push(event) });
+  assert.equal(result.state, 'DONE', result.output);
+  const online = f.requests[0].tools.map((tool) => tool.function.name);
+  assert.equal(new Set(online).size, online.length);
+  for (const name of online) assert.match(name, /^[a-zA-Z0-9_-]{1,64}$/);
+  const encoded = Object.fromEntries(f.requests[0].tools
+    .filter((tool) => ['dotted tool', 'colliding tool', 'long tool'].includes(tool.function.description))
+    .map((tool) => [tool.function.description, tool.function.name]));
+  assert.equal(new Set(Object.values(encoded)).size, 3);
+  assert.equal(encoded['dotted tool'], 'live2d__motion__play');
+  assert.deepEqual(executed, [dotted]);
+  for (const eventName of ['tool_call.stable', 'tool.call', 'tool_call.requested', 'tool_call.started', 'tool.result', 'tool_call.completed']) {
+    assert.equal(events.find((event) => event.event === eventName).payload.name, dotted, eventName);
+  }
+  assert.deepEqual(events.find((event) => event.event === 'llm.final' && event.payload.decision.type === 'tool').payload.decision.tools[0].name, dotted);
+});

@@ -33,7 +33,7 @@ function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
 function buildDesktopCapturePrompt(availableTools = []) {
   const toolNames = new Set(
     (Array.isArray(availableTools) ? availableTools : [])
-      .map((tool) => String(tool?.name || '').trim())
+      .map((tool) => String(tool?.originalName || tool?.name || '').trim())
       .filter(Boolean)
   );
   const hasLocateTool = toolNames.has('desktop.locate.capture') || toolNames.has('desktop.locate.desktop');
