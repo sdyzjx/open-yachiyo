@@ -86,6 +86,7 @@
 - [Android 端 Live2D WebView 渲染可行性实验](experiments/EXP-20261012-android-live2d-webview-feasibility.md)
 - [Android Companion 集成与真机验收](experiments/EXP-20261012-companion-integration-acceptance.md)
 - [Android 麦克风回录与扬声器试听验收](experiments/EXP-20261013-android-microphone-acoustic-capture.md)
+- [Android Live2D 静音口型复位实验](experiments/EXP-20261013-android-mouth-neutral.md)
 - [真实 pi、TTS 与 ASR 服务验收](experiments/EXP-20261013-real-voice-services.md)
 
 ## 调研 Research
