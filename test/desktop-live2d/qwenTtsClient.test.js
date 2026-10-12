@@ -89,3 +89,23 @@ test('qwen tts client fetchAudioBuffer reads binary payload', async () => {
   assert.equal(Buffer.isBuffer(buf), true);
   assert.deepEqual([...buf], [1, 2, 3, 4]);
 });
+
+test('TC-VOC-021 desktop wrapper returns a data URL for providers without remote audio URLs', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qwen-tts-oai-'));
+  const configPath = path.join(tmpDir, 'providers.yaml');
+  fs.writeFileSync(configPath, [
+    'version: 2', 'active_model: c/m', 'voice: { active_tts: oai }', 'providers:',
+    '  c: { type: openai_compatible, base_url: "https://x/v1", model: m, api_key: k }',
+    '  oai: { type: tts_openai_compatible, base_url: "https://o/v1", api_key: k, tts_model: tts-1, tts_voice: alloy, format: mp3 }'
+  ].join('\n'));
+  const { ProviderConfigStore } = require('../../apps/runtime/config/providerConfigStore');
+  const client = new QwenTtsClient({
+    store: new ProviderConfigStore({ configPath }),
+    fetchImpl: async () => ({ ok: true, status: 200, headers: new Map(), async arrayBuffer() { return Uint8Array.from([9, 8, 7]).buffer; } })
+  });
+  const result = await client.synthesizeNonStreaming({ text: 'hi' });
+  assert.match(result.audioUrl, /^data:audio\/mpeg;base64,/);
+  assert.equal(result.mimeType, 'audio/mpeg');
+  assert.deepEqual([...(await client.fetchAudioBuffer({ audioUrl: result.audioUrl }))], [9, 8, 7]);
+  assert.equal(client.describeActive().supportsRealtime, false);
+});

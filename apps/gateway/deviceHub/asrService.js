@@ -3,6 +3,7 @@ const path = require('node:path');
 const YAML = require('yaml');
 const { loadModelCatalog } = require('../../runtime/config/modelCatalog');
 const { resolveYachiyoHome } = require('../../runtime/skills/runtimePaths');
+const { buildAsrClient } = require('../../runtime/voice/asr');
 const { fault } = require('./hub');
 
 function loadAsrProvider() {
@@ -23,28 +24,14 @@ function createAsrService({ getProvider = loadAsrProvider, fetchImpl = fetch, fa
       if (!value?.text?.trim()) throw fault(-32602, 'Empty ASR transcript');
       return value;
     }
-    const base = String(provider.base_url || '').replace(/\/$/, '');
-    const key = provider.api_key || process.env[provider.api_key_env] || '';
-    const headers = { ...provider.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) };
-    let endpoint; let body;
-    if (provider.type === 'asr_openai_compatible') {
-      endpoint = `${base}/audio/transcriptions`;
-      body = new FormData();
-      body.append('file', new Blob([wav], { type: 'audio/wav' }), 'input.wav');
-      body.append('model', provider.model || provider.asr_model || 'whisper-1');
-      if (lang !== 'auto') body.append('language', lang);
-    } else if (provider.type === 'asr_dashscope') {
-      // Qwen ASR supports inline WAV via the OpenAI-compatible multimodal endpoint.
-      endpoint = `${base.replace(/\/api\/v1$/, '/compatible-mode/v1')}/chat/completions`;
-      headers['content-type'] = 'application/json';
-      body = JSON.stringify({ model: provider.model || provider.asr_model || 'qwen3-asr-flash', messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: `data:audio/wav;base64,${wav.toString('base64')}` } }] }], stream: false, asr_options: { enable_itn: false, ...(lang !== 'auto' ? { language: lang === 'zh' ? 'Chinese' : 'English' } : {}) } });
-    } else throw fault(-32602, 'Unsupported ASR provider');
-    const response = await fetchImpl(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(Number(provider.timeout_ms) || 60000) });
-    if (!response.ok) throw fault(-32600, `ASR HTTP ${response.status}`);
-    const result = await response.json();
-    const text = result.text || result.choices?.[0]?.message?.content;
-    if (typeof text !== 'string' || !text.trim()) throw fault(-32602, 'Empty ASR transcript');
-    return { text: text.trim() };
+    try {
+      return await buildAsrClient({ provider, fetchImpl }).transcribe({ buffer: wav, mime: 'audio/wav', lang });
+    } catch (err) {
+      if (err.code === 'ASR_HTTP_ERROR') throw fault(-32600, err.message);
+      if (err.code === 'ASR_EMPTY') throw fault(-32602, err.message);
+      if (err.code === 'ASR_CONFIG_MISSING') throw fault(-32602, 'Unsupported ASR provider');
+      throw err;
+    }
   };
 }
 module.exports = { createAsrService, loadAsrProvider };

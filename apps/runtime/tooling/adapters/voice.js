@@ -3,11 +3,10 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { loadVoicePolicy, evaluateVoicePolicy } = require('../voice/policy');
 const { InMemoryVoiceCooldownStore, InMemoryVoiceIdempotencyStore, InMemoryVoiceActiveJobStore } = require('../voice/cooldownStore');
-const { ProviderConfigStore } = require('../../config/providerConfigStore');
+const { ProviderConfigStore, normalizeProviderConfig } = require('../../config/providerConfigStore');
+const { resolveVoiceProvider, TTS_TYPES } = require('../../config/modelCatalog');
 const { getRuntimePaths } = require('../../skills/runtimePaths');
 
-// TTS provider name in providers.yaml
-const TTS_PROVIDER_KEY = process.env.TTS_PROVIDER_KEY || 'qwen3_tts';
 const JP_TTS_HARD_REPLACEMENTS = Object.freeze({
   '八千代': 'やちよ'
 });
@@ -15,12 +14,10 @@ const JP_TTS_HARD_REPLACEMENTS = Object.freeze({
 function loadTtsProviderConfig() {
   try {
     const store = new ProviderConfigStore();
-    const config = store.load();
-    const provider = config.providers && config.providers[TTS_PROVIDER_KEY];
-    if (!provider || provider.type !== 'tts_dashscope') {
-      return null;
-    }
-    return provider;
+    // Same resolution as runtime/voice: voice.active_tts -> TTS_PROVIDER_KEY -> first tts_* provider.
+    const config = normalizeProviderConfig(store.load());
+    const picked = resolveVoiceProvider(config, TTS_TYPES, [config.voice?.active_tts, process.env.TTS_PROVIDER_KEY]);
+    return picked ? config.providers[picked.key] : null;
   } catch (_) {
     return null;
   }

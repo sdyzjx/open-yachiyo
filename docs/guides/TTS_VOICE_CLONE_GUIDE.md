@@ -22,7 +22,8 @@
 关键事实：
 
 - `active_provider` 只决定文本模型，不决定 TTS provider
-- TTS 默认读取 `providers.qwen3_tts`
+- TTS provider 由 `providers.yaml` 顶层 `voice.active_tts` 选择（缺省 → 环境变量 `TTS_PROVIDER_KEY` → 第一个 `tts_*` provider）；旧 key `qwen3_tts` 无需迁移即可继续使用，新模板推荐命名为 `qwen_tts`
+- 实时（流式）仅 `tts_dashscope` 且配置了 `tts_realtime_model` 时可用，其他 provider 自动走非流式；详见 `docs/features/FEAT-voice-provider-config.md`
 - 是否走流式，不由 `tts_realtime_model` 单独决定，而由 `desktop-live2d.json` 中的 `voice.path` 和 `voice.transport` 共同决定
 
 ## 2. 仓库内参考音频
@@ -201,9 +202,26 @@ python3 scripts/aliyun_voice_clone_http.py \
 
 ## 6. 如何配置 TTS
 
+### 5.0 切换 TTS provider（voice 段）
+
+```yaml
+voice:
+  active_tts: qwen_tts      # 指向下面任一 tts_* provider；也可指向 tts_openai_compatible
+providers:
+  openai_tts:               # POST {base_url}/audio/speech
+    type: tts_openai_compatible
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    tts_model: gpt-4o-mini-tts
+    tts_voice: alloy
+    format: mp3             # mp3|wav|opus|aac|flac|pcm
+```
+
+声音克隆产生的 voice id 仍写入 `tts_dashscope` provider 的 `tts_voice` / `tts_realtime_voice`。
+
 ### 5.1 推荐配置方式
 
-当前系统中，TTS 应统一集中在 `~/yachiyo/config/providers.yaml` 的 `qwen3_tts` 节点管理。
+当前系统中，TTS 应统一集中在 `~/yachiyo/config/providers.yaml` 的 `tts_dashscope` 节点管理（示例 key 为 `qwen3_tts`，新模板为 `qwen_tts`，二者等价，由 `voice.active_tts` 决定生效项）。
 
 推荐写法如下：
 
