@@ -102,3 +102,17 @@
 ### 背景素材选择
 
 已找到并视觉确认[影片官网角色背景](https://www.cho-kaguyahime.com/assets/img/character/character_bg.jpg)（2400×1440）：蓝紫水面、朱红宫殿、暖色灯光，没有其他人物，适合叠加八千代。已向用户展示原图及官网来源；本轮只提供候选，未将第三方素材打包入仓库或修改手机背景。
+
+### GL 状态缓存与 FPS 计时审查（2026-10-13）
+
+候选 `02cf3f6` 增加逐 drawModel 的 GL 状态缓存，独立审查确认 texture 按 unit/target、uniform 按 location/value 区分，每 pass 清缓存并恢复原方法。首次 host 时钟结果为59.29FPS，但采样发现 CDP begin/snapshot 排队导致页面实际采样时长超过 host 等待时间，不能拿该数字声明60FPS。已由 `f93fbfd` 改成页面同一 performance.now 时钟计算。
+
+当前APK通过页面内 Promise 同时包围 begin/snapshot 的暖机复测：10.0247秒561帧，实际draw **55.96FPS**，draw均值16.34ms/p95 20.30ms，Worker18.06Hz。缓存跳过2,508,026次重复状态调用，仍未达标。8秒Greet/Idle录屏及4Hz连续抽帧未见明显撕裂，但低频抽帧不能证明逐帧稳定；文件位于本机 `/tmp/yachiyo-companion-acceptance/perf-02cf3f6-greet.mp4`。候选未合并，真机再次恢复稳定音频APK。下一步交错position/UV VBO降低buffer绑定次数。
+
+### 通用节省计划购买后复验
+
+用户明确告知已购买入门型AI通用节省计划并要求重试。2026-10-13通过现有`qwen35_plus/qwen3.5-flash`配置执行一次最小连接测试，HTTP200，1363ms，无Arrearage。随后真实pi工具调用到手机TTS播放2325ms，完整started/ended通过，日志 `mobile-voice-after-savings.log`。成功仅说明调用恢复；没有访问账单，不能据此断言抵扣项或剩余额度。
+
+该产品沿用通用API凭据，和限制应用后端使用的Token Plan不同，见[官方节省计划使用方式](https://help.aliyun.com/zh/model-studio/savings-plan-and-resource-package)。原文档关于“只换Coding Plan Base URL即可”的误导表述已纠正。
+
+手机自播放参考语音并用原生MIC回录：系统媒体音量从0/25临时设5，录音RMS最大0.208，recording→uploading→idle；服务返回Empty ASR transcript，故实录ASR→回复仍未通过。WAV已保留为`mic-d23c8c95-1791823517037-0.wav`，正在离线检查内容/格式。测试结束恢复媒体音量0并释放设备锁。
