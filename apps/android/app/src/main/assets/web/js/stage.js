@@ -70,6 +70,7 @@
       this.modelName = name || '';
       this.content = this.measureContent();
       this.bindHook();
+      this.wrapUpdate();
       this.log('info', `model loaded in ${Math.round(performance.now() - t0)} ms @${quality}, content ${JSON.stringify(this.content)}`);
       return { loadMs: performance.now() - t0, content: this.content };
     }
@@ -102,6 +103,20 @@
       this.model.update(16);
       this.app.renderer.render(this.app.stage);
       this.model.visible = this.visible;
+    }
+
+    // Cubism Core's mesh update is CPU-heavy on mid-range phones (~21 ms on MI 6). While the UI is animating
+    // (drag, camera, transfer) we skip it on most frames and only redraw the cached mesh at the new transform.
+    wrapUpdate() {
+      const im = this.model.internalModel;
+      const orig = im.update.bind(im);
+      this.skipped = 0;
+      this.skipUpdate = false;
+      im.update = (dt, now) => {
+        if (this.skipUpdate) { this.skipped += dt; return; }
+        orig(dt + this.skipped, now);
+        this.skipped = 0;
+      };
     }
 
     bindHook() {
@@ -148,8 +163,9 @@
     }
 
     // pose: { x, y, scale } in CSS px; one frame step.
-    render(dtMs, pose) {
+    render(dtMs, pose, fullUpdate = true) {
       if (!this.app || !this.model || this.contextLost) return;
+      this.skipUpdate = !fullUpdate;
       if (pose) this.pose = pose;
       this.model.position.set(this.pose.x, this.pose.y);
       this.model.scale.set(this.pose.scale);

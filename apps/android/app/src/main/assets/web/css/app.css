@@ -143,3 +143,6 @@ body[data-landscape="1"] .drawer { height: 88%; }
 .menu button:active { background: rgba(255,255,255,.1); }
 .toast { position: absolute; z-index: 9; left: 50%; bottom: calc(110px + var(--sab)); transform: translateX(-50%); padding: 9px 16px; border-radius: 999px; background: rgba(20,24,38,.95); border: 1px solid var(--glass-line); font-size: 13px; max-width: 80%; text-align: center; animation: pop .25s; }
 .toast[hidden] { display: none; }
+
+.unlock { display: none; position: absolute; z-index: 4; left: 50%; bottom: calc(14px + var(--sab)); transform: translateX(-50%); background: rgba(255,255,255,.14); padding: 8px 16px; }
+body[data-mode="lockscreen"] .unlock { display: block; }

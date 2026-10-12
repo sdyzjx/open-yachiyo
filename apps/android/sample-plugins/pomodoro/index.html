@@ -16,7 +16,7 @@
   .bar { stroke: var(--accent); transition: stroke-dashoffset .4s linear, stroke .3s; }
   body.rest .bar { stroke: #62d6a0; }
   .time { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
-  .time b { font-size: 40px; font-weight: 300; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+  .time b { font-size: clamp(20px, 8vh, 40px); font-weight: 300; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
   .time span { font-size: 12px; color: var(--dim); }
   .row { display: flex; gap: 10px; }
   button { font: inherit; color: var(--ink); background: rgba(255,255,255,.1); border: 0; border-radius: 999px; padding: 10px 20px; }

@@ -101,7 +101,7 @@
   function focusMode() { return L.resolveFocus({ landscape: S.landscape, config: cfg.appearance || {} }); }
 
   function cameraTarget() {
-    const f = L.computeFrame({ viewW: S.view.w, viewH: S.view.h, content: stage.content, focus: focusMode() });
+    const f = L.computeFrame({ viewW: S.view.w, viewH: S.view.h, content: stage.content, focus: focusMode(), ...(lockscreen ? { marginTop: S.landscape ? 0.04 : 0.22, marginBottom: 0.09 } : {}) });
     return { ...L.placeModel(f), frame: f };
   }
 
@@ -169,7 +169,10 @@
           y: cam.y.value + pvy * sc * (1 - mul) + ty
         };
         lipsync.step();
-        stage.render(dt * 1000, pose);
+        const interacting = !!dragging || !!S.anim || [cam.scale, cam.x, cam.y, panel, drawer].some((s) => !s.settled());
+        const full = !interacting || now - lastFullUpdate >= 90;
+        if (full) lastFullUpdate = now;
+        stage.render(dt * 1000, pose, full);
         busy = true;
       } else if (S.firstFrame === false) {
         lipsync.step();
@@ -179,6 +182,7 @@
     return busy;
   }
 
+  let lastFullUpdate = 0;
   let lastPanelKey = '';
   function applyPanels(tr, p) {
     const key = `${tr.appsX.toFixed(1)}|${tr.widgetsX.toFixed(1)}|${S.landscape}`;
@@ -295,6 +299,8 @@
       S.drawerOpen = target === 1;
       drawer.to(target, -r.vy / drawerRange());
       dragging = null;
+    } else if (lockscreen && r.axis === 'y' && r.vy < -600) {
+      B.call('dismissKeyguard');
     } else if (!p.moved && !p.long && e.timeStamp - p.t < 400) {
       onTap(e.clientX, e.clientY, p.hit);
     }
@@ -493,6 +499,7 @@
   };
   el.chatText.addEventListener('blur', () => setTimeout(() => { if (!el.chatText.value) { el.chatForm.classList.remove('open'); document.body.dataset.chat = '0'; } }, 150));
   el.settings.onclick = () => B.call('openSettings');
+  $('btn-unlock').onclick = () => B.call('dismissKeyguard');
 
   function unlockAudio() { if (voice) voice.unlock(); }
 

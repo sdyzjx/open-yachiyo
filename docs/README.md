@@ -17,7 +17,10 @@
 
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
+- [Android 手势布局与取景](features/FEAT-android-gesture-layout.md)
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
+- [Android 统一配置界面](features/FEAT-android-settings.md)
+- [插件系统（Android 宿主与 SDK）](features/FEAT-plugin-system.md)
 
 ## 指南 Guides
 
@@ -25,6 +28,7 @@
 
 - [macOS Packaging Guide](guides/MAC_PACKAGING_GUIDE.md)
 - [Onboarding API Guide](guides/ONBOARDING_API_GUIDE.md)
+- [插件开发指南](guides/PLUGIN_DEVELOPMENT_GUIDE.md)
 - [Provider 配置指南](guides/PROVIDER_CONFIGURATION_GUIDE.md)
 - [Runtime Feature Usage Cases](guides/RUNTIME_FEATURE_USAGE_CASES.md)
 - [声线克隆与 TTS 配置指南](guides/TTS_VOICE_CLONE_GUIDE.md)
@@ -125,6 +129,7 @@
 测试策略与用例集（TC-*）。
 
 - [Android Web 前端测试用例](testing/TC-android-web.md)
+- [插件系统测试用例](testing/TC-plugin-system.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 
