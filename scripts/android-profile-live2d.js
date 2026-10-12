@@ -16,12 +16,19 @@ function summarize(snapshot, hostElapsedMs, mode) {
   const draws = snapshot.drawSamples || [];
   const workers = snapshot.workerSamples || [];
   const mean = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const timing = (values) => ({
+    meanMs: mean(values),
+    p95Ms: percentile(values, 0.95),
+    maxMs: values.length ? Math.max(...values) : 0,
+    over16_7Ms: values.filter((value) => value > 16.7).length,
+    over33_3Ms: values.filter((value) => value > 33.3).length
+  });
   return {
     mode,
     elapsedMs,
     hostElapsedMs,
-    raf: { frames: snapshot.rafFrames, fps: snapshot.rafFrames / seconds, meanMs: mean(frames), p95Ms: percentile(frames, 0.95) },
-    draw: { frames: snapshot.drawFrames, fps: snapshot.drawFrames / seconds, meanMs: mean(draws), p95Ms: percentile(draws, 0.95) },
+    raf: { frames: snapshot.rafFrames, fps: snapshot.rafFrames / seconds, ...timing(frames) },
+    draw: { frames: snapshot.drawFrames, fps: snapshot.drawFrames / seconds, ...timing(draws) },
     worker: {
       frames: snapshot.workerFrames, fps: snapshot.workerFrames / seconds,
       meanMs: mean(workers), p95Ms: percentile(workers, 0.95),

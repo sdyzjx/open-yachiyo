@@ -255,7 +255,7 @@
 | 类型 | manual-device |
 | 前置条件 | 小米 6，包含 Worker Core 性能实现的集成 APK |
 | 步骤 | 建立临时 CDP forward；运行 `node scripts/android-profile-live2d.js --port <port> --duration 5`，再加 `--swipe` 运行一次；核对页面 `elapsedMs` 与主机 `hostElapsedMs`；播放 motion/语音并观察呼吸、头发、衣摆与口型 |
-| 期望结果 | FPS 以页面 begin/snapshot 的同一 `performance.now()` 时钟计算，主机时长只作诊断；rAF 与真实 WebGL draw 稳态目标均 ≥ 60 FPS；Worker frame 持续增长；人物逐帧形变、没有冻结或抽动；结果如实记录在 `EXP-20261012-android-live2d-performance.md` |
+| 期望结果 | FPS 以页面 begin/snapshot 的同一 `performance.now()` 时钟计算，主机时长只作诊断；报告平均/P95/最大帧间隔与 `>16.7 ms`、`>33.3 ms` 长帧数；rAF 与真实 WebGL draw 稳态目标均 ≥ 60 FPS；Worker frame 持续增长；人物逐帧形变、没有冻结或抽动；结果如实记录在 `EXP-20261012-android-live2d-performance.md` |
 | 自动化 | manual |
 
 ## TC-AWB-026 离线 mockNative 运行
