@@ -77,3 +77,11 @@
 同一手机显式 `new AudioContext({latencyHint:'playback'})` 的短测试在 1 秒后为 running/currentTime=1.0667，提供可验证的兼容方案；播放器正在落实后复验。麦克风原生录音开始/取消已执行，尚未据此声明识别/回复链路完成。
 
 手机唤醒需等待系统画面完成；`input keyevent 224` 后约 1 秒，再 `wm dismiss-keyguard` 与上滑，才恢复 Main 可见。该状态下确认手机 host 人物返回、modelLoaded=true、visible=true、paused=false。所有临时旋转、锁屏开关和 screen_off_timeout（原 1800000）均已恢复并释放设备锁。
+
+### 稳定基线音频复验与性能回退
+
+- `c96dc4b`（不含性能实验）Node 653/653、Android 单测/构建通过。真机 TTS playback started→ended 为 2407 ms；AudioContext 保持 running，currentTime 推进至10.005秒；口型43个采样处于active、最大开度0.935，播放与口型通过。
+- 真实麦克风录音3.45秒，RMS峰值0.158，recording→uploading→idle，16kHz单声道WAV产生；该次外部扬声器测试ASR结果为空，故不宣称实录识别通过。读取系统音量发现MUSIC speaker为0，未擅自保留音量修改。
+- 后续真实模型调用返回 `Arrearage`（服务账户欠费），已停止真实API重试，离线测试不受影响。声音服务之前成功和之后账户阻断分别记录。
+- 用户报告性能实验版人物持续抽动。立即回退主线稳定APK，人物恢复完整显示；性能实验不合并。确认缺陷：原库每帧 saveParameters→physics→Core→loadParameters，简单跳过physics会导致输出与基础姿态交替。后续候选先恢复逐帧physics，并在隔离分支审查顶点插值/GL缓冲合并。
+- 有问题的compositor实验虽然idle rAF57.99、swipe55.49，但真实draw/Worker约17Hz且画面抽动，绝不视作60FPS达标。A15继续阻塞。
