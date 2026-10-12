@@ -1,12 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { once } = require('node:events');
+const { EventEmitter, once } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 const { fixture } = require('./helpers');
 const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
-const { pcmToWav } = require('../../../apps/gateway/deviceHub/audioInput');
+const { pcmToWav, attachAudioInput } = require('../../../apps/gateway/deviceHub/audioInput');
 const { createAsrService } = require('../../../apps/gateway/deviceHub/asrService');
 
 test('Audio PCM becomes WAV, mock HTTP ASR yields transcript and device run', async (t) => {
@@ -50,4 +50,129 @@ test('ASR DashScope inline WAV and legacy fallback are deterministic', async () 
   assert.match(sent.body.messages[0].content[0].input_audio.data, /^data:audio\/wav;base64,/);
   const fallback = createAsrService({ getProvider: () => null, fallback: async () => JSON.stringify({ text: 'fallback' }) });
   assert.equal((await fallback({ wav, file: 'test.wav' })).text, 'fallback');
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function audioEvent(topic, device, data) {
+  return { topic, device, data };
+}
+
+function startData(streamId) {
+  return { stream_id: streamId, format: 'pcm_s16le', sample_rate: 16000, channels: 1, mode: 'push_to_talk', lang: 'auto' };
+}
+
+test('ASR completion releases capture while the accepted runtime turn is pending', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-race-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const runStarted = deferred();
+  const releaseRun = deferred();
+  const published = [];
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish(topic, data) { published.push({ topic, data }); },
+    async runInput() { runStarted.resolve(); await releaseRun.promise; }
+  });
+  const audio = attachAudioInput({ hub, directory, transcribe: async () => ({ text: 'first' }) });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 1).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('first')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'first', seq: 0, data_b64: pcm }));
+  const firstEnd = audio.handle(audioEvent('audio.input.end', device, { stream_id: 'first', reason: 'released' }));
+  await runStarted.promise;
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('second')));
+  assert.equal(audio.streams.get(device)?.stream_id, 'second');
+  assert.equal(published.some(({ data }) => data.error?.message === 'Audio stream already active'), false);
+
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'second', reason: 'cancel' }));
+  releaseRun.resolve();
+  await firstEnd;
+});
+
+test('a late frame from an ended stream cannot clear its replacement', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-late-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish() {},
+    async runInput() {}
+  });
+  const audio = attachAudioInput({ hub, directory, transcribe: async () => ({ text: 'ok' }) });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 1).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('old')));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'old', reason: 'cancel' }));
+  await audio.handle(audioEvent('audio.input.start', device, startData('current')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'old', seq: 0, data_b64: pcm }));
+  assert.equal(audio.streams.get(device)?.stream_id, 'current');
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'current', seq: 0, data_b64: pcm }));
+  assert.equal(audio.streams.get(device)?.nextSeq, 1);
+});
+
+test('empty ASR result reports once and never enqueues a user turn', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-empty-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const published = [];
+  let runs = 0;
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish(topic, data) { published.push({ topic, data }); },
+    async runInput() { runs += 1; }
+  });
+  const audio = attachAudioInput({ hub, directory, transcribe: async () => ({ text: '   ' }) });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 1).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('silent')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'silent', seq: 0, data_b64: pcm }));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'silent', reason: 'released' }));
+
+  assert.equal(runs, 0);
+  assert.deepEqual(published.map(({ data }) => data.error?.message).filter(Boolean), ['Empty transcription']);
+  await audio.handle(audioEvent('audio.input.start', device, startData('next')));
+  assert.equal(audio.streams.get(device)?.stream_id, 'next');
+});
+
+test('a rejected recording reports its start error once without Unknown stream noise', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-rejected-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const releaseAsr = deferred();
+  const asrStarted = deferred();
+  const published = [];
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish(topic, data) { published.push({ topic, data }); },
+    async runInput() {}
+  });
+  const audio = attachAudioInput({
+    hub,
+    directory,
+    transcribe: async () => { asrStarted.resolve(); await releaseAsr.promise; return { text: 'first' }; }
+  });
+  t.after(() => hub.emit('shutdown'));
+  const pcm = Buffer.alloc(3200, 1).toString('base64');
+
+  await audio.handle(audioEvent('audio.input.start', device, startData('first')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'first', seq: 0, data_b64: pcm }));
+  const firstEnd = audio.handle(audioEvent('audio.input.end', device, { stream_id: 'first', reason: 'released' }));
+  await asrStarted.promise;
+  await audio.handle(audioEvent('audio.input.start', device, startData('rejected')));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'rejected', seq: 0, data_b64: pcm }));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'rejected', reason: 'released' }));
+
+  const errors = published.map(({ data }) => data.error?.message).filter(Boolean);
+  assert.deepEqual(errors, ['Audio stream already active']);
+  releaseAsr.resolve();
+  await firstEnd;
 });

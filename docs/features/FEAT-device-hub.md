@@ -40,11 +40,11 @@ Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源�
 
 ### 麦克风上行
 
-接收 C1.7 的 16 kHz/单声道 PCM，严格校验 stream_id、base64 和从 0 开始的连续 seq；每设备只允许一个录音或识别任务，最长 120 秒数据、130 秒接收期限。cancel 不识别；断线清理接收缓存。WAV 以独占创建方式保存到 `data/device-audio/<stream_id>.wav`，同名拒绝覆盖。
+接收 C1.7 的 16 kHz/单声道 PCM，严格校验 stream_id、base64 和从 0 开始的连续 seq；每设备只允许一个活动录音或 ASR 任务，最长 120 秒数据、130 秒接收期限。ASR 完成后即释放录音互斥，后续 agent turn 进入网关的全局串行队列，不继续占用录音；旧 stream 的迟到帧不会清除同设备的新 stream。录音 start 被互斥拒绝后，该 stream 的后续 chunk/end 会被忽略，保留首次 `Audio stream already active` 错误而不连锁误报 `Unknown audio stream`。cancel 不识别；断线清理接收缓存。WAV 以独占创建方式保存到 `data/device-audio/<stream_id>.wav`，同名拒绝覆盖。
 
 ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型时使用原 YAML 只读 store。OpenAI-compatible 调 `/audio/transcriptions` multipart；DashScope 使用 Qwen ASR 的 `/compatible-mode/v1/chat/completions` 内嵌 WAV，协议参考[官方文档](https://www.alibabacloud.com/help/en/model-studio/non-realtime-speech-recognition-user-guide)。无 provider 时经 ToolExecutor 回退 `voice.asr_aliyun`，保留会话权限检查。
 
-识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。预填的 `transcribed_text` 会跳过重复 ASR；即使同时带非空 `input`，audio_ref、format、lang、hints、transcribed_text、confidence 和 segments 也会进入 runtime context，转录文本与置信度写入会话历史。录音文件当前保留供会话引用，运维需定期清理。
+识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。空白识别结果返回明确错误且不创建空用户 turn。预填的 `transcribed_text` 会跳过重复 ASR；即使同时带非空 `input`，audio_ref、format、lang、hints、transcribed_text、confidence 和 segments 也会进入 runtime context，转录文本与置信度写入会话历史。录音文件当前保留供会话引用，运维需定期清理。
 
 ### 电脑设备页
 

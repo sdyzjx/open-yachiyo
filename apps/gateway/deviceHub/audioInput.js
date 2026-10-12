@@ -17,9 +17,23 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
   fs.mkdirSync(directory, { recursive: true });
   const streams = new Map();
   const busy = new Set();
+  const rejected = new Map();
   let stopped = false;
-  const clear = (device) => {
+  const rememberRejected = (device, streamId) => {
+    const ids = rejected.get(device) || new Set();
+    ids.add(streamId);
+    while (ids.size > 32) ids.delete(ids.values().next().value);
+    rejected.set(device, ids);
+  };
+  const forgetRejected = (device, streamId) => {
+    const ids = rejected.get(device);
+    if (!ids) return;
+    if (streamId) ids.delete(streamId); else ids.clear();
+    if (!ids.size) rejected.delete(device);
+  };
+  const clear = (device, expectedStreamId) => {
     const stream = streams.get(device);
+    if (stream && expectedStreamId && stream.stream_id !== expectedStreamId) return null;
     if (stream) clearTimeout(stream.timer);
     streams.delete(device);
     return stream;
@@ -30,12 +44,19 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
     try {
       if (!/^[\w-]{1,128}$/.test(data.stream_id || '')) throw fault(-32602, 'Invalid stream id');
       if (topic === 'audio.input.start') {
+        forgetRejected(device, data.stream_id);
         if (busy.has(device) || streams.has(device)) throw fault(-32600, 'Audio stream already active');
         if (data.format !== 'pcm_s16le' || data.sample_rate !== 16000 || data.channels !== 1 || !['push_to_talk', 'continuous'].includes(data.mode) || !['auto', 'zh', 'en'].includes(data.lang || 'auto')) throw fault(-32602, 'Expected 16 kHz mono PCM s16le');
         const stream = { ...data, chunks: [], bytes: 0, nextSeq: 0 };
-        stream.timer = setTimeout(() => { clear(device); transcript(device, data.stream_id, '', { code: -32003, message: 'Audio stream timeout' }); }, streamTimeoutMs);
+        stream.timer = setTimeout(() => {
+          if (clear(device, data.stream_id)) transcript(device, data.stream_id, '', { code: -32003, message: 'Audio stream timeout' });
+        }, streamTimeoutMs);
         streams.set(device, stream);
       } else {
+        if (rejected.get(device)?.has(data.stream_id)) {
+          if (topic === 'audio.input.end') forgetRejected(device, data.stream_id);
+          return;
+        }
         const stream = streams.get(device);
         if (!stream || stream.stream_id !== data.stream_id) throw fault(-32602, 'Unknown audio stream');
         if (topic === 'audio.input.chunk') {
@@ -45,7 +66,7 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
           stream.chunks.push(chunk); stream.bytes += chunk.length; stream.nextSeq++;
         } else if (topic === 'audio.input.end') {
           if (!['released', 'vad', 'cancel'].includes(data.reason)) throw fault(-32602, 'Invalid end reason');
-          clear(device);
+          clear(device, data.stream_id);
           if (data.reason === 'cancel') return;
           if (!stream.bytes) throw fault(-32602, 'Empty recording');
           const wav = pcmToWav(Buffer.concat(stream.chunks));
@@ -53,22 +74,31 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
           const file = path.join(directory, `${stream.stream_id}.wav`);
           fs.writeFileSync(file, wav, { flag: 'wx', mode: 0o600 });
           busy.add(device);
+          let result;
           try {
-            const result = await transcribe({ wav, file, lang: stream.lang || 'auto', device });
-            if (stopped || hub.devices.get(device.device_id) !== device) return;
-            transcript(device, stream.stream_id, result.text);
-            await hub.runInput(device, { text: result.text, input_audio: { audio_ref: file, format: 'wav', lang: stream.lang || 'auto', transcribed_text: result.text } });
+            result = await transcribe({ wav, file, lang: stream.lang || 'auto', device });
           } finally { busy.delete(device); }
+          if (stopped || hub.devices.get(device.device_id) !== device) return;
+          const text = typeof result?.text === 'string' ? result.text.trim() : '';
+          if (!text) {
+            transcript(device, stream.stream_id, '', { code: -32602, message: 'Empty transcription' });
+            return;
+          }
+          transcript(device, stream.stream_id, text);
+          await hub.runInput(device, { text, input_audio: { audio_ref: file, format: 'wav', lang: stream.lang || 'auto', transcribed_text: text } });
         }
       }
     } catch (err) {
-      clear(device);
+      if (topic === 'audio.input.start') {
+        if (streams.get(device)?.stream_id !== data.stream_id) rememberRejected(device, data.stream_id);
+      } else clear(device, data.stream_id);
       if (!stopped) transcript(device, data.stream_id, '', { code: typeof err.code === 'number' ? err.code : -32600, message: typeof err.code === 'number' ? err.message : 'Audio processing failed' });
     }
   };
   const listener = (event) => { void handle(event); };
-  hub.on('publication', listener); hub.on('offline', clear);
-  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', clear); for (const device of streams.keys()) clear(device); });
+  const offline = (device) => { clear(device); forgetRejected(device); };
+  hub.on('publication', listener); hub.on('offline', offline);
+  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clear(device); rejected.clear(); });
   return { handle, streams };
 }
 module.exports = { pcmToWav, attachAudioInput };
