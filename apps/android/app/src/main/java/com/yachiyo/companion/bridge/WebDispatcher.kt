@@ -10,7 +10,7 @@ class WebDispatcher(private val evaluate: (String) -> Unit, private val maxQueue
     private val queue = ArrayDeque<String>()
     private var ready = false
 
-    fun post(type: String, data: JSONObject) {
+    fun post(type: String, data: Any) {
         val json = JSONObject().put("type", type).put("data", data).toString()
         val script: String?
         synchronized(this) {

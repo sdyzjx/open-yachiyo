@@ -63,13 +63,19 @@ class YachiyoNativeBridge(
 
     private val configListener: (JSONObject) -> Unit = { cfg -> dispatcher.post("config.changed", cfg) }
 
+    private val pluginsListener: () -> Unit = {
+        dispatcher.post("plugins.changed", JSONArray(host.features.listPlugins(lockscreen)))
+    }
+
     fun attach() {
+        app.plugins.addListener(pluginsListener)
         hub.addListener(hubListener)
         app.config.addListener(configListener)
     }
 
     fun detach() {
         hub.removeListener(hubListener)
+        app.plugins.removeListener(pluginsListener)
         app.config.removeListener(configListener)
         main.removeCallbacks(backTimeout)
     }

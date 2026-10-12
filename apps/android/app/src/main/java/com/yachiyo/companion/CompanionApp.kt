@@ -25,10 +25,14 @@ class CompanionApp : Application() {
 
     val mic: com.yachiyo.companion.audio.MicController by lazy { com.yachiyo.companion.audio.MicController(hub) }
 
+    val plugins: com.yachiyo.companion.plugins.PluginManager by lazy { com.yachiyo.companion.plugins.PluginManager(filesDir) }
+    private val pushHandler by lazy { com.yachiyo.companion.plugins.PluginPushHandler(hub, plugins, config) }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
         com.yachiyo.companion.device.DeviceMethods(this).install(hub)
+        pushHandler.start()
     }
 
     private fun buildHello(): JSONObject {

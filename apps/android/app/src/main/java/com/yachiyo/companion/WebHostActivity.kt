@@ -105,6 +105,12 @@ abstract class WebHostActivity : Activity() {
             or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+        features.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         features.onPermissionResult(requestCode, grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
