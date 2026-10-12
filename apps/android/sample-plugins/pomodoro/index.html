@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>番茄钟</title>
+<style>
+  :root { --ink: #eef1fb; --dim: #a9b1c9; --accent: #ff7a6b; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #14182a; color: var(--ink); font-family: -apple-system, "PingFang SC", "Noto Sans SC", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 12px; }
+  .ring { position: relative; width: min(46vh, 70vw, 220px); aspect-ratio: 1; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 9; stroke-linecap: round; }
+  .track { stroke: rgba(255,255,255,.1); }
+  .bar { stroke: var(--accent); transition: stroke-dashoffset .4s linear, stroke .3s; }
+  body.rest .bar { stroke: #62d6a0; }
+  .time { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .time b { font-size: 40px; font-weight: 300; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+  .time span { font-size: 12px; color: var(--dim); }
+  .row { display: flex; gap: 10px; }
+  button { font: inherit; color: var(--ink); background: rgba(255,255,255,.1); border: 0; border-radius: 999px; padding: 10px 20px; }
+  button.primary { background: linear-gradient(135deg, #ff7a6b, #ff9d5c); font-weight: 600; }
+  button:active { transform: scale(.95); }
+  .meta { font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+  <div class="ring">
+    <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="44"/><circle class="bar" id="bar" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"/></svg>
+    <div class="time"><b id="time">25:00</b><span id="phase">专注</span></div>
+  </div>
+  <div class="row"><button id="toggle" class="primary">开始</button><button id="reset">重置</button></div>
+  <div class="meta" id="meta">今日完成 0 个</div>
+  <script src="/sdk/yachiyo-plugin-sdk.js"></script>
+  <script>
+    const FOCUS = 25 * 60, REST = 5 * 60, CIRC = 276.46;
+    const $ = (id) => document.getElementById(id);
+    let y, phase = 'focus', total = FOCUS, left = FOCUS, endsAt = 0, timer = 0, done = 0;
+
+    const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    function render() {
+      $('time').textContent = fmt(left);
+      $('phase').textContent = phase === 'focus' ? '专注' : '休息';
+      $('bar').style.strokeDashoffset = String(CIRC * (1 - left / total));
+      $('toggle').textContent = timer ? '暂停' : '开始';
+      $('meta').textContent = `今日完成 ${done} 个`;
+      document.body.classList.toggle('rest', phase === 'rest');
+    }
+    function publishState() { y && y.bus.publish('.state', { phase, left, running: !!timer, done }); }
+    function tick() {
+      left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      if (left <= 0) return finish();
+      render();
+      if (left % 5 === 0) publishState();
+    }
+    function start(seconds) {
+      if (seconds) { total = left = seconds; }
+      endsAt = Date.now() + left * 1000;
+      clearInterval(timer);
+      timer = setInterval(tick, 500);
+      render(); publishState();
+    }
+    function pause() { clearInterval(timer); timer = 0; render(); publishState(); }
+    function finish() {
+      clearInterval(timer); timer = 0;
+      if (phase === 'focus') {
+        done += 1; y.storage.set('done', { day: new Date().toDateString(), count: done });
+        phase = 'rest'; total = left = REST;
+        y.avatar.act({ type: 'emote', name: 'happy', args: { intensity: 'high' } }, { durationSec: 4, queuePolicy: 'replace' }).catch(() => {});
+        y.bus.publish('.finished', { done });
+      } else { phase = 'focus'; total = left = FOCUS; }
+      render(); publishState();
+    }
+    $('toggle').onclick = () => (timer ? pause() : start());
+    $('reset').onclick = () => { pause(); phase = 'focus'; total = left = FOCUS; render(); publishState(); };
+
+    Yachiyo.ready().then(async (api) => {
+      y = api;
+      const saved = await y.storage.get('done');
+      if (saved && saved.day === new Date().toDateString()) done = saved.count;
+      render();
+      await y.rpc.register('start_timer', async ({ minutes }) => {
+        const m = Math.min(120, Math.max(1, Number(minutes) || 25));
+        phase = 'focus'; start(m * 60);
+        return { ok: true, minutes: m };
+      }, {
+        description: '开始一个番茄钟专注计时',
+        paramsSchema: { type: 'object', properties: { minutes: { type: 'integer', minimum: 1, maximum: 120, description: '专注分钟数，默认 25' } } },
+        exposeAsTool: true
+      });
+      y.bus.subscribe('.command', (cmd) => { if (cmd && cmd.action === 'pause') pause(); });
+    });
+  </script>
+</body>
+</html>

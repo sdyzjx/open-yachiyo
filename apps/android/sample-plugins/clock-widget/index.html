@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>时钟</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: linear-gradient(135deg, #1d2a4d, #2d1f4a); color: #eef1fb; font-family: -apple-system, "PingFang SC", "Noto Sans SC", Roboto, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; justify-content: space-between; padding: 12px 14px; }
+  #time { font-size: 34px; font-weight: 200; letter-spacing: .02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  #date { font-size: 12px; color: #a9b1c9; margin-top: 4px; }
+  #task { font-size: 12px; padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,.1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #task.running::before { content: "◔ "; color: #7aa2ff; }
+  #task.done::before { content: "✓ "; color: #8fe3b5; }
+  #task.failed::before { content: "✕ "; color: #ff9c9c; }
+  body.small #task { display: none; }
+  body.small #time { font-size: 26px; }
+</style>
+</head>
+<body>
+  <div><div id="time">--:--</div><div id="date"></div></div>
+  <div id="task">暂无任务</div>
+  <script src="/sdk/yachiyo-plugin-sdk.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function clock() {
+      const d = new Date();
+      $('time').textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      $('date').textContent = d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+    }
+    clock(); setInterval(clock, 5000);
+    Yachiyo.ready().then((y) => {
+      y.widget.onResize(({ h }) => document.body.classList.toggle('small', h < 2));
+      y.bus.subscribe('task.update', (t) => {
+        $('task').textContent = t.title || '任务';
+        $('task').className = t.status || 'running';
+      });
+    });
+  </script>
+</body>
+</html>
