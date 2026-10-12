@@ -47,19 +47,22 @@
 
     const buffers = { vertex: null, uv: null, index: null };
     const stats = {
-      drawCalls: 0, transparentSkipped: 0, bufferUploads: 0, bufferUploadBytes: 0,
+      drawCalls: 0, maskDrawCalls: 0, colorDrawCalls: 0,
+      transparentSkipped: 0, bufferUploads: 0, bufferUploadBytes: 0,
       programChanges: 0, stateCallsSkipped: 0, bufferBinds: 0, textureBinds: 0,
       blendChanges: 0, uniformUpdates: 0, capabilityChanges: 0,
       packedVertexValues: vertexValues, packedIndexValues: indexValues
     };
     let current = null;
+    let currentIsMask = false;
     let initialized = false;
     let detached = false;
     let disabled = false;
 
     renderer.drawMesh = function (...args) {
       const opacity = Number(args[6]);
-      if (opacity <= 0.001 && !this.getClippingContextBufferForMask()) {
+      const isMask = !!this.getClippingContextBufferForMask();
+      if (opacity <= 0.001 && !isMask) {
         stats.transparentSkipped += 1;
         return undefined;
       }
@@ -70,7 +73,8 @@
       }
       this._bufferData = buffers;
       current = entry;
-      try { return originalDrawMesh.apply(this, args); } finally { current = null; }
+      currentIsMask = isMask;
+      try { return originalDrawMesh.apply(this, args); } finally { current = null; currentIsMask = false; }
     };
 
     renderer.drawModel = function (...args) {
@@ -248,6 +252,8 @@
         };
         gl.drawElements = function (mode, drawCount, type, offset) {
           stats.drawCalls += 1;
+          if (currentIsMask) stats.maskDrawCalls += 1;
+          else stats.colorDrawCalls += 1;
           return native.drawElements.call(gl, mode, drawCount, type, current ? current.indexByteOffset : offset);
         };
         patched = Object.entries(native).every(([name, method]) => typeof method === 'function' && gl[name] !== method);
@@ -275,7 +281,8 @@
 
     function resetStats() {
       for (const key of [
-        'drawCalls', 'transparentSkipped', 'bufferUploads', 'bufferUploadBytes', 'programChanges',
+        'drawCalls', 'maskDrawCalls', 'colorDrawCalls', 'transparentSkipped',
+        'bufferUploads', 'bufferUploadBytes', 'programChanges',
         'stateCallsSkipped', 'bufferBinds', 'textureBinds', 'blendChanges', 'uniformUpdates', 'capabilityChanges'
       ]) stats[key] = 0;
     }

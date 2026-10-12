@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Optimizer = require('../../apps/android/app/src/main/assets/web/js/live2dRendererOptimizer');
 
-function fixture({ throwOnDraw = false, varyState = false } = {}) {
+function fixture({ throwOnDraw = false, varyState = false, maskSecond = false } = {}) {
   const vertices = [new Float32Array([0, 0, 1, 1]), new Float32Array([2, 2, 3, 3, 4, 4])];
   const uvs = [new Float32Array([0, 0, 1, 1]), new Float32Array([0, 0, 0.5, 0.5, 1, 1])];
   const indices = [new Uint16Array([0, 1, 0]), new Uint16Array([0, 1, 2])];
@@ -18,6 +18,7 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
   const baseColorLocation = {};
   const matrixLocation = {};
   const matrix = new Float32Array(16);
+  let clippingContext = null;
   const gl = {
     ARRAY_BUFFER: 1, ELEMENT_ARRAY_BUFFER: 2, DYNAMIC_DRAW: 3, STATIC_DRAW: 4,
     TEXTURE0: 5, TEXTURE1: 6, TEXTURE_2D: 7, CULL_FACE: 8, CCW: 9, CW: 10,
@@ -44,7 +45,7 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
   const originalBufferData = { vertex: null, uv: null, index: null };
   const renderer = {
     gl, _bufferData: originalBufferData,
-    getClippingContextBufferForMask: () => null,
+    getClippingContextBufferForMask: () => clippingContext,
     drawMesh(texture, count, verticesCount, indexArray, vertexArray, uvArray, opacity) {
       gl.enable(gl.CULL_FACE);
       if (texture === 1) gl.disable(gl.CULL_FACE);
@@ -78,7 +79,9 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
       calls.passes += 1;
       this.drawMesh(0, 3, 2, indices[0], vertices[0], uvs[0], 1);
       if (throwOnDraw) throw new Error('draw failed');
+      if (maskSecond) clippingContext = {};
       this.drawMesh(varyState ? 1 : 0, 3, 3, indices[1], vertices[1], uvs[1], 1);
+      clippingContext = null;
     }
   };
   const model = {
@@ -118,6 +121,8 @@ test('renderer optimizer packs model buffers and offsets each original draw with
   assert.equal(f.calls.uniform1i, 2, 'unchanged sampler uniform is reused within each pass');
   assert.equal(f.calls.uniformMatrix, 2, 'unchanged model matrix is reused within each pass');
   assert.equal(installed.stats.drawCalls, 4);
+  assert.equal(installed.stats.colorDrawCalls, 4);
+  assert.equal(installed.stats.maskDrawCalls, 0);
   assert.equal(installed.stats.bufferUploads, 3);
   assert.equal(installed.stats.bufferBinds, 2, 'only the index buffer binds inside each model pass');
   assert.ok(installed.stats.stateCallsSkipped >= 18);
@@ -152,7 +157,7 @@ test('renderer optimizer falls back when a WebGL method cannot be wrapped', () =
 });
 
 test('renderer optimizer preserves changed mask, texture, blend, and cull state', () => {
-  const f = fixture({ varyState: true });
+  const f = fixture({ varyState: true, maskSecond: true });
   const installed = Optimizer.install(f.renderer, f.model);
   f.renderer.drawModel();
   assert.deepEqual(f.calls.useProgram, ['program', 'mask-program', null]);
@@ -162,6 +167,8 @@ test('renderer optimizer preserves changed mask, texture, blend, and cull state'
   assert.equal(f.calls.disable, 1, 'a changed cull state is not cached away');
   assert.equal(f.calls.frontFace, 2, 'a changed winding mode is not cached away');
   assert.equal(installed.stats.drawCalls, 2);
+  assert.equal(installed.stats.colorDrawCalls, 1);
+  assert.equal(installed.stats.maskDrawCalls, 1, 'mask atlas draws are reported separately from color draws');
 });
 
 test('renderer optimizer skips transparent non-mask drawables', () => {

@@ -294,8 +294,8 @@
 |---|---|
 | 类型 | unit |
 | 前置条件 | fake WebGL context、两个 drawable、原 renderer draw 顺序 |
-| 步骤 | 安装 optimizer；绘制两帧；检查交错 position/UV 内容、16-byte stride、attrib/index offset、上传次数、program 及重复 texture/blend/cull/attribute/uniform 状态；触发 draw 异常；detach |
-| 期望结果 | position/UV 共用一个 dynamic VBO、index 使用一个 static EBO，后续每模型帧只上传一次交错 VBO；draw 顺序不变；同 pass 内值相同的 WebGL 状态调用被省略且每个新 pass 重新建立状态；透明非 mask drawable 可跳过；真实 draw 异常不重试；全部 GL 方法、原 `_bufferData` 和两份自有 buffer 正确恢复/释放 |
+| 步骤 | 安装 optimizer；绘制两帧；检查交错 position/UV 内容、16-byte stride、attrib/index offset、上传次数、program 及重复 texture/blend/cull/attribute/uniform 状态；分别执行 mask/color draw；触发 draw 异常；detach |
+| 期望结果 | position/UV 共用一个 dynamic VBO、index 使用一个 static EBO，后续每模型帧只上传一次交错 VBO；draw 顺序不变；同 pass 内值相同的 WebGL 状态调用被省略且每个新 pass 重新建立状态；真实 draw 总数正确拆分为 mask/color；透明非 mask drawable 可跳过；真实 draw 异常不重试；全部 GL 方法、原 `_bufferData` 和两份自有 buffer 正确恢复/释放 |
 | 自动化 | `test/android-web/live2dRendererOptimizer.test.js` |
 
 ## TC-AWB-030 Stage 异步加载 generation 隔离
