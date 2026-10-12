@@ -16,6 +16,8 @@ test('TC-AND-053 phone chat selects a safe remote model and carries it on text a
   assert.match(script, /B\.publish\('chat\.input', \{ text, model_ref:/);
   assert.match(script, /audio_mode: audioModeForSelectedModel\(\)/);
   assert.match(script, /model_ref: S\.selectedModelRef/);
+  assert.match(script, /model\.available === false/);
+  assert.match(script, /模型不可用/);
   assert.match(script, /activeModelName\.textContent = active\?\.name/);
   assert.match(script, /activeModelBadge\.onclick = openChat/);
   assert.match(script, /function hubErrorMessage/);

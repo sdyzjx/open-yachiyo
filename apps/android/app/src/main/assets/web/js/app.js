@@ -60,20 +60,25 @@
     }
     for (const model of models) {
       const suffix = model.transport === 'realtime' ? ' · 实时语音' : (model.input || []).includes('audio') ? ' · 音频直通' : '';
-      el.chatModel.append(new Option(`${model.name || model.id}${suffix}`, model.ref));
+      const option = new Option(`${model.name || model.id}${suffix}${model.available === false ? ' · 不可用' : ''}`, model.ref);
+      option.disabled = model.available === false;
+      option.title = model.reason || '';
+      el.chatModel.append(option);
     }
-    if (!S.selectedModelRef || !models.some((model) => model.ref === S.selectedModelRef)) {
-      S.selectedModelRef = S.modelCatalog.active || models[0].ref;
+    const available = models.filter((model) => model.available !== false);
+    if (!S.selectedModelRef || !models.some((model) => model.ref === S.selectedModelRef && model.available !== false)) {
+      const active = models.find((model) => model.ref === S.modelCatalog.active && model.available !== false);
+      S.selectedModelRef = active?.ref || available[0]?.ref || '';
     }
     el.chatModel.value = S.selectedModelRef;
-    el.chatModel.disabled = false;
+    el.chatModel.disabled = available.length === 0;
     const modeName = { transcribe: '转写', direct: '直通', realtime: '实时' }[audioModeForSelectedModel()];
     if (el.modelModeBadge) el.modelModeBadge.textContent = modeName;
     const active = selectedModel();
     if (el.activeModelName) el.activeModelName.textContent = active?.name || active?.id || '选择模型';
     if (el.activeModelMode) el.activeModelMode.textContent = modeName;
     if (el.activeModelBadge) {
-      el.activeModelBadge.disabled = false;
+      el.activeModelBadge.disabled = available.length === 0;
       el.activeModelBadge.dataset.mode = audioModeForSelectedModel();
     }
   }
@@ -736,6 +741,11 @@
   let micOn = false;
   function micStart() {
     if (micOn) return;
+    const model = selectedModel();
+    if (!model || model.available === false) {
+      toast(model?.reason ? `模型不可用：${model.reason}` : '没有可用模型');
+      return;
+    }
     micOn = true;
     micDownAt = performance.now();
     el.micBtn.classList.add('rec');

@@ -30,3 +30,24 @@ test('TC-LLM-040 phone catalog exposes enabled capabilities without credentials'
   assert.equal(hub.methods.has('model.catalog.get'), false);
   void catalog;
 });
+
+test('TC-VOC-026 phone catalog disables realtime models without a workspace endpoint', () => {
+  const descriptor = {
+    ref: 'qwen/rt', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime', name: 'Realtime',
+    input: ['text', 'audio'], output: ['text', 'audio'], transport: 'realtime',
+    audio: { mode: 'realtime' }
+  };
+  const hub = Object.assign(new EventEmitter(), { methods: new Map() });
+  attachModelControl({ hub, llmManager: { store: { load: () => ({
+    active_model: descriptor.ref,
+    enabled_models: [descriptor.ref],
+    providers: { qwen: {
+      type: 'openai_compatible', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api_key: 'secret',
+      models: [{ id: descriptor.id, input: descriptor.input, output: descriptor.output, transport: 'realtime', audio: descriptor.audio }]
+    } }
+  }) } } });
+  const model = hub.methods.get('model.catalog.get')().models[0];
+  assert.equal(model.available, false);
+  assert.match(model.reason, /workspace-specific/);
+  hub.emit('shutdown');
+});

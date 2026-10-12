@@ -30,7 +30,14 @@ test('TC-VOC-024 direct Omni sends WAV as input_audio and returns transcript tex
 test('TC-VOC-025 realtime URL uses workspace endpoint and rejects public DashScope host', () => {
   assert.equal(realtimeUrl({ id: 'qwen3.8-omni-flash-realtime', base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' }),
     'wss://wsid.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3.8-omni-flash-realtime');
-  assert.throws(() => realtimeUrl({ id: 'x', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1' }), /workspace-specific/);
+  assert.throws(
+    () => realtimeUrl({ id: 'x', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1' }),
+    (error) => error.code === -32602 && /workspace-specific/.test(error.message)
+  );
+  assert.throws(
+    () => realtimeUrl({ id: 'x', base_url: 'https://workspace.example/v1', realtime_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/realtime' }),
+    (error) => error.code === -32602 && /wss:\/\//.test(error.message)
+  );
 });
 
 test('TC-VOC-025 realtime Omni relays text/audio deltas to one device', async () => {

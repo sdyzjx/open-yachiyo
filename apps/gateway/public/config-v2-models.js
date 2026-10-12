@@ -23,7 +23,13 @@
     const opts = [];
     if (emptyLabel) opts.push(h('option', { value: '', text: emptyLabel }));
     for (const m of state.models) {
-      opts.push(h('option', { value: m.ref, selected: m.ref === selected, text: m.ref }));
+      opts.push(h('option', {
+        value: m.ref,
+        selected: m.ref === selected,
+        disabled: m.available === false,
+        title: m.reason || '',
+        text: `${m.ref}${m.available === false ? '（配置不可用）' : ''}`
+      }));
     }
     return opts;
   }
@@ -150,7 +156,7 @@
         field('显示名', input('display', base.display_name)),
         field('类型', typeSelect),
         field('Base URL', input('base', base.base_url)),
-        field('Realtime WebSocket URL', input('realtime', base.realtime_url), '仅 Realtime 模型需要；可留空并从工作区 Base URL 自动推导'),
+        field('Realtime WebSocket URL', input('realtime', base.realtime_url), 'Qwen3.8 Omni Realtime 必须填写工作空间专属 wss://*.maas.aliyuncs.com 地址；也可把 Base URL 配成同一工作空间的 compatible-mode URL 后自动推导。'),
         field('API Key', input('apikey', '', 'password', { autocomplete: 'new-password', placeholder: existing && existing.has_api_key ? '••••••••' : '' }), keyHint),
         field('API Key 环境变量', input('env', base.api_key_env), '例如 DEEPSEEK_API_KEY；没有内联密钥时读取该变量'),
         field('超时（毫秒）', input('timeout', base.timeout_ms, 'number')),
@@ -235,18 +241,20 @@
     for (const [provider, models] of byProvider) {
       groups.push(h('div', { class: 'cv-group-label', text: state.providers[provider]?.display_name || provider }));
       for (const m of models) {
+        const unavailable = m.available === false;
         groups.push(h('div', { class: 'cv-row cv-row--model' },
-          h('label', { class: 'cv-check', title: '启用后可在聊天窗口的模型选择器中切换' },
-            h('input', { type: 'checkbox', checked: draft.enabled.has(m.ref), onchange: (e) => { if (e.target.checked) draft.enabled.add(m.ref); else draft.enabled.delete(m.ref); } }),
+          h('label', { class: 'cv-check', title: unavailable ? m.reason : '启用后可在聊天窗口的模型选择器中切换' },
+            h('input', { type: 'checkbox', disabled: unavailable, checked: draft.enabled.has(m.ref), onchange: (e) => { if (e.target.checked) draft.enabled.add(m.ref); else draft.enabled.delete(m.ref); } }),
             h('span', { text: '启用' })),
-          h('label', { class: 'cv-check' },
-            h('input', { type: 'radio', name: 'cv-active', checked: draft.active === m.ref, onchange: () => { draft.active = m.ref; draft.enabled.add(m.ref); rerender(); } }),
+          h('label', { class: 'cv-check', title: unavailable ? m.reason : '' },
+            h('input', { type: 'radio', disabled: unavailable, name: 'cv-active', checked: draft.active === m.ref, onchange: () => { draft.active = m.ref; draft.enabled.add(m.ref); rerender(); } }),
             h('span', { text: '默认' })),
           h('div', { class: 'cv-row-main' }, h('strong', { text: m.name || m.id }), h('span', { class: 'cv-mono cv-dim', text: m.ref })),
           h('div', { class: 'cv-row-meta' },
             m.reasoning ? chip('推理') : null,
             (m.input || []).includes('image') ? chip('看图') : null,
             (m.input || []).includes('audio') ? chip(m.transport === 'realtime' ? '实时语音' : '音频直通', 'good') : null,
+            unavailable ? chip('配置不可用', 'warn') : null,
             !m.has_api_key && state.providers[m.provider]?.requires_api_key ? chip('缺少密钥', 'warn') : null)));
       }
     }

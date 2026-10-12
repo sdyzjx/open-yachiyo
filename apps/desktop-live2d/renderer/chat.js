@@ -70,7 +70,7 @@
   function modelLabel(model) {
     const name = String(model?.name || model?.id || model?.ref || '未命名模型');
     const provider = String(model?.provider || '').trim();
-    return `${name}${provider ? ` · ${provider}` : ''}${model?.has_api_key === false ? ' · 缺少密钥' : ''}`;
+    return `${name}${provider ? ` · ${provider}` : ''}${model?.has_api_key === false ? ' · 缺少密钥' : ''}${model?.available === false ? ' · 配置不可用' : ''}`;
   }
 
   function renderModelConfig() {
@@ -81,6 +81,7 @@
     const enabledModels = Array.isArray(snapshot?.models)
       ? snapshot.models.filter((model) => model?.enabled === true || enabledRefs.has(model?.ref) || model?.ref === snapshot.active)
       : [];
+    const availableModels = enabledModels.filter((model) => model.available !== false);
     if (!snapshot || enabledModels.length === 0) {
       modelActiveElement.append(new Option('没有可用模型', ''));
       modelActiveElement.title = '没有已启用的模型';
@@ -89,12 +90,19 @@
     }
     for (const model of enabledModels) {
       const option = new Option(modelLabel(model), model.ref);
+      option.disabled = model.available === false;
+      option.title = model.availability_reason || '';
       option.selected = model.ref === (state.selectedModelRef || snapshot.active);
       modelActiveElement.append(option);
     }
-    const active = snapshot.models.find((model) => model.ref === (state.selectedModelRef || snapshot.active));
+    if (!availableModels.some((model) => model.ref === state.selectedModelRef)) {
+      const configuredActive = availableModels.find((model) => model.ref === snapshot.active);
+      state.selectedModelRef = configuredActive?.ref || availableModels[0]?.ref || '';
+      modelActiveElement.value = state.selectedModelRef;
+    }
+    const active = snapshot.models.find((model) => model.ref === state.selectedModelRef);
     modelActiveElement.title = active ? `本次对话：${modelLabel(active)}` : '选择对话模型';
-    setModelControlsDisabled(false);
+    setModelControlsDisabled(availableModels.length === 0);
   }
 
   async function loadModelConfig({ quiet = false } = {}) {
@@ -105,8 +113,10 @@
     if (!quiet) setModelStatus('正在从本机网关加载模型…');
     try {
       state.models = await bridge.modelConfigRequest({ method: 'GET', path: '/api/config/models' });
-      if (!state.selectedModelRef || !state.models.models?.some((model) => model.ref === state.selectedModelRef && model.enabled)) {
-        state.selectedModelRef = state.models.active || '';
+      if (!state.selectedModelRef || !state.models.models?.some((model) => model.ref === state.selectedModelRef && model.enabled && model.available !== false)) {
+        const enabled = new Set(state.models.enabled || []);
+        state.selectedModelRef = state.models.models?.find((model) =>
+          model.available !== false && (model.enabled || enabled.has(model.ref)))?.ref || '';
       }
       renderModelConfig();
       if (!quiet) setModelStatus(`已加载 ${state.models.models?.length || 0} 个模型`);

@@ -137,6 +137,18 @@ test('TC-CFG-005 error responses are single-line and do not echo secrets', async
   assert.equal(r.text.includes('sk-SECRET-VALUE'), false);
 });
 
+test('TC-CFG-019 realtime provider save requires a workspace-specific endpoint', async (t) => {
+  const f = await setup(t);
+  const r = await f.call('PUT', '/api/config/models/providers/ds', {
+    models: [{
+      id: 'qwen3.8-omni-flash-realtime', input: ['text', 'audio'], output: ['text', 'audio'],
+      transport: 'realtime', audio: { mode: 'realtime' }
+    }]
+  });
+  assert.equal(r.status, 400);
+  assert.match(JSON.parse(r.text).error, /workspace|workspace-specific/i);
+});
+
 function rawGet(port, pathName, headers) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, path: pathName, method: 'GET', headers }, (res) => {

@@ -1,4 +1,15 @@
 const { loadModelCatalog } = require('../../runtime/config/modelCatalog');
+const { realtimeUrl } = require('./omniAudio');
+
+function modelAvailability(model) {
+  if (model.chatgpt_plan) return { available: true, reason: null };
+  if (!model.api_key) return { available: false, reason: `No API key for provider ${model.provider}` };
+  if (model.transport === 'realtime') {
+    try { realtimeUrl(model); } catch (error) { return { available: false, reason: error.message }; }
+  }
+  return { available: true, reason: null };
+}
+
 function attachModelControl({ hub, llmManager }) {
   if (!hub || !llmManager) return null;
 
@@ -23,7 +34,7 @@ function attachModelControl({ hub, llmManager }) {
           output_sample_rate: Number(model.audio.output_sample_rate) || null
         } : null,
         enabled: enabledRefs.has(model.ref),
-        available: Boolean(model.api_key)
+        ...modelAvailability(model)
       }))
     };
   };
@@ -33,4 +44,4 @@ function attachModelControl({ hub, llmManager }) {
   return { getCatalog };
 }
 
-module.exports = { attachModelControl };
+module.exports = { attachModelControl, modelAvailability };

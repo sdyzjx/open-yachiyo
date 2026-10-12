@@ -415,5 +415,5 @@
 | 类型 | unit + manual-device |
 | 前置条件 | Device Hub 已连接；电脑已启用普通文本、Omni direct、Omni realtime 模型 |
 | 步骤 | 打开聊天栏切换三种模型；分别发送文字与按住说话；检查 Hub 帧 |
-| 期望结果 | 手机只显示已启用模型；主界面常驻显示当前模型及“转写 / 直通 / 实时”徽标且点击可打开聊天；文字携带 `model_ref`；麦克风携带正确 `audio_mode`；页面没有 provider/key/配置 API |
+| 期望结果 | 手机只显示已启用模型；主界面常驻显示当前模型及“转写 / 直通 / 实时”徽标且点击可打开聊天；文字携带 `model_ref`；麦克风携带正确 `audio_mode`；`available=false` 的模型显示为不可用且不能选中或启动录音；结构化错误显示可读 `message`；页面没有 provider/key/配置 API |
 | 自动化 | `test/android-web/modelPicker.test.js`；真机语音为 manual-device |

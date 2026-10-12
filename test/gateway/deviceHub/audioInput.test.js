@@ -113,6 +113,31 @@ test('TC-VOC-025 Realtime audio streams chunks and does not enqueue a second age
   assert.equal(runs, 0);
 });
 
+test('TC-VOC-026 Realtime start preserves an actionable configuration error', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-config-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const published = [];
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish(topic, data) { published.push({ topic, data }); },
+    async runInput() {}
+  });
+  const audio = attachAudioInput({
+    hub, directory,
+    omniAudio: { startRealtime() { const error = new Error('Realtime Omni requires a workspace-specific Model Studio URL (*.maas.aliyuncs.com)'); error.code = -32602; throw error; } }
+  });
+  t.after(() => hub.emit('shutdown'));
+
+  await audio.handle(audioEvent('audio.input.start', device, {
+    ...startData('bad-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
+  }));
+
+  assert.equal(published.length, 1);
+  assert.equal(published[0].data.error.code, -32602);
+  assert.match(published[0].data.error.message, /workspace-specific/);
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });

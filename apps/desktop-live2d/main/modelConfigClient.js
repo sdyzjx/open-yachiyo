@@ -81,6 +81,8 @@ function sanitizeModel(model) {
       output_sample_rate: Number(model.audio.output_sample_rate) || null
     } : null,
     has_api_key: model.has_api_key !== false,
+    available: model.available !== false,
+    availability_reason: safeString(model.reason || model.availability_reason),
     enabled: model.enabled === true
   };
 }

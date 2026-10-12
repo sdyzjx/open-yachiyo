@@ -8,15 +8,24 @@ function contentText(payload) {
   return '';
 }
 
+function configurationError(message) {
+  const error = new Error(message);
+  error.code = -32602;
+  return error;
+}
+
 function realtimeUrl(descriptor) {
-  if (descriptor.realtime_url) {
-    const url = new URL(descriptor.realtime_url);
-    url.searchParams.set('model', descriptor.id);
-    return url.toString();
+  let base;
+  try {
+    base = new URL(descriptor.realtime_url || descriptor.base_url);
+  } catch {
+    throw configurationError('Realtime Omni requires a valid workspace WebSocket URL');
   }
-  const base = new URL(descriptor.base_url);
   if (!base.hostname.endsWith('.maas.aliyuncs.com')) {
-    throw new Error('Realtime Omni requires a workspace-specific Model Studio Base URL');
+    throw configurationError('Realtime Omni requires a workspace-specific Model Studio URL (*.maas.aliyuncs.com)');
+  }
+  if (descriptor.realtime_url && base.protocol !== 'wss:') {
+    throw configurationError('Realtime Omni WebSocket URL must use wss://');
   }
   base.protocol = 'wss:';
   base.pathname = '/api-ws/v1/realtime';
@@ -28,11 +37,11 @@ function realtimeUrl(descriptor) {
 function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetch(...args), WebSocketImpl = WebSocket, timeoutMs = 120000 }) {
   const resolve = (modelRef, mode) => {
     const descriptor = llmManager.getCatalog().resolve(modelRef);
-    if (!descriptor) throw new Error(`Unknown model_ref: ${modelRef}`);
-    if (!descriptor.input.includes('audio')) throw new Error(`Model ${modelRef} does not accept audio`);
-    if (mode === 'realtime' && descriptor.transport !== 'realtime') throw new Error(`Model ${modelRef} is not a realtime model`);
-    if (mode === 'direct' && descriptor.transport === 'realtime') throw new Error(`Model ${modelRef} requires realtime audio`);
-    if (!descriptor.api_key) throw new Error(`No API key for provider ${descriptor.provider}`);
+    if (!descriptor) throw configurationError(`Unknown model_ref: ${modelRef}`);
+    if (!descriptor.input.includes('audio')) throw configurationError(`Model ${modelRef} does not accept audio`);
+    if (mode === 'realtime' && descriptor.transport !== 'realtime') throw configurationError(`Model ${modelRef} is not a realtime model`);
+    if (mode === 'direct' && descriptor.transport === 'realtime') throw configurationError(`Model ${modelRef} requires realtime audio`);
+    if (!descriptor.api_key) throw configurationError(`No API key for provider ${descriptor.provider}`);
     return descriptor;
   };
 
@@ -200,4 +209,4 @@ function createOmniAudioService({ hub, llmManager, fetchImpl = (...args) => fetc
   return { resolve, transcribe, startRealtime, generateText };
 }
 
-module.exports = { contentText, createOmniAudioService, realtimeUrl };
+module.exports = { configurationError, contentText, createOmniAudioService, realtimeUrl };

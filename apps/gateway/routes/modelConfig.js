@@ -12,6 +12,7 @@ const {
   safeProviderSnapshot
 } = require('./configSecurity');
 const { configLoopbackOnly } = require('../deviceHub/accessControl');
+const { modelAvailability } = require('../deviceHub/modelControl');
 
 const DEFAULT_TEST_TIMEOUT_MS = 15000;
 const MAX_TIMEOUT_MS = 60000;
@@ -77,7 +78,10 @@ function createModelConfigRouter({
       enabled: catalog.enabled.map((m) => m.ref),
       roles: config.roles,
       fallback_models: config.fallback_models,
-      models: catalog.models.map((m) => safeModelDescriptor(m, enabledRefs.has(m.ref))),
+      models: catalog.models.map((m) => ({
+        ...safeModelDescriptor(m, enabledRefs.has(m.ref)),
+        ...modelAvailability(m)
+      })),
       providers
     };
   }
@@ -141,6 +145,19 @@ function createModelConfigRouter({
       const config = JSON.parse(JSON.stringify(store.load()));
       const previous = isObject(config.providers[key]) ? config.providers[key] : {};
       const next = applyProviderPatch(previous, input);
+      const realtimeModel = Array.isArray(next.models) && next.models.find((model) =>
+        isObject(model) && (model.transport === 'realtime' || model.audio?.mode === 'realtime'));
+      if (realtimeModel) {
+        const availability = modelAvailability({
+          provider: key,
+          id: realtimeModel.id,
+          api_key: 'validation-only',
+          base_url: next.base_url,
+          realtime_url: realtimeModel.realtime_url || next.realtime_url,
+          transport: 'realtime'
+        });
+        if (!availability.available) throw new Error(availability.reason);
+      }
       config.providers[key] = next;
       config.version = 2;
       llmManager.saveConfig(config);
