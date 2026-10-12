@@ -165,8 +165,8 @@
 | 类型 | manual-device |
 | 前置条件 | App 内（需麦克风权限） |
 | 步骤 | 按住按钮说话并松开；< 280 ms 点击；连续模式开关 |
-| 期望结果 | 按住时按钮光圈随音量变化；松手触发识别并显示用户气泡；误触取消并提示；连续模式按 mic.state 工作 |
-| 自动化 | manual |
+| 期望结果 | 按住时按钮光圈随音量变化；松手触发识别并显示用户气泡；ASR/Omni 失败时显示结构化错误的 message，不出现 `[object Object]`；误触取消并提示；连续模式按 mic.state 工作 |
+| 自动化 | `test/android-web/modelPicker.test.js`（错误展示）+ manual-device |
 
 ## TC-AWB-017 聊天气泡与任务画布位置
 

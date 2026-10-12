@@ -573,6 +573,12 @@
     toastTimer = setTimeout(() => { el.toast.hidden = true; }, 2600);
   }
 
+  function hubErrorMessage(error, fallback = '未知错误') {
+    if (typeof error === 'string' && error.trim()) return error.trim();
+    if (error && typeof error.message === 'string' && error.message.trim()) return error.message.trim();
+    return fallback;
+  }
+
   /* ------------------------------------------------------------------ avatar transfer (C1.5) */
   const transferPending = () => S.transferRequestPending || !!transferEvents.activeId;
 
@@ -873,7 +879,14 @@
     B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta));
     B.subscribe('chat.final', (d) => taskCanvasApi.final(d && d.output));
     B.subscribe('task.update', (d) => taskCanvasApi.updateTask(d));
-    B.subscribe('audio.input.transcript', (d) => { if (d && d.final && d.text) taskCanvasApi.showUser(d.text); if (d && d.error) toast(`识别失败：${d.error}`); });
+    B.subscribe('audio.input.transcript', (d) => {
+      if (d && d.final && d.text) taskCanvasApi.showUser(d.text);
+      if (d && d.error) {
+        const message = hubErrorMessage(d.error, '音频处理失败');
+        log('warn', `audio input failed: ${message}`);
+        toast(`识别失败：${message}`);
+      }
+    });
     B.subscribe('avatar.**', (d, ev) => {
       switch (ev.topic) {
         case 'avatar.transfer.prepare': onPrepare(d); break;

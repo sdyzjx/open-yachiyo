@@ -18,5 +18,8 @@ test('TC-AND-053 phone chat selects a safe remote model and carries it on text a
   assert.match(script, /model_ref: S\.selectedModelRef/);
   assert.match(script, /activeModelName\.textContent = active\?\.name/);
   assert.match(script, /activeModelBadge\.onclick = openChat/);
+  assert.match(script, /function hubErrorMessage/);
+  assert.match(script, /toast\(`识别失败：\$\{message\}`\)/);
+  assert.doesNotMatch(script, /识别失败：\$\{d\.error\}/);
   assert.doesNotMatch(script, /api_key|enabled_models|\/api\/config\/models/);
 });

@@ -14,6 +14,8 @@
 
 模型描述符用 `input/output/transport/audio` 声明能力。手机按所选模型自动选择三种路径：普通文本模型使用已配置 ASR；`audio.mode=direct` 把整段 WAV 作为 `input_audio` 发送并将转录文本交给 Pi；`transport=realtime` 在录音开始时建立 WebSocket，逐块发送 PCM，松手后 commit 并创建响应。Realtime 的文字增量进入 `chat.delta/chat.final`，音频进入 `voice.stream.start/chunk/end`。
 
+手机会保留网关返回的结构化音频错误并显示其中的 `message`（如 `ASR HTTP 401/403/400`），同时写入不含凭据的 Web 日志，避免把错误对象渲染成无法诊断的 `[object Object]`。
+
 ```mermaid
 sequenceDiagram
   participant A as Android
