@@ -144,9 +144,9 @@
 |---|---|
 | 类型 | manual-device |
 | 前置条件 | debug 面板 |
-| 步骤 | 点"说话(音频)"，观察口型与回执 |
-| 期望结果 | 嘴随音频开合；结束后平滑闭合；发布 `voice.playback.started/ended`；新播放打断旧播放 |
-| 自动化 | manual |
+| 步骤 | 点"说话(音频)"，观察口型与回执；模拟 AudioContext options 不支持、resume 后仍 suspended 和 resume 不返回 |
+| 期望结果 | 使用 playback latency hint；嘴随音频开合；实际开始后才发布 started；失败/挂起只发布 ended 并释放 speaking；新播放打断旧播放 |
+| 自动化 | `test/android-web/audio.test.js`（构造回退、running 检查、超时、误报与占用回归）；真机播放/口型待修复 APK 复测 |
 
 ## TC-AWB-015 voice.stream 实时播放
 
