@@ -62,4 +62,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-027，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`。

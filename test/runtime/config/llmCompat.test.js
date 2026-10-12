@@ -219,3 +219,36 @@ test('ToolLoopRunner forwards modelRef to getReasoner and publishes llm.fallback
   assert.equal(seen.length, 1);
   assert.equal(seen[0].data?.to ?? seen[0].to, 'b/y');
 });
+
+test('RuntimeRpcWorker: params.model_ref wins over session settings model_ref; both reach runner as model_ref', async () => {
+  const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
+  const { RpcInputQueue } = require('../../../apps/runtime/queue/rpcInputQueue');
+  const { RuntimeRpcWorker } = require('../../../apps/runtime/rpc/runtimeRpcWorker');
+  const seen = [];
+  const runner = {
+    async run({ sessionId, modelRef, runtimeContext }) {
+      seen.push({ modelRef, ctx: runtimeContext.model_ref });
+      return { output: 'ok', traceId: 't', state: 'DONE', sessionId, metrics: {} };
+    }
+  };
+  const queue = new RpcInputQueue();
+  const worker = new RuntimeRpcWorker({ queue, runner, bus: new RuntimeEventBus() });
+  worker.start();
+  try {
+    const submit = (id, params) => queue.submit(
+      { jsonrpc: '2.0', id, method: 'runtime.run', params: { input: 'hi', session_id: 's', ...params } },
+      {
+        send: () => {}, sendEvent: () => {},
+        buildPromptMessages: async () => [],
+        buildRunContext: async () => ({ model_ref: 'session/model' })
+      }
+    );
+    await submit('a', { model_ref: 'param/model' });
+    await submit('b', {});
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(seen, [
+      { modelRef: 'param/model', ctx: 'param/model' },
+      { modelRef: 'session/model', ctx: 'session/model' }
+    ]);
+  } finally { worker.stop?.(); }
+});

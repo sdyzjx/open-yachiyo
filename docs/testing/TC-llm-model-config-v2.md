@@ -35,3 +35,4 @@
 | TC-LLM-025 | 会话级 `model_ref`：未知 ref 400；合法/清除/缺省放行；merge 持久化 | integration | — | `PUT /api/sessions/:id/settings` | 400 / 放行；`mergeSessionSettings` 保留与清除 model_ref | 同上「session settings…」 |
 | TC-LLM-026 | 随仓库发布的 `config/providers.yaml` 模板是合法 v2 配置 | unit | — | 校验并加载 Catalog | active=qwen35_plus/qwen3.5-plus；含 deepseek-reasoner（reasoning）；enabled 3 个；tts 保留 | test/runtime/config/providerConfigSchemaV2.test.js「shipped config/providers.yaml…」 |
 | TC-LLM-027 | 配置页 models 标签页：渲染、勾选启用并保存、编辑 provider、测试连接 | manual-device | 启动网关，打开 `/config-v2.html` | 1) 打开 models 页 2) 勾选/切换当前模型并保存 3) 编辑 provider，点击「发现模型」「测试连接」4) 保存 provider | 状态栏显示「已保存 ✓」；密钥框留空不丢失原密钥；测试失败时显示状态码与脱敏后的错误 | manual |
+| TC-LLM-028 | `params.model_ref` 优先于会话 `model_ref`，均以 `model_ref` 透传给 runner | integration | stub runner | `runtime.run` 带/不带 `params.model_ref` | runner 收到 `modelRef` 与 `runtimeContext.model_ref`：参数优先，否则取会话设置 | test/runtime/config/llmCompat.test.js「RuntimeRpcWorker: params.model_ref…」 |
