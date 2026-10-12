@@ -23,6 +23,8 @@ class CompanionApp : Application() {
         )
     }
 
+    val mic: com.yachiyo.companion.audio.MicController by lazy { com.yachiyo.companion.audio.MicController(hub) }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
