@@ -83,11 +83,11 @@ test('TC-AWB-027 bridge falls back until a worker frame then applies drawable st
   assert.ok(Math.abs(raw.drawables.opacities[0] - 0.8) < 1e-6, 'opacity follows the vertex interpolation');
   assert.equal(raw.drawables.dynamicFlags[0] & 32, 32, 'interpolated vertices keep clipping masks dirty');
   assert.equal(bridge.state.interpolationProgress, 0.5);
-  assert.deepEqual(Array.from(raw.drawables.renderOrders), [0, 1]);
+  assert.deepEqual(Array.from(raw.drawables.renderOrders), [1, 0], 'draw order switches at the target midpoint');
   assert.equal(instance.sent.at(-1).transfer.length, 6, 'previous drawable payload is returned to the worker pool');
   time = 120;
   bridge.update();
-  assert.deepEqual(Array.from(raw.drawables.renderOrders), [1, 0], 'draw order switches only when the target mesh is complete');
+  assert.deepEqual(Array.from(raw.drawables.renderOrders), [1, 0], 'draw order remains stable after its bounded switch');
   bridge.destroy();
   assert.equal(instance.sent.at(-1).data.type, 'destroy');
   const finalVertices = Array.from(raw.drawables.vertexPositions[0]);
@@ -234,6 +234,12 @@ test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async
   await wait(30);
   assert.equal(stalled.state.failed, true);
   assert.equal(instance.terminated, true);
+  const stalledFrames = stalled.state.frames;
+  instance.emit({
+    type: 'frame', vertices: new Float32Array(0), opacities: new Float32Array(0),
+    renderOrders: new Int32Array(0), dynamicFlags: new Uint8Array(0), workerMs: 1
+  });
+  assert.equal(stalled.state.frames, stalledFrames, 'late frame after fallback is ignored');
 
   class UpdateThrowWorker extends FakeWorker {
     postMessage(data, transfer) {
@@ -248,6 +254,49 @@ test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async
   updateSend.state.ready = true;
   assert.doesNotThrow(() => updateSend.update());
   assert.equal(updateSend.state.failed, true);
+});
+
+test('TC-AWB-027 rapid Worker frames cannot indefinitely postpone render order', () => {
+  let instance;
+  class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
+  let time = 0;
+  const raw = {
+    parameters: { values: new Float32Array(0) }, parts: { opacities: new Float32Array(0) },
+    drawables: {
+      vertexPositions: [new Float32Array([0, 0])], opacities: new Float32Array([1]),
+      renderOrders: new Int32Array([0]), dynamicFlags: new Uint8Array([1])
+    }
+  };
+  const bridge = Bridge.create({
+    model: { getModel: () => raw, update() {} },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
+    now: () => time
+  });
+  instance.emit({ type: 'ready', drawables: 1, vertexValues: 2 });
+  bridge.update();
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([1, 1]), opacities: new Float32Array([1]),
+    renderOrders: new Int32Array([0]), dynamicFlags: new Uint8Array([1]), workerMs: 1
+  });
+  bridge.update();
+  time = 60;
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([2, 2]), opacities: new Float32Array([1]),
+    renderOrders: new Int32Array([1]), dynamicFlags: new Uint8Array([1]), workerMs: 1
+  });
+  time = 70;
+  bridge.update();
+  assert.equal(raw.drawables.renderOrders[0], 0, 'order waits before the midpoint');
+  time = 75;
+  instance.emit({
+    type: 'frame', vertices: new Float32Array([3, 3]), opacities: new Float32Array([1]),
+    renderOrders: new Int32Array([2]), dynamicFlags: new Uint8Array([1]), workerMs: 1
+  });
+  assert.equal(raw.drawables.renderOrders[0], 1, 'interrupted target order is committed at the next Worker boundary');
+  time = 92;
+  bridge.update();
+  assert.equal(raw.drawables.renderOrders[0], 2, 'latest target order switches at its midpoint');
+  bridge.destroy();
 });
 
 test('TC-AWB-027 background time resets the pending frame deadline', async () => {

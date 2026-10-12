@@ -12,7 +12,7 @@ Android WebView 把 Cubism Core 网格求值移到专用 Worker，并在真实�
 
 ## 2. 行为说明
 
-加载模型后，主线程先走同步 Cubism 路径生成首帧。Worker 加载同一份 Core 与 moc，接收当前参数和部件透明度，异步计算下一份 drawable 状态。第一份 Worker 结果只用于完成预热并回收 buffer，主线程继续同步求值；第二份结果到达时从屏幕当前网格开始平滑接管，不在消息回调中改动画面。相邻 Worker 网格按实际到达间隔在每个显示帧线性插值，透明度同步插值，并持续标记顶点变化以刷新 clipping mask；离散的 render order 只在目标网格插值完成时切换。motion、表情、口型、呼吸、physics、pose、相机和 WebGL draw 都仍在每个显示帧执行。
+加载模型后，主线程先走同步 Cubism 路径生成首帧。Worker 加载同一份 Core 与 moc，接收当前参数和部件透明度，异步计算下一份 drawable 状态。第一份 Worker 结果只用于完成预热并回收 buffer，主线程继续同步求值；第二份结果到达时从屏幕当前网格开始平滑接管，不在消息回调中改动画面。相邻 Worker 网格按实际到达间隔在每个显示帧线性插值，透明度同步插值，并持续标记顶点变化以刷新 clipping mask；离散的 render order 在对应网格插值越过 50% 时切换，若更快的新结果提前到达则先提交上一代 order，避免层级长期冻结。motion、表情、口型、呼吸、physics、pose、相机和 WebGL draw 都仍在每个显示帧执行。
 
 ```mermaid
 sequenceDiagram
@@ -30,7 +30,7 @@ sequenceDiagram
   end
 ```
 
-渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部顶点、UV 和 index 分别使用一个 packed buffer；UV/index 只初始化一次，position 每个显示帧一次 `bufferSubData`。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。启动超过 12 秒或单帧超过 3 秒没有响应也会终止 Worker 并回退；页面进入后台时暂停计时，恢复可见后重新开始完整截止期。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
+渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部顶点、UV 和 index 分别使用一个 packed buffer；UV/index 只初始化一次，position 每个显示帧一次 `bufferSubData`。每个模型 draw pass 还记录当前 program、buffer、texture、blend、cull、front-face、attribute 与 uniform，仅省略该 pass 内值完全相同的后续 WebGL 状态调用；下一 pass 从未知状态重新建立缓存。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。启动超过 12 秒或单帧超过 3 秒没有响应也会终止 Worker 并回退；页面进入后台时暂停计时，恢复可见后重新开始完整截止期。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
 
 ## 3. 接口与协议
 

@@ -37,6 +37,7 @@
     let fromDynamicFlags = null;
     let targetDynamicFlags = null;
     let targetRenderOrders = null;
+    let renderOrderApplied = true;
     let parameterPool = null;
     let partPool = null;
     let previousPayload = null;
@@ -133,6 +134,11 @@
         // second job evaluates the latest parameters, avoiding an immediate backwards mesh jump.
         state.warmed = true;
       } else {
+        // Discrete order cannot be interpolated. Commit an interrupted generation before replacing
+        // its target so rapid Worker frames cannot postpone layer changes indefinitely.
+        if (state.active && !renderOrderApplied && targetRenderOrders) {
+          copyTyped(drawables.renderOrders, targetRenderOrders, 'render order');
+        }
         fromVertices = currentVertices;
         targetVertices = data.vertices;
         fromOpacities = Float32Array.from(drawables.opacities);
@@ -140,6 +146,7 @@
         fromDynamicFlags = Uint8Array.from(drawables.dynamicFlags);
         targetDynamicFlags = data.dynamicFlags;
         targetRenderOrders = data.renderOrders;
+        renderOrderApplied = false;
         interpolationMs = Math.min(100, Math.max(33, receivedAt - priorReceivedAt || 60));
         targetReceivedAt = receivedAt;
         state.interpolationProgress = 0;
@@ -163,12 +170,15 @@
         raw.drawables.dynamicFlags[i] = flags;
       }
       state.interpolationProgress = progress;
-      if (progress >= 1) copyTyped(raw.drawables.renderOrders, targetRenderOrders, 'render order');
+      if (!renderOrderApplied && progress >= 0.5) {
+        copyTyped(raw.drawables.renderOrders, targetRenderOrders, 'render order');
+        renderOrderApplied = true;
+      }
     }
 
     worker.onmessage = (event) => {
       const data = event && event.data || {};
-      if (state.destroyed) {
+      if (state.destroyed || state.failed) {
         if (data.type === 'destroyed') { try { worker.terminate(); } catch { /* ignore */ } }
         return;
       }

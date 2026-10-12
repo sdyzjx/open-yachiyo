@@ -61,9 +61,18 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 抽动根因是 Cubism 的更新顺序：motion 后 `saveParameters()`，physics 修改参数并供 Core 消费，帧尾 `loadParameters()` 恢复 motion 基线。试验版在未采样帧完全跳过 physics，使 Core 交替看到物理结果与未加物理的基线。修正决策是恢复每个显示帧原始 physics，不把低频缓存方案带入候选版。
 
-### 候选版
+### 候选版 `827f036`
 
-候选版改为每个显示帧都执行 physics、顶点/透明度插值与真实 WebGL draw；renderer 把 409 drawable 的 position/UV/index 打包为三个 buffer，position 每显示帧只上传一次。真机数据须在统筹者审查候选后补录；未复测前不声称达到 60 FPS。
+候选版改为每个显示帧都执行 physics、顶点/透明度插值与真实 WebGL draw；renderer 把 409 drawable 的 position/UV/index 打包为三个 buffer，position 每显示帧只上传一次。统筹者在相同小米 6 上完成了 10 秒静止与连续滑动采样：
+
+| 场景 | rAF / draw | 帧间隔均值 / P95 | draw 均值 / P95 | Worker | Worker 均值 / P95 |
+|---|---:|---:|---:|---:|---:|
+| 横屏静止 10.001 s | 55.59 FPS | 18.12 / 21.5 ms | 16.57 / 20.0 ms | 18.50 Hz | 32.30 / 37.2 ms |
+| 横屏连续滑动 10.484 s | 54.27 FPS | 18.44 / 23.1 ms | 16.26 / 20.4 ms | 17.93 Hz | 33.07 / 51.6 ms |
+
+静止窗口执行 222574 次 draw，即每显示帧 400.31 次，另有每帧 59.23 次 program 变化；连续滑动为每帧 399.56 次 draw。截图显示模型和插件分屏完整，未见旧试验的静态撕裂。此轮没有连续帧录像，不能据此认定动态抽动已经消失。真实 draw 仍低于 60 FPS，因此该提交是显著改善但未达最终目标。
+
+下一候选保持每帧约 400 次真实 draw 和原 painter order，只在单个模型 pass 内缓存 WebGL 状态，省略相同的 buffer/texture/blend/cull/front-face/attribute/uniform 调用。缓存每 pass 重建，不复用 canvas 或降低 draw 频率；真机收益待复测。
 
 ## 结论与决策
 
@@ -72,10 +81,11 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 - 把约 29 ms 的 Cubism Core 网格求值移到 Worker，并用 transferable typed arrays 交付完整 drawable 状态。
 - 主线程保留逐帧 motion、表情、口型、呼吸、physics、相机和 WebGL draw；相邻 Worker 网格逐显示帧插值。
 - 把 position/UV/index 打包为三个 GPU buffer，保留 drawable 顺序与 mask 语义，减少逐 drawable 上传调用。
+- 在单个模型 pass 内去重值相同的 WebGL 状态调用，同时保留每个 drawable 的真实 draw。
 - 6 GiB 及以下设备的自动纹理为 2048，降低加载和显存压力；显式画质设置仍生效。
 - Worker 失败立即回退同步 Core；renderer 优化无法安装时回退原绘制路径。
 
 ## 后续动作
 
-- 由统筹者安排单次可回退真机窗口，完成同口径 5 秒静止、连续滑动、动作与口型复测。
+- 由统筹者安排下一候选的可回退真机窗口，完成同口径静止、连续滑动、连续帧录屏、动作与口型复测。
 - 若真实逐帧 draw 仍超过 16.7 ms，评估原生 Cubism Core/JNI 或离线模型网格 LOD；不再用 canvas 合成频率代替人物帧率。
