@@ -29,3 +29,5 @@
 ## 测试用例
 
 [TC-PI-001](../testing/TC-runtime-pi-agent-core.md)：精确依赖版本和 ESM 包验证，自动化 `test/runtime/agent-pi/dependencies.test.js`。
+
+模型适配已实现：C4 descriptor 转为 pi 模型，支持 reasoning、compat、headers、extra_body、请求超时/重试和 model_ref 优先的去重回退链。凭证仅驻留内存；ESM 加载统一缓存。
