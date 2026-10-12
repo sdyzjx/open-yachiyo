@@ -36,6 +36,7 @@
     let targetOpacities = null;
     let fromDynamicFlags = null;
     let targetDynamicFlags = null;
+    let targetVertexChanged = null;
     let targetRenderOrders = null;
     let renderOrderApplied = true;
     let parameterPool = null;
@@ -119,6 +120,15 @@
       if (!data.opacities || data.opacities.length !== drawables.opacities.length) throw new Error('opacity shape changed');
       if (!data.dynamicFlags || data.dynamicFlags.length !== drawables.dynamicFlags.length) throw new Error('dynamic flags shape changed');
       if (!data.renderOrders || data.renderOrders.length !== drawables.renderOrders.length) throw new Error('render order shape changed');
+      const vertexChanged = new Uint8Array(drawables.vertexPositions.length);
+      let vertexOffset = 0;
+      for (let drawableIndex = 0; drawableIndex < drawables.vertexPositions.length; drawableIndex += 1) {
+        const vertices = drawables.vertexPositions[drawableIndex];
+        for (let i = 0; i < vertices.length; i += 1) {
+          if (vertices[i] !== data.vertices[vertexOffset + i]) { vertexChanged[drawableIndex] = 1; break; }
+        }
+        vertexOffset += vertices.length;
+      }
       previousReceivedAt = receivedAt;
       parameterPool = data.parameterBuffer || null;
       partPool = data.partsBuffer || null;
@@ -145,6 +155,7 @@
         targetOpacities = data.opacities;
         fromDynamicFlags = Uint8Array.from(drawables.dynamicFlags);
         targetDynamicFlags = data.dynamicFlags;
+        targetVertexChanged = vertexChanged;
         targetRenderOrders = data.renderOrders;
         renderOrderApplied = false;
         interpolationMs = Math.min(100, Math.max(33, receivedAt - priorReceivedAt || 60));
@@ -159,13 +170,22 @@
     }
 
     function interpolate() {
-      if (!state.active || !targetVertices || state.interpolationProgress >= 1) return;
+      if (!state.active || !targetVertices) return;
+      if (state.interpolationProgress >= 1) {
+        // Cubism's clipping manager consumes bit 5 for one draw. With Core running in a Worker,
+        // nothing else resets it, so clear it once the displayed mesh has stopped changing.
+        for (let i = 0; i < raw.drawables.dynamicFlags.length; i += 1) raw.drawables.dynamicFlags[i] &= ~32;
+        return;
+      }
+      const previousProgress = state.interpolationProgress;
       const progress = Math.min(1, (now() - targetReceivedAt) / interpolationMs);
       copyVertices(targetVertices, progress);
       for (let i = 0; i < raw.drawables.opacities.length; i += 1) {
         raw.drawables.opacities[i] = fromOpacities[i] + (targetOpacities[i] - fromOpacities[i]) * progress;
-        // Bit 5 tells Cubism's clipping pass that interpolated mask vertices need a refresh.
-        let flags = targetDynamicFlags[i] | 32;
+        // Bit 5 tells Cubism's clipping pass that this drawable's displayed vertices changed.
+        // Mark only moving drawables; forcing it on all 409 drawables redraws every mask pass.
+        let flags = targetDynamicFlags[i] & ~32;
+        if (targetVertexChanged[i] && progress > previousProgress) flags |= 32;
         if (progress < 1 && ((fromDynamicFlags[i] | targetDynamicFlags[i]) & 1)) flags |= 1;
         raw.drawables.dynamicFlags[i] = flags;
       }
