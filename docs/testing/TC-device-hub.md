@@ -24,3 +24,6 @@
 
 | TC-HUB-009 | ZIP/manifest 校验 | unit | 内存包 | 确定性打包与读取；破坏路径/CRC/尺寸/类型 | 合法包一致；损坏/穿越/symlink/炸弹拒绝 | `test/gateway/deviceHub/pluginStore.test.js` / Plugin ZIP roundtrip is deterministic and rejects unsafe archives/manifests |
 | TC-HUB-010 | 插件上传推送与 CLI | integration | 本机 Hub、普通/锁屏手机、临时插件目录 | CLI 打包/上传/推送；下载；回执；非法上传 | hash/size/内容正确；锁屏拒绝；回执记录；非法上传 400 | 同文件 / Plugin upload, download, CLI push and lockscreen denial |
+
+| TC-HUB-011 | 设备页与 API | integration | 本机静态页 + Hub | 获取页面、pairing、列表、移交 | 本地资源；配对和 host 正确；错误可读 | `test/gateway/deviceHub/devicesPage.test.js` / Devices page serves offline assets and API reports pairing, host and errors |
+| TC-HUB-012 | 设备页授权与写请求 | unit | fetch mock | transfer/push/upload | Bearer、JSON target 与 ZIP Content-Type 正确 | 同文件 / Devices page client uses Bearer authorization and encodes write requests |

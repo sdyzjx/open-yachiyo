@@ -40,6 +40,10 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。旧网关/worker 会剥离 transcribed_text，暂通过非空 input 避免重复 ASR；元数据持久化待统筹修复。录音文件当前保留供会话引用，运维需定期清理。
 
+### 电脑设备页
+
+打开 `/devices.html`：本机显示可复制的配对 token 和地址（优先局域网地址），远程访问先输入 token；token 仅保留页面内存。在线设备每 5 秒刷新，支持移交与接回电脑；选择 `.yplug/.zip` 上传后，可推送到指定手机或全部未锁屏手机。设备/插件名称均用 textContent 展示。无 CDN 依赖；按施工文档允许的简化形式提供 URL + token，不生成二维码。
+
 ## 配置项
 
 `~/yachiyo/config/device-hub.yaml`（遵循 `YACHIYO_HOME`）：`pairing_token` 缺省生成 24 字节随机值并保存为仅用户可读文件；`heartbeat_ms` 默认 15000，最小 100。RPC 默认 8000 ms；单帧上限 1 MiB。TTS 沿用现有 qwen3_tts provider；媒体 TTL 10 分钟，单条媒体上限 20 MiB。
