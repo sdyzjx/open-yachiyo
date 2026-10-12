@@ -1,7 +1,7 @@
 # WS1 施工文档：Agent 核心迁移到 pi
 
 > 类型: plan
-> 状态: active
+> 状态: done
 > 负责人: codex (gpt-6-astra)
 > 更新: 2026-10-12
 > 关联: PLAN-android-companion.md, PLAN-android-companion-contracts.md §C4 §C5
@@ -65,6 +65,8 @@
 
 - **统筹答复（2026-10-12）**：①锁文件由统筹合并时统一生成，同意。②`model_ref` 透传与 settings 持久化归 WS2，WS1 读取 `params.model_ref`（优先）与会话 settings 的 `model_ref` 即可。③Avatar 服务端 API 已写入契约 C5「Device Hub 服务端 API」：使用 `getDeviceHub().requestAvatarTransfer(to)`、`getAvatarHost()`、`listDevices()`、`invoke('avatar-host', ...)`，空实现已在 `apps/gateway/deviceHub/index.js` 提供；不需要另行注入 avatar 控制器（可保留注入点用于测试）。
 
+- 配置集成提醒：仓库默认 tools.yaml 使用非空 policy.allow，新增 bus/avatar/设备工具会按规则拒绝。请统筹在运行配置中显式加入需要的工具名称；WS1 保留 allow/deny 权限，不自动扩大名单。
+
 ## 8. 进度记录
 
 - 开始前完整阅读四份约束文档；Node v24.10.0，分支 `agent/ws1-pi-core`，工作区干净。
@@ -115,3 +117,58 @@ pi resource loader、skills.yaml 过滤、目录优先级和重新加载完成�
 ### 任务 10
 
 功能文档六个必备章节、TC-PI-001…024、架构核心流程与 docs:index 索引完成；`npm run test:ci` 535 / 535 通过，`git diff --check` 通过。
+
+## 9. 交付记录
+
+### 完成项
+
+WS1 任务 1–10 全部完成：精确依赖与调研、模型/provider 适配、权限工具桥、动态设备/总线/Avatar 工具、prompt 迁移、pi 会话持久化与 UI 历史兼容、技能资源加载、实际 AgentSession 循环与旧事件、默认 pi/legacy 回滚网关装配、功能/测试/架构/索引文档。补充压缩、错误码和自定义 reasoning 字段兼容修正。
+
+### 提交哈希
+
+| 任务 | 提交 | 内容 |
+|---|---|---|
+| 1 | d3d08cb | 调研、精确依赖及版本验证 |
+| 2 | 2a3adf3 | ESM 缓存、模型映射与 provider 注册 |
+| 3 | 3fa17a9 | ToolExecutor 工具桥、权限与截图 |
+| 4 | a707280 | 设备动态工具、总线、Avatar |
+| 5 | 1042d3c | Prompt 等价迁移 |
+| 6 | 00c49a3 | pi JSONL 恢复、UI 镜像与压缩配置 |
+| 7 | 76805fb | pi resource loader 与技能规则 |
+| 8 | a1caa7e | pi 循环、事件、图片/音频、回退 |
+| 9 | 8485332 | 默认 pi、legacy 回滚、双模式网关 e2e |
+| 补查 | a1be6b7 | 压缩事件、原始错误码、自定义 reasoning、技能可见性 |
+| 10 | b54d6e8 | 功能/测试/架构文档与索引 |
+
+最终交付记录提交位于以上提交之后，可用 `git log -1 --format='%h %s' -- docs/plans/PLAN-android-ws1-pi-core.md` 查询。所有提交均附用户要求的 Co-Authored-By；未 push、未合并其他分支。
+
+### 未完成项与集成边界
+
+WS1 范围内无未完成任务。统筹后续事项：
+
+1. 合并后统一更新 package-lock.json，再执行 npm ci 和完整回归。本工作流未修改锁文件。
+2. 合并 WS2 的 model_ref RPC 透传与会话 settings 持久化；当前装配兼容层已支持单次 model_ref。
+3. 合并 WS3 的真实 Hub，并验证设备/Avatar 实际调用；测试使用假 Hub，未操作 Android。
+4. 在非空 tools.yaml policy.allow 中加入批准的新工具名称；不建议通过清空 allowlist 来替代显式配置。
+
+执行期间统筹补充的 contracts 文档 diff 保留在工作区，WS1 没有编辑或暂存该文件；交付后的这项未提交修改属于统筹。
+
+### 已知风险
+
+- 真实 DeepSeek/Anthropic/Google 服务、手机/桌面移交、TTS 音频设备需统筹集成验收；WS1 自动化均为本地离线 mock。
+- pi 当前使用串行工具执行，关闭旧 early dispatch；正在执行的旧工具沿用原超时，取消不会强制终止其副作用。
+- v1 模型视觉元数据不完整，用户图片仍发送给 provider；不支持视觉的 provider 会返回错误。
+- 历史中已经出现的内容不能通过降低权限撤回；权限控制限制新的 memory seed/工具访问。
+
+### 如何验证
+
+Node v24.10.0；为遵守 worktree 隔离，运行：
+
+```sh
+mkdir -p node_modules/.ws1-tmp
+TMPDIR="$PWD/node_modules/.ws1-tmp" YACHIYO_HOME="$PWD/node_modules/.ws1-home" npm run test:ci
+npm run docs:index
+git diff --check
+```
+
+最终结果：**535 / 535 通过，0 失败、0 跳过**（基线 509，新增 26）；其中 gatewayModes.test.js 子进程分别完整执行 pi 和 legacy 的既有 gateway.e2e 五用例。TC-PI-001…024 记录每个用例的步骤、期望和自动化名称。真实 SDK、本地 SSE mock 覆盖二轮会话恢复、自动压缩持久化、图片/ASR、权限拒绝、工具错误码、回退和循环上限。
