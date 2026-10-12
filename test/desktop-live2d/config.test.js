@@ -22,6 +22,7 @@ test('resolveDesktopLive2dConfig applies defaults and model relative path', () =
   assert.equal(config.modelJsonName, '八千代辉夜姬.model3.json');
   assert.ok(config.modelRelativePath.includes('assets/live2d/yachiyo-kaguya/八千代辉夜姬.model3.json'));
   assert.ok(config.windowStatePath.endsWith(path.join('desktop-live2d', 'window-state.json')));
+  assert.ok(config.chatWindowStatePath.endsWith(path.join('desktop-live2d', 'chat-window-state.json')));
   assert.equal(config.desktopCaptureDir, path.join(yachiyoHome, 'data', 'desktop-live2d', 'captures'));
   assert.equal(config.gatewayExternal, false);
   assert.equal(config.desktopCaptureTtlMs, 5 * 60 * 1000);

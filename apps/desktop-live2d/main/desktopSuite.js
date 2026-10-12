@@ -55,6 +55,13 @@ const CHANNELS = Object.freeze({
 });
 
 const AVATAR_WINDOW_MAX_OFFSCREEN_RATIO = 0.8;
+const AVATAR_DEFAULT_HEIGHT_RATIO = 0.38;
+const AVATAR_DEFAULT_MAX_HEIGHT = 420;
+const AVATAR_DEFAULT_LEFT_MARGIN = 24;
+const CHAT_WINDOW_DEFAULT_WIDTH = 420;
+const CHAT_WINDOW_DEFAULT_HEIGHT = 640;
+const CHAT_WINDOW_MIN_WIDTH = 360;
+const CHAT_WINDOW_MIN_HEIGHT = 480;
 const BUBBLE_DEFAULT_LINE_DURATION_MS = 2000;
 const BUBBLE_DEFAULT_LAUNCH_INTERVAL_MS = 300;
 const BUBBLE_DEFAULT_WIDTH = 560;
@@ -1724,8 +1731,10 @@ async function startDesktopSuite({
     preloadPath: path.join(__dirname, 'preload.js'),
     uiConfig: config.uiConfig,
     avatarBounds: avatarWindowBounds,
-    display
+    display,
+    persistedState: loadPersistedChatWindowState(config.chatWindowStatePath, { display, logger })
   });
+  let allowChatWindowClose = false;
   const bubbleWindow = createBubbleWindow({
     BrowserWindow,
     preloadPath: path.join(__dirname, 'preload.js'),
@@ -2808,6 +2817,17 @@ async function startDesktopSuite({
   avatarWindow.on('show', () => {
     notifyShellChanged();
   });
+  const persistChatWindowBounds = () => {
+    if (chatWindow.isDestroyed()) return;
+    writePersistedWindowState(config.chatWindowStatePath, chatWindow.getBounds(), { logger });
+  };
+  chatWindow.on('move', persistChatWindowBounds);
+  chatWindow.on('resize', persistChatWindowBounds);
+  chatWindow.on('close', (event) => {
+    if (allowChatWindowClose) return;
+    event?.preventDefault?.();
+    hideChatWindow();
+  });
   const avatarContextMenuListener = (event) => {
     if (avatarWindow.isDestroyed() || event?.sender !== avatarWindow.webContents) return;
     onAvatarContextMenu?.();
@@ -3410,6 +3430,7 @@ async function startDesktopSuite({
       bubbleWindow.destroy();
     }
     if (!chatWindow.isDestroyed()) {
+      allowChatWindowClose = true;
       chatWindow.destroy();
     }
     if (imagePreviewWindow && !imagePreviewWindow.isDestroyed()) {
@@ -3816,19 +3837,17 @@ async function handleDesktopRpcRequest({
 function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windowMetrics, initialSizeOverride = null }) {
   const windowConfig = uiConfig?.window || {};
   const aspectRatio = resolveWindowAspectRatio(windowMetrics);
-  const initialSize = normalizePersistedWindowState(initialSizeOverride, { windowMetrics }) || {
-    width: windowMetrics?.expandedWidth || 320,
-    height: windowMetrics?.expandedHeight || 500
-  };
+  const initialSize = normalizePersistedWindowState(initialSizeOverride, { windowMetrics })
+    || resolveDefaultAvatarWindowSize({ display, windowMetrics });
   const placement = windowConfig.placement || {};
   const unclampedWindowBounds = computeWindowBounds({
     width: initialSize.width,
     height: initialSize.height,
     display,
-    anchor: String(placement.anchor || 'bottom-right'),
+    anchor: initialSizeOverride ? String(placement.anchor || 'bottom-left') : 'bottom-left',
     marginRight: Number(placement.marginRight) || 18,
-    marginBottom: Number(placement.marginBottom) || 18,
-    marginLeft: Number(placement.marginLeft) || 18,
+    marginBottom: initialSizeOverride ? (Number(placement.marginBottom) || 0) : 0,
+    marginLeft: initialSizeOverride ? (Number(placement.marginLeft) || AVATAR_DEFAULT_LEFT_MARGIN) : AVATAR_DEFAULT_LEFT_MARGIN,
     marginTop: Number(placement.marginTop) || 18,
     x: placement.x,
     y: placement.y
@@ -3845,6 +3864,7 @@ function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windo
     minHeight: windowMetrics?.minHeight || 320,
     maxWidth: windowMetrics?.maxWidth || Number.POSITIVE_INFINITY,
     maxHeight: windowMetrics?.maxHeight || Number.POSITIVE_INFINITY,
+    margin: 0,
     maxOffscreenRatio: AVATAR_WINDOW_MAX_OFFSCREEN_RATIO
   });
 
@@ -3883,31 +3903,75 @@ function createMainWindow({ BrowserWindow, preloadPath, display, uiConfig, windo
   return win;
 }
 
-function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, display }) {
+function resolveDefaultAvatarWindowSize({ display, windowMetrics } = {}) {
+  const workAreaHeight = Math.max(1, Number(display?.workArea?.height) || 900);
+  const ratio = resolveWindowAspectRatio(windowMetrics);
+  const minHeight = Math.max(1, Number(windowMetrics?.minHeight) || 260);
+  const height = Math.max(minHeight, Math.min(AVATAR_DEFAULT_MAX_HEIGHT, Math.round(workAreaHeight * AVATAR_DEFAULT_HEIGHT_RATIO)));
+  return {
+    width: Math.max(1, Math.round(height * ratio)),
+    height
+  };
+}
+
+function normalizeChatWindowBounds(input, { display } = {}) {
+  if (!input || typeof input !== 'object') return null;
+  const width = Math.max(CHAT_WINDOW_MIN_WIDTH, Math.round(Number(input.width) || 0));
+  const height = Math.max(CHAT_WINDOW_MIN_HEIGHT, Math.round(Number(input.height) || 0));
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return clampWindowBoundsToWorkArea({
+    bounds: {
+      x: Number.isFinite(Number(input.x)) ? Math.round(Number(input.x)) : Number(display?.workArea?.x) || 0,
+      y: Number.isFinite(Number(input.y)) ? Math.round(Number(input.y)) : Number(display?.workArea?.y) || 0,
+      width,
+      height
+    },
+    display,
+    minWidth: CHAT_WINDOW_MIN_WIDTH,
+    minHeight: CHAT_WINDOW_MIN_HEIGHT
+  });
+}
+
+function loadPersistedChatWindowState(filePath, { display, logger = console } = {}) {
+  if (!filePath) return null;
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return normalizeChatWindowBounds(JSON.parse(fs.readFileSync(filePath, 'utf8')), { display });
+  } catch (err) {
+    logger.warn?.('[desktop-live2d] failed to load chat window state', err?.message || err);
+    return null;
+  }
+}
+
+function createChatWindow({ BrowserWindow, preloadPath, uiConfig, avatarBounds, display, persistedState = null }) {
   const panelConfig = uiConfig?.chat?.panel || {};
-  const width = toPositiveInt(panelConfig.width, 320);
-  const height = toPositiveInt(panelConfig.height, 220);
-  const bounds = computeChatWindowBounds({
-    avatarBounds,
-    chatWidth: width,
-    chatHeight: height,
-    display
+  const width = Math.max(CHAT_WINDOW_MIN_WIDTH, toPositiveInt(panelConfig.width, CHAT_WINDOW_DEFAULT_WIDTH));
+  const height = Math.max(CHAT_WINDOW_MIN_HEIGHT, toPositiveInt(panelConfig.height, CHAT_WINDOW_DEFAULT_HEIGHT));
+  const bounds = normalizeChatWindowBounds(persistedState, { display }) || computeChatWindowBounds({
+    avatarBounds, chatWidth: width, chatHeight: height, display
   });
 
   return new BrowserWindow({
-    width,
-    height,
+    width: bounds.width || width,
+    height: bounds.height || height,
     x: bounds.x,
     y: bounds.y,
-    minWidth: Math.max(260, Math.min(width, width)),
-    minHeight: Math.max(180, Math.min(height, height)),
-    frame: false,
-    transparent: true,
+    minWidth: CHAT_WINDOW_MIN_WIDTH,
+    minHeight: CHAT_WINDOW_MIN_HEIGHT,
+    title: '八千代',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    frame: true,
+    transparent: false,
     hasShadow: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     show: false,
     movable: true,
-    backgroundColor: '#00000000',
+    minimizable: true,
+    maximizable: true,
+    closable: true,
+    resizable: true,
+    backgroundColor: '#090b20',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -3981,10 +4045,11 @@ function computeWindowBounds({ width, height, display, anchor = 'bottom-right', 
     return { x: customX, y: customY };
   }
 
-  const marginLeft = Number(margins.marginLeft) || 16;
-  const marginTop = Number(margins.marginTop) || 16;
-  const marginRight = Number(margins.marginRight) || 16;
-  const marginBottom = Number(margins.marginBottom) || 16;
+  const marginValue = (value, fallback = 16) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const marginLeft = marginValue(margins.marginLeft);
+  const marginTop = marginValue(margins.marginTop);
+  const marginRight = marginValue(margins.marginRight);
+  const marginBottom = marginValue(margins.marginBottom);
 
   if (anchor === 'top-left') {
     return {
@@ -4223,6 +4288,9 @@ module.exports = {
   handleDesktopRpcRequest,
   isNewSessionCommand,
   createChatWindow,
+  resolveDefaultAvatarWindowSize,
+  normalizeChatWindowBounds,
+  loadPersistedChatWindowState,
   createBubbleWindow,
   computeChatWindowBounds,
   computeBubbleWindowBounds,
