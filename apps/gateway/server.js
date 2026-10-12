@@ -1038,7 +1038,7 @@ const server = app.listen(port, host, () => {
 });
 
 const wss = new WebSocketServer({ noServer: true });
-require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc });
+require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore });
 
 function sendSafe(ws, payload) {
   if (ws.readyState !== 1) return;

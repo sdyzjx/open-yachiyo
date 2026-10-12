@@ -18,3 +18,6 @@
 | TC-HUB-005 | 运行时双向桥接 | integration | bus + 两设备 + mock 入队 | 发布 runtime 事件、设备 pub、chat.input、工具状态 | host 独占动作、chat 映射、无循环/重复、设备会话、任务完成 | `test/gateway/deviceHub/runtimeBridge.test.js` / Runtime bridge maps chat, aggregates tools and prevents publication loops |
 
 | TC-HUB-006 | 手机语音中继 | integration | mock TTS、本机 Hub | 合成、下载、重复请求、过期、合成时切 host | 内容正确；带 token；只合成一次；过期 404；不播旧结果 | `test/gateway/deviceHub/voiceRelay.test.js` / Voice relay serves temporary audio, deduplicates and drops stale host output |
+
+| TC-HUB-007 | PCM/WAV 与 ASR 对话 | integration | 本机 mock HTTP ASR | 上传 PCM、结束、取消、乱序 | 合法 WAV；multipart；transcript 和设备 run；取消无识别；乱序拒绝 | `test/gateway/deviceHub/audioInput.test.js` / Audio PCM becomes WAV, mock HTTP ASR yields transcript and device run |
+| TC-HUB-008 | DashScope 与无配置回退 | unit | fetch/fallback mock | 调两条识别路径 | Qwen inline WAV 格式正确；回退工具解析正确 | 同文件 / ASR DashScope inline WAV and legacy fallback are deterministic |

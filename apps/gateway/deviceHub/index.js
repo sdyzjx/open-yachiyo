@@ -56,6 +56,20 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   attachHttpRoutes({ app, server, hub, ...options });
   if (options.bus) require('./runtimeBridge').attachRuntimeBridge({ hub, ...options });
   if (options.bus && (settings.home || options.voice)) require('./voiceRelay').attachVoiceRelay({ hub, bus: options.bus, directory: settings.home && require('node:path').join(settings.home, 'data/device-media'), ...options.voice });
+  if (options.bus && (settings.home || options.audio)) {
+    const { createAsrService } = require('./asrService');
+    require('./audioInput').attachAudioInput({
+      hub,
+      directory: settings.home && require('node:path').join(settings.home, 'data/device-audio'),
+      transcribe: createAsrService({ fallback: options.executor ? async (args, device) => {
+        const settings = await options.sessionStore?.getSessionSettings(`device-${device.device_id}`);
+        const result = await options.executor.execute({ name: 'voice.asr_aliyun', args }, { permission_level: settings?.permission_level || 'low', meta: { session_id: `device-${device.device_id}` }, bus: options.bus });
+        if (!result.ok) throw new Error('ASR tool failed');
+        return result.result;
+      } : undefined }),
+      ...options.audio
+    });
+  }
   server.once('close', () => {
     hub.close();
     server.off('upgrade', upgrade);

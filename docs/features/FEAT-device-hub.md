@@ -32,6 +32,14 @@
 
 手机为 host 时，网关消费 `voice.requested`，复用 `QwenTtsClient.synthesizeNonStreaming`，将音频保存到 `data/device-media/`，定向发送含带 token 下载 URL 的 `voice.play`。`GET /api/device/media/:id` 提供音频，10 分钟后返回 404 并清理文件。request_id 去重；合成期间 host 切换时丢弃旧结果。播放回执桥接回 bus。桌面 host 不由网关再次合成；实时 `voice.stream.*` 已由普通桥接转发。
 
+### 麦克风上行
+
+接收 C1.7 的 16 kHz/单声道 PCM，严格校验 stream_id、base64 和从 0 开始的连续 seq；每设备只允许一个录音或识别任务，最长 120 秒数据、130 秒接收期限。cancel 不识别；断线清理接收缓存。WAV 以独占创建方式保存到 `data/device-audio/<stream_id>.wav`，同名拒绝覆盖。
+
+ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型时使用原 YAML 只读 store。OpenAI-compatible 调 `/audio/transcriptions` multipart；DashScope 使用 Qwen ASR 的 `/compatible-mode/v1/chat/completions` 内嵌 WAV，协议参考[官方文档](https://www.alibabacloud.com/help/en/model-studio/non-realtime-speech-recognition-user-guide)。无 provider 时经 ToolExecutor 回退 `voice.asr_aliyun`，保留会话权限检查。
+
+识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。旧网关/worker 会剥离 transcribed_text，暂通过非空 input 避免重复 ASR；元数据持久化待统筹修复。录音文件当前保留供会话引用，运维需定期清理。
+
 ## 配置项
 
 `~/yachiyo/config/device-hub.yaml`（遵循 `YACHIYO_HOME`）：`pairing_token` 缺省生成 24 字节随机值并保存为仅用户可读文件；`heartbeat_ms` 默认 15000，最小 100。RPC 默认 8000 ms；单帧上限 1 MiB。TTS 沿用现有 qwen3_tts provider；媒体 TTL 10 分钟，单条媒体上限 20 MiB。
