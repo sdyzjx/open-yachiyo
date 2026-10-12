@@ -228,3 +228,4 @@ flowchart TD
 - 根据小米 6 横屏截图重做对话几何：居中双列改为脸部保护线以下各占半屏，取消 420 px 上限，允许覆盖人物下半身以提高长文可读性。未收到 `chat.final` 的中断流在最后增量 30 s 后自动淡出，新增 TC-AWB-043。
 - 实际日志定位手机“说话后不回应”：上一条 Apple Music 语音任务连续重试工具并进入第 8 轮模型决策，单 worker 一直被占用。现同 session 新语音会 abort 旧 Pi turn，音频 turn 90 s 硬超时；Realtime 模式下新录音也会取消仍在工具回合的旧连接。新增 TC-PI-029、TC-VOC-029。
 - 手机任务卡把同一任务内名称与状态相同的重复步骤合并计数，连续工具重试显示为 `shell.exec ×N`，避免一次失败链刷出多行相同错误；新增 TC-AWB-044。
+- 定位 Realtime “不记得刚做过的事”：本机会话已有 91 条消息，但每轮新 WebSocket 仅把最近 10 条拼入 instructions，模型在实际追问中否认了前序操作。现将最近 20 条按 user=`input_text`、assistant=`output_text` 恢复为原生 conversation items，并在当前输入前发送；更早历史刷新为 session memory 摘要/相关片段。新增 TC-VOC-030。

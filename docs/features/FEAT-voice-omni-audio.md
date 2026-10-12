@@ -14,7 +14,7 @@
 
 模型描述符用 `input/output/transport/audio` 声明能力。手机按所选模型自动选择三种路径：普通文本模型使用已配置 ASR；`audio.mode=direct` 把整段 WAV 作为 `input_audio` 发送并将转录文本交给 Pi；`transport=realtime` 在录音开始时建立 WebSocket并逐块发送 PCM。松手后网关等待输入转写，用它加载人格、技能和最近会话，再创建响应。
 
-Realtime 会话把本地 `ToolExecutor` 工具注册到 `session.tools`。模型发出 `response.function_call_arguments.done` 后，网关在现有权限和工作区策略下执行工具，发送 `function_call_output`，等同一轮全部工具完成后仅创建一次续答。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，文本进入 `chat.delta/chat.final`，工具状态进入 `tool_call.*`。Realtime 会话排除 `voice.tts_aliyun_vc`，避免原生复刻声音与第二套 TTS 同时播放。
+Realtime 会话把本地 `ToolExecutor` 工具注册到 `session.tools`。模型发出 `response.function_call_arguments.done` 后，网关在现有权限和工作区策略下执行工具，发送 `function_call_output`，等同一轮全部工具完成后仅创建一次续答。每轮新建云端 WebSocket 时，网关先把本机保存的最近 20 条 user/assistant 消息分别恢复为 Realtime 原生 `conversation.item.create`，再提交本轮音频或文字；assistant 历史使用 `output_text`，因此追问可以引用先前对话，并区分模型曾声称的结果与实际工具输出。更早的对话由 session memory 摘要与当前输入相关片段补充到 instructions。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，文本进入 `chat.delta/chat.final`，工具状态进入 `tool_call.*`。Realtime 会话排除 `voice.tts_aliyun_vc`，避免原生复刻声音与第二套 TTS 同时播放。
 
 录音采用「最新输入优先」：首个 Realtime 录音已 commit 但工具或续答尚未结束时，新的 `audio.input.start` 会取消旧 Realtime 连接并立即开始新 stream。该打断不显示“Audio stream already active”或“Realtime audio cancelled”错误，且旧 stream 的异步收尾不能清掉新 stream。
 
@@ -67,4 +67,4 @@ Realtime 原生音频的 `realtime_voice` 预设默认是官方音色 `Tina`，�
 
 ## 6. 测试用例
 
-TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029，见 `docs/testing/TC-voice-provider-config.md`；TC-AND-053，见 `docs/testing/TC-android-web.md`。
+TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030，见 `docs/testing/TC-voice-provider-config.md`；TC-AND-053，见 `docs/testing/TC-android-web.md`。

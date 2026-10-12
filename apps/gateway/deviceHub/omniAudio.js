@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
 const { allocateToolName } = require('../../runtime/agent-pi/toolBridge');
 const { buildRecentContextMessages } = require('../../runtime/session/contextBuilder');
+const { buildLongTermMemoryPromptMessages } = require('../../runtime/session/longTermMemory');
 
 const REALTIME_TTS_TOOL = 'voice.tts_aliyun_vc';
 
@@ -63,13 +64,23 @@ function baseRealtimeInstructions() {
     'Use registered tools whenever the request needs computer access, current local state, or an external action.',
     'Tool calls, visible text, and native audio are independent channels. A tool call never replaces the final answer.',
     'After receiving tool output, continue the same answer using the result.',
+    'Prior conversation items are records of what you and the user already said. Use them for follow-up questions, distinguish claimed results from verified tool output, and do not say there is no prior context when relevant items are present.',
     'Native realtime audio already uses Yachiyo\'s cloned voice. Never request a second TTS playback.'
   ].join(' ');
 }
 
-function historyPrompt(messages) {
-  if (!messages.length) return '';
-  return `Recent conversation:\n${messages.map((message) => `${message.role}: ${message.content}`).join('\n')}`;
+function realtimeHistoryEvents(messages) {
+  return messages.map((message) => ({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: message.role,
+      content: [{
+        type: message.role === 'assistant' ? 'output_text' : 'input_text',
+        text: message.content
+      }]
+    }
+  }));
 }
 
 function createOmniAudioService({
@@ -123,13 +134,25 @@ function createOmniAudioService({
   }
 
   async function buildInstructions({ sessionId, input }) {
+    await sessionStore?.refreshMemory?.(sessionId);
     const [persona, skills, session] = await Promise.all([
       resolvePersonaContext?.({ sessionId, input }),
       resolveSkillsContext?.({ sessionId, input }),
       sessionStore?.getSession?.(sessionId)
     ]);
-    const recent = buildRecentContextMessages(session, { maxMessages: 10, maxChars: 8000 });
-    return [baseRealtimeInstructions(), persona?.prompt, skills?.prompt, historyPrompt(recent)].filter(Boolean).join('\n\n');
+    const memory = buildLongTermMemoryPromptMessages(session, { input })
+      .map((message) => message.content)
+      .join('\n\n');
+    return [baseRealtimeInstructions(), persona?.prompt, skills?.prompt, memory].filter(Boolean).join('\n\n');
+  }
+
+  async function loadHistory(sessionId, excludeTrailingUserText = '') {
+    const session = await sessionStore?.getSession?.(sessionId);
+    const recent = buildRecentContextMessages(session, { maxMessages: 20, maxChars: 12000 });
+    const expected = String(excludeTrailingUserText || '').trim();
+    const trailing = recent.at(-1);
+    if (expected && trailing?.role === 'user' && trailing.content.trim() === expected) recent.pop();
+    return recent;
   }
 
   function startRealtime({ device, streamId, modelRef }) {
@@ -150,12 +173,14 @@ function createOmniAudioService({
     let responseDone = false;
     let responseHadTools = false;
     let continuationSent = false;
+    let initializingHistory = false;
     let settled = false;
     let timer;
     let resolveDone;
     let rejectDone;
     const done = new Promise((resolvePromise, rejectPromise) => { resolveDone = resolvePromise; rejectDone = rejectPromise; });
     done.catch(() => {});
+    const historyPromise = loadHistory(sessionId);
     const ws = new WebSocketImpl(realtimeUrl(descriptor), { headers: { Authorization: `Bearer ${descriptor.api_key}`, ...descriptor.headers } });
     const sendNow = (event) => ws.send(JSON.stringify(event));
     const send = (event) => { if (!ready) pending.push(event); else sendNow(event); };
@@ -246,8 +271,14 @@ function createOmniAudioService({
         });
       } else if (event.type === 'session.updated') {
         if (!ready) {
-          ready = true;
-          for (const item of pending.splice(0)) sendNow(item);
+          if (initializingHistory) return;
+          initializingHistory = true;
+          void historyPromise.then((history) => {
+            if (settled) return;
+            for (const item of realtimeHistoryEvents(history)) sendNow(item);
+            ready = true;
+            for (const item of pending.splice(0)) sendNow(item);
+          }).catch((error) => finish(error));
         } else if (awaitingInstructionUpdate) {
           awaitingInstructionUpdate = false;
           sendNow({ type: 'response.create' });
@@ -312,6 +343,7 @@ function createOmniAudioService({
     let responseDone = false;
     let responseHadTools = false;
     let continuationSent = false;
+    let preparedHistory = [];
     let settled = false;
     let timer;
     let resolveDone;
@@ -380,11 +412,16 @@ function createOmniAudioService({
       let event;
       try { event = JSON.parse(raw.toString()); } catch { return; }
       if (event.type === 'session.created') {
-        void buildInstructions({ sessionId, input: text }).then((instructions) => {
+        void Promise.all([
+          buildInstructions({ sessionId, input: text }),
+          loadHistory(sessionId, text)
+        ]).then(([instructions, history]) => {
+          preparedHistory = history;
           send({ type: 'session.update', session: { modalities: ['text'], instructions, tools, tool_choice: 'auto', turn_detection: null } });
         }).catch((error) => finish(error));
       } else if (event.type === 'session.updated' && !ready) {
         ready = true;
+        for (const item of realtimeHistoryEvents(preparedHistory)) send(item);
         send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
         send({ type: 'response.create' });
       } else if (event.type === 'response.text.delta') {
@@ -414,5 +451,5 @@ function createOmniAudioService({
 
 module.exports = {
   REALTIME_TTS_TOOL, baseRealtimeInstructions, buildRealtimeTools,
-  configurationError, contentText, createOmniAudioService, realtimeUrl
+  configurationError, contentText, createOmniAudioService, realtimeHistoryEvents, realtimeUrl
 };
