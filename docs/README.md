@@ -19,6 +19,7 @@
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
 - [Avatar 跨设备移交](features/FEAT-device-hub-avatar-transfer.md)
 - [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub.md)
+- [插件打包、存储与推送](features/FEAT-plugin-push.md)
 
 ## 指南 Guides
 

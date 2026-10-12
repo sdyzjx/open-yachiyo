@@ -15,6 +15,20 @@ function attachHttpRoutes({ app, server, hub }) {
     const addresses = Object.values(os.networkInterfaces()).flat().filter((a) => a.family === 'IPv4' && !a.internal).map((a) => a.address);
     res.set('Cache-Control', 'no-store').json({ token: hub.token, urls: [...new Set(['127.0.0.1', ...addresses])].map((ip) => `ws://${ip}:${port}/ws/device`) });
   });
+  app.post('/api/device/plugins', require('express').raw({ type: ['application/zip', 'application/octet-stream'], limit: '20mb' }), (req, res) => {
+    try { res.json(hub.pluginStore.put(req.body)); }
+    catch (err) { res.status(400).json({ error: { code: err.code || -32602, message: 'Invalid or unsafe plugin archive' } }); }
+  });
+  app.get('/api/device/plugins', (req, res) => res.json({ plugins: hub.pluginStore?.list() || [] }));
+  app.get('/api/device/plugins/:sha256/blob', (req, res) => {
+    const item = hub.pluginStore?.get(req.params.sha256);
+    if (!item) return res.sendStatus(404);
+    res.type('application/zip').sendFile(item.file);
+  });
+  app.post('/api/device/plugins/:sha256/push', (req, res) => {
+    try { res.json(hub.pluginStore.push(req.params.sha256, req.body?.target)); }
+    catch (err) { res.status(err.code === -32006 ? 403 : 400).json({ error: { code: err.code || -32602, message: err.message } }); }
+  });
   app.get('/api/device/media/:id', (req, res) => {
     const entry = hub.voiceRelay?.get(req.params.id);
     if (!entry) return res.sendStatus(404);

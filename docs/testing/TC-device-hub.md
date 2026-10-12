@@ -21,3 +21,6 @@
 
 | TC-HUB-007 | PCM/WAV 与 ASR 对话 | integration | 本机 mock HTTP ASR | 上传 PCM、结束、取消、乱序 | 合法 WAV；multipart；transcript 和设备 run；取消无识别；乱序拒绝 | `test/gateway/deviceHub/audioInput.test.js` / Audio PCM becomes WAV, mock HTTP ASR yields transcript and device run |
 | TC-HUB-008 | DashScope 与无配置回退 | unit | fetch/fallback mock | 调两条识别路径 | Qwen inline WAV 格式正确；回退工具解析正确 | 同文件 / ASR DashScope inline WAV and legacy fallback are deterministic |
+
+| TC-HUB-009 | ZIP/manifest 校验 | unit | 内存包 | 确定性打包与读取；破坏路径/CRC/尺寸/类型 | 合法包一致；损坏/穿越/symlink/炸弹拒绝 | `test/gateway/deviceHub/pluginStore.test.js` / Plugin ZIP roundtrip is deterministic and rejects unsafe archives/manifests |
+| TC-HUB-010 | 插件上传推送与 CLI | integration | 本机 Hub、普通/锁屏手机、临时插件目录 | CLI 打包/上传/推送；下载；回执；非法上传 | hash/size/内容正确；锁屏拒绝；回执记录；非法上传 400 | 同文件 / Plugin upload, download, CLI push and lockscreen denial |

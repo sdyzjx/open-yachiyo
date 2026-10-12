@@ -98,6 +98,7 @@ class DeviceHub extends EventEmitter {
         return;
       }
       case 'pub': {
+        if (msg.topic === 'plugin.install') throw fault(-32006, 'Topic is server-owned');
         if (!validPattern(msg.topic) || msg.topic.includes('*')) throw fault(-32602, 'Invalid topic');
         if (device.mode === 'lockscreen' && msg.topic.startsWith('plugin.')) throw fault(-32006, 'Plugins unavailable while locked');
         if (msg.topic === 'sys.device.mode') {

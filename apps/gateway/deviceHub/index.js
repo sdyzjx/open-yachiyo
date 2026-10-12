@@ -56,6 +56,7 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
     if (!target) { socket.destroy(); return; }
     target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
   };
+  if (settings.home || options.plugins) hub.pluginStore = new (require('./pluginStore').PluginStore)({ hub, directory: settings.home && require('node:path').join(settings.home, 'data/device-plugins'), ...options.plugins });
   server.on('upgrade', upgrade);
   attachHttpRoutes({ app, server, hub, ...options });
   if (options.bus) require('./runtimeBridge').attachRuntimeBridge({ hub, ...options });
