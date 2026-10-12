@@ -11,6 +11,7 @@
 
   const STATUS_ICON = { running: '◔', done: '✓', failed: '✕', pending: '○' };
   const MAX_BUBBLES = 8;
+  const STALE_STREAM_MS = 30000;
 
   function createCanvas({ root }) {
     const L = global.YachiyoLayout;
@@ -105,6 +106,17 @@
       group.fadeTimer = setTimeout(() => fade(group), delay);
     }
 
+    function scheduleStreamExpiry(key, state) {
+      clearTimeout(state.group.fadeTimer);
+      state.group.fadeTimer = setTimeout(() => {
+        if (assistants.get(key) === state) {
+          assistants.delete(key);
+          rememberCompleted(key);
+        }
+        fade(state.group);
+      }, STALE_STREAM_MS);
+    }
+
     function showUser(text) {
       if (!text) return;
       const group = makeBubble('user', text);
@@ -123,10 +135,9 @@
         state = { group: makeBubble('assistant', ''), text: '' };
         assistants.set(key, state);
       }
-      clearTimeout(state.group.fadeTimer);
-      state.group.fadeTimer = 0;
       state.text += text;
       for (const { node } of state.group.nodes) node.textContent = state.text;
+      scheduleStreamExpiry(key, state);
       refreshVisibility();
       pin(agentView);
       pin(mergedView);

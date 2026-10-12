@@ -135,6 +135,27 @@ test('a newer streamed reply does not cancel an older bubble fade timer', () => 
   assert.equal(root.classList.contains('has-content'), true);
 });
 
+test('an interrupted assistant stream expires after 30 seconds without a final event', () => {
+  const { api, advance } = load();
+  const root = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root });
+  const bubbles = canvas.mergedScrollEl.children[0];
+
+  canvas.delta('新回答仍在生成', { trace_id: 'trace-stale' });
+  const bubble = bubbles.children[0];
+  advance(29999);
+  assert.equal(bubble.classList.contains('tc-out'), false);
+
+  canvas.delta('中', { trace_id: 'trace-stale' });
+  advance(29999);
+  assert.equal(bubble.classList.contains('tc-out'), false);
+  advance(1);
+  assert.equal(bubble.classList.contains('tc-out'), true);
+  advance(420);
+  assert.equal(bubble.isConnected, false);
+  assert.equal(root.classList.contains('has-content'), false);
+});
+
 test('chat panel is a bounded scroller that does not feed the stage swipe gestures', () => {
   const css = read('css/app.css');
   assert.match(css, /\.chat-scroll\s*\{[^}]*overflow-y:\s*auto/s);

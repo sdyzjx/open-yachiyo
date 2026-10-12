@@ -151,7 +151,7 @@
   // Landscape center: agent messages occupy the left lane, user messages the right lane.
   function computeChatSplitLayout({
     viewport, modelBounds, hud = {}, margin = 14, gap = 16,
-    maxWidth = 420, minWidth = 96, minHeight = 72
+    faceRatio = 0.3, centerGap = 16, minWidth = 96, minHeight = 72
   }) {
     const viewW = Math.max(0, viewport.width);
     const viewH = Math.max(0, viewport.height);
@@ -159,8 +159,16 @@
     const topObstacles = [hud.status, hud.transfer, hud.settings].filter(Boolean);
     const bottomObstacles = [hud.input, hud.mic, hud.chat, hud.send].filter(Boolean);
 
+    const faceBottom = clamp(
+      modelBounds.top + rectHeight(modelBounds) * faceRatio,
+      margin,
+      bottomLimit
+    );
+
     function lane(left, right, alignment) {
-      let top = margin;
+      // Center lanes may overlap the character below the face. Keeping their top
+      // below the face provides much more line length without obscuring expressions.
+      let top = faceBottom + gap;
       let bottom = Math.min(viewH - margin, bottomLimit);
       const horizontal = { left, right };
       for (const obstacle of topObstacles) {
@@ -174,16 +182,17 @@
       const width = Math.max(0, right - left);
       const height = Math.max(0, bottom - top);
       return {
-        left, top, right, bottom, width, height,
+        left, top, right, bottom, width, height, neckY: faceBottom,
         hidden: width < minWidth || height < minHeight,
         style: { radius: 20, opacity: 0.96, alignment }, presence: 1
       };
     }
 
-    const agentRight = clamp(modelBounds.left - gap, margin, viewW - margin);
-    const userLeft = clamp(modelBounds.right + gap, margin, viewW - margin);
-    const agent = lane(Math.max(margin, agentRight - maxWidth), agentRight, 1);
-    const user = lane(userLeft, Math.min(viewW - margin, userLeft + maxWidth), -1);
+    const halfGap = centerGap / 2;
+    const agentRight = clamp(viewW / 2 - halfGap, margin, viewW - margin);
+    const userLeft = clamp(viewW / 2 + halfGap, margin, viewW - margin);
+    const agent = lane(margin, agentRight, 1);
+    const user = lane(userLeft, viewW - margin, -1);
     return { agent, user, hidden: agent.hidden && user.hidden };
   }
 

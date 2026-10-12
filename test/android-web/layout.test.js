@@ -171,23 +171,26 @@ test('B9 landscape center split lanes fill both sides and avoid every HUD rectan
       mic: { left: 554, top: 282, right: 618, bottom: 346 }
     }
   });
-  assert.deepEqual([result.agent.left, result.agent.right], [14, 234]);
-  assert.deepEqual([result.user.left, result.user.right], [406, 626]);
-  assert.ok(result.agent.top >= 66);
-  assert.ok(result.user.top >= 68);
+  assert.deepEqual([result.agent.left, result.agent.right], [14, 312]);
+  assert.deepEqual([result.user.left, result.user.right], [328, 626]);
+  assert.ok(result.agent.top >= 173);
+  assert.ok(result.user.top >= 173);
   assert.ok(result.agent.bottom <= 274);
   assert.ok(result.user.bottom <= 266);
   assert.equal(result.hidden, false);
 });
 
-test('B9 split lanes keep a 16px gap outside the full model bounds and cap width on wide screens', () => {
+test('B9 split lanes use the wide lower screen while staying below the face region', () => {
   const result = L.computeChatSplitLayout({
     viewport: { width: 1600, height: 700 },
     modelBounds: { left: 500, top: 0, right: 1100, bottom: 900 },
     hud: {}
   });
-  assert.deepEqual([result.agent.left, result.agent.right, result.agent.width], [64, 484, 420]);
-  assert.deepEqual([result.user.left, result.user.right, result.user.width], [1116, 1536, 420]);
+  assert.deepEqual([result.agent.left, result.agent.right, result.agent.width], [14, 792, 778]);
+  assert.deepEqual([result.user.left, result.user.right, result.user.width], [808, 1586, 778]);
+  assert.equal(result.agent.top, 286);
+  assert.equal(result.user.top, 286);
+  assert.equal(result.agent.neckY, 270);
 });
 
 test('B9 open side layouts exclude either drawer and plugin sheet', () => {

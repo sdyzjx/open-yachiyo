@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: Codex（工作流 A）
 > 更新: 2026-10-13
-> 关联: apps/android/app/src/main/assets/web/js/layout.js, js/app.js, js/canvas.js, test/android-web/layout.test.js, TC-AWB-003, TC-AWB-004, TC-AWB-009..TC-AWB-011, TC-AWB-033..TC-AWB-040
+> 关联: apps/android/app/src/main/assets/web/js/layout.js, js/app.js, js/canvas.js, test/android-web/layout.test.js, TC-AWB-003, TC-AWB-004, TC-AWB-009..TC-AWB-011, TC-AWB-033..TC-AWB-043
 
 ## 1. 概述
 
@@ -50,7 +50,7 @@ stateDiagram-v2
 对话面板以模型屏幕外框顶部向下 24% 的「脖子线」为上界。`computeChatPanelLayout()` 接收视口、模型 bounds、吸附状态、侧栏宽度与输入栏/迁移控件/设置按钮/插件面板矩形，返回面板矩形和圆角、不透明度、内容对齐偏置。所有端点均在脖子线下方和输入栏上方，并将侧栏、插件面板和相交的顶部 HUD 视为硬障碍；不足 120×56 px 时隐藏，而不是盖住其他组件。
 
 - 竖屏：左右留 14 px，从脖子线下方延伸到输入栏上方，可覆盖身体但不覆盖脸。
-- 横屏居中：模型左侧为八千代回答列，右侧为用户消息列。`computeChatSplitLayout()` 让两列从各自顶部 HUD（状态点/迁移控件或设置按钮）下沿延伸到输入区、聊天按钮或语音按钮上沿，内侧距离完整模型 bounds 16 px，单列最大 420 px。包括头发、飘带和袖子在内的角色像素都不会被消息覆盖；宽屏额外空间留在屏幕外侧。两列各自按时间向下排列、独立滚动和维护「是否贴底」状态。
+- 横屏居中：左半屏为八千代回答列，右半屏为用户消息列。`computeChatSplitLayout()` 以模型外框上 30% 的底边作为脸部保护线，两列从保护线下 16 px 开始，到输入区、聊天按钮或语音按钮上沿为止。每列横向填满对应半屏，中间留 16 px，允许气泡接触或覆盖下半身而不遮挡脸部。两列各自按时间向下排列、独立滚动和维护「是否贴底」状态。
 - 横屏左/右侧栏：面板可覆盖角色身体，但水平方向限制在完全打开的侧栏之外。
 - 右侧插件栏随 `panel` 进度打开时，设置齿轮用同一进度向左移动并保持在插件栏外 14 px；左侧栏打开时齿轮保留在人物所在的右侧安全区。齿轮不使用额外 CSS 补间，拖动与吸附均跟随面板弹簧。
 - `interpolateSplitChatLayout({split, merged, progress})` 分别把左右列矩形插值到侧栏态的合并矩形，同时让双列淡出、按完整时间顺序渲染的合并视图淡入。拖动直接使用 `abs(panel.value)`，所以位置、宽高、圆角与透明度和人物/侧栏逐帧同步；松手继续读取同一个 `panel` 弹簧（260/27）。
@@ -84,4 +84,4 @@ stateDiagram-v2
 
 ## 6. 测试用例
 
-TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011、TC-AWB-027、TC-AWB-033、TC-AWB-034、TC-AWB-036、TC-AWB-037、TC-AWB-038、TC-AWB-039、TC-AWB-040（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`、`test/android-web/theme.test.js`、`test/android-web/chatPanel.test.js`。
+TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011、TC-AWB-027、TC-AWB-033、TC-AWB-034、TC-AWB-036、TC-AWB-037、TC-AWB-038、TC-AWB-039、TC-AWB-040、TC-AWB-043（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`、`test/android-web/theme.test.js`、`test/android-web/chatPanel.test.js`。

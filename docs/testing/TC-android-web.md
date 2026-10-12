@@ -404,9 +404,9 @@
 |---|---|
 | 类型 | unit + manual-device |
 | 前置条件 | 小米 6 横屏居中并有多轮长对话；可用页面状态函数打开左右侧栏，不发送坐标点击 |
-| 步骤 | 1) 记录完整模型 bounds 与双列矩形；2) 检查两列内侧间距和宽屏上限；3) 分别打开左右侧栏并记录设置齿轮与侧栏矩形；4) 截图复核标题区 |
-| 期望结果 | 双列内侧距完整模型 bounds 约 16 px，消息不覆盖头发、袖子或身体，单列不超过 420 px且宽屏额外空间留在外侧；任一侧栏终态齿轮均在面板内容外，右侧插件栏展开过程中齿轮与面板同步移动 |
-| 自动化 | `test/android-web/layout.test.js`（full model bounds / lane max width / settings shift）+ manual-device |
+| 步骤 | 1) 记录脸部保护线与双列矩形；2) 检查两列宽度、中缝和上边界；3) 分别打开左右侧栏并记录设置齿轮与侧栏矩形；4) 截图复核脸部与长文区 |
+| 期望结果 | 双列从脸部保护线下 16 px 开始，不遮挡脸部；左右各填满半屏并中留 16 px，可覆盖下半身；任一侧栏终态齿轮均在面板内容外，右侧插件栏展开过程中齿轮与面板同步移动 |
+| 自动化 | `test/android-web/layout.test.js`（wide lower-screen lanes / face protection / settings shift）+ manual-device |
 
 ## TC-AWB-041 Realtime 对话 trace 隔离与最终事件幂等
 
@@ -427,6 +427,16 @@
 | 步骤 | 首个回答进入淡出等待后，立即让第二个回答持续发送 `chat.delta`；等待首个回答的展示时限与 420 ms 淡出动画 |
 | 期望结果 | 首个回答按时淡出并从 DOM 移除；第二个回答继续显示；画布在仍有内容时保持可见 |
 | 自动化 | `test/android-web/chatPanel.test.js`（a newer streamed reply does not cancel an older bubble fade timer）+ manual-device |
+
+## TC-AWB-043 中断的流式回答超时收起
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 可注入带 `trace_id` 的 `chat.delta`，不发送 `chat.final` |
+| 步骤 | 发送一次增量，30 s 内再发送一次，然后停止发送并等待 30 s + 420 ms |
+| 期望结果 | 第二次增量重置超时；最后一次增量 30 s 后气泡开始淡出，420 ms 后从 DOM 移除，不会永久停留 |
+| 自动化 | `test/android-web/chatPanel.test.js`（an interrupted assistant stream expires after 30 seconds without a final event）+ manual-device |
 
 ## TC-AND-053 手机聊天模型选择与音频模式
 
