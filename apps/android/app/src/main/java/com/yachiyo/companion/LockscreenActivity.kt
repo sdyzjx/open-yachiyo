@@ -23,11 +23,11 @@ class LockscreenActivity : WebHostActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+        CompanionApp.instance.hub.setMode("lockscreen")
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         registerReceiver(userPresent, IntentFilter(Intent.ACTION_USER_PRESENT), Context.RECEIVER_NOT_EXPORTED)
         getSystemService(android.app.NotificationManager::class.java).cancel(2)  // full-screen-intent helper
-        CompanionApp.instance.hub.setMode("lockscreen")
         active = true
         HubService.start(this)
     }
@@ -45,8 +45,8 @@ class LockscreenActivity : WebHostActivity() {
     override fun onDestroy() {
         active = false
         try { unregisterReceiver(userPresent) } catch (_: Exception) {}
-        CompanionApp.instance.hub.setMode("normal")
         super.onDestroy()
+        CompanionApp.instance.hub.setMode("normal")
     }
 
     companion object {

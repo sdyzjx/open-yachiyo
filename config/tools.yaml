@@ -21,6 +21,9 @@ policy:
     - live2d.emote
     - live2d.gesture
     - live2d.react
+    - bus_publish
+    - avatar_status
+    - avatar_transfer
     - desktop.perception.capabilities
     - desktop.displays.list
     - desktop.windows.list
@@ -32,6 +35,11 @@ policy:
     - desktop.capture.delete
   deny: []
   byProvider: {}
+  deviceHub:
+    allow:
+      - '*__device_*'
+      - '*__plugin_*'
+    deny: []
 
 exec:
   security: allowlist

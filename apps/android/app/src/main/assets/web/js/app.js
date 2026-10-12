@@ -523,7 +523,7 @@
   /* ------------------------------------------------------------------ lifecycle */
   B.on('lifecycle', (d) => {
     if (!d) return;
-    if (d.state === 'pause' || d.state === 'screen_off') { S.paused = true; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+    if (d.state === 'pause' || d.state === 'screen_off') { S.paused = true; if (voice) voice.stop('lifecycle'); if (raf) { cancelAnimationFrame(raf); raf = 0; } }
     if (d.state === 'resume' || d.state === 'screen_on') {
       S.paused = false;
       const gl = stage.app && stage.app.renderer && stage.app.renderer.gl;

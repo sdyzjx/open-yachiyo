@@ -12,7 +12,9 @@ import android.util.Log
 import android.webkit.WebView
 import com.yachiyo.companion.BuildConfig
 import com.yachiyo.companion.CompanionApp
+import com.yachiyo.companion.SettingsActivity
 import com.yachiyo.companion.WebHostActivity
+import com.yachiyo.companion.discovery.ServerDiscovery
 import com.yachiyo.companion.hub.HubClient
 import com.yachiyo.companion.hub.HubListener
 import com.yachiyo.companion.hub.HubState
@@ -34,8 +36,15 @@ class YachiyoNativeBridge(
     private val main = Handler(Looper.getMainLooper())
     val mode: String get() = host.mode
     private val lockscreen get() = mode == "lockscreen"
+    private val isSettings get() = host is SettingsActivity
+    private val activeHubSurface get() = HubSurfacePolicy.acceptsPayload(isSettings, mode, hub.currentMode)
+    private val pluginsBlocked get() = hub.currentMode == "lockscreen"
+    private val ownedRegistrations = linkedSetOf<String>()
 
     val dispatcher = WebDispatcher({ script -> main.post { webView.evaluateJavascript(script, null) } })
+    private val serverDiscovery = ServerDiscovery(host.applicationContext, emit = { type, data ->
+        dispatcher.post(type, data)
+    })
 
     @Volatile private var backPending = false
     private val backTimeout = Runnable {
@@ -46,17 +55,19 @@ class YachiyoNativeBridge(
         override fun onState(state: HubState) = dispatcher.post("hub.state", hub.snapshotJson())
 
         override fun onEvent(topic: String, data: JSONObject, from: String) {
-            if (lockscreen && topic.startsWith("plugin.")) return
+            if (!activeHubSurface || (pluginsBlocked && topic.startsWith("plugin."))) return
             dispatcher.post("hub.event", JSONObject().put("topic", topic).put("data", data).put("from", from))
         }
 
-        override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String) {
-            if (lockscreen && method.startsWith("plugin.")) {
+        override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String): Boolean {
+            if (!activeHubSurface) return false
+            if (pluginsBlocked && method.startsWith("plugin.")) {
                 hub.respond(id, null, HubClient.errorJson(RpcCodes.PERMISSION_DENIED, "plugins disabled in lockscreen mode"))
-                return
+                return true
             }
             dispatcher.post("hub.rpc.request",
                 JSONObject().put("id", id).put("method", method).put("params", params).put("from", from))
+            return true
         }
     }
 
@@ -73,6 +84,9 @@ class YachiyoNativeBridge(
     }
 
     fun detach() {
+        serverDiscovery.stop(ServerDiscovery.REASON_LIFECYCLE)
+        if (ownedRegistrations.isNotEmpty()) hub.unregister(ownedRegistrations.toList())
+        ownedRegistrations.clear()
         hub.removeListener(hubListener)
         app.plugins.removeListener(pluginsListener)
         app.config.removeListener(configListener)
@@ -129,6 +143,8 @@ class YachiyoNativeBridge(
             "log" -> { log(s(0), s(1)); "" }
             "consumeBack" -> { consumeBack(); "" }
             "dismissKeyguard" -> { dismissKeyguard(); "" }
+            "startServerDiscovery" -> { startServerDiscovery(); "" }
+            "stopServerDiscovery" -> { stopServerDiscovery(); "" }
             else -> null
         }
     }
@@ -165,21 +181,22 @@ class YachiyoNativeBridge(
     fun hubDisconnect() { hub.disconnect() }
 
     fun hubPublish(topic: String, dataJson: String) {
-        if (lockscreen && topic.startsWith("plugin.")) return
+        if (!activeHubSurface || (pluginsBlocked && topic.startsWith("plugin."))) return
         val data = parseObject(dataJson) ?: JSONObject()
         hub.publish(topic, data)
     }
 
     fun hubSubscribe(patternsJson: String) {
-        hub.subscribe(parseStrings(patternsJson).filterNot { lockscreen && it.startsWith("plugin.") })
+        if (!activeHubSurface) return
+        hub.subscribe(parseStrings(patternsJson).filterNot { pluginsBlocked && it.startsWith("plugin.") })
     }
 
-    fun hubUnsubscribe(patternsJson: String) { hub.unsubscribe(parseStrings(patternsJson)) }
+    fun hubUnsubscribe(patternsJson: String) { if (activeHubSurface) hub.unsubscribe(parseStrings(patternsJson)) }
 
     fun hubRpc(callId: String, method: String, paramsJson: String, target: String) {
-        if (lockscreen && method.startsWith("plugin.")) {
+        if (!activeHubSurface || (pluginsBlocked && method.startsWith("plugin."))) {
             dispatcher.post("hub.rpc.result", JSONObject().put("call_id", callId)
-                .put("error", HubClient.errorJson(RpcCodes.PERMISSION_DENIED, "plugins disabled in lockscreen mode")))
+                .put("error", HubClient.errorJson(RpcCodes.PERMISSION_DENIED, "hub calls disabled for this surface")))
             return
         }
         hub.rpc(method, parseObject(paramsJson) ?: JSONObject(), target.ifEmpty { null }) { result, error ->
@@ -190,24 +207,35 @@ class YachiyoNativeBridge(
     }
 
     fun hubRpcRespond(reqId: String, resultJson: String, errorJson: String) {
+        if (!activeHubSurface) return
         val err = if (errorJson.isNotEmpty()) parseObject(errorJson) else null
         if (err != null) hub.respond(reqId, null, err)
         else hub.respond(reqId, if (resultJson.isEmpty()) JSONObject.NULL else parseValue(resultJson), null)
     }
 
     fun hubRegister(methodsJson: String) {
+        if (!activeHubSurface) return
         val arr = try { JSONArray(methodsJson) } catch (_: Exception) { return }
-        if (lockscreen) {
+        val accepted = if (pluginsBlocked) {
             val filtered = JSONArray()
             for (i in 0 until arr.length()) {
                 val m = arr.optJSONObject(i) ?: continue
                 if (!m.optString("name").startsWith("plugin.")) filtered.put(m)
             }
-            hub.register(filtered)
-        } else hub.register(arr)
+            filtered
+        } else arr
+        for (i in 0 until accepted.length()) {
+            accepted.optJSONObject(i)?.optString("name")?.takeIf { it.isNotEmpty() }?.let(ownedRegistrations::add)
+        }
+        hub.register(accepted)
     }
 
-    fun hubUnregister(namesJson: String) { hub.unregister(parseStrings(namesJson)) }
+    fun hubUnregister(namesJson: String) {
+        if (!activeHubSurface) return
+        val names = parseStrings(namesJson)
+        ownedRegistrations.removeAll(names.toSet())
+        hub.unregister(names)
+    }
 
     // ---- back / UI / misc ---------------------------------------------------------------------
 
@@ -245,16 +273,31 @@ class YachiyoNativeBridge(
     fun micStop(reason: String) { host.features.micStop(reason) }
     fun pickBackground() { host.features.pickBackground(this) }
     fun pickPluginPackage() { host.features.pickPluginPackage(this) }
-    fun listPlugins(): String = host.features.listPlugins(lockscreen)
+    fun listPlugins(): String = host.features.listPlugins(pluginsBlocked)
     fun uninstallPlugin(id: String) { host.features.uninstallPlugin(this, id) }
     fun setPluginEnabled(id: String, enabled: Boolean) { host.features.setPluginEnabled(this, id, enabled) }
-    fun pluginStorageGet(pluginId: String, key: String): String = host.features.pluginStorageGet(lockscreen, pluginId, key)
-    fun pluginStorageSet(pluginId: String, key: String, valueJson: String) { host.features.pluginStorageSet(lockscreen, pluginId, key, valueJson) }
+    fun pluginStorageGet(pluginId: String, key: String): String = host.features.pluginStorageGet(pluginsBlocked, pluginId, key)
+    fun pluginStorageSet(pluginId: String, key: String, valueJson: String) { host.features.pluginStorageSet(pluginsBlocked, pluginId, key, valueJson) }
     fun openHomeSettings() { main.post { host.openHomeSettings() } }
     fun listLaunchableApps(): String = host.features.listLaunchableApps(lockscreen)
     fun launchApp(pkg: String) { if (!lockscreen) main.post { host.launchApp(pkg) } }
     fun setLockscreenEnabled(enabled: Boolean) { host.features.setLockscreenEnabled(enabled) }
     fun setOrientation(mode: String) { main.post { host.applyOrientation(mode, persist = true) } }
+
+    fun startServerDiscovery() {
+        if (lockscreen || host !is SettingsActivity) {
+            dispatcher.post("server.discovery.state", JSONObject()
+                .put("state", "error")
+                .put("reason", ServerDiscovery.REASON_PERMISSION_DENIED)
+                .put("error", "server discovery is only available from settings"))
+            return
+        }
+        serverDiscovery.start()
+    }
+
+    fun stopServerDiscovery() = serverDiscovery.stop(ServerDiscovery.REASON_MANUAL)
+
+    fun stopServerDiscoveryForLifecycle() = serverDiscovery.stop(ServerDiscovery.REASON_LIFECYCLE)
 
     companion object {
         const val TAG_WEB = "YachiyoWeb"

@@ -39,6 +39,8 @@ sequenceDiagram
 
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 pi 解析；使用 pi 官方 formatter 显式展示技能清单，因为内置 read/bash 禁用后 pi 不会自动展示它们。
 
+发给模型 provider 的工具名统一满足 `^[a-zA-Z0-9_-]{1,64}$`：合法名称保持不变，名称中的 `.` 优先编码为 `__`，其他非法字符按 UTF-8 字节编码，过长名称使用稳定摘要；候选冲突时追加稳定摘要。桥接对象保留原名，实际 executor 调用、publishEvent、兼容事件和 Live2D/TTS 单次调用控制均使用原名。pi 内部为旧兼容 provider 返回的原始点号名保留隐藏声明，原名不会出现在发送给 provider 的工具 schema 中。
+
 用户图片转换成 pi image blocks；图片不经过 pi 自动缩放，网关沿用原有大小限制。v1 模型缺少视觉元数据时仍发送用户显式图片，由 provider 判断能力。desktop.capture 工具结果附加实际图像。网关仍先执行现有 ASR；直接使用工厂时可注入 transcribeAudio，或提供 inputAudio.transcribed_text。
 
 ## 3. 接口与协议
@@ -72,7 +74,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | avatar_transfer | `{to}` | Hub.requestAvatarTransfer(to, {reason:'agent'}) |
 | Hub 暴露的方法 | C5 params_schema | invoke(device_id, method, params, {timeoutMs:8000}) |
 
-设备工具集在请求边界取快照；tools.changed 标记下一快照刷新，不改变已经执行中的定义。可注入 avatar 控制器用于测试。内置工具全部排除，只有现有 registry 和上述桥接工具可用。
+设备工具集在请求边界取快照；tools.changed 标记下一快照刷新，不改变已经执行中的定义。动态方法必须来自 Hub 的已配对且 `expose_as_tool:true` 列表，并匹配 `policy.deviceHub.allow` 且不匹配 `policy.deviceHub.deny`；匹配后仅将实际方法名加入本次 executor 精确 allow。全局 deny、provider deny 和会话权限仍优先。可注入 avatar 控制器用于测试。内置工具全部排除，只有现有 registry 和上述桥接工具可用。
 
 ## 4. 配置项
 
@@ -91,12 +93,14 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | providers.yaml C4 字段 | Model Catalog | api、reasoning、input、headers、compat、extra_body、timeout_ms、max_retries、temperature |
 | skills.yaml | 现有规则 | workspace/global/extraDirs、entries.enabled、eligibility |
 | tools.yaml policy | 原配置 | 所有工具保留 allow/deny；非空 allowlist 需加入 bus_publish、avatar_status、avatar_transfer 及需要的设备工具名 |
+| tools.yaml policy.deviceHub.allow | `[]` | 动态 Hub 工具名的 `*` 通配模式；空数组表示不暴露任何动态方法 |
+| tools.yaml policy.deviceHub.deny | `[]` | 动态 Hub 工具名的 `*` 通配拒绝模式，优先于 deviceHub.allow |
 
 ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0。ModelRuntime 凭证和目录缓存使用内存，不读取 ~/.pi 用户凭证，不联网刷新模型目录。关闭外部 pi 扩展、模板和开发仓库上下文的自动加载。
 
 ## 5. 限制与已知问题
 
-- WS2 负责 RPC 的 model_ref 透传及 settings 持久化；当前兼容装配可转送单次覆盖，持久设置需合并 WS2。
+- RuntimeRpcWorker 原生透传单次 `model_ref`，会话 settings 提供持久覆盖；gatewayAssembly 的旧兼容入口仅保留为无操作导出，待网关装配移除调用后删除。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
 - pi 侧工具串行执行，关闭旧核心 early dispatch/parallel 开关。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
@@ -105,6 +109,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…024，覆盖模型、权限、设备刷新、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关及实际压缩。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…025，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关及实际压缩。
 
-`npm run test:ci` 最终 535 项通过（基线 509；新增 26）。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。
+`npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

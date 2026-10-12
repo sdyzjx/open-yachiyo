@@ -28,6 +28,7 @@ require('./deviceHub').attachDeviceHub({
 |---|---|
 | `index.js` | get/setDeviceHub、NullDeviceHub、唯一装配入口 |
 | `config.js` | 只在缺 token 时生成配置，常量时间 token 比较 |
+| `accessControl.js` | loopback 判定、远程管理/API/runtime WS pairing 鉴权、appassets CORS |
 | `hub.js` / `topics.js` | v1 帧、设备 registry、订阅/投递、双向 RPC、工具发现、权限 |
 | `runtimeBridge.js` | runtime/设备发布桥接，聊天映射、工具任务聚合、设备输入入队 |
 | `avatarHost.js` | 原子持久化、prepare/exit/enter 时序、取消与回滚 |
@@ -36,7 +37,7 @@ require('./deviceHub').attachDeviceHub({
 | `asrService.js` | 只读 Model Catalog、OpenAI multipart、Qwen ASR、工具回退 |
 | `pluginArchive.js` | ZIP store/deflate 编解码、CRC32、路径/资源上限与 manifest 校验 |
 | `pluginStore.js` | SHA-256 存储、push URL、锁屏过滤、回执缓存 |
-| `httpRoutes.js` | localhost/token 权限以及 C1.8 HTTP 接口 |
+| `httpRoutes.js` | localhost/token 权限以及 C1.8 HTTP 接口；全局管理鉴权在 server 装配 accessControl |
 
 ## 服务端 API
 
@@ -82,7 +83,7 @@ flowchart LR
 
 桥接支持新 `message.delta` / `runtime.final`、旧 `runtime.event` 的 llm.stream.delta/llm.final/done，以及 tool_call.* / tool.call.*。事件按 session/trace/seq 去重，最终回复再按 session/trace 去重；任务缓存上限 128，事件去重窗口上限 2048。
 
-C1.7 的 transcribed_text 已由 WS3 传入，但旧 server/worker 规范化函数会移除它；当前非空 input 保证不重复识别。context/历史中的音频转录元数据由 WS1/统筹者补齐，见 WS3「待统筹决策」。
+C1.7 的 `transcribed_text`、confidence 与 segments 会通过 server/worker 规范化；预填转录跳过重复 ASR。带非空 input 的请求仍把音频对象注入 runtime context，会话历史保存 audio_ref/format/lang/transcribed_text/confidence。
 
 ## 文件与配置
 

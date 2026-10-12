@@ -42,12 +42,45 @@ test('Hub wildcard routing, directed events and lockscreen filtering', async (t)
   assert.equal(f.hub.devices.get('a').subscriptions.size, 0);
 });
 
+test('Devices cannot publish gateway and runtime reserved topics', async (t) => {
+  const f = await fixture(t);
+  const phone = await f.client('phone');
+  const reserved = [
+    'plugin.install',
+    'avatar.host.changed',
+    'avatar.transfer.prepare',
+    'avatar.transfer.exit',
+    'avatar.transfer.enter',
+    'avatar.transfer.cancel',
+    'avatar.transfer.completed',
+    'avatar.transfer.failed',
+    'sys.device.online',
+    'sys.device.offline',
+    'voice.play',
+    'chat.delta',
+    'chat.final',
+    'task.update'
+  ];
+  for (const topic of reserved) {
+    phone.send('pub', {}, { topic });
+    const error = await phone.next((message) => message.type === 'error');
+    assert.equal(error.data.code, -32006, topic);
+  }
+  for (const topic of ['avatar.transfer.ready', 'avatar.transfer.exited', 'avatar.transfer.entered']) {
+    phone.send('pub', { transfer_id: 'test' }, { topic });
+    await phone.sync();
+  }
+});
+
 test('Hub RPC registration, two directions, timeout, offline and response ownership', async (t) => {
   const f = await fixture(t);
   const a = await f.client('a'); const b = await f.client('b');
   let changes = 0; f.hub.on('tools.changed', () => changes++);
-  b.send('rpc.register', { methods: [{ name: 'device.vibrate', expose_as_tool: true }] }); await b.sync();
-  assert.equal(f.hub.listToolMethods()[0].tool_name, 'b__device_vibrate');
+  b.send('rpc.register', { methods: [
+    { name: 'device.vibrate', expose_as_tool: true },
+    { name: 'device.private', expose_as_tool: false }
+  ] }); await b.sync();
+  assert.deepEqual(f.hub.listToolMethods().map((tool) => tool.tool_name), ['b__device_vibrate']);
   assert.equal(changes, 1);
   const result = f.hub.invoke('b', 'device.vibrate', { ms: 20 });
   const req = await b.next((m) => m.type === 'rpc.req');
@@ -60,7 +93,7 @@ test('Hub RPC registration, two directions, timeout, offline and response owners
   assert.equal((await a.next((m) => m.type === 'rpc.res')).data.result, 42);
   await assert.rejects(f.hub.invoke('b', 'device.vibrate', {}, { timeoutMs: 10 }), { code: -32003 });
   await assert.rejects(f.hub.invoke('absent', 'state.get'), { code: -32010 });
-  b.send('rpc.unregister', { methods: ['device.vibrate'] }); await b.sync();
+  b.send('rpc.unregister', { methods: ['device.vibrate', 'device.private'] }); await b.sync();
   assert.equal(f.hub.listToolMethods().length, 0);
   await assert.rejects(f.hub.invoke('b', 'device.vibrate'), { code: -32601 });
 });

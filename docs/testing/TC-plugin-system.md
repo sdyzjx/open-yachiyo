@@ -198,3 +198,12 @@
 | 期望结果 | 手机自动安装并出现在插件网格 |
 | 自动化 | manual |
 
+## TC-PLG-020 同版本重装与注册清理
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | integration |
+| 前置条件 | 插件已加载并注册 agent 工具 |
+| 步骤 | 用相同 id/version 覆盖安装入口内容；重复注册同名方法；重建 MainActivity |
+| 期望结果 | manifest 修订变化使旧 iframe 重载；同名注册只有最新处理器；页面销毁后旧工具从 Hub 注销 |
+| 自动化 | `test/android-web/pluginProtocol.test.js` — `manifest revision changes when the same version is reinstalled`；注册生命周期由 Android 集成测试/真机验证 |

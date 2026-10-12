@@ -170,6 +170,49 @@ class HubClientTest {
         assertEquals(RpcCodes.METHOD_NOT_FOUND, next("rpc.res").data!!.getJSONObject("error").getInt("code"))
     }
 
+    @Test fun incomingRpcIsDeliveredOnlyToTheFirstClaimingSurface() {
+        val c = newClient()
+        val settingsCalls = AtomicInteger(0)
+        val mainCalls = AtomicInteger(0)
+        val duplicateCalls = AtomicInteger(0)
+        c.addListener(object : HubListener {
+            override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String): Boolean {
+                settingsCalls.incrementAndGet()
+                return false
+            }
+        })
+        c.addListener(object : HubListener {
+            override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String): Boolean {
+                mainCalls.incrementAndGet()
+                c.respond(id, JSONObject().put("surface", "main"), null)
+                return true
+            }
+        })
+        c.addListener(object : HubListener {
+            override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String): Boolean {
+                duplicateCalls.incrementAndGet()
+                return true
+            }
+        })
+        c.connect(); awaitState(c, HubState.CONNECTED)
+        sockets[0].send(Envelope("rpc.req", id = "surface-1", data = JSONObject().put("method", "state.get")).toJson())
+        val res = next("rpc.res")
+        assertEquals("main", res.data!!.getJSONObject("result").getString("surface"))
+        assertEquals(1, settingsCalls.get())
+        assertEquals(1, mainCalls.get())
+        assertEquals(0, duplicateCalls.get())
+    }
+
+    @Test fun unclaimedRpcWithListenersReturnsMethodNotFound() {
+        val c = newClient()
+        c.addListener(object : HubListener {
+            override fun onRpcRequest(id: String, method: String, params: JSONObject, from: String) = false
+        })
+        c.connect(); awaitState(c, HubState.CONNECTED)
+        sockets[0].send(Envelope("rpc.req", id = "settings-only", data = JSONObject().put("method", "state.get")).toJson())
+        assertEquals(RpcCodes.METHOD_NOT_FOUND, next("rpc.res").data!!.getJSONObject("error").getInt("code"))
+    }
+
     @Test fun eventsDispatchedToListeners() {
         val c = newClient()
         val q = LinkedBlockingQueue<String>()
@@ -178,5 +221,10 @@ class HubClientTest {
         sockets[0].send(Envelope("event", topic = "avatar.host.changed", from = "gateway", data = JSONObject().put("host", "android-test")).toJson())
         assertEquals("avatar.host.changed|gateway", q.poll(2, TimeUnit.SECONDS))
         assertEquals("android-test", c.avatarHost)
+    }
+
+    @Test fun ipv6HostIsBracketedAndScopeEncoded() {
+        assertEquals("ws://[2001:db8::2]:3000/ws/device", HubConfig("2001:db8::2", 3000, "").url())
+        assertEquals("ws://[fe80::1%25wlan0]:3000/ws/device", HubConfig("fe80::1%wlan0", 3000, "").url())
     }
 }

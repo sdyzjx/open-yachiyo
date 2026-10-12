@@ -4,6 +4,7 @@ const { fault } = require('./hub');
 function attachRuntimeBridge({ hub, bus, enqueueRun }) {
   const tasks = new Map();
   const seen = new Set();
+  const pendingDeltaAliases = new Map();
   const mark = (key) => {
     if (seen.has(key)) return false;
     seen.add(key);
@@ -11,11 +12,47 @@ function attachRuntimeBridge({ hub, bus, enqueueRun }) {
     return true;
   };
   const sendChat = (topic, payload) => hub.publish(topic, payload);
+  const deltaKey = (data) => JSON.stringify([
+    data.session_id || null,
+    data.trace_id || null,
+    data.step_index ?? null,
+    data.delta || ''
+  ]);
+  const relayDelta = (data, { expectCanonicalAlias = false } = {}) => {
+    const key = deltaKey(data);
+    if (!expectCanonicalAlias) {
+      const count = pendingDeltaAliases.get(key) || 0;
+      if (count > 0) {
+        if (count === 1) pendingDeltaAliases.delete(key);
+        else pendingDeltaAliases.set(key, count - 1);
+        return;
+      }
+    } else {
+      pendingDeltaAliases.set(key, (pendingDeltaAliases.get(key) || 0) + 1);
+      queueMicrotask(() => {
+        const count = pendingDeltaAliases.get(key) || 0;
+        if (count <= 1) pendingDeltaAliases.delete(key);
+        else pendingDeltaAliases.set(key, count - 1);
+      });
+    }
+    sendChat('chat.delta', {
+      session_id: data.session_id,
+      trace_id: data.trace_id,
+      delta: data.delta
+    });
+  };
   const aggregate = (topic, data) => {
-    const status = (data.ok === false || data.payload?.ok === false || /failed|error/.test(topic)) ? 'failed' : /completed|result/.test(topic) ? 'done' : 'running';
+    const payload = data.payload || data;
+    const failed = data.ok === false
+      || payload.ok === false
+      || data.error === true
+      || payload.error === true
+      || (typeof data.error === 'string' && data.error)
+      || (typeof payload.error === 'string' && payload.error)
+      || /failed|error/.test(topic);
+    const status = failed ? 'failed' : /completed|result/.test(topic) ? 'done' : 'running';
     const taskId = data.trace_id || data.task_id || data.session_id;
     if (!taskId) return;
-    const payload = data.payload || data;
     const name = payload.name || payload.tool_name || payload.tool?.name || 'tool';
     const stepId = payload.call_id || payload.tool_call_id || `${data.step_index || 0}:${name}`;
     const task = tasks.get(taskId) || { task_id: taskId, title: 'Agent tools', steps: new Map() };
@@ -28,13 +65,13 @@ function attachRuntimeBridge({ hub, bus, enqueueRun }) {
   const handle = (topic, data = {}) => {
     if (!data || typeof data !== 'object' || data.__from_device) return; // Publications were already delivered by the Hub.
     if (/^(ui|client|voice|avatar|task|plugin|sys)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
-    if (topic === 'message.delta') sendChat('chat.delta', { session_id: data.session_id, trace_id: data.trace_id, delta: data.delta });
+    if (topic === 'message.delta') relayDelta(data);
     if (topic === 'runtime.final' && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
     if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(topic)) aggregate(topic, data);
     if (topic === 'runtime.event') {
       if (data.seq != null && !mark(`${data.session_id}:${data.trace_id}:${data.seq}`)) return;
       if (data.event === 'done') handle('runtime.final', { ...data, output: data.payload?.output || '' });
-      if (data.event === 'llm.stream.delta') handle('message.delta', { ...data, delta: data.payload?.delta || '' });
+      if (data.event === 'llm.stream.delta') relayDelta({ ...data, delta: data.payload?.delta || '' }, { expectCanonicalAlias: true });
       if (data.event === 'llm.final' && !data.payload?.streamed && data.payload?.decision?.type === 'final') handle('message.delta', { ...data, delta: data.payload.decision.preview || '' });
       if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(data.event || '') || data.event === 'tool.result') aggregate(data.event, data);
     }

@@ -612,6 +612,28 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     );
     assert.equal(fs.existsSync(workspaceImagePath), true);
 
+    const audioRun = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
+      jsonrpc: '2.0',
+      id: 'rpc-audio-prefilled',
+      method: 'runtime.run',
+      params: {
+        session_id: 'audio-prefilled-s1',
+        input: 'prefilled audio transcript',
+        input_audio: {
+          audio_ref: 'file:///tmp/prefilled.wav',
+          format: 'wav',
+          lang: 'auto',
+          transcribed_text: 'prefilled audio transcript',
+          confidence: 0.91
+        }
+      }
+    }, { expectRpcId: 'rpc-audio-prefilled' });
+    assert.equal(audioRun.result.result.state, 'DONE');
+    const audioSession = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/audio-prefilled-s1`).then((r) => r.json());
+    const audioUserMessage = audioSession.data.messages.find((msg) => msg.role === 'user');
+    assert.equal(audioUserMessage.metadata.input_audio.transcribed_text, 'prefilled audio transcript');
+    assert.equal(audioUserMessage.metadata.input_audio.confidence, 0.91);
+
     const saveMemory = await wsRequest(`ws://127.0.0.1:${gatewayPort}/ws`, {
       type: 'run',
       session_id: 'memory-write-s1',

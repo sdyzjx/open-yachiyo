@@ -1,4 +1,5 @@
 const { EventEmitter } = require('node:events');
+const { isAuthorized } = require('./accessControl');
 
 class NullDeviceHub extends EventEmitter {
   get enabled() {
@@ -54,6 +55,11 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
     try { pathname = new URL(req.url, 'http://localhost').pathname; } catch { socket.destroy(); return; }
     const target = pathname === '/ws/device' ? hub.wss : pathname === '/ws' ? wss : null;
     if (!target) { socket.destroy(); return; }
+    if (pathname === '/ws' && !isAuthorized(req, settings.pairing_token)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
   };
   if (settings.home || options.plugins) hub.pluginStore = new (require('./pluginStore').PluginStore)({ hub, directory: settings.home && require('node:path').join(settings.home, 'data/device-plugins'), ...options.plugins });

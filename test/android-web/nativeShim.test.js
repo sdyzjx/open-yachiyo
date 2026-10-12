@@ -24,7 +24,7 @@ test('installs YachiyoNative forwarding every method through invoke with the cap
   assert.deepEqual(calls[0], { t: 'tok123', method: 'hubSubscribe', args: ['["avatar.*"]'] });
   assert.deepEqual(calls[1].args, [20]);
   assert.deepEqual(calls[2].args, ['c1', 'state.get', '{}', '']);
-  for (const name of ['dismissKeyguard', 'consumeBack', 'listLaunchableApps', 'launchApp', 'micStart', 'pluginStorageSet']) {
+  for (const name of ['dismissKeyguard', 'consumeBack', 'listLaunchableApps', 'launchApp', 'micStart', 'pluginStorageSet', 'startServerDiscovery', 'stopServerDiscovery']) {
     assert.equal(typeof root.YachiyoNative[name], 'function', name);
   }
 });

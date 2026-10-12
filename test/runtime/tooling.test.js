@@ -33,6 +33,13 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
+  assert.equal(cfg.policy.allow.includes('bus_publish'), true);
+  assert.equal(cfg.policy.allow.includes('avatar_status'), true);
+  assert.equal(cfg.policy.allow.includes('avatar_transfer'), true);
+  assert.deepEqual(cfg.policy.deviceHub, {
+    allow: ['*__device_*', '*__plugin_*'],
+    deny: []
+  });
   assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.locate.')), false);
   assert.equal(cfg.tools.some((t) => t.name.startsWith('desktop.inspect.')), false);
 });

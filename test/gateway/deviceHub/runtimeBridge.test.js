@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
+const { EventBridge } = require('../../../apps/runtime/agent-pi/eventBridge');
 const { fixture } = require('./helpers');
 
 test('Runtime bridge maps chat, aggregates tools and prevents publication loops', async (t) => {
@@ -35,4 +36,38 @@ test('Runtime bridge maps chat, aggregates tools and prevents publication loops'
   assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'done');
   bus.publish('tool.call.result', { trace_id: 'r', call_id: 'a', name: 'weather', ok: false });
   assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'failed');
+});
+
+test('Runtime bridge relays real pi deltas once and never reports failed tools as done', async (t) => {
+  const bus = new RuntimeEventBus();
+  const f = await fixture(t, { bus });
+  const phone = await f.client('phone');
+  phone.send('sub', { topics: ['chat.**', 'task.**'] });
+  await phone.sync();
+
+  const bridge = new EventBridge({ bus, sessionId: 'device-phone', streaming: true });
+  bridge.accept({ type: 'turn_start' });
+  bridge.accept({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: 'only once' }
+  });
+  assert.equal((await phone.next((message) => message.topic === 'chat.delta')).data.delta, 'only once');
+  await phone.sync();
+  assert.equal(phone.inbox.filter((message) => message.topic === 'chat.delta').length, 0);
+
+  bridge.accept({ type: 'tool_execution_start', toolCallId: 'call-fail', toolName: 'demo_tool', args: {} });
+  bridge.accept({
+    type: 'tool_execution_end',
+    toolCallId: 'call-fail',
+    toolName: 'demo_tool',
+    isError: true,
+    result: { content: [{ type: 'text', text: 'failed' }], details: { code: 'RUNTIME_ERROR' } }
+  });
+  await phone.sync();
+  const statuses = phone.inbox
+    .filter((message) => message.topic === 'task.update')
+    .map((message) => message.data.status);
+  assert.equal(statuses.includes('running'), true);
+  assert.equal(statuses.includes('failed'), true);
+  assert.equal(statuses.includes('done'), false);
 });

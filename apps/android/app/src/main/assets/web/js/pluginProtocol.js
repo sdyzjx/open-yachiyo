@@ -54,6 +54,7 @@
 
   const ns = (id) => `plugin.${id}.**`;
   const methodName = (id, name) => `plugin.${id}.${name}`;
+  const manifestRevision = (m) => JSON.stringify([m && m.id, m && m.version, m && m.type, (m && m.entry) || 'index.html', (m && m.installed_at) || 0]);
 
   // ".tick" -> "plugin.<id>.tick"
   function expandTopic(id, topic) {
@@ -132,5 +133,5 @@
     }
   }
 
-  return { ID_RE, PLUGIN_OPS, ERR, isEnvelope, validateManifest, parsePermissions, expandTopic, methodName, canPublish, canSubscribe, canCall, checkOp };
+  return { ID_RE, PLUGIN_OPS, ERR, isEnvelope, validateManifest, parsePermissions, expandTopic, methodName, manifestRevision, canPublish, canSubscribe, canCall, checkOp };
 });

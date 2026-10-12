@@ -132,6 +132,7 @@ abstract class WebHostActivity : Activity() {
     }
 
     override fun onPause() {
+        bridge.stopServerDiscoveryForLifecycle()
         bridge.emitLifecycle("pause")
         super.onPause()
     }

@@ -30,6 +30,9 @@ function normalizeInputAudio(value) {
   const format = typeof value.format === 'string' ? value.format.trim().toLowerCase() : '';
   const lang = typeof value.lang === 'string' ? value.lang.trim().toLowerCase() : 'auto';
   const hints = Array.isArray(value.hints) ? value.hints.filter((item) => typeof item === 'string').map((s) => s.trim()).filter(Boolean) : [];
+  const transcribedText = typeof value.transcribed_text === 'string' ? value.transcribed_text.trim() : '';
+  const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? value.confidence : null;
+  const segments = Array.isArray(value.segments) ? value.segments : [];
 
   if (!audioRef || !format) return null;
   if (!['wav', 'mp3', 'ogg', 'webm', 'm4a'].includes(format)) return null;
@@ -39,7 +42,10 @@ function normalizeInputAudio(value) {
     audio_ref: audioRef,
     format,
     lang,
-    hints
+    hints,
+    transcribed_text: transcribedText,
+    confidence,
+    segments
   };
 }
 
@@ -187,6 +193,10 @@ class RuntimeRpcWorker {
       });
       if (prepared && typeof prepared === 'object' && !Array.isArray(prepared)) {
         runtimeContext = prepared;
+      }
+      if (inputAudio) {
+        runtimeContext = { ...runtimeContext, input_audio: { ...inputAudio } };
+        if (!input.trim() && inputAudio.transcribed_text) input = inputAudio.transcribed_text;
       }
       publishChainEvent(this.bus, 'worker.context.ready', {
         request_id: request?.id ?? null,

@@ -22,18 +22,27 @@ enum class HubState(val wire: String) {
 data class HubConfig(val host: String, val port: Int, val token: String) {
     fun url(): String {
         val h = host.trim()
-        val base = if (h.startsWith("ws://") || h.startsWith("wss://")) h.trimEnd('/') else "ws://$h:$port"
+        val base = if (h.startsWith("ws://") || h.startsWith("wss://")) h.trimEnd('/') else "ws://${hostForUrl(h)}:$port"
         val sep = "/ws/device"
         val tokenPart = if (token.isNotEmpty()) "?token=" + java.net.URLEncoder.encode(token, "UTF-8") else ""
         return base + sep + tokenPart
+    }
+
+    companion object {
+        /** DNS-SD reports IPv6 literals without URL brackets; encode scope ids for URI parsing. */
+        fun hostForUrl(host: String): String {
+            val h = host.trim().removePrefix("[").removeSuffix("]")
+            if (!h.contains(':')) return h
+            return "[${h.replace("%", "%25")}]"
+        }
     }
 }
 
 interface HubListener {
     fun onState(state: HubState) {}
     fun onEvent(topic: String, data: JSONObject, from: String) {}
-    /** Incoming rpc.req that no local handler claimed. Implementer must eventually call respond(). */
-    fun onRpcRequest(id: String, method: String, params: JSONObject, from: String) {}
+    /** Returns true only when this listener claimed the request and will eventually call respond(). */
+    fun onRpcRequest(id: String, method: String, params: JSONObject, from: String): Boolean = false
 }
 
 typealias LocalRpcHandler = (params: JSONObject) -> Any?
@@ -303,8 +312,8 @@ class HubClient(
             }
             return
         }
-        if (listeners.isEmpty()) { respond(id, null, errorJson(RpcCodes.METHOD_NOT_FOUND, "no handler: $method")); return }
-        listeners.forEach { runCatching { it.onRpcRequest(id, method, params, env.from ?: "") } }
+        val claimed = listeners.any { runCatching { it.onRpcRequest(id, method, params, env.from ?: "") }.getOrDefault(false) }
+        if (!claimed) respond(id, null, errorJson(RpcCodes.METHOD_NOT_FOUND, "no handler: $method"))
     }
 
     private inner class Listener(val gen: Int) : WebSocketListener() {

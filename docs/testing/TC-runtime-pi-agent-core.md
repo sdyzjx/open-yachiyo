@@ -17,7 +17,7 @@
 | TC-PI-005 | 工具上下文与 schema | unit | 真 ToolExecutor | 执行 echo 和非法参数 | 上下文传递正确、非法参数拒绝 | toolBridge.test.js: TC-PI-005 bridge preserves schema, permission, trace, workspace and publishEvent |
 | TC-PI-006 | 权限拒绝与取消 | unit | low 会话 | 调 memory_write、取消后执行 | 不执行工具，pi 收到异常 | toolBridge.test.js: TC-PI-006 permission rejection becomes a pi tool error without executing |
 | TC-PI-007 | 截图附件 | unit | 临时离线图像 | 调 capture bridge | 返回 text + image | toolBridge.test.js: TC-PI-007 desktop capture result includes an actual image block |
-| TC-PI-008 | 设备工具动态刷新 | unit | 假 EventEmitter Hub | 注册后变更、取下一快照 | 新快照撤销工具、旧快照路由稳定、释放订阅 | deviceTools.test.js: TC-PI-008 device tools refresh next snapshot and preserve in-flight definitions |
+| TC-PI-008 | 设备工具动态刷新与授权 | unit | 假 EventEmitter Hub | 配置 allow/deny，注册后变更、取下一快照 | 默认不暴露，deny 优先；获准工具刷新且旧快照路由稳定 | deviceTools.test.js: TC-PI-008 device tools refresh next snapshot and preserve in-flight definitions / dynamic Hub tools require explicit patterns and keep deny precedence |
 | TC-PI-009 | 总线与 Avatar 权限 | unit | 假 Hub/controller | 发布合法/非法主题、移交、deny | 非法发布拒绝，移交参数保留 | deviceTools.test.js: TC-PI-009 bus namespace, schema, policy and avatar routing are enforced |
 | TC-PI-010 | Prompt 与旧核心逐段比对 | integration | 离线假 reasoner | 捕获旧循环 system messages，对比新 builder | 每个原有段落存在 | promptBuilder.test.js: TC-PI-010 prompt migration preserves each legacy system paragraph |
 | TC-PI-011 | 低权限和语音关闭 | unit | low、voice off | 构造 prompt | 不含 memory seed 与语音强制规则 | promptBuilder.test.js: TC-PI-011 low permission omits memory seeds and voice force-off instructions |
@@ -31,6 +31,7 @@
 | TC-PI-019 | 副作用后禁止回退 | integration | 工具后 503、401 | 执行两种错误 | 不重放工具，不回退鉴权失败 | piRuntime.test.js: TC-PI-019 never fall back after tools or on authentication failures |
 | TC-PI-020 | 循环步数上限 | integration | 无限工具 mock | maxStep=2 | 有限请求后 ERROR | piRuntime.test.js: TC-PI-020 endless tools stop at configured step limit |
 | TC-PI-021 | 网关完整双模式 e2e | e2e | 每模式独立 home、本地 mock | 子进程分别执行原 gateway.e2e.test.js 五项 | pi/legacy 均通过 HTTP、WS、历史、记忆、Live2D、图片及语音设置 | gatewayModes.test.js: TC-PI-021 existing gateway e2e suite passes with AGENT_CORE=pi/legacy |
-| TC-PI-022 | 回滚与 model_ref 转送 | unit | 假 worker | legacy 选择、无效开关、组装 context | 回滚对象保留，model_ref 与权限共存 | gatewayModes.test.js: TC-PI-022 core rollback and RPC model_ref assembly preserve existing context |
+| TC-PI-022 | 回滚与 model_ref 转送 | unit | 真 RuntimeRpcWorker、假 runner | legacy 选择、无效开关、执行 runtime.run | worker 原生把 model_ref 与权限转交 runner，兼容装配不再二次包装 | gatewayModes.test.js: TC-PI-022 core rollback and native worker model_ref forwarding preserve existing context |
 | TC-PI-023 | 自动压缩持久化 | integration | 小上下文模型、本地 mock usage | 三轮对话触发 threshold | 实际生成并持久化 compaction entry，下一轮继续 | piRuntime.test.js: TC-PI-023 automatic compaction persists a summary and resumes through pi |
 | TC-PI-024 | 自定义推理字段 | unit | 字节切分 UTF-8 SSE | 转换字段并回放历史 | 中文与 DONE 帧保留，历史映射到配置字段 | modelAdapter.test.js: TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history replay |
+| TC-PI-025 | 多 provider 工具名编码 | integration | 含点、冲突候选、超长名称的工具，本地 SSE mock | 发送工具 schema、由模型调用含点工具 | 线上名称合法无碰撞；executor、Live2D 控制与所有兼容事件使用原名 | piRuntime.test.js: TC-PI-025 provider-safe tool names execute and emit their original names without collisions |

@@ -525,3 +525,39 @@
 | 步骤 | 发送不带 sha256 的 plugin.install |
 | 期望结果 | Hub 收到 plugin.install_failed（error `sha256 required`），不发起下载 |
 | 自动化 | manual |
+
+### TC-AND-050 多 WebView RPC 只由一个宿主应答
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-050 |
+| 标题 | Settings 不抢答且首个活动渲染宿主独占 RPC |
+| 类型 | integration |
+| 前置条件 | HubClient 同时注册设置页、主页面、重复页面监听者 |
+| 步骤 | 服务端发送 `rpc.req state.get` |
+| 期望结果 | Settings 返回未接管；主页面应答一次；其后监听者不被调用；所有监听者未接管时统一回 -32601 |
+| 自动化 | `HubClientTest.kt` — `incomingRpcIsDeliveredOnlyToTheFirstClaimingSurface`、`unclaimedRpcWithListenersReturnsMethodNotFound` |
+
+### TC-AND-051 锁屏与普通页面事件隔离
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-051 |
+| 标题 | currentMode 只允许对应渲染宿主接收 Hub payload |
+| 类型 | unit |
+| 前置条件 | normal/lockscreen/settings 三种 surface |
+| 步骤 | 组合 surfaceMode、currentMode、isSettings |
+| 期望结果 | normal-normal 与 lockscreen-lockscreen 接受；Settings 和 mode 不匹配全部拒绝 |
+| 自动化 | `HubSurfacePolicyTest.kt` — `onlyTheCurrentRenderSurfaceAcceptsPayloads` |
+
+### TC-AND-052 锁屏语音、动作与插件真机隔离
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-052 |
+| 标题 | Main 与 Lockscreen 不双播放、不双应答 |
+| 类型 | manual-device |
+| 前置条件 | Main 已加载插件且设备连接真实网关 |
+| 步骤 | 开启锁屏并息屏；网关发 voice.play、live2d RPC、调用插件工具；再解锁重复 |
+| 期望结果 | 锁屏时只有 Lockscreen 播放/应答，插件工具不可用；解锁后只有 Main 播放/应答且插件重新可用 |
+| 自动化 | manual（待真机） |

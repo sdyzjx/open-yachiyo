@@ -45,6 +45,7 @@ sequenceDiagram
 - Activity：`singleInstance`、`taskAffinity=""`、`excludeFromRecents`、`showWhenLocked`、`turnScreenOn`、保持屏幕常亮标志；`HubClient.currentMode` 同步进入重连时的 `hello.mode`。
 - 屏幕开/关与解锁通过 `lifecycle {state: screen_off|screen_on}` 通知 Web（所有 Activity 动态注册广播）。
 - **插件隔离**：资源层 `/plugins/*` 返回 403；Bridge 层：`hubSubscribe/hubPublish/hubRpc/hubRegister` 过滤或拒绝 `plugin.*`，入站 `plugin.*` 事件不转发给 Web、入站 `plugin.*` RPC 回 `-32006`；`listPlugins()=[]`、`pluginStorage*` 无效、`pickPluginPackage`/`uninstallPlugin`/`setPluginEnabled` 拒绝、`plugin.install` 推送回 `plugin.install_failed`；`openSettings`/`launchApp`/`listLaunchableApps` 禁用。网关侧同样会对 `mode=lockscreen` 设备返回 `-32006`（契约 C1.4）。
+- **单一活动宿主**：进入锁屏前先把 `HubClient.currentMode` 切为 `lockscreen`，普通 Main WebView 随即停止接收入站事件/RPC；锁屏销毁并移除监听后再切回 `normal`。因此同一条动作或语音只进入一个页面，后台插件也不能借普通页面 Bridge 访问 Hub。
 - 麦克风/音频/avatar 功能正常。
 
 ## 3. 接口与协议
@@ -68,4 +69,4 @@ Bridge：`openHomeSettings()`、`listLaunchableApps()`、`launchApp(pkg)`、`set
 
 ## 6. 测试用例
 
-TC-AND-029（设为默认桌面）、TC-AND-030（应用列表与图标）、TC-AND-031（锁屏显示）、TC-AND-032（锁屏插件隔离）、TC-AND-034（解锁与返回），单元：TC-AND-035（包名/图标路径校验）。见 `docs/testing/TC-android-native.md`。
+TC-AND-029（设为默认桌面）、TC-AND-030（应用列表与图标）、TC-AND-031（锁屏显示）、TC-AND-032（锁屏插件隔离）、TC-AND-034（解锁与返回）、TC-AND-050/051（多宿主路由），单元：TC-AND-035（包名/图标路径校验）。见 `docs/testing/TC-android-native.md`。

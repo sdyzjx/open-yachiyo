@@ -429,3 +429,42 @@ test('RuntimeRpcWorker transcribes input_audio via hook and forwards transcribed
 
   worker.stop();
 });
+
+test('RuntimeRpcWorker preserves pre-transcribed audio metadata with non-empty input and skips ASR', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  let seen = null;
+  let transcribeCalls = 0;
+  const runner = {
+    async run({ input, runtimeContext }) {
+      seen = { input, runtimeContext };
+      return { output: 'ok', traceId: 't-audio-prefilled', state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+
+  await queue.submit({
+    jsonrpc: '2.0', id: 'audio-prefilled', method: 'runtime.run', params: {
+      session_id: 'audio-prefilled',
+      input: 'already transcribed',
+      input_audio: {
+        audio_ref: 'file:///tmp/prefilled.wav', format: 'wav', lang: 'auto',
+        transcribed_text: 'already transcribed', confidence: 0.87,
+        segments: [{ start: 0, end: 1, text: 'already transcribed' }]
+      }
+    }
+  }, {
+    send: () => {},
+    buildRunContext: async () => ({ permission_level: 'low' }),
+    transcribeAudio: async () => { transcribeCalls += 1; return { text: 'wrong' }; }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.equal(transcribeCalls, 0);
+  assert.equal(seen.input, 'already transcribed');
+  assert.equal(seen.runtimeContext.input_audio.transcribed_text, 'already transcribed');
+  assert.equal(seen.runtimeContext.input_audio.confidence, 0.87);
+  assert.deepEqual(seen.runtimeContext.input_audio.segments, [{ start: 0, end: 1, text: 'already transcribed' }]);
+  worker.stop();
+});

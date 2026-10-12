@@ -1,12 +1,8 @@
 const os = require('node:os');
-const { tokenMatches } = require('./config');
-
-function isLocal(req) {
-  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
-}
+const { isAuthorized, isLocal } = require('./accessControl');
 function attachHttpRoutes({ app, server, hub }) {
   app.use('/api/device', (req, res, next) => {
-    if (isLocal(req) || tokenMatches(req.query.token || String(req.headers.authorization || '').replace(/^Bearer /, ''), hub.token)) return next();
+    if (isAuthorized(req, hub.token)) return next();
     res.status(403).json({ error: { code: -32006, message: 'Pairing token required' } });
   });
   app.get('/api/device/pairing', (req, res) => {

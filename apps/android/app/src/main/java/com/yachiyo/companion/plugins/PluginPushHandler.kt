@@ -4,6 +4,7 @@ import android.util.Log
 import com.yachiyo.companion.config.ConfigStore
 import com.yachiyo.companion.hub.HubClient
 import com.yachiyo.companion.hub.HubListener
+import com.yachiyo.companion.hub.HubConfig
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import org.json.JSONObject
@@ -79,7 +80,7 @@ object PushPolicy {
      */
     fun resolveUrl(url: String, host: String, port: Int): String {
         val h = host.trim()
-        val base = (if (h.startsWith("ws://") || h.startsWith("wss://")) h.replaceFirst("ws", "http") else "http://$h:$port")
+        val base = (if (h.startsWith("ws://") || h.startsWith("wss://")) h.replaceFirst("ws", "http") else "http://${HubConfig.hostForUrl(h)}:$port")
             .trimEnd('/').toHttpUrlOrNull() ?: throw PluginException("bad server config")
         if (!(url.startsWith("http://") || url.startsWith("https://"))) {
             if (url.startsWith("//")) throw PluginException("foreign_url")

@@ -47,7 +47,7 @@ sequenceDiagram
 - 单一帧循环：Pixi 自带 ticker 被关闭（`autoStart:false`，`autoUpdate:false`），由 `app.js` 的 rAF 统一推进弹簧、DOM 变换、口型与渲染，避免多源时序抖动。
 - 取景（见 FEAT-android-gesture-layout）由弹簧驱动；模型真实外框由可见 drawable 的包围盒并集得到，而不是画布留白。
 - 性能策略：Cubism Core 的网格更新在小米 6 上约 21 ms/帧（CPU）。交互动画期间（拖动、取景、移交）仅每 ~90 ms 做一次完整模型更新，其余帧只用新的变换重绘缓存网格，保证手势/移交动画流畅；静止时每帧完整更新。
-- `webglcontextlost` / 恢复：丢失后销毁并重建 Pixi 应用与模型（`rebuildStage`），可见状态与相机保持；回前台（`lifecycle resume` / `visibilitychange`）也会检查 `gl.isContextLost()`。`pause`/`screen_off` 停止帧循环。
+- `webglcontextlost` / 恢复：丢失后销毁并重建 Pixi 应用与模型（`rebuildStage`），可见状态与相机保持；回前台（`lifecycle resume` / `visibilitychange`）也会检查 `gl.isContextLost()`。`pause`/`screen_off` 停止帧循环并终止当前语音，避免普通页面与锁屏页面同时播放。
 - 点击互动：头部（外框上 27%）→ `smile` 表情 + 轻振动；身体 → `Greet` 动作；长按人物 → 菜单（去电脑那边 / 设置 / 打招呼）。指针移动时模型 `focus` 跟随视线。
 
 ### 2.3 动作与 RPC（契约 C1.4 / C1.6）

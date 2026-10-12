@@ -6,6 +6,7 @@
   'use strict';
 
   function createVoice({ bridge, lipsync, getConfig, log = () => {} }) {
+    const Address = global.YachiyoServerAddress;
     let ctx = null;
     let analyser = null;
     let gain = null;
@@ -38,7 +39,7 @@
       const cfg = getConfig().server || {};
       let u = url;
       if (/^(blob|data):/i.test(u)) return u;
-      if (!/^https?:/i.test(u)) u = `http://${cfg.host}:${cfg.port}${u.startsWith('/') ? '' : '/'}${u}`;
+      if (!/^https?:/i.test(u)) u = `${Address.baseUrl('http', cfg.host, cfg.port)}${u.startsWith('/') ? '' : '/'}${u}`;
       if (cfg.token && !/[?&]token=/.test(u)) u += `${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(cfg.token)}`;
       return u;
     }

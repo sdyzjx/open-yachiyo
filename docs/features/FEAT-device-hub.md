@@ -20,11 +20,15 @@
 
 遵循 C1/C5：`/ws/device?token=…`、v1 JSON 信封，保留旧 `/ws`。`getDeviceHub()` 返回当前实例，未启动时返回空实现。`listToolMethods()`、`invoke(deviceId, method, params, {timeoutMs})` 与 `tools.changed` 供 agent 使用。
 
-`GET /api/device/pairing` 仅 socket 来源为 localhost 可读；`GET /api/device/devices` 返回 `{devices, avatar_host}`。HTTP 远程请求使用 Bearer 或 query token，不信任代理头。
+`GET /api/device/pairing` 仅 socket 来源为 localhost 可读；`GET /api/device/devices` 返回 `{devices, avatar_host}`。HTTP 远程请求使用 Bearer 或 query token，不信任代理头。网关所有 `/api/*`、`/debug/*` 管理入口以及 runtime `/ws` 对 loopback 保持免 token，局域网连接统一要求 Device Hub pairing token；`/ws/device` 始终要求 token。
+
+Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源访问 `/api/device/*` 和 `/api/config/models*`。网关只对该精确源返回 CORS，支持带 `Authorization` 的 OPTIONS 预检，不向其他源开放。
+
+旧版 `GET /api/config/providers/config` 与 `/raw` 会清空内联 API key、鉴权 header 等敏感值；结构化响应用 `has_api_key` 表示凭据是否存在。把脱敏结果原样写回时，服务端恢复原凭据；显式提交新值才替换。清除密钥使用 v2 provider API 的 `clear_api_key`。
 
 ### 运行时桥接
 
-订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重；旧 done 事件同样映射 chat.final，并与新 runtime.final/入队回调按 trace 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，内存最多保存 128 个任务。
+订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重。pi 同一 token 同步发出的 `runtime.event llm.stream.delta` 与 `message.delta` 被识别为别名，只向手机投递一次；合法的相同连续 token 仍会逐个投递。旧 done 事件同样映射 chat.final，并与新 runtime.final/入队回调按 trace 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，失败结果不会短暂显示 done；内存最多保存 128 个任务。
 
 `chat.input` 固定使用 `device-<device_id>` 会话，通过现有网关入队入口执行，复用权限、历史记录与 workspace；设备提交的其他 session_id 不覆盖设备会话。TC-HUB-005 对应 `test/gateway/deviceHub/runtimeBridge.test.js`。
 
@@ -38,7 +42,7 @@
 
 ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型时使用原 YAML 只读 store。OpenAI-compatible 调 `/audio/transcriptions` multipart；DashScope 使用 Qwen ASR 的 `/compatible-mode/v1/chat/completions` 内嵌 WAV，协议参考[官方文档](https://www.alibabacloud.com/help/en/model-studio/non-realtime-speech-recognition-user-guide)。无 provider 时经 ToolExecutor 回退 `voice.asr_aliyun`，保留会话权限检查。
 
-识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。旧网关/worker 会剥离 transcribed_text，暂通过非空 input 避免重复 ASR；元数据持久化待统筹修复。录音文件当前保留供会话引用，运维需定期清理。
+识别完成向来源设备发 `audio.input.transcript` 并将文本/音频元数据交给设备会话。预填的 `transcribed_text` 会跳过重复 ASR；即使同时带非空 `input`，audio_ref、format、lang、hints、transcribed_text、confidence 和 segments 也会进入 runtime context，转录文本与置信度写入会话历史。录音文件当前保留供会话引用，运维需定期清理。
 
 ### 电脑设备页
 
@@ -48,10 +52,12 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 `~/yachiyo/config/device-hub.yaml`（遵循 `YACHIYO_HOME`）：`pairing_token` 缺省生成 24 字节随机值并保存为仅用户可读文件；`heartbeat_ms` 默认 15000，最小 100。RPC 默认 8000 ms；单帧上限 1 MiB。TTS 沿用现有 qwen3_tts provider；媒体 TTL 10 分钟，单条媒体上限 20 MiB。
 
+动态设备工具必须在 `config/tools.yaml` 的 `policy.deviceHub.allow` 显式启用。默认模板允许 `*__device_*` 与 `*__plugin_*`，同时把 Hub 桥接工具 `bus_publish`、`avatar_status`、`avatar_transfer` 加入全局 allowlist。运行时先应用 `policy.deviceHub.deny`，再应用 allow；全局 deny、provider deny 与会话权限继续生效。候选方法只来自已经配对并完成 hello 的在线设备，且设备注册时必须声明 `expose_as_tool: true`；锁屏手机的插件方法暂时隐藏。
+
 ## 限制与已知问题
 
 单桌面假设。插件的细粒度 manifest 权限由 Android 插件宿主执行；Hub 执行设备级锁屏边界。同名设备工具冲突时加设备 ID 的稳定散列后缀。局域网明文 WS，远程部署需在外层配置 TLS。
 
 ## 测试用例
 
-[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～018；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub.md](../testing/TC-device-hub.md)：TC-HUB-001～025；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。

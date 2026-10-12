@@ -18,19 +18,9 @@ function createGatewayRunner({ core = process.env.AGENT_CORE || 'pi', legacyFact
   };
 }
 
-// C4 model_ref is not forwarded by the existing read-only worker. Adapt its
-// context hook at assembly time without changing worker or wire semantics.
+// Kept temporarily for the gateway assembly import. RuntimeRpcWorker now
+// forwards model_ref itself, so wrapping it here would duplicate that logic.
 function attachModelContext(worker) {
-  const processEnvelope = worker.processEnvelope.bind(worker);
-  worker.processEnvelope = (envelope) => {
-    const context = envelope.context || {};
-    return processEnvelope({ ...envelope, context: { ...context,
-      buildRunContext: async (args) => ({
-        ...await context.buildRunContext?.(args),
-        ...(envelope.request?.params?.model_ref ? { model_ref: envelope.request.params.model_ref } : {})
-      })
-    } });
-  };
   return worker;
 }
 

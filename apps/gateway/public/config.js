@@ -64,6 +64,7 @@ function cloneProvider(provider = {}) {
     model: provider.model || '',
     api_key_env: provider.api_key_env || '',
     api_key: provider.api_key || '',
+    has_api_key: provider.has_api_key === true,
     timeout_ms: Number(provider.timeout_ms) || 20000
   };
 }
@@ -87,7 +88,7 @@ function buildConfigFromState() {
     if (!provider.base_url.trim()) throw new Error(`Provider ${key} 缺少 base_url`);
     if (!provider.model.trim()) throw new Error(`Provider ${key} 缺少 model`);
 
-    const hasKey = provider.api_key.trim().length > 0;
+    const hasKey = provider.api_key.trim().length > 0 || provider.has_api_key === true;
     const hasEnv = provider.api_key_env.trim().length > 0;
     if (!hasKey && !hasEnv) {
       throw new Error(`Provider ${key} 需要填写 api_key 或 api_key_env`);

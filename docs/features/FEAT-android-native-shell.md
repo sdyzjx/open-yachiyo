@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws4
 > 更新: 2026-10-12
-> 关联: docs/plans/PLAN-android-ws4-android-native.md, docs/plans/PLAN-android-companion-contracts.md (C1/C2/C3/C6), apps/android/, TC-AND-001…TC-AND-035
+> 关联: docs/plans/PLAN-android-ws4-android-native.md, docs/plans/PLAN-android-companion-contracts.md (C1/C2/C3/C6/C7), apps/android/, docs/testing/TC-android-native.md, docs/testing/TC-android-server-discovery.md
 
 ## 1. 概述
 
@@ -50,6 +50,8 @@ flowchart LR
 `HubClient` 实现 C1.2 信封（`v/type/id/topic/data/from/ts`）、`hello`（含 `device_id`、`mode`、`capabilities`、`screen`）、`sub/unsub/pub`、`rpc.req/res`（8 s 超时 → `-32003`，未连接 → `-32010`）、`rpc.register`。入站 `rpc.req` 先查本地处理器（`device.*`），否则转交 Web 层（`hub.rpc.request`），无监听者则返回 `-32601`。
 `hubRpc` 的结果 `result` 为任意 JSON，经 `hub.rpc.result {call_id, result|error}` 返回。
 
+进程内可能同时存在 Main、Settings、Lockscreen 三个 WebView。入站事件与未被原生处理的 RPC 只投递给 `HubClient.currentMode` 对应的渲染宿主：设置页不接收动作 RPC，普通主页面与锁屏页面不会同时应答或播放。监听者以布尔值声明是否接管 RPC，首个接管者后停止分发；无人接管统一回 `-32601`。
+
 ### 3.2 JS Bridge（契约 C2.0 / C2.1 / C2.2）
 
 **注入与令牌门（C2.0）**：`addJavascriptInterface` 会把对象注入所有 frame（含沙箱插件 iframe），因此原生只注入 `window.__YachiyoBridge`（`BridgeGate`），仅两个 `@JavascriptInterface` 方法：`handshake()` 每次主文档加载后**只有第一次**返回 32 字节随机 hex token，之后返回 `""` 并记录告警；`invoke(token, method, argsJson)` 常量时间比较 token，不匹配返回 `{"error":{"code":-32006,"message":"bridge token invalid"}}`，未知方法 `-32601`，参数非数组 `-32602`，处理器异常 `-32603`，否则按名称调用下述 C2.1 方法（`argsJson` 为参数数组）。C2.1 的各方法本身不带 `@JavascriptInterface`，不可被直接调用。令牌在**主文档请求**（`shouldInterceptRequest` 的 `isForMainFrame`）时重置——不能依赖 `onPageStarted`，它异步到达，可能晚于页面首个脚本（真机实测）。宿主页第一个脚本调用 `handshake()` 并把 token 留在闭包里，再由 `nativeShim.js` 构造 `window.YachiyoNative`（见 C2.0）；插件 iframe 是 opaque origin，拿不到闭包，真机验证其 `handshake()` 返回空、`invoke` 被拒。WebView 使用 `MIXED_CONTENT_ALWAYS_ALLOW`（页面源 https，网关 http），导航仍限制在资源域名。内置 fallback 页已改用 handshake/invoke，并内置沙箱 iframe 探针（结果写入 logcat `IFRAME_PROBE`）。
@@ -66,6 +68,7 @@ C2.1 全部方法均已实现（`getConfig/setConfig/getDeviceInfo/hub*/mic*/pic
 - 额外方法（契约外，向后兼容）：`dismissKeyguard()`（仅锁屏 Activity 有效）。
 - `setConfig` 返回 `"ok"` 或 `{"error": "..."}`；合并语义为**递归对象合并、数组整体替换**（比 C2.3 "浅合并"略强：`appearance.background` 等嵌套对象可局部更新）。
 - `hubSubscribe/hubPublish/hubRpc/hubRegister` 在锁屏模式下对 `plugin.*` 拒绝（`-32006`/忽略）；`listPlugins` 返回 `[]`、`pluginStorage*` 无效、`pickPluginPackage` 返回错误、`launchApp` 与 `listLaunchableApps` 在锁屏模式禁用。
+- Web 宿主注册的插件 RPC 由该 Bridge 实例记录，页面销毁时自动 `rpc.unregister`，避免 WebView 重建后遗留无法应答的 agent 工具。
 
 ### 3.3 原生设备方法（契约 C1.6，`expose_as_tool: true`，`scope: device`）
 
@@ -131,4 +134,4 @@ SharedPreferences `yachiyo`，键 `config`（JSON，缺省值与契约 C2.3 一�
 
 ## 6. 测试用例
 
-JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md`：TC-AND-001 … TC-AND-043。
+JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`bridge/HubSurfacePolicyTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md` 与 `TC-android-server-discovery.md`。

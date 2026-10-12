@@ -53,7 +53,8 @@
 
 - 订阅通过 `bridge.subscribe`（引用计数后一次性 `hubSubscribe`），事件按 pattern 分发到各插件的订阅。
 - 注册的方法在 hub 重连后会被宿主重新 `hubRegister`（幂等）。
-- 插件卸载/刷新时：取消其订阅、`hubUnregister` 其方法、中止进行中的调用。
+- 同名方法重复注册时先移除旧处理器；插件卸载/刷新时取消其订阅、`hubUnregister` 其方法并中止进行中的调用；整个 Web 宿主销毁时由原生 Bridge 清理该页面拥有的全部注册。
+- 重装同一 `id+version` 也以 `installed_at`/入口等 manifest 修订字段识别，旧 iframe 会销毁并加载新包，避免继续运行覆盖前的代码。
 
 ## 3. 接口与协议
 
@@ -75,4 +76,4 @@ SDK 见 `sdk/yachiyo-plugin-sdk.js` 与 `docs/guides/PLUGIN_DEVELOPMENT_GUIDE.md
 
 ## 6. 测试用例
 
-TC-PLG-001..TC-PLG-019（`docs/testing/TC-plugin-system.md`）；自动化 `test/android-web/pluginProtocol.test.js`、`pluginGrid.test.js`、`topics.test.js`。
+TC-PLG-001..TC-PLG-020（`docs/testing/TC-plugin-system.md`）；自动化 `test/android-web/pluginProtocol.test.js`、`pluginGrid.test.js`、`topics.test.js`。

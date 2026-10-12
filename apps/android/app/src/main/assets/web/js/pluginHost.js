@@ -21,6 +21,7 @@
     let editing = false;
     let curGeom = geom;
     let seq = 0;
+    const revision = P.manifestRevision;
 
     /* ---------------------------------------------------------- messaging */
     function post(rec, msg) {
@@ -77,6 +78,8 @@
             reply(rec, msg, await bridge.rpc(p.method, p.params, p.target));
             return;
           case 'rpc.register': {
+            const previous = rec.rpcOffs.get(p.name);
+            if (previous) previous();
             rec.methods.add(p.name);
             rec.rpcOffs.set(p.name, bridge.handleRpc(p.full_name, (params) => invokeInPlugin(rec, p.name, params)));
             bridge.register([{ name: p.full_name, description: p.description, params_schema: p.params_schema, expose_as_tool: p.expose_as_tool, scope: 'plugin' }]);
@@ -148,7 +151,7 @@
       iframe.setAttribute('sandbox', SANDBOX);
       iframe.setAttribute('referrerpolicy', 'no-referrer');
       iframe.title = manifest.name;
-      const rec = { manifest, iframe, subs: new Map(), methods: new Set(), rpcOffs: new Map(), pending: new Map() };
+      const rec = { manifest, revision: revision(manifest), iframe, subs: new Map(), methods: new Set(), rpcOffs: new Map(), pending: new Map() };
       parent.appendChild(iframe);
       iframe.src = `${manifest.base_url}${manifest.entry || 'index.html'}`;
       byWindow.set(iframe.contentWindow, rec);
@@ -340,9 +343,9 @@
         if (m.enabled === false) continue;
         next.push(m);
       }
-      const keep = new Set(next.map((m) => `${m.id}@${m.version}`));
+      const keep = new Map(next.map((m) => [m.id, revision(m)]));
       for (const rec of Array.from(frames.values())) {
-        if (!keep.has(`${rec.manifest.id}@${rec.manifest.version}`)) {
+        if (keep.get(rec.manifest.id) !== rec.revision) {
           if (activeApp === rec.manifest.id) closeApp(true);
           destroyFrame(rec);
         }

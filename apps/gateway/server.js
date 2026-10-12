@@ -6,6 +6,7 @@ const { WebSocketServer } = require('ws');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { DebugEventStream } = require('./debugEventStream');
+const { attachGatewayDiscovery } = require('./discovery');
 
 const { ToolExecutor } = require('../runtime/executor/toolExecutor');
 const { ToolLoopRunner } = require('../runtime/loop/toolLoopRunner');
@@ -56,9 +57,21 @@ const {
   DEFAULT_NORMAL_MODEL,
   DEFAULT_REALTIME_MODEL
 } = require('./onboardingService');
+const { loadConfig: loadDeviceHubConfig } = require('./deviceHub/config');
+const { appassetsCors, remoteApiAuth } = require('./deviceHub/accessControl');
+const {
+  redactProviderConfig,
+  redactProviderYaml,
+  restoreProviderSecrets,
+  restoreProviderYaml
+} = require('./providerSecrets');
 
 const app = express();
+const deviceHubConfig = loadDeviceHubConfig();
 app.use(express.json({ limit: '1mb' }));
+app.use(appassetsCors);
+app.use('/api', remoteApiAuth(deviceHubConfig.pairing_token));
+app.use('/debug', remoteApiAuth(deviceHubConfig.pairing_token));
 app.use('/assets', express.static(path.join(__dirname, '..', '..', 'assets')));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -254,7 +267,7 @@ async function persistSessionInputImages(sessionId, inputImages = [], workspaceR
   return persisted;
 }
 
-const { createGatewayRunner, attachModelContext } = require('../runtime/agent-pi/gatewayAssembly');
+const { createGatewayRunner } = require('../runtime/agent-pi/gatewayAssembly');
 const { loadModelCatalog } = require('../runtime/config/modelCatalog');
 const { getDeviceHub } = require('./deviceHub');
 const runner = createGatewayRunner({
@@ -288,7 +301,7 @@ const dispatcher = new ToolCallDispatcher({
 });
 dispatcher.start();
 
-const worker = attachModelContext(new RuntimeRpcWorker({ queue, runner, bus }));
+const worker = new RuntimeRpcWorker({ queue, runner, bus });
 worker.start();
 
 app.get('/api/session-images/:sessionId/:fileName', async (req, res) => {
@@ -738,14 +751,18 @@ app.get('/api/config/providers', (_, res) => {
 
 app.get('/api/config/providers/config', (_, res) => {
   try {
-    res.json({ ok: true, data: llmManager.getConfig() });
+    res.json({ ok: true, data: redactProviderConfig(llmManager.getConfig()) });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
   }
 });
 
 app.get('/api/config/providers/raw', (_, res) => {
-  res.json({ ok: true, yaml: llmManager.loadYaml() });
+  try {
+    res.json({ ok: true, yaml: redactProviderYaml(llmManager.loadYaml()) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
 });
 
 app.get('/api/config/tools/config', (_, res) => {
@@ -772,7 +789,7 @@ app.put('/api/config/providers/config', (req, res) => {
   }
 
   try {
-    llmManager.saveConfig(config);
+    llmManager.saveConfig(restoreProviderSecrets(config, llmManager.getConfig()));
     res.json({ ok: true, data: llmManager.getConfigSummary() });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message || String(err) });
@@ -787,7 +804,7 @@ app.put('/api/config/providers/raw', (req, res) => {
   }
 
   try {
-    llmManager.saveYaml(yaml);
+    llmManager.saveYaml(restoreProviderYaml(yaml, llmManager.getConfig()));
     res.json({ ok: true, data: llmManager.getConfigSummary() });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message || String(err) });
@@ -1046,12 +1063,31 @@ const host = process.env.HOST || '0.0.0.0';
 
 const server = app.listen(port, host, () => {
   const summary = llmManager.getConfigSummary();
-  console.log(`Debug web: http://localhost:${port} (listening on ${host})`);
+  const address = server.address();
+  const actualPort = typeof address === 'object' && address ? address.port : port;
+  console.log(`Debug web: http://localhost:${actualPort} (listening on ${host})`);
   console.log(`LLM provider: ${summary.active_provider} / ${summary.active_model} / has_api_key=${summary.has_api_key}`);
 });
+const discovery = attachGatewayDiscovery({ server });
+
+let shutdownStarted = false;
+async function shutdownGateway() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  await discovery.stop();
+  server.close((error) => {
+    if (error) {
+      console.error(`[gateway] shutdown failed: ${error.message}`);
+      process.exitCode = 1;
+    }
+  });
+}
+
+process.once('SIGINT', () => { void shutdownGateway(); });
+process.once('SIGTERM', () => { void shutdownGateway(); });
 
 const wss = new WebSocketServer({ noServer: true });
-require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore });
+require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, config: deviceHubConfig });
 
 function sendSafe(ws, payload) {
   if (ws.readyState !== 1) return;
@@ -1140,6 +1176,13 @@ function normalizeInputAudio(rawInputAudio) {
   const hints = Array.isArray(rawInputAudio.hints)
     ? rawInputAudio.hints.filter((item) => typeof item === 'string').map((s) => s.trim()).filter(Boolean)
     : [];
+  const transcribedText = typeof rawInputAudio.transcribed_text === 'string'
+    ? rawInputAudio.transcribed_text.trim()
+    : '';
+  const confidence = typeof rawInputAudio.confidence === 'number' && Number.isFinite(rawInputAudio.confidence)
+    ? rawInputAudio.confidence
+    : null;
+  const segments = Array.isArray(rawInputAudio.segments) ? rawInputAudio.segments : [];
 
   if (!audioRef || !format) {
     return { ok: false, error: 'params.input_audio.audio_ref and params.input_audio.format are required' };
@@ -1159,7 +1202,10 @@ function normalizeInputAudio(rawInputAudio) {
       audio_ref: audioRef,
       format,
       lang,
-      hints
+      hints,
+      transcribed_text: transcribedText,
+      confidence,
+      segments
     }
   };
 }

@@ -21,8 +21,10 @@
 - [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
+- [Android 局域网服务端自动发现](features/FEAT-android-server-discovery.md)
 - [Android 统一配置界面](features/FEAT-android-settings.md)
 - [Avatar 跨设备移交](features/FEAT-device-hub-avatar-transfer.md)
+- [Device Hub 局域网服务发现](features/FEAT-device-hub-discovery.md)
 - [Device Hub 设备连接与运行时桥接](features/FEAT-device-hub.md)
 - [模型配置 v2（多 provider / 多模型）](features/FEAT-llm-model-config-v2.md)
 - [插件打包、存储与推送](features/FEAT-plugin-push.md)
@@ -80,6 +82,7 @@
 实验记录（EXP-*）。
 
 - [Android 端 Live2D WebView 渲染可行性实验](experiments/EXP-20261012-android-live2d-webview-feasibility.md)
+- [Android Companion 集成与真机验收](experiments/EXP-20261012-companion-integration-acceptance.md)
 
 ## 调研 Research
 
@@ -138,9 +141,12 @@
 
 测试策略与用例集（TC-*）。
 
+- [Android Companion 跨工作流集成验收](testing/TC-android-companion-integration.md)
 - [Android 原生壳测试用例](testing/TC-android-native.md)
+- [Android 局域网服务端发现测试用例](testing/TC-android-server-discovery.md)
 - [Android Web 前端测试用例](testing/TC-android-web.md)
 - [Avatar 移交测试用例](testing/TC-avatar-transfer.md)
+- [Device Hub 局域网服务发现测试用例](testing/TC-device-hub-discovery.md)
 - [Device Hub 测试用例](testing/TC-device-hub.md)
 - [模型配置 v2 测试用例](testing/TC-llm-model-config-v2.md)
 - [插件系统测试用例](testing/TC-plugin-system.md)

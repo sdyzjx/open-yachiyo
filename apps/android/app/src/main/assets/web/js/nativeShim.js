@@ -16,7 +16,7 @@
     'hubUnsubscribe', 'hubRpc', 'hubRpcRespond', 'hubRegister', 'hubUnregister', 'micStart', 'micStop', 'pickBackground',
     'pickPluginPackage', 'listPlugins', 'uninstallPlugin', 'setPluginEnabled', 'pluginStorageGet', 'pluginStorageSet',
     'openHomeSettings', 'listLaunchableApps', 'launchApp', 'setLockscreenEnabled', 'setOrientation', 'openSettings',
-    'closeSettings', 'vibrate', 'log', 'consumeBack', 'dismissKeyguard'
+    'closeSettings', 'vibrate', 'log', 'consumeBack', 'dismissKeyguard', 'startServerDiscovery', 'stopServerDiscovery'
   ];
 
   function install(root) {

@@ -74,3 +74,10 @@ test('lockscreen denies everything, unknown ops are invalid', () => {
   assert.equal(P.checkOp(manifest, 'nope', {}).code, -32600);
   assert.equal(P.checkOp(manifest, 'storage.get', {}).code, -32602);
 });
+
+test('manifest revision changes when the same version is reinstalled', () => {
+  const base = { id: 'com.example.x', version: '1.0.0', type: 'app', entry: 'index.html', installed_at: 10 };
+  assert.equal(P.manifestRevision(base), P.manifestRevision({ ...base }));
+  assert.notEqual(P.manifestRevision(base), P.manifestRevision({ ...base, installed_at: 11 }));
+  assert.notEqual(P.manifestRevision(base), P.manifestRevision({ ...base, entry: 'next.html' }));
+});

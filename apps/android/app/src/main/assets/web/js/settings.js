@@ -3,6 +3,7 @@
   'use strict';
 
   const B = window.YachiyoBridge;
+  const Address = window.YachiyoServerAddress;
   const root = document.getElementById('root');
   let cfg = B.getConfig();
   const info = B.deviceInfo();
@@ -11,6 +12,8 @@
   let models = null;     // result of GET /api/config/models, or null when unavailable
   let modelsError = '';
   let testing = false;
+  let discovery = { state: 'stopped', reason: '', error: '' };
+  let discoveredServices = [];
 
   const set = (patch) => { B.setConfig(patch); };
 
@@ -59,12 +62,47 @@
     const s = cfg.server || {};
     const status = h('div', { class: 'status' }, h('span', { class: `dot ${hub.state}` }), HUB_LABEL[hub.state] || hub.state, hub.state === 'connected' && hub.avatar_host ? ` · 八千代在 ${hub.avatar_host === 'desktop' ? '电脑' : '本机/其他设备'}` : '');
     const test = h('button', { class: 'btn primary', type: 'button', onclick: runTest }, testing ? '测试中…' : '测试连接');
+    const scanning = discovery.state === 'scanning';
+    const scan = h('button', { class: `btn${scanning ? '' : ' primary'}`, type: 'button', onclick: () => B.call(scanning ? 'stopServerDiscovery' : 'startServerDiscovery') }, scanning ? '停止扫描' : '查找局域网服务');
+    const discoveryStatus = discovery.state === 'error'
+      ? `发现失败：${discovery.error || reasonLabel(discovery.reason)}`
+      : scanning ? '正在查找同一局域网中的 Yachiyo…'
+        : discoveredServices.length ? `找到 ${discoveredServices.length} 个服务`
+          : discovery.reason === 'timeout' ? '未发现服务，可继续手动输入地址' : '通过局域网发现服务端，不会读取或传输配对令牌';
+    const candidates = discoveredServices.length
+      ? h('div', { class: 'discovery-list' }, discoveredServices.map((service) => h('button', {
+        class: 'server-candidate', type: 'button', onclick: () => chooseService(service)
+      }, h('span', { class: 'candidate-name' }, service.name), h('span', { class: 'candidate-address' }, `${service.host}:${service.port}`))))
+      : null;
     return card('服务器',
-      row('地址', text(s.host, (v) => set({ server: { host: v } })), '运行网关的电脑 IP'),
-      row('端口', text(s.port, (v) => set({ server: { port: Number(v) || 3000 } }), { inputmode: 'numeric' })),
+      row('地址', text(s.host, (v) => setServerEndpoint({ host: v })), '运行网关的电脑 IP'),
+      row('端口', text(s.port, (v) => setServerEndpoint({ port: Number(v) || 3000 }), { inputmode: 'numeric' })),
       row('配对 token', text(s.token, (v) => set({ server: { token: v } }), { type: 'password' }), '网关控制台或 /api/device/pairing'),
       row('启动时自动连接', toggle(s.auto_connect, (v) => set({ server: { auto_connect: v } }))),
+      row('局域网发现', scan, discoveryStatus),
+      candidates,
       row(status, test));
+  }
+
+  function reasonLabel(reason) {
+    return ({ permission_denied: '系统拒绝了局域网发现权限', unavailable: '当前网络不支持服务发现', lifecycle: '页面已离开', manual: '扫描已停止', timeout: '扫描超时' })[reason] || '未知错误';
+  }
+
+  function chooseService(service) {
+    const current = cfg.server || {};
+    const next = Address.endpointPatch(current, service);
+    const changed = !Address.sameEndpoint(current, next);
+    set({ server: next });
+    B.call('stopServerDiscovery');
+    toast(changed ? `已选择 ${service.name}，请填写该服务端的配对 token` : `已选择 ${service.name}`);
+  }
+
+  function setServerEndpoint(patch) {
+    const current = cfg.server || {};
+    const next = Address.endpointPatch(current, { host: patch.host === undefined ? current.host : patch.host, port: patch.port === undefined ? current.port : patch.port });
+    const changed = !Address.sameEndpoint(current, next);
+    set({ server: next });
+    if (changed && current.token) toast('服务端已更换，请重新填写配对 token');
   }
 
   function runTest() {
@@ -146,7 +184,7 @@
         h('span', null, m.name, ' ', h('small', null, `${m.provider}${m.ok ? '' : ' · 缺少 API key'}`))))));
   }
 
-  function serverBase() { const s = cfg.server || {}; return `http://${s.host}:${s.port}`; }
+  function serverBase() { const s = cfg.server || {}; return Address.baseUrl('http', s.host, s.port); }
 
   async function api(method, path, body) {
     const s = cfg.server || {};
@@ -192,6 +230,8 @@
     if (r.error) { toast(r.error); return; }
     if (r.kind === 'background' && (r.url || r.uri)) set({ appearance: { background: { type: 'image', image_url: r.url || r.uri } } });
   });
+  B.on('server.discovery.state', (state) => { discovery = state || discovery; render(); });
+  B.on('server.discovery.results', (result) => { discoveredServices = result && Array.isArray(result.services) ? result.services : []; render(); });
   document.getElementById('back').onclick = () => B.call('closeSettings');
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') B.call('closeSettings'); });
   B.on('back', () => { B.call('consumeBack'); B.call('closeSettings'); });

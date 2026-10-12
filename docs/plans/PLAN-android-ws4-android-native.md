@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws4
 > 更新: 2026-10-12
-> 关联: PLAN-android-companion-contracts.md §C1 §C2 §C3 §C6
+> 关联: PLAN-android-companion-contracts.md §C1 §C2 §C3 §C6 §C7
 
 ## 1. 目标
 
@@ -96,3 +96,15 @@ WS5 的前端在 `app/src/main/assets/web/` 由另一个 agent 并行开发；�
 - Bridge 约定（见 §6）需 WS5 对齐，尤其是 `dispatch` 入参为对象与 `plugins.changed` 为数组。
 
 **如何验证**：见 `docs/guides/ANDROID_BUILD_GUIDE.md` 与 `docs/testing/TC-android-native.md`。自动：`cd apps/android && ./gradlew :app:testDebugUnitTest :app:assembleDebug`；真机：安装 APK 后用 fallback 页按钮逐项点击（deviceInfo/hubState/micStart/apps/landscape/lockscreen on），并用任意实现 C1 的服务端（Node + ws）观察帧。
+
+### 2026-10-12 集成收尾（codex-android-integration）
+
+| 提交 | 内容 |
+|---|---|
+| `9fd91be` | 实现 C7 Android NSD 局域网发现、配置页扫描/选择、endpoint 变化清除旧 token、IPv6 URL 与自动化测试 |
+| `69d7e7e` | Main/Settings/Lockscreen 共存时只允许当前渲染宿主接管入站 Hub RPC/事件；页面销毁注销其 Web RPC；锁屏阻止后台插件；暂停时停止旧页面语音 |
+| `e3e915e` | NSD 失败路径停止并释放原 discovery listener；generation 取消迟到回调；记录停止失败且不触发竞态重扫 |
+
+自动验证：仓库 Node 测试 `628/628` 通过；`./gradlew :app:testDebugUnitTest :app:assembleDebug` 通过。统筹者报告的真实网关（端口 3002）初验已覆盖 Wi-Fi 连接、示例 app/widget 安装与 `start_timer` RPC，均成功。
+
+待验证：C7 真机发现/丢失/超时与 multicast lock 系统行为；Main/Settings/Lockscreen 同时存在时的单次 RPC 应答、语音单播和插件隔离。上述项目仍按 `TC-AND-047/048/052` 标记为待真机，不据自动化结果判定通过。

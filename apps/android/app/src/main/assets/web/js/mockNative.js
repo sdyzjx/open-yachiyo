@@ -10,6 +10,7 @@
   if (global.YachiyoNative) return;
 
   const params = new URLSearchParams(location.search);
+  const Address = global.YachiyoServerAddress;
   const CONFIG_KEY = 'yachiyo.mock.config';
   const DEVICE_KEY = 'yachiyo.mock.device_id';
   const PLUGIN_KEY = 'yachiyo.mock.plugins';
@@ -68,7 +69,7 @@
     hub.wantConnected = true;
     if (hub.ws || !config.server.host) return;
     const { host, port, token } = config.server;
-    hub.url = `ws://${host}:${port}/ws/device`;
+    hub.url = `${Address.baseUrl('ws', host, port)}/ws/device`;
     setState('connecting');
     let ws;
     try { ws = new WebSocket(`${hub.url}?token=${encodeURIComponent(token || '')}`); } catch { scheduleRetry(); return; }
@@ -297,6 +298,8 @@
     openSettings() { location.href = 'settings.html'; },
     closeSettings() { location.href = 'index.html'; },
     dismissKeyguard() { console.log('[mockNative] dismissKeyguard'); },
+    startServerDiscovery() { emit('server.discovery.state', { state: 'error', reason: 'unavailable', error: 'Android NSD is unavailable in browser preview' }); },
+    stopServerDiscovery() { emit('server.discovery.state', { state: 'stopped', reason: 'manual' }); },
     vibrate(ms) { if (navigator.vibrate) navigator.vibrate(Number(ms) || 20); },
     consumeBack() { /* not needed in browser */ },
     log(level, msg) { /* console logging is done by the bridge wrapper */ }
