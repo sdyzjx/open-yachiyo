@@ -104,6 +104,8 @@
 
 ## 5. 调试与验证
 
-- Android 真机：`adb` 位于 `~/Library/Android/sdk/platform-tools/adb`。安装：`adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk`。
+- Android 真机：`adb` 位于 `~/Library/Android/sdk/platform-tools/adb`。**统一使用 Wi-Fi ADB**：`adb -s 192.168.20.183:5555 ...`；不得执行 `adb kill-server` / `adb tcpip` / `adb usb` / `adb disconnect`。
+- **真机互斥**：手机由多个 agent 共享，使用前必须 `/Volumes/data/Users/Programming/yachiyo-wt/devlock.sh acquire <工作流名>`，用完立即 `release`；单次占用不超过 10 分钟，编码/构建期间不得持有锁；改过的系统设置（如屏幕旋转）在释放前恢复。
+- 安装：`adb -s 192.168.20.183:5555 install -r apps/android/app/build/outputs/apk/debug/app-debug.apk`。手机与电脑同一局域网，手机可直接访问电脑 `192.168.20.212`。
 - WebView 调试：debug 构建开启 `WebView.setWebContentsDebuggingEnabled(true)`，用 `chrome://inspect`。
 - 网关：`npm run dev`（默认 `0.0.0.0:3000`），手机与电脑需在同一局域网。
