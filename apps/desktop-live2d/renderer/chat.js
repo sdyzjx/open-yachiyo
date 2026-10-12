@@ -10,6 +10,15 @@
   const chatComposerElement = document.getElementById('chat-panel-composer');
   const chatHideElement = document.getElementById('chat-hide');
   const openWebUiElement = document.getElementById('open-webui');
+  const modelPickerToggleElement = document.getElementById('model-picker-toggle');
+  const modelPickerElement = document.getElementById('model-picker');
+  const modelPickerCloseElement = document.getElementById('model-picker-close');
+  const modelActiveElement = document.getElementById('model-active');
+  const modelProviderElement = document.getElementById('model-provider');
+  const modelSaveElement = document.getElementById('model-save');
+  const modelDiscoverElement = document.getElementById('model-discover');
+  const modelStatusElement = document.getElementById('model-picker-status');
+  const modelDiscoveryResultsElement = document.getElementById('model-discovery-results');
   const MAX_UPLOAD_IMAGES = 4;
   const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
   const COMPACT_CHAT_WIDTH = 520;
@@ -19,6 +28,8 @@
     messages: [],
     compact: false,
     pendingUploads: [],
+    models: null,
+    modelsLoading: false,
     stream: {
       active: false,
       sessionId: null,
@@ -33,6 +44,132 @@
   };
   let chatInputComposing = false;
   const allowedRoles = new Set(['user', 'assistant', 'system', 'tool']);
+
+  function setModelStatus(message, error = false) {
+    if (!modelStatusElement) return;
+    modelStatusElement.textContent = String(message || '');
+    modelStatusElement.classList.toggle('error', error);
+  }
+
+  function setModelControlsDisabled(disabled) {
+    for (const element of [modelActiveElement, modelProviderElement, modelSaveElement, modelDiscoverElement]) {
+      if (element) element.disabled = Boolean(disabled);
+    }
+  }
+
+  function modelLabel(model) {
+    const name = String(model?.name || model?.id || model?.ref || '未命名模型');
+    const provider = String(model?.provider || '').trim();
+    return `${name}${provider ? ` · ${provider}` : ''}${model?.has_api_key === false ? ' · 缺少密钥' : ''}`;
+  }
+
+  function renderModelConfig() {
+    const snapshot = state.models;
+    if (!modelActiveElement || !modelProviderElement) return;
+    modelActiveElement.replaceChildren();
+    modelProviderElement.replaceChildren();
+    if (!snapshot || !Array.isArray(snapshot.models) || snapshot.models.length === 0) {
+      modelActiveElement.append(new Option('没有可用模型', ''));
+      modelProviderElement.append(new Option('没有可用 Provider', ''));
+      modelPickerToggleElement.dataset.state = 'empty';
+      modelPickerToggleElement.textContent = '模型';
+      setModelControlsDisabled(true);
+      return;
+    }
+    for (const model of snapshot.models) {
+      const option = new Option(modelLabel(model), model.ref);
+      option.selected = model.ref === snapshot.active;
+      modelActiveElement.append(option);
+    }
+    const providers = Object.values(snapshot.providers || {});
+    for (const provider of providers) {
+      const option = new Option(provider.display_name || provider.key, provider.key);
+      modelProviderElement.append(option);
+    }
+    const active = snapshot.models.find((model) => model.ref === snapshot.active);
+    modelPickerToggleElement.dataset.state = 'ready';
+    modelPickerToggleElement.textContent = active?.name || active?.id || '模型';
+    modelPickerToggleElement.title = active ? `当前模型：${active.ref}` : '选择模型';
+    setModelControlsDisabled(false);
+    if (providers.length === 0) modelDiscoverElement.disabled = true;
+  }
+
+  async function loadModelConfig({ quiet = false } = {}) {
+    if (state.modelsLoading || typeof bridge?.modelConfigRequest !== 'function') return;
+    state.modelsLoading = true;
+    setModelControlsDisabled(true);
+    modelPickerToggleElement.dataset.state = 'loading';
+    if (!quiet) setModelStatus('正在从本机网关加载模型…');
+    try {
+      state.models = await bridge.modelConfigRequest({ method: 'GET', path: '/api/config/models' });
+      renderModelConfig();
+      if (!quiet) setModelStatus(`已加载 ${state.models.models?.length || 0} 个模型`);
+    } catch (err) {
+      state.models = null;
+      renderModelConfig();
+      modelPickerToggleElement.dataset.state = 'error';
+      setModelStatus(`加载失败：${err?.message || err}`, true);
+    } finally {
+      state.modelsLoading = false;
+    }
+  }
+
+  async function saveActiveModel() {
+    const ref = String(modelActiveElement?.value || '');
+    if (!ref || !state.models) return;
+    setModelControlsDisabled(true);
+    setModelStatus('正在保存模型选择…');
+    try {
+      const enabled = new Set(Array.isArray(state.models.enabled) ? state.models.enabled : []);
+      enabled.add(ref);
+      state.models = await bridge.modelConfigRequest({
+        method: 'PUT',
+        path: '/api/config/models/selection',
+        body: { active_model: ref, enabled_models: Array.from(enabled) }
+      });
+      renderModelConfig();
+      setModelStatus('模型选择已保存，下一次对话开始生效');
+    } catch (err) {
+      setModelStatus(`保存失败：${err?.message || err}`, true);
+      setModelControlsDisabled(false);
+    }
+  }
+
+  async function discoverProviderModels() {
+    const provider = String(modelProviderElement?.value || '');
+    if (!provider) return;
+    setModelControlsDisabled(true);
+    modelDiscoveryResultsElement?.replaceChildren();
+    setModelStatus('正在从 Provider 拉取模型列表…');
+    try {
+      const result = await bridge.modelConfigRequest({
+        method: 'POST',
+        path: '/api/config/models/discover',
+        body: { provider }
+      });
+      if (!result?.ok) throw new Error(result?.error || `Provider 返回 ${result?.status || '错误'}`);
+      const models = Array.isArray(result.models) ? result.models : [];
+      for (const model of models.slice(0, 24)) {
+        const chip = document.createElement('span');
+        chip.className = 'model-result-chip';
+        chip.textContent = model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id;
+        chip.title = model.id;
+        modelDiscoveryResultsElement?.append(chip);
+      }
+      setModelStatus(models.length ? `Provider 返回 ${models.length} 个模型${models.length > 24 ? '，下方显示前 24 个' : ''}` : 'Provider 没有返回模型');
+    } catch (err) {
+      setModelStatus(`拉取失败：${err?.message || err}`, true);
+    } finally {
+      setModelControlsDisabled(false);
+    }
+  }
+
+  function setModelPickerOpen(open) {
+    if (!modelPickerElement) return;
+    modelPickerElement.hidden = !open;
+    modelPickerToggleElement?.setAttribute('aria-expanded', String(open));
+    if (open && !state.models && !state.modelsLoading) void loadModelConfig();
+  }
 
   function normalizeRole(role) {
     const normalized = String(role || '').trim();
@@ -790,6 +927,10 @@
   openWebUiElement?.addEventListener('click', () => {
     bridge?.sendWindowControl?.({ action: 'open_webui' });
   });
+  modelPickerToggleElement?.addEventListener('click', () => setModelPickerOpen(modelPickerElement?.hidden !== false));
+  modelPickerCloseElement?.addEventListener('click', () => setModelPickerOpen(false));
+  modelSaveElement?.addEventListener('click', () => { void saveActiveModel(); });
+  modelDiscoverElement?.addEventListener('click', () => { void discoverProviderModels(); });
   syncCompactLayout();
   if (typeof ResizeObserver === 'function' && chatPanelElement) {
     const observer = new ResizeObserver(() => {
@@ -811,4 +952,5 @@
   }
   updateComposerState();
   renderUploadPreview();
+  void loadModelConfig({ quiet: true });
 })();

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -524,16 +524,48 @@
         opacity: 0.5;
         cursor: default;
       }
+
+      /* Keep the transparent pet window, while unifying every optional overlay. */
+      body.resize-mode-active::before { border-color: rgba(182,161,255,.9); box-shadow: 0 0 0 1px rgba(9,11,32,.9), inset 0 0 0 1px rgba(239,208,157,.24); }
+      #resize-mode-close, #layout-tuner-toggle, #drag-zone-toggle, #mouth-tuner-toggle {
+        border-color: rgba(235,225,255,.16);
+        background: linear-gradient(145deg, rgba(31,30,61,.86), rgba(10,12,31,.9));
+        color: #f3eeff;
+        box-shadow: 0 10px 28px rgba(3,4,15,.28);
+      }
+      #mouth-tuner-panel, #layout-tuner-panel, #drag-zone-panel {
+        border-color: rgba(235,225,255,.16);
+        border-radius: 20px;
+        background: linear-gradient(145deg, rgba(31,30,63,.92), rgba(10,12,31,.96));
+        color: #f7f3ff;
+        box-shadow: 0 20px 52px rgba(3,4,15,.4);
+        backdrop-filter: blur(18px) saturate(1.14);
+      }
+      .layout-tuner-title { font-family: Georgia, "Songti SC", serif; letter-spacing: .08em; }
+      .layout-tuner-row label, .mouth-tuner-toggle-row label { color: #aaa7c0; }
+      .layout-tuner-value, #layout-tuner-status, #drag-zone-status, #mouth-tuner-status { color: #efd09d; }
+      .layout-tuner-slider, .mouth-tuner-checkbox { accent-color: #9d87e2; }
+      .layout-tuner-action { border-color: rgba(235,225,255,.14); border-radius: 11px; background: rgba(238,230,255,.07); color: #f3eeff; }
+      #drag-zone-visual { border-color: rgba(239,208,157,.92); background: rgba(182,161,255,.08); }
+      #bubble { color: #f7f3ff; background: linear-gradient(145deg, rgba(31,30,63,.86), rgba(10,12,31,.9)); border-color: rgba(239,208,157,.26); border-radius: 19px; backdrop-filter: blur(14px) saturate(1.12); box-shadow: 0 18px 42px rgba(3,4,15,.34); }
+      #chat-panel { border-color: rgba(235,225,255,.16); border-radius: 20px; background: linear-gradient(145deg, rgba(31,30,63,.88), rgba(10,12,31,.94)); backdrop-filter: blur(18px) saturate(1.14); }
+      #chat-panel-header { border-color: rgba(235,225,255,.1); color: #efd09d; }
+      .chat-panel-action { border-color: rgba(235,225,255,.15); border-radius: 999px; background: rgba(238,230,255,.07); color: #eee9fa; }
+      .chat-message { border: 1px solid rgba(235,225,255,.08); border-radius: 14px; background: rgba(238,230,255,.07); }
+      .chat-message.user { background: linear-gradient(135deg, rgba(121,103,190,.72), rgba(79,73,143,.76)); }
+      .chat-message.assistant { background: linear-gradient(145deg, rgba(40,37,75,.72), rgba(18,20,45,.74)); }
+      #chat-input { border-color: rgba(235,225,255,.16); border-radius: 12px; background: rgba(238,230,255,.07); }
+      #chat-send { border-color: rgba(239,208,157,.3); border-radius: 12px; background: linear-gradient(135deg,#a995ed,#7969c5); }
     </style>
   </head>
   <body>
     <div id="drag-handle"></div>
     <div id="stage"></div>
-    <button id="resize-mode-close" type="button">Close Resize Mode</button>
-    <button id="mouth-tuner-toggle" type="button">Mouth Tuner</button>
+    <button id="resize-mode-close" type="button">退出调整</button>
+    <button id="mouth-tuner-toggle" type="button">口型调试</button>
     <div id="mouth-tuner-panel">
       <div class="layout-tuner-header">
-        <span class="layout-tuner-title">Mouth Tuner</span>
+        <span class="layout-tuner-title">口型调试</span>
         <button id="mouth-tuner-close" type="button" aria-label="Close mouth tuner">×</button>
       </div>
       <div class="mouth-tuner-toggle-row">
@@ -556,12 +588,12 @@
       </div>
       <div id="mouth-tuner-status" aria-live="polite"></div>
     </div>
-    <button id="layout-tuner-toggle" type="button">Adjust Layout</button>
-    <button id="drag-zone-toggle" type="button">Adjust Drag Zone</button>
+    <button id="layout-tuner-toggle" type="button">调整布局</button>
+    <button id="drag-zone-toggle" type="button">调整拖拽区</button>
     <div id="drag-zone-visual"></div>
     <div id="layout-tuner-panel">
       <div class="layout-tuner-header">
-        <span class="layout-tuner-title">Layout Tuner</span>
+        <span class="layout-tuner-title">布局调整</span>
         <button id="layout-tuner-close" type="button" aria-label="Close layout tuner">×</button>
       </div>
       <div class="layout-tuner-row">
@@ -587,7 +619,7 @@
     </div>
     <div id="drag-zone-panel">
       <div class="layout-tuner-header">
-        <span class="layout-tuner-title">Drag Zone</span>
+        <span class="layout-tuner-title">拖拽区域</span>
         <button id="drag-zone-close" type="button" aria-label="Close drag zone panel">×</button>
       </div>
       <div class="layout-tuner-row">
@@ -618,16 +650,16 @@
     </div>
     <div id="chat-panel">
       <div id="chat-panel-header">
-        <span id="chat-panel-header-title">Desktop Chat</span>
+        <span id="chat-panel-header-title">八千代</span>
         <div id="chat-panel-header-actions">
-          <button class="chat-panel-action" id="pet-hide" type="button">Hide</button>
-          <button class="chat-panel-action" id="pet-close" type="button">Close</button>
+          <button class="chat-panel-action" id="pet-hide" type="button">收起</button>
+          <button class="chat-panel-action" id="pet-close" type="button">关闭</button>
         </div>
       </div>
       <div id="chat-panel-messages"></div>
       <div id="chat-panel-composer">
-        <input id="chat-input" type="text" maxlength="4000" placeholder="Type message..." />
-        <button id="chat-send" type="button">Send</button>
+        <input id="chat-input" type="text" maxlength="4000" placeholder="对八千代说点什么…" />
+        <button id="chat-send" type="button">发送</button>
       </div>
     </div>
     <div id="bubble-layer">

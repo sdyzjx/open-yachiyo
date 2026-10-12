@@ -6,6 +6,7 @@ const CHANNELS = {
   rendererReady: 'live2d:renderer:ready',
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
+  modelConfigRequest: 'live2d:model-config:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
@@ -97,6 +98,9 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   getRuntimeConfig() {
     return ipcRenderer.invoke(CHANNELS.getRuntimeConfig);
+  },
+  modelConfigRequest(payload = {}) {
+    return ipcRenderer.invoke(CHANNELS.modelConfigRequest, payload);
   },
   onVoicePlayMemory(handler) {
     const channel = 'desktop:voice:play-memory';

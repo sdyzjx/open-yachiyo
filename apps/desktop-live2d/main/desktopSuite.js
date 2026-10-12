@@ -20,6 +20,7 @@ const { createDesktopCaptureStore } = require('./desktopCaptureStore');
 const { createDesktopCaptureService } = require('./desktopCaptureService');
 const { QwenTtsClient } = require('./voice/qwenTtsClient');
 const { QwenTtsRealtimeClient } = require('./voice/qwenTtsRealtimeClient');
+const { createModelConfigClient } = require('./modelConfigClient');
 const {
   ACTION_EVENT_NAME,
   ACTION_ENQUEUE_METHOD,
@@ -32,6 +33,7 @@ const CHANNELS = Object.freeze({
   rendererReady: 'live2d:renderer:ready',
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
+  modelConfigRequest: 'live2d:model-config:request',
   chatInputSubmit: 'live2d:chat:input:submit',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
@@ -2799,6 +2801,13 @@ async function startDesktopSuite({
     live2dPresets: live2dPresetConfig,
     uiConfig: event?.sender === avatarWindow.webContents ? avatarUiConfig : config.uiConfig
   }));
+  const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
+  ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('model config requests are only available to the chat window');
+    }
+    return modelConfigRequest(payload);
+  });
   const windowDragListener = createWindowDragListener({
     BrowserWindow,
     screen,
@@ -3320,6 +3329,7 @@ async function startDesktopSuite({
     deviceHubClient?.stop();
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
+    ipcMain.removeHandler(CHANNELS.modelConfigRequest);
     ipcMain.off(CHANNELS.windowDrag, windowDragListener);
     ipcMain.off(CHANNELS.chatPanelVisibility, chatPanelVisibilityListener);
     ipcMain.off(CHANNELS.chatPanelToggle, chatPanelToggleListener);

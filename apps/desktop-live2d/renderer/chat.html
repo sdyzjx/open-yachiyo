@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -422,6 +422,62 @@
         background: rgba(255, 100, 100, 0.15);
         border-color: rgba(255, 100, 100, 0.3);
       }
+
+      /* Night palace theme shared with the Android companion. */
+      :root {
+        --night: #090b20;
+        --surface: rgba(13, 15, 35, 0.88);
+        --surface-soft: rgba(32, 30, 64, 0.68);
+        --line: rgba(235, 225, 255, 0.16);
+        --ink: #f7f3ff;
+        --dim: #aaa7c0;
+        --lilac: #b6a1ff;
+        --gold: #efd09d;
+      }
+
+      * { box-sizing: border-box; }
+      #chat-panel {
+        position: relative;
+        border-color: var(--line);
+        border-radius: 20px;
+        background: linear-gradient(145deg, rgba(30, 28, 61, .88), rgba(9, 11, 31, .94) 58%, rgba(23, 18, 42, .92));
+        backdrop-filter: blur(20px) saturate(1.16);
+        box-shadow: 0 22px 62px rgba(3, 4, 15, .38), inset 0 1px rgba(255,255,255,.045);
+      }
+      #chat-panel-header { min-height: 48px; padding: 8px 10px 8px 14px; border-color: rgba(235,225,255,.1); }
+      .chat-brand { min-width: 0; display: flex; align-items: center; gap: 9px; }
+      .chat-brand-mark { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(239,208,157,.09), 0 0 16px rgba(239,208,157,.42); }
+      .chat-brand-copy { min-width: 0; display: grid; gap: 1px; }
+      #chat-panel-header-title { color: var(--ink); font-family: Georgia, "Songti SC", serif; font-size: 14px; letter-spacing: .08em; }
+      .chat-brand-subtitle { color: var(--gold); font-size: 7px; font-weight: 700; letter-spacing: .16em; opacity: .72; }
+      #chat-panel-header-actions { gap: 5px; }
+      .chat-panel-action { min-height: 27px; padding: 3px 9px; border-color: var(--line); border-radius: 999px; background: rgba(238,230,255,.065); color: #eee9fa; }
+      .chat-panel-action:hover { background: rgba(238,230,255,.13); }
+      #model-picker-toggle[data-state="ready"] { border-color: rgba(239,208,157,.28); }
+      #chat-panel-messages { padding: 12px; gap: 9px; scrollbar-color: rgba(182,161,255,.34) transparent; }
+      .chat-message { border: 1px solid rgba(235,225,255,.09); border-radius: 14px; padding: 8px 10px; background: rgba(238,230,255,.075); box-shadow: 0 8px 20px rgba(3,4,15,.1); }
+      .chat-message.user { align-self: flex-end; background: linear-gradient(135deg, rgba(121,103,190,.7), rgba(79,73,143,.74)); border-color: rgba(239,208,157,.18); }
+      .chat-message.assistant { background: linear-gradient(145deg, rgba(40,37,75,.7), rgba(18,20,45,.72)); }
+      #chat-panel-composer { padding: 9px; border-color: rgba(235,225,255,.1); background: rgba(7,9,26,.22); }
+      #chat-input { min-width: 0; border-color: var(--line); border-radius: 12px; background: rgba(238,230,255,.07); color: var(--ink); }
+      #chat-input:focus { border-color: rgba(182,161,255,.68); box-shadow: 0 0 0 3px rgba(182,161,255,.08); }
+      #chat-image-pick, #chat-send { border-color: var(--line); border-radius: 12px; background: rgba(238,230,255,.085); }
+      #chat-send { background: linear-gradient(135deg, #a995ed, #7969c5); border-color: rgba(239,208,157,.3); }
+
+      #model-picker { position: absolute; z-index: 6; inset: 49px 8px auto; max-height: calc(100% - 58px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(10,12,31,.97); box-shadow: 0 18px 46px rgba(3,4,15,.52); -webkit-app-region: no-drag; }
+      #model-picker[hidden] { display: none; }
+      .model-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+      .model-picker-kicker { display: block; margin-bottom: 3px; color: var(--gold); font-size: 8px; font-weight: 700; letter-spacing: .16em; }
+      .model-picker-title { color: var(--ink); font-size: 14px; font-weight: 600; }
+      .model-picker-close { width: 27px; height: 27px; border: 1px solid var(--line); border-radius: 50%; background: rgba(238,230,255,.06); color: var(--dim); cursor: pointer; }
+      .model-picker-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; margin-top: 8px; }
+      .model-picker-row select { width: 100%; min-width: 0; height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: rgba(238,230,255,.07); color: var(--ink); font: inherit; font-size: 11px; }
+      .model-picker-button { height: 34px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; background: rgba(238,230,255,.08); color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+      .model-picker-button.primary { background: linear-gradient(135deg,#a995ed,#7969c5); border-color: rgba(239,208,157,.3); }
+      #model-picker-status { min-height: 17px; margin: 9px 1px 0; color: var(--dim); font-size: 10px; line-height: 1.45; }
+      #model-picker-status.error { color: #ff9aac; }
+      #model-discovery-results { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+      .model-result-chip { max-width: 100%; padding: 3px 7px; overflow: hidden; border: 1px solid rgba(239,208,157,.16); border-radius: 999px; color: #d9d1e9; background: rgba(239,208,157,.055); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -439,12 +495,20 @@
   <body>
     <div id="chat-panel">
       <div id="chat-panel-header">
-        <span id="chat-panel-header-title">Desktop Chat</span>
+        <div class="chat-brand"><span class="chat-brand-mark"></span><span class="chat-brand-copy"><span id="chat-panel-header-title">八千代</span><span class="chat-brand-subtitle">DESKTOP COMPANION</span></span></div>
         <div id="chat-panel-header-actions">
-          <button class="chat-panel-action" id="chat-hide" type="button">Hide Chat</button>
-          <button class="chat-panel-action" id="open-webui" type="button">WebUI</button>
+          <button class="chat-panel-action" id="model-picker-toggle" type="button" data-state="idle">模型</button>
+          <button class="chat-panel-action" id="open-webui" type="button">控制台</button>
+          <button class="chat-panel-action" id="chat-hide" type="button">收起</button>
         </div>
       </div>
+      <section id="model-picker" aria-label="模型选择" hidden>
+        <div class="model-picker-head"><div><span class="model-picker-kicker">MODEL ROUTING</span><div class="model-picker-title">选择对话模型</div></div><button id="model-picker-close" class="model-picker-close" type="button" aria-label="关闭">×</button></div>
+        <div class="model-picker-row"><select id="model-active" aria-label="当前模型"></select><button id="model-save" class="model-picker-button primary" type="button">应用</button></div>
+        <div class="model-picker-row"><select id="model-provider" aria-label="Provider"></select><button id="model-discover" class="model-picker-button" type="button">拉取列表</button></div>
+        <div id="model-picker-status" role="status" aria-live="polite">打开后将从本机网关读取模型配置</div>
+        <div id="model-discovery-results"></div>
+      </section>
       <div id="chat-panel-messages"></div>
       <div id="chat-panel-composer">
         <div id="chat-composer-input-row">

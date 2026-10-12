@@ -97,6 +97,7 @@ flowchart TD
 | A13 | 每个功能均有 `FEAT-*` 文档与 `TC-*` 用例，`docs/README.md` 索引更新 | 审查 |
 | A14 | 配置页自动发现同一局域网服务端，选择端点并配对 | 真机 |
 | A15 | 小米 6 连续人物动画及滑动达到 60 FPS 目标，报告真实帧间隔和画质 | 真机性能采样 |
+| A16 | 手机使用已选官网宫殿夜景（通过系统选图导入私有目录，离线可用），Android 面板/设置与桌面聊天/控制浮层视觉统一；桌面可真实选择模型并拉取 Provider 模型列表 | 自动 + 真机/桌面截图 |
 
 ## 6. 统筹待办
 
@@ -160,3 +161,11 @@ flowchart TD
 - 主线合入麦克风流隔离 `0da92cf` / 畸形帧保护 `f7b0dd7`，Node658/658通过。
 - 用户购买通用节省计划后授权复测，最小模型请求HTTP200/1363ms、pi到手机TTS播放2325ms成功；空实录ASR仍待调查。
 - FPS计时已发现host/CDP采样边界偏差，后续只用页面时钟。02cf3f6暖机真实draw55.96FPS，继续交错VBO优化；候选未合并，手机保持稳定版。
+
+### UI 刷新工作流（2026-10-13）
+
+- 统筹决策：采用官网 `character_bg.jpg` 宫殿夜景；素材不复制进仓库或默认发布包，真机通过现有系统选图 → `NativeFeatures` 私有目录导入，以保证离线持久化。设置页保留带来源链接的网络预设，加载失败时以 `#090b20` 回退色显示。
+- Android `08f3198`：主舞台、HUD、横屏面板、抽屉和设置页统一深蓝紫夜景、暖金/淡紫强调色。侧面板使用内部静态高斯预模糊装饰层，不对 Live2D 使用大型 `backdrop-filter`，因此不新增每帧人物离屏滤镜；未修改 `stage.js`、Live2D core、渲染优化器或人物动作逻辑。
+- Desktop：透明人物窗口保持透明；聊天、气泡、布局/口型/拖拽区浮层统一夜景视觉。聊天窗模型选择经 main process 精确 allowlist 调用现有 `GET /api/config/models`、`PUT /api/config/models/selection`、`POST /api/config/models/discover`；renderer 不接收 token/API key，错误在 main 截断并脱敏。
+- 自动验证：Node `npm run test:ci` 663/663；Android JDK17 `:app:testDebugUnitTest :app:assembleDebug` 通过。
+- 尚待验收：安装 UI 版 APK，通过系统选图实际导入官网背景并保存横竖屏/面板/设置截图；桌面启动截图及模型选择/拉取状态实测。A15 继续未达标，不能用旧 host clock 或历史约 59 FPS 数据标记完成。
