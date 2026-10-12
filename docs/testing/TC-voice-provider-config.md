@@ -13,6 +13,7 @@
 | TC-VOC-003 | voice.active_* 选择与校验错误 | unit | voice 引用不存在/错类型 provider | validateConfig；loadModelCatalog | 选中指定 provider；错误信息指出字段 | 同上 |
 | TC-VOC-004 | TTS 解析顺序 | unit | 设置 TTS_PROVIDER_KEY | loadModelCatalog | active_tts > env > 第一个；无效 env 被忽略 | 同上 |
 | TC-VOC-005 | ASR model 兼容 asr_model | unit | ASR provider 仅有 asr_model | normalize / catalog | model 取 asr_model；两者都缺则报错 | 同上 |
+| TC-VOC-006 | 旧 qwen3_tts key 兼容 | unit | 无 voice 段、TTS_PROVIDER_KEY=qwen3_tts | loadModelCatalog | 解析到 qwen3_tts | test/runtime/config/voiceConfigSchema.test.js |
 | TC-VOC-010 | tts_dashscope 合成（URL + 下载） | integration | 本地 mock HTTP | createTtsClient().synthesize | 请求体/鉴权头正确；返回 buffer+mime；supportsRealtime=true | test/runtime/voice/voiceProviders.test.js |
 | TC-VOC-011 | 无实时模型不支持实时；HTTP 错误映射 | integration | mock 返回 401 | synthesize | supportsRealtime=false；TTS_PROVIDER_AUTH_FAILED | 同上 |
 | TC-VOC-012 | tts_openai_compatible 合成 | integration | mock /v1/audio/speech | synthesize | POST 体含 model/voice/input/response_format；mime 取自响应头 | 同上 |

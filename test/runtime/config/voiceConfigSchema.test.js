@@ -71,3 +71,16 @@ test('TC-VOC-005 ASR reads model with legacy asr_model fallback', () => {
   const missing = parse(); delete missing.providers.asr1.asr_model;
   assert.throws(() => validateConfig(missing), /provider asr1 must define model/);
 });
+
+test('TC-VOC-006 legacy qwen3_tts key keeps working without a voice section', () => {
+  const cfg = parse();
+  cfg.providers.qwen3_tts = { type: 'tts_dashscope', base_url: 'https://d/api/v1', api_key: 'k', tts_model: 'old', tts_voice: 'v' };
+  validateConfig(cfg);
+  const prev = process.env.TTS_PROVIDER_KEY;
+  try {
+    process.env.TTS_PROVIDER_KEY = 'qwen3_tts';
+    assert.equal(loadModelCatalog({ store: { load: () => cfg } }).tts.key, 'qwen3_tts');
+  } finally {
+    if (prev === undefined) delete process.env.TTS_PROVIDER_KEY; else process.env.TTS_PROVIDER_KEY = prev;
+  }
+});

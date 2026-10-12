@@ -105,5 +105,8 @@ test('shipped config/providers.yaml template is a valid v2 config with a catalog
   assert.equal(catalog.active.ref, 'qwen35_plus/qwen3.5-plus');
   assert.ok(catalog.resolve('deepseek/deepseek-reasoner').reasoning);
   assert.equal(catalog.enabled.length, 3);
-  assert.equal(catalog.tts.key, 'qwen3_tts');
+  assert.equal(catalog.tts.key, 'qwen_tts');
+  assert.equal(catalog.tts.tts_model, 'qwen3-tts-flash');
+  assert.equal(catalog.tts.tts_realtime_model, 'qwen3-tts-flash-realtime');
+  assert.equal(cfg.voice.active_tts, 'qwen_tts');
 });

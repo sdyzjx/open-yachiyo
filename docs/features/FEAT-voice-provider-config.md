@@ -64,4 +64,4 @@ providers:
 
 ## 6. 测试用例
 
-见 `docs/testing/TC-voice-provider-config.md`：TC-VOC-001 … TC-VOC-005（schema 与解析）、TC-VOC-010 … TC-VOC-016（运行时客户端）、TC-VOC-020 … TC-VOC-023（消费方切换）。
+见 `docs/testing/TC-voice-provider-config.md`：TC-VOC-001 … TC-VOC-006（schema 与解析）、TC-VOC-010 … TC-VOC-016（运行时客户端）、TC-VOC-020 … TC-VOC-023（消费方切换）。
