@@ -103,4 +103,4 @@ function loadModelCatalog({ store = new ProviderConfigStore() } = {}) {
   };
 }
 
-module.exports = { loadModelCatalog, toDescriptor };
+module.exports = { loadModelCatalog, toDescriptor, resolveVoiceProvider, resolveApiKey, TTS_TYPES, ASR_TYPES };
