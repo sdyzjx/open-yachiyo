@@ -101,9 +101,9 @@ flowchart TD
 | 工作流 | 状态 | 最新提交 | 备注 |
 |---|---|---|---|
 | 统筹：文档整理 + AGENT.md | done | 608edd7 | |
-| 统筹：实验 + 契约 + 施工文档 | in progress | | |
-| WS1 | pending | | |
-| WS2 | pending | | |
-| WS3 | pending | | |
-| WS4 | pending | | |
-| WS5 | pending | | |
+| 统筹：实验 + 契约 + 施工文档 + 接口桩 | done | 0c2b84b | |
+| WS1 | in progress | | Codex，2026-10-12 启动 |
+| WS2 | in progress | | Sonnet，2026-10-12 启动 |
+| WS3 | in progress | | Codex，2026-10-12 启动 |
+| WS4 | in progress | | Sonnet，2026-10-12 启动 |
+| WS5 | in progress | | Sonnet，2026-10-12 启动 |
