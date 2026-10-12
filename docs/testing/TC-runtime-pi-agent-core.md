@@ -17,3 +17,5 @@
 | TC-PI-005 | 工具上下文与 schema | unit | 真 ToolExecutor | 执行 echo 和非法参数 | 上下文传递正确、非法参数拒绝 | toolBridge.test.js: TC-PI-005 bridge preserves schema, permission, trace, workspace and publishEvent |
 | TC-PI-006 | 权限拒绝与取消 | unit | low 会话 | 调 memory_write、取消后执行 | 不执行工具，pi 收到异常 | toolBridge.test.js: TC-PI-006 permission rejection becomes a pi tool error without executing |
 | TC-PI-007 | 截图附件 | unit | 临时离线图像 | 调 capture bridge | 返回 text + image | toolBridge.test.js: TC-PI-007 desktop capture result includes an actual image block |
+| TC-PI-008 | 设备工具动态刷新 | unit | 假 EventEmitter Hub | 注册后变更、取下一快照 | 新快照撤销工具、旧快照路由稳定、释放订阅 | deviceTools.test.js: TC-PI-008 device tools refresh next snapshot and preserve in-flight definitions |
+| TC-PI-009 | 总线与 Avatar 权限 | unit | 假 Hub/controller | 发布合法/非法主题、移交、deny | 非法发布拒绝，移交参数保留 | deviceTools.test.js: TC-PI-009 bus namespace, schema, policy and avatar routing are enforced |

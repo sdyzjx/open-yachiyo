@@ -33,3 +33,5 @@
 模型适配已实现：C4 descriptor 转为 pi 模型，支持 reasoning、compat、headers、extra_body、请求超时/重试和 model_ref 优先的去重回退链。凭证仅驻留内存；ESM 加载统一缓存。
 
 工具桥已实现：所有注册表工具经 executor.execute 执行，参数 JSON Schema、权限、workspace、trace 与 publishEvent 上下文保留；失败抛给 pi，截图附加 image 内容块。
+
+设备工具在请求边界刷新，支持 tools.changed 通知和显式释放订阅。bus_publish 仅接受 plugin./avatar./ui./task.；avatar_status 查询 host/devices，avatar_transfer 经注入的服务端控制器执行，未装配时明确失败。

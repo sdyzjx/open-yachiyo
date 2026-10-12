@@ -83,3 +83,7 @@ loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模�
 ### 任务 3
 
 全注册表工具桥、权限/参数失败与截图附件完成；`npm run test:ci` 518 / 518 通过（含下一任务准备的两个设备用例）。
+
+### 任务 4
+
+设备快照动态刷新、总线前缀与 policy 检查、可注入 Avatar 控制器完成；`npm run test:ci` 518 / 518 通过。生产 Avatar transfer 装配仍等待统筹确认 WS3 服务端入口。
