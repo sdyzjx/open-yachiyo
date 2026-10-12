@@ -7,6 +7,8 @@
   'use strict';
 
   const Layout = global.YachiyoLayout;
+  const TRACE_PARAMS = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamBodyAngleX', 'ParamBodyAngleY', 'ParamBodyAngleZ',
+    'ParamBodyUpper', 'ParamBreath', 'ParamEyeBallX', 'ParamEyeBallY'];
 
   class Stage {
     constructor({ container, log = () => {}, onContextLost = () => {} }) {
@@ -25,6 +27,44 @@
       this.mouth = { active: false, open: 0, form: 0, defaults: null };
       this.contextLost = false;
       this.hookDetach = null;
+      global.__yachiyoStage = this;  // debug handle (CDP): __yachiyoStage.startTrace()/stopTrace()
+      this.trace = null;             // debug-only per-frame trace (off by default, see startTrace)
+    }
+
+    // Debug-only: per-frame trace of the values actually fed to the model (EXP-20261013-live2d-body-twitch).
+    // Off unless ?trace=1 is in the page URL or startTrace() is called (e.g. over CDP). Costs nothing when off.
+    startTrace(params) {
+      const ids = this.model && this.model.internalModel.coreModel.getParameterIds ? this.model.internalModel.coreModel.getParameterIds() : [];
+      if (!params) params = ids.length ? ids : TRACE_PARAMS;
+      this.trace = { params: params.slice(), rows: [], events: [], t0: performance.now(), pending: null };
+      return true;
+    }
+
+    stopTrace() {
+      const t = this.trace;
+      this.trace = null;
+      return t ? { params: t.params, rows: t.rows, events: t.events } : null;
+    }
+
+    traceEvent(type, detail) {
+      if (this.trace) this.trace.events.push({ t: performance.now() - this.trace.t0, type, ...detail });
+    }
+
+    traceFrame() {
+      const tr = this.trace;
+      const im = this.model && this.model.internalModel;
+      if (!tr || !im) return;
+      const core = im.coreModel;
+      const st = im.motionManager && im.motionManager.state;
+      const row = {
+        t: performance.now() - tr.t0,
+        dt: tr.pending ? tr.pending.dt : 0,
+        raw: tr.pending ? tr.pending.raw : 0,
+        grp: st ? `${st.currentGroup || ''}:${st.currentIndex === undefined ? '' : st.currentIndex}:${st.currentPriority}` : '',
+        ov: this.overlays.size,
+        v: tr.params.map((n) => Math.round(core.getParameterValueById(n) * 1e4) / 1e4)
+      };
+      tr.rows.push(row);
     }
 
     async init() {
@@ -72,6 +112,7 @@
       this.content = this.measureContent();
       this.bindHook();
       this.wrapUpdate();
+      try { if (/[?&]trace=1\b/.test(global.location && global.location.search)) this.startTrace(); } catch { /* ignore */ }
       this.log('info', `model loaded in ${Math.round(performance.now() - t0)} ms @${quality}, content ${JSON.stringify(this.content)}`);
       return { loadMs: performance.now() - t0, content: this.content };
     }
@@ -115,14 +156,16 @@
       this.skipUpdate = false;
       im.update = (dt, now) => {
         if (this.skipUpdate) { this.skipped += dt; return; }
-        orig(dt + this.skipped, now);
+        const total = dt + this.skipped;
+        if (this.trace) this.trace.pending = { dt: total, raw: dt };
+        orig(total, now);
         this.skipped = 0;
       };
     }
 
     bindHook() {
       const im = this.model.internalModel;
-      const handler = () => this.applyOverrides();
+      const handler = () => { this.applyOverrides(); if (this.trace) this.traceFrame(); };
       im.on('beforeModelUpdate', handler);
       this.hookDetach = () => { if (im.off) im.off('beforeModelUpdate', handler); };
     }
@@ -155,11 +198,13 @@
     }
 
     setParam(name, value) {
+      this.traceEvent('setParam', { name, value });
       const o = this.overlays.get(name);
       if (o) { o.target = value; o.goal = 1; } else this.overlays.set(name, { target: value, weight: 0, goal: 1 });
     }
 
     releaseParams(names) {
+      this.traceEvent('releaseParams', { names: names || 'all' });
       for (const [name, o] of this.overlays) { if (!names || names.includes(name)) o.goal = 0; }
     }
 

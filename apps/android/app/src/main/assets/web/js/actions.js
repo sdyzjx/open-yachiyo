@@ -27,12 +27,14 @@
       const model = requireModel();
       const n = String(name || '').trim();
       if (!n) throw rpcError(-32602, 'model.expression.set requires non-empty name');
+      stage.traceEvent('expression', { name: n });
       model.expression(n);
       return { ok: true, name: n };
     }
 
     function resetExpressionRaw() {
       const mgr = stage.model && stage.model.internalModel.motionManager.expressionManager;
+      stage.traceEvent('resetExpression', {});
       if (mgr && mgr.resetExpression) mgr.resetExpression();
     }
 
@@ -42,6 +44,7 @@
       if (!group) throw rpcError(-32602, 'model.motion.play requires non-empty group');
       const hasIndex = params && Object.prototype.hasOwnProperty.call(params, 'index') && params.index !== undefined;
       if (hasIndex && !Number.isInteger(Number(params.index))) throw rpcError(-32602, 'model.motion.play index must be integer');
+      stage.traceEvent('motion', { group, index: hasIndex ? Number(params.index) : null });
       if (hasIndex) model.motion(group, Number(params.index)); else model.motion(group);
       return { ok: true, group, index: hasIndex ? Number(params.index) : null };
     }
