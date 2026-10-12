@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1d2233">
+  <title>Yachiyo</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body data-mode="normal" data-landscape="0" data-pos="top">
+  <div id="bg"></div>
+  <div id="stage"></div>
+
+  <aside id="widgets-panel" class="panel panel-left" aria-label="桌面组件">
+    <header class="panel-head"><h2>桌面组件</h2><button id="widgets-edit" class="chip" type="button">编辑</button></header>
+    <div class="panel-scroll"><div id="widgets-grid" class="widget-grid"></div><p id="widgets-empty" class="empty">还没有桌面组件<br>在设置里导入 .yplug 插件</p></div>
+  </aside>
+  <aside id="apps-panel" class="panel panel-right" aria-label="插件">
+    <header class="panel-head"><h2>插件</h2></header>
+    <div class="panel-scroll"><div id="apps-grid" class="app-grid"></div><p id="apps-empty" class="empty">还没有插件应用<br>在设置里导入 .yplug 插件</p></div>
+  </aside>
+
+  <section id="canvas" class="task-canvas" aria-live="polite"></section>
+
+  <div id="away" class="away" hidden>
+    <div class="away-card">
+      <div class="away-title">八千代在<span id="away-where">电脑</span>上</div>
+      <button id="away-call" class="btn-primary" type="button">叫她过来</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="hub-dot" class="hub-dot" title="网关连接状态"></div>
+    <button id="btn-settings" class="hud-btn hud-settings" type="button" aria-label="设置">
+      <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zm7.4-2.5c.05-.33.1-.66.1-1s-.05-.67-.1-1l2.1-1.65-2-3.46-2.5 1a7.6 7.6 0 0 0-1.7-1L15 4.2h-4l-.3 2.7a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.46L6.6 11c-.05.33-.1.66-.1 1s.05.67.1 1l-2.1 1.65 2 3.46 2.5-1c.5.4 1.1.75 1.7 1l.3 2.7h4l.3-2.7c.6-.25 1.2-.6 1.7-1l2.5 1 2-3.46L19.4 13z" fill="currentColor"/></svg>
+    </button>
+    <button id="btn-chat" class="hud-btn hud-chat" type="button" aria-label="输入">
+      <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="currentColor"/></svg>
+    </button>
+    <button id="btn-mic" class="hud-btn hud-mic" type="button" aria-label="按住说话">
+      <svg viewBox="0 0 24 24"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15zm6-3.5a6 6 0 0 1-12 0H4.5a7.5 7.5 0 0 0 6.75 7.46V22h1.5v-3.04A7.5 7.5 0 0 0 19.5 11.5z" fill="currentColor"/></svg>
+      <span id="mic-level" class="mic-level"></span>
+    </button>
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input id="chat-text" type="text" enterkeyhint="send" placeholder="对八千代说点什么…">
+      <button type="submit" class="btn-primary">发送</button>
+    </form>
+  </div>
+
+  <div id="lock-clock" class="lock-clock"><div id="lock-time"></div><div id="lock-date"></div></div>
+  <button id="btn-unlock" class="chip unlock" type="button">上滑或点此解锁</button>
+
+  <section id="sheet" class="sheet">
+    <header class="sheet-bar">
+      <button id="sheet-close" class="chip" type="button">关闭</button>
+      <span id="sheet-title" class="sheet-title"></span>
+      <button id="sheet-expand" class="chip" type="button">全屏</button>
+    </header>
+    <div id="sheet-body" class="sheet-body"></div>
+  </section>
+
+  <section id="drawer" class="drawer">
+    <div class="drawer-handle"></div>
+    <input id="drawer-search" type="search" placeholder="搜索应用">
+    <div id="drawer-list" class="drawer-list"></div>
+  </section>
+
+  <div id="menu" class="menu" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="js/nativeShim.js"></script>
+  <script src="js/topics.js"></script>
+  <script src="js/bridge.js"></script>
+  <script src="js/mockNative.js"></script>
+  <script src="/generated/lib/pixi.min.js"></script>
+  <script src="/generated/lib/live2dcubismcore.min.js"></script>
+  <script src="/generated/lib/cubism4.min.js"></script>
+  <script src="/generated/shared/live2dActionMessage.js"></script>
+  <script src="/generated/shared/live2dActionMutex.js"></script>
+  <script src="/generated/shared/live2dActionQueuePlayer.js"></script>
+  <script src="/generated/shared/live2dActionExecutor.js"></script>
+  <script src="/generated/shared/lipsyncViseme.js"></script>
+  <script src="/generated/shared/lipsyncMouthTransition.js"></script>
+  <script src="/generated/shared/realtimeVoicePlayer.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/transfer.js"></script>
+  <script src="js/pluginProtocol.js"></script>
+  <script src="js/pluginGrid.js"></script>
+  <script src="js/stage.js"></script>
+  <script src="js/actions.js"></script>
+  <script src="js/lipsync.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/canvas.js"></script>
+  <script src="js/pluginHost.js"></script>
+  <script src="js/launcher.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

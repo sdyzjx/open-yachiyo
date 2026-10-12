@@ -1,0 +1,12 @@
+{
+  "id": "com.yachiyo.clock",
+  "name": "时钟",
+  "version": "1.0.0",
+  "type": "widget",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "description": "时钟，并显示八千代当前正在执行的任务。",
+  "sdk": 1,
+  "widget": { "w": 4, "h": 2, "min_w": 2, "min_h": 1, "max_w": 4, "max_h": 3 },
+  "permissions": [ "bus.subscribe:task.*" ]
+}
