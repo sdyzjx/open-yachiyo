@@ -128,3 +128,28 @@ test('qwen realtime tts client streams events and returns stats', async () => {
     else delete process.env.DASHSCOPE_API_KEY;
   }
 });
+
+test('TC-VOC-022 realtime client exposes streamSynthesis only when the active provider supports realtime', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qwen-tts-rt-gate-'));
+  const write = (voiceLine) => {
+    const configPath = path.join(tmpDir, 'providers.yaml');
+    fs.writeFileSync(configPath, [
+      'version: 2', 'active_model: c/m', voiceLine, 'providers:',
+      '  c: { type: openai_compatible, base_url: "https://x/v1", model: m, api_key: k }',
+      '  oai: { type: tts_openai_compatible, base_url: "https://o/v1", api_key: k, tts_model: tts-1, tts_voice: alloy }',
+      '  qwen: { type: tts_dashscope, base_url: "https://d/api/v1", api_key: k, tts_model: a, tts_voice: v, tts_realtime_model: rt }'
+    ].join('\n'));
+    return configPath;
+  };
+  const prev = process.env.PROVIDER_CONFIG_PATH;
+  try {
+    process.env.PROVIDER_CONFIG_PATH = write('voice: { active_tts: qwen }');
+    const client = new QwenTtsRealtimeClient({ WebSocketImpl: FakeRealtimeSocket });
+    assert.equal(typeof client.streamSynthesis, 'function');
+    write('voice: { active_tts: oai }');
+    assert.equal(client.streamSynthesis, undefined);
+    assert.equal(client.supportsRealtime(), false);
+  } finally {
+    if (prev !== undefined) process.env.PROVIDER_CONFIG_PATH = prev; else delete process.env.PROVIDER_CONFIG_PATH;
+  }
+});

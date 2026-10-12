@@ -20,3 +20,7 @@
 | TC-VOC-014 | asr_openai_compatible 转写 | integration | mock /v1/audio/transcriptions | transcribe | multipart 含 wav/model/language | 同上 |
 | TC-VOC-015 | asr_dashscope 内联音频与 asr_model 兼容 | unit | 注入 fetchImpl | transcribe | 使用 compatible-mode；空文本 ASR_EMPTY；HTTP 错误 ASR_HTTP_ERROR | 同上 |
 | TC-VOC-016 | describeVoiceConfig 无密钥 | unit | provider 含 api_key/headers | describeVoiceConfig | JSON 不含任何密钥；has_api_key 布尔 | 同上 |
+| TC-VOC-020 | 手机播放 voiceRelay 按当前 provider 合成 | integration | PROVIDER_CONFIG_PATH 指向 tts_openai_compatible + mock 服务 | voiceRelay.handle | 手机收到 voice.play，音频来自 /v1/audio/speech | test/gateway/deviceHub/voiceRelay.test.js |
+| TC-VOC-021 | 桌面包装器对无远程 URL 的 provider 返回 data URL | unit | active_tts=tts_openai_compatible | QwenTtsClient.synthesizeNonStreaming / fetchAudioBuffer | audioUrl 为 data:；fetchAudioBuffer 解码；supportsRealtime=false | test/desktop-live2d/qwenTtsClient.test.js |
+| TC-VOC-022 | 实时 TTS 仅在 provider 支持时可用 | unit | 切换 voice.active_tts | 读取 realtime client 的 streamSynthesis | dashscope+实时模型为函数；其他为 undefined（桌面回退非流式） | test/desktop-live2d/qwenTtsRealtimeClient.test.js |
+| TC-VOC-023 | asrService 遵循 voice.active_asr | unit | 两个 ASR provider | loadAsrProvider | 返回 active_asr 指定项，model 兼容 asr_model | test/gateway/deviceHub/audioInput.test.js |
