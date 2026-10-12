@@ -9,7 +9,8 @@ function percentile(values, ratio) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
 }
 
-function summarize(snapshot, elapsedMs, mode) {
+function summarize(snapshot, hostElapsedMs, mode) {
+  const elapsedMs = Number(snapshot.elapsedMs) > 0 ? Number(snapshot.elapsedMs) : hostElapsedMs;
   const seconds = elapsedMs / 1000;
   const frames = snapshot.frameIntervals || [];
   const draws = snapshot.drawSamples || [];
@@ -18,6 +19,7 @@ function summarize(snapshot, elapsedMs, mode) {
   return {
     mode,
     elapsedMs,
+    hostElapsedMs,
     raf: { frames: snapshot.rafFrames, fps: snapshot.rafFrames / seconds, meanMs: mean(frames), p95Ms: percentile(frames, 0.95) },
     draw: { frames: snapshot.drawFrames, fps: snapshot.drawFrames / seconds, meanMs: mean(draws), p95Ms: percentile(draws, 0.95) },
     worker: {

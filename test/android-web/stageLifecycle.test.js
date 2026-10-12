@@ -43,3 +43,22 @@ test('TC-AWB-030 stage discards a model whose async load outlives its generation
   assert.equal(modelDestroyed, 1, 'stale model resources are released');
   assert.equal(stage.model, null);
 });
+
+test('TC-AWB-025 performance snapshot measures elapsed time in the page clock', () => {
+  let clock = 100;
+  const sandbox = {
+    Map, Promise, setTimeout, clearTimeout,
+    performance: { now: () => clock },
+    PIXI: { live2d: { Live2DModel: {} } }
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  const file = path.join(__dirname, '../../apps/android/app/src/main/assets/web/js/stage.js');
+  vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: file });
+  const stage = new sandbox.YachiyoStage({
+    container: { getBoundingClientRect: () => ({ width: 1, height: 1 }) }
+  });
+  stage.beginPerformanceSample();
+  clock = 355;
+  assert.equal(stage.performanceSnapshot().elapsedMs, 255);
+});

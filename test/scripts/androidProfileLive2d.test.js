@@ -13,13 +13,16 @@ test('Live2D profiler reports rAF, draw, and worker rates separately', () => {
   assert.equal(percentile([1, 2, 9, 3], 0.95), 9);
   const report = summarize({
     rafFrames: 300, drawFrames: 90, workerFrames: 88,
+    elapsedMs: 4000,
     frameIntervals: [16, 17], drawSamples: [5, 7], workerSamples: [31, 35],
     workerReady: true, workerActive: true, workerFailed: false,
     gl: { drawCalls: 123 }
   }, 5000, 'continuous-swipe');
-  assert.equal(report.raf.fps, 60);
-  assert.equal(report.draw.fps, 18);
-  assert.equal(report.worker.fps, 17.6);
+  assert.equal(report.elapsedMs, 4000);
+  assert.equal(report.hostElapsedMs, 5000);
+  assert.equal(report.raf.fps, 75);
+  assert.equal(report.draw.fps, 22.5);
+  assert.equal(report.worker.fps, 22);
   assert.equal(report.worker.p95Ms, 35);
   assert.equal(report.mode, 'continuous-swipe');
   assert.equal(report.gl.drawCalls, 123);

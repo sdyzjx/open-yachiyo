@@ -44,7 +44,7 @@ sequenceDiagram
 
 参数、部件和 drawable typed array 通过 transferable buffer 循环复用。Worker 为 7 MiB 生产 moc 预留 64 MiB Core heap；销毁时释放 model 与 moc，主线程等待确认并有 250 ms terminate 兜底。
 
-页面提供只读采样钩子 `window.__yachiyoPerf.begin()` / `snapshot()`。`scripts/android-profile-live2d.js` 通过命令行显式传入的 CDP forward 端口读取它，不在产品中写死调试地址。
+页面提供只读采样钩子 `window.__yachiyoPerf.begin()` / `snapshot()`。begin/snapshot 在页面内用同一个 `performance.now()` 时钟计算 `elapsedMs`，脚本以该值计算 rAF、draw 与 Worker 频率；主机墙钟只作为 CDP 排队诊断字段。`scripts/android-profile-live2d.js` 通过命令行显式传入的 CDP forward 端口读取它，不在产品中写死调试地址。
 
 ## 4. 配置项
 

@@ -26,7 +26,10 @@
       this.performanceProfile = performanceProfile;
       this.coreBridge = null;
       this.rendererOptimization = null;
-      this.metrics = { rafFrames: 0, drawFrames: 0, frameIntervals: [], drawSamples: [], lastFrameAt: 0, workerFrameBase: 0 };
+      this.metrics = {
+        rafFrames: 0, drawFrames: 0, frameIntervals: [], drawSamples: [], lastFrameAt: 0,
+        workerFrameBase: 0, sampleStartedAt: 0
+      };
       this.generation = 0;
     }
 
@@ -212,6 +215,7 @@
       this.metrics.frameIntervals.length = 0;
       this.metrics.drawSamples.length = 0;
       this.metrics.lastFrameAt = 0;
+      this.metrics.sampleStartedAt = performance.now();
       this.metrics.workerFrameBase = this.coreBridge ? this.coreBridge.state.frames : 0;
       if (this.coreBridge) this.coreBridge.state.workerSamples.length = 0;
       if (this.rendererOptimization) this.rendererOptimization.resetStats();
@@ -220,6 +224,7 @@
     performanceSnapshot() {
       const worker = this.coreBridge && this.coreBridge.state;
       return {
+        elapsedMs: this.metrics.sampleStartedAt ? performance.now() - this.metrics.sampleStartedAt : 0,
         rafFrames: this.metrics.rafFrames,
         drawFrames: this.metrics.drawFrames,
         frameIntervals: this.metrics.frameIntervals.slice(),
