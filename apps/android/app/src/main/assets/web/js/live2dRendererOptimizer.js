@@ -19,10 +19,12 @@
       const vertexArray = model.getDrawableVertices(i);
       const uvArray = model.getDrawableVertexUvs(i);
       const indexArray = model.getDrawableVertexIndices(i);
+      if (vertexArray.length !== uvArray.length || vertexArray.length % 2 !== 0) return null;
       const entry = {
         vertexArray, uvArray, indexArray,
         vertexValueOffset: vertexValues,
-        vertexByteOffset: vertexValues * Float32Array.BYTES_PER_ELEMENT,
+        vertexIndexOffset: vertexValues / 2,
+        interleavedByteOffset: vertexValues / 2 * 4 * Float32Array.BYTES_PER_ELEMENT,
         indexValueOffset: indexValues,
         indexByteOffset: indexValues * Uint16Array.BYTES_PER_ELEMENT
       };
@@ -31,11 +33,15 @@
       vertexValues += vertexArray.length;
       indexValues += indexArray.length;
     }
-    const packedVertices = new Float32Array(vertexValues);
-    const packedUvs = new Float32Array(vertexValues);
+    const packedInterleaved = new Float32Array(vertexValues * 2);
     const packedIndices = new Uint16Array(indexValues);
     for (const entry of entries) {
-      packedUvs.set(entry.uvArray, entry.vertexValueOffset);
+      let packedOffset = entry.vertexIndexOffset * 4;
+      for (let i = 0; i < entry.vertexArray.length; i += 2) {
+        packedInterleaved[packedOffset + 2] = entry.uvArray[i];
+        packedInterleaved[packedOffset + 3] = entry.uvArray[i + 1];
+        packedOffset += 4;
+      }
       packedIndices.set(entry.indexArray, entry.indexValueOffset);
     }
 
@@ -70,25 +76,31 @@
     renderer.drawModel = function (...args) {
       const gl = this.gl;
       if (!gl || detached || disabled) return originalDrawModel.apply(this, args);
-      for (const entry of entries) packedVertices.set(entry.vertexArray, entry.vertexValueOffset);
+      for (const entry of entries) {
+        let packedOffset = entry.vertexIndexOffset * 4;
+        for (let i = 0; i < entry.vertexArray.length; i += 2) {
+          packedInterleaved[packedOffset] = entry.vertexArray[i];
+          packedInterleaved[packedOffset + 1] = entry.vertexArray[i + 1];
+          packedOffset += 4;
+        }
+      }
       if (!initialized) {
         buffers.vertex = gl.createBuffer();
-        buffers.uv = gl.createBuffer();
+        buffers.uv = buffers.vertex;
         buffers.index = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
-        gl.bufferData(gl.ARRAY_BUFFER, packedVertices.byteLength, gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.uv);
-        gl.bufferData(gl.ARRAY_BUFFER, packedUvs, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, packedInterleaved, gl.DYNAMIC_DRAW);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, packedIndices, gl.STATIC_DRAW);
-        stats.bufferUploads += 3;
-        stats.bufferUploadBytes += packedVertices.byteLength + packedUvs.byteLength + packedIndices.byteLength;
+        stats.bufferUploads += 2;
+        stats.bufferUploadBytes += packedInterleaved.byteLength + packedIndices.byteLength;
         initialized = true;
+      } else {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, packedInterleaved);
+        stats.bufferUploads += 1;
+        stats.bufferUploadBytes += packedInterleaved.byteLength;
       }
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, packedVertices);
-      stats.bufferUploads += 1;
-      stats.bufferUploadBytes += packedVertices.byteLength;
 
       const native = {
         bindBuffer: gl.bindBuffer,
@@ -108,11 +120,12 @@
         uniformMatrix4fv: gl.uniformMatrix4fv
       };
       let activeProgram = null;
-      let boundArrayBuffer = null;
+      let boundArrayBuffer = buffers.vertex;
+      let attributeSource = null;
       let activeTexture = null;
       let blend = null;
       let frontFace = null;
-      const boundBuffers = new Map();
+      const boundBuffers = new Map([[gl.ARRAY_BUFFER, buffers.vertex]]);
       const boundTextures = new Map();
       const capabilities = new Map();
       const enabledAttributes = new Set();
@@ -136,7 +149,10 @@
           return native.bindBuffer.call(gl, target, buffer);
         };
         gl.bufferData = function (target, data, usage) {
-          if (current && (data === current.vertexArray || data === current.uvArray || data === current.indexArray)) return undefined;
+          if (current && data === current.vertexArray) { attributeSource = 'position'; return undefined; }
+          if (current && data === current.uvArray) { attributeSource = 'uv'; return undefined; }
+          if (current && data === current.indexArray) { attributeSource = null; return undefined; }
+          attributeSource = null;
           return native.bufferData.call(gl, target, data, usage);
         };
         gl.useProgram = function (program) {
@@ -222,8 +238,13 @@
           return native.uniformMatrix4fv.call(gl, location, transpose, values);
         };
         gl.vertexAttribPointer = function (index, size, type, normalized, stride, offset) {
-          const packed = current && (boundArrayBuffer === buffers.vertex || boundArrayBuffer === buffers.uv);
-          return native.vertexAttribPointer.call(gl, index, size, type, normalized, stride, packed ? current.vertexByteOffset : offset);
+          const packed = current && boundArrayBuffer === buffers.vertex && attributeSource;
+          const packedStride = 4 * Float32Array.BYTES_PER_ELEMENT;
+          const packedOffset = packed
+            ? current.interleavedByteOffset + (attributeSource === 'uv' ? 2 * Float32Array.BYTES_PER_ELEMENT : 0)
+            : offset;
+          attributeSource = null;
+          return native.vertexAttribPointer.call(gl, index, size, type, normalized, packed ? packedStride : stride, packedOffset);
         };
         gl.drawElements = function (mode, drawCount, type, offset) {
           stats.drawCalls += 1;
@@ -266,7 +287,7 @@
       renderer.drawModel = originalDrawModel;
       renderer._bufferData = originalBufferData;
       const gl = renderer.gl;
-      if (gl) for (const buffer of Object.values(buffers)) { if (buffer) gl.deleteBuffer(buffer); }
+      if (gl) for (const buffer of new Set(Object.values(buffers))) { if (buffer) gl.deleteBuffer(buffer); }
       buffers.vertex = null;
       buffers.uv = null;
       buffers.index = null;

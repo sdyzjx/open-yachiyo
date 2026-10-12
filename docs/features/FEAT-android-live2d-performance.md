@@ -30,7 +30,7 @@ sequenceDiagram
   end
 ```
 
-渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部顶点、UV 和 index 分别使用一个 packed buffer；UV/index 只初始化一次，position 每个显示帧一次 `bufferSubData`。每个模型 draw pass 还记录当前 program、buffer、texture、blend、cull、front-face、attribute 与 uniform，仅省略该 pass 内值完全相同的后续 WebGL 状态调用；下一 pass 从未知状态重新建立缓存。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。启动超过 12 秒或单帧超过 3 秒没有响应也会终止 Worker 并回退；页面进入后台时暂停计时，恢复可见后重新开始完整截止期。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
+渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部 position/UV 交错存入一个 dynamic VBO，index 使用一个 static EBO；position 与 UV attribute 使用 16-byte stride 和各 drawable 的独立 offset。首帧初始化两份 buffer，后续每个显示帧用一次 `bufferSubData` 上传完整交错 VBO，模型 pass 内不再在 position/UV buffer 间切换。每个模型 draw pass 还记录当前 program、buffer、texture、blend、cull、front-face、attribute 与 uniform，仅省略该 pass 内值完全相同的后续 WebGL 状态调用；下一 pass 从未知状态重新建立缓存。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。启动超过 12 秒或单帧超过 3 秒没有响应也会终止 Worker 并回退；页面进入后台时暂停计时，恢复可见后重新开始完整截止期。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
 
 ## 3. 接口与协议
 

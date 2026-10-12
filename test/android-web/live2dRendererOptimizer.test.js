@@ -10,6 +10,7 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
   const indices = [new Uint16Array([0, 1, 0]), new Uint16Array([0, 1, 2])];
   const calls = {
     bufferData: 0, bufferSubData: 0, useProgram: [], offsets: [], attribOffsets: [], deleted: 0, passes: 0,
+    attribStrides: [], uploads: [], subUploads: [],
     activeTexture: 0, bindTexture: 0, blend: 0, enable: 0, disable: 0, frontFace: 0,
     enableAttribute: 0, uniform1i: 0, uniform4f: 0, uniformMatrix: 0
   };
@@ -21,8 +22,8 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
     ARRAY_BUFFER: 1, ELEMENT_ARRAY_BUFFER: 2, DYNAMIC_DRAW: 3, STATIC_DRAW: 4,
     TEXTURE0: 5, TEXTURE1: 6, TEXTURE_2D: 7, CULL_FACE: 8, CCW: 9, CW: 10,
     createBuffer: () => ({}), bindBuffer() {},
-    bufferData() { calls.bufferData += 1; },
-    bufferSubData() { calls.bufferSubData += 1; },
+    bufferData(target, data) { calls.bufferData += 1; if (ArrayBuffer.isView(data)) calls.uploads.push(Array.from(data)); },
+    bufferSubData(target, offset, data) { calls.bufferSubData += 1; calls.subUploads.push(Array.from(data)); },
     useProgram(program) { calls.useProgram.push(program); },
     activeTexture() { calls.activeTexture += 1; },
     bindTexture() { calls.bindTexture += 1; },
@@ -34,7 +35,9 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
     uniform1i() { calls.uniform1i += 1; },
     uniform4f() { calls.uniform4f += 1; },
     uniformMatrix4fv() { calls.uniformMatrix += 1; },
-    vertexAttribPointer(index, size, type, normalized, stride, offset) { calls.attribOffsets.push(offset); },
+    vertexAttribPointer(index, size, type, normalized, stride, offset) {
+      calls.attribStrides.push(stride); calls.attribOffsets.push(offset);
+    },
     drawElements(mode, count, type, offset) { calls.offsets.push(offset); },
     deleteBuffer() { calls.deleted += 1; }
   };
@@ -43,7 +46,7 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
     gl, _bufferData: originalBufferData,
     getClippingContextBufferForMask: () => null,
     drawMesh(texture, count, verticesCount, indexArray, vertexArray, uvArray, opacity) {
-    gl.enable(gl.CULL_FACE);
+      gl.enable(gl.CULL_FACE);
       if (texture === 1) gl.disable(gl.CULL_FACE);
       gl.frontFace(texture === 1 ? gl.CW : gl.CCW);
       gl.useProgram(texture === 1 ? 'mask-program' : 'program');
@@ -84,19 +87,27 @@ function fixture({ throwOnDraw = false, varyState = false } = {}) {
     getDrawableVertexUvs: (i) => uvs[i],
     getDrawableVertexIndices: (i) => indices[i]
   };
-  return { calls, gl, renderer, model, originalBufferData };
+  return { calls, gl, renderer, model, originalBufferData, vertices, uvs };
 }
 
 test('renderer optimizer packs model buffers and offsets each original draw without reordering', () => {
   const f = fixture();
   const installed = Optimizer.install(f.renderer, f.model);
   f.renderer.drawModel();
+  f.vertices[0][0] = 9;
   f.renderer.drawModel();
 
-  assert.equal(f.calls.bufferData, 3, 'packed position/UV/index storage is allocated once');
-  assert.equal(f.calls.bufferSubData, 2, 'all positions are uploaded once per model frame');
+  assert.equal(f.calls.bufferData, 2, 'interleaved position/UV and index storage are allocated once');
+  assert.equal(f.calls.bufferSubData, 1, 'subsequent frames upload one interleaved model buffer');
+  assert.deepEqual(f.calls.uploads[0], [
+    0, 0, 0, 0, 1, 1, 1, 1,
+    2, 2, 0, 0, 3, 3, 0.5, 0.5, 4, 4, 1, 1
+  ]);
+  assert.equal(f.calls.subUploads[0][0], 9, 'dynamic position is refreshed');
+  assert.equal(f.calls.subUploads[0][2], 0, 'static UV remains interleaved beside the position');
   assert.deepEqual(f.calls.offsets, [0, 6, 0, 6]);
-  assert.deepEqual(f.calls.attribOffsets, [0, 0, 16, 16, 0, 0, 16, 16]);
+  assert.deepEqual(f.calls.attribOffsets, [0, 8, 32, 40, 0, 8, 32, 40]);
+  assert.deepEqual(f.calls.attribStrides, new Array(8).fill(16));
   assert.deepEqual(f.calls.useProgram, ['program', null, 'program', null]);
   assert.equal(f.calls.activeTexture, 2, 'active texture is set once per model pass');
   assert.equal(f.calls.bindTexture, 2, 'unchanged texture binding is reused within each pass');
@@ -107,11 +118,12 @@ test('renderer optimizer packs model buffers and offsets each original draw with
   assert.equal(f.calls.uniform1i, 2, 'unchanged sampler uniform is reused within each pass');
   assert.equal(f.calls.uniformMatrix, 2, 'unchanged model matrix is reused within each pass');
   assert.equal(installed.stats.drawCalls, 4);
-  assert.equal(installed.stats.bufferUploads, 5);
+  assert.equal(installed.stats.bufferUploads, 3);
+  assert.equal(installed.stats.bufferBinds, 2, 'only the index buffer binds inside each model pass');
   assert.ok(installed.stats.stateCallsSkipped >= 18);
 
   installed.detach();
-  assert.equal(f.calls.deleted, 3);
+  assert.equal(f.calls.deleted, 2);
   assert.equal(f.renderer._bufferData, f.originalBufferData);
 });
 
@@ -160,4 +172,16 @@ test('renderer optimizer skips transparent non-mask drawables', () => {
   f.renderer.drawMesh(0, 3, 2, new Uint16Array(3), new Float32Array(4), new Float32Array(4), 0);
   assert.equal(draws, 0);
   assert.equal(installed.stats.transparentSkipped, 1);
+});
+
+test('renderer optimizer rejects a drawable whose UV layout cannot share the packed VBO', () => {
+  const f = fixture();
+  const originalDrawMesh = f.renderer.drawMesh;
+  const originalDrawModel = f.renderer.drawModel;
+  f.uvs[1] = new Float32Array([0, 0]);
+
+  assert.equal(Optimizer.install(f.renderer, f.model), null);
+  assert.equal(f.renderer.drawMesh, originalDrawMesh);
+  assert.equal(f.renderer.drawModel, originalDrawModel);
+  assert.equal(f.calls.bufferData, 0);
 });

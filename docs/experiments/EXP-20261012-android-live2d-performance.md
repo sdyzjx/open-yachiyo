@@ -72,7 +72,11 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 静止窗口执行 222574 次 draw，即每显示帧 400.31 次，另有每帧 59.23 次 program 变化；连续滑动为每帧 399.56 次 draw。截图显示模型和插件分屏完整，未见旧试验的静态撕裂。此轮没有连续帧录像，不能据此认定动态抽动已经消失。真实 draw 仍低于 60 FPS，因此该提交是显著改善但未达最终目标。
 
-下一候选保持每帧约 400 次真实 draw 和原 painter order，只在单个模型 pass 内缓存 WebGL 状态，省略相同的 buffer/texture/blend/cull/front-face/attribute/uniform 调用。缓存每 pass 重建，不复用 canvas 或降低 draw 频率；真机收益待复测。
+### 状态缓存候选 `02cf3f6`
+
+状态缓存候选保持每帧约 400 次真实 draw 和原 painter order，只在单个模型 pass 内省略值相同的 WebGL 状态调用。使用页面内同一 `performance.now()` 时钟复测 warm idle 10.025 秒：真实 draw/rAF 55.96 FPS，draw 平均 16.34 ms、P95 20.3 ms，Worker 18.06 Hz、平均 33.83 ms、P95 57.7 ms。561 帧共省略 2508026 次状态调用，即每帧约 4470 次；仍执行 224507 次 draw。该稳定值仍低于 60 FPS。
+
+下一候选把 position/UV 合为一个 16-byte stride 的交错 VBO，index 保持独立 EBO。每个显示帧上传的新网格增至约 425 KiB，但模型 pass 内不再为约 400 个 drawable 往返绑定 position/UV buffer；不复用 canvas、不降低 draw 频率，真机收益待复测。
 
 ## 结论与决策
 
@@ -80,7 +84,7 @@ resolution 1、1.25、1.5 的 rAF 分别为 20.30、20.42、20.43 FPS；降像�
 
 - 把约 29 ms 的 Cubism Core 网格求值移到 Worker，并用 transferable typed arrays 交付完整 drawable 状态。
 - 主线程保留逐帧 motion、表情、口型、呼吸、physics、相机和 WebGL draw；相邻 Worker 网格逐显示帧插值。
-- 把 position/UV/index 打包为三个 GPU buffer，保留 drawable 顺序与 mask 语义，减少逐 drawable 上传调用。
+- 把 position/UV 打包为一个交错 dynamic VBO、index 打包为一个 static EBO，保留 drawable 顺序与 mask 语义，减少逐 drawable 上传和 ARRAY_BUFFER 切换。
 - 在单个模型 pass 内去重值相同的 WebGL 状态调用，同时保留每个 drawable 的真实 draw。
 - 6 GiB 及以下设备的自动纹理为 2048，降低加载和显存压力；显式画质设置仍生效。
 - Worker 失败立即回退同步 Core；renderer 优化无法安装时回退原绘制路径。
