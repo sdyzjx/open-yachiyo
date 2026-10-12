@@ -99,6 +99,7 @@ flowchart TD
 ## 6. 统筹待办
 
 - [ ] **网关局域网加固**（WS3 合并后，统筹执行）：网关监听 `0.0.0.0`，`/api/config/*`、`/api/sessions*`、`/api/memory*` 等管理接口目前对局域网无鉴权，且既有 `GET /api/config/providers/config` 会返回内联 api_key。方案：非 loopback 请求必须携带 Device Hub `pairing_token`；`/api/config/providers/config` 与 `/raw` 对外脱敏。
+- [ ] **WS3 合并审查必查**：设备 `pub` 不得发布网关保留主题（`plugin.install`、`avatar.host.changed`、`avatar.transfer.*`（除 ready/exited/entered）、`sys.device.online/offline`、`voice.play`、`chat.delta/final`、`task.update`）；`/api/device/*`、`/api/config/models*` 增加 CORS（源 `https://appassets.androidplatform.net`）。
 - [ ] 合并时统一重新生成 `package-lock.json`（WS1 新增 pi 依赖）。
 
 ## 7. 进度
@@ -110,5 +111,5 @@ flowchart TD
 | WS1 | in progress | | Codex，2026-10-12 启动 |
 | WS2 | merged | 63504a1 | 统筹审查修复：/test 凭据外泄（63504a1）；538 测试通过 |
 | WS3 | in progress | | Codex，2026-10-12 启动 |
-| WS4 | in progress | | Sonnet，2026-10-12 启动 |
+| WS4 | review | d6cd0d6 | 审查发现：Bridge 注入到插件 iframe（越权）、插件推送 token 可外发；已退回修复 |
 | WS5 | in progress | | Sonnet，2026-10-12 启动 |
