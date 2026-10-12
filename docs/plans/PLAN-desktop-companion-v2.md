@@ -165,6 +165,14 @@ HTTP（D2，均为 loopback-only）：
 | 统筹：设计规范 + 本计划 | done | 06e6898 | |
 | D1 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
 | D2 | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
-| V | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
 | A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
 | T | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+
+## V 交付记录
+
+- 分支 `agent/v2-voice-providers`，提交：`8121d9e` schema/catalog；`voice 模块` 提交（`apps/runtime/voice/`）；`aaf8307` 消费方切换；模板与指南提交（见 `git log`）。
+- 完成：C8 全部——`voice.active_tts/active_asr`、`tts_openai_compatible`、ASR `model`（兼容 `asr_model`）、`modelCatalog.tts/asr` 解析顺序（active → `TTS_PROVIDER_KEY`(仅 TTS) → 第一个）；`apps/runtime/voice/{index,tts,asr,common}.js` 导出 `createTtsClient/createAsrClient/describeVoiceConfig`（签名同 §2，另支持可选 `providerKey`、`fetchImpl`，供 D2 `test-tts` 指定 key）；voiceRelay/asrService 改用新模块；`QwenTtsClient` 变薄包装（每次调用重新解析 provider；非 URL 型 provider 返回 `data:` URL）；实时客户端 `streamSynthesis` 为 getter，provider 不支持实时时为 `undefined`，桌面自动回退非流式。模板新增 `voice:`、`qwen_tts`、openai/asr 注释示例。B7 的后端部分完成。
+- `desktopSuite.js` 零改动（靠包装器与 getter 保持接口不变），不会与 D1 冲突。
+- 文档/用例：`FEAT-voice-provider-config.md`、`TC-voice-provider-config.md`（TC-VOC-001…006, 010…016, 020…023）、两份指南。`npm run test:ci` 685 全绿，`docs:lint` 通过。
+- 未完成/风险：`apps/runtime/tooling/adapters/voice.js`（Agent voice 工具）仍硬编码 `TTS_PROVIDER_KEY || qwen3_tts`，不在 V 的所属路径，建议后续让它改用 `createTtsClient`；声音克隆脚本 `--provider-key` 默认仍为 `qwen3_tts`；D2 需注意旧 `/api/config/providers/*` 写入口保存时会按新校验（含 `voice` 引用）拒绝悬空引用。

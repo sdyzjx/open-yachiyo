@@ -198,3 +198,18 @@ test('a rejected recording reports its start error once without Unknown stream n
   releaseAsr.resolve();
   await firstEnd;
 });
+
+test('TC-VOC-023 asrService loadAsrProvider honours voice.active_asr', () => {
+  const fsx = require('node:fs'); const os = require('node:os');
+  const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'asr-active-'));
+  const file = path.join(dir, 'providers.yaml');
+  fsx.writeFileSync(file, ['version: 2', 'active_model: c/m', 'voice: { active_asr: second }', 'providers:',
+    '  c: { type: openai_compatible, base_url: "https://x/v1", model: m, api_key: k }',
+    '  first: { type: asr_dashscope, base_url: "https://d/api/v1", api_key: k, model: a }',
+    '  second: { type: asr_openai_compatible, base_url: "https://o/v1", api_key: k, asr_model: legacy }'].join('\n'));
+  const prev = process.env.PROVIDER_CONFIG_PATH; process.env.PROVIDER_CONFIG_PATH = file;
+  try {
+    const provider = require('../../../apps/gateway/deviceHub/asrService').loadAsrProvider();
+    assert.equal(provider.key, 'second'); assert.equal(provider.model, 'legacy');
+  } finally { if (prev === undefined) delete process.env.PROVIDER_CONFIG_PATH; else process.env.PROVIDER_CONFIG_PATH = prev; }
+});

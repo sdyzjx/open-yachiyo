@@ -23,7 +23,9 @@ function isObject(value) {
 
 const CHAT_TYPES = ['openai_compatible', 'anthropic', 'google'];
 const ASR_TYPES = ['asr_openai_compatible', 'asr_dashscope'];
-const SUPPORTED_TYPES = [...CHAT_TYPES, 'tts_dashscope', ...ASR_TYPES];
+const TTS_TYPES = ['tts_dashscope', 'tts_openai_compatible'];
+const TTS_FORMATS = ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'];
+const SUPPORTED_TYPES = [...CHAT_TYPES, ...TTS_TYPES, ...ASR_TYPES];
 const DEFAULT_BASE_URLS = {
   anthropic: 'https://api.anthropic.com',
   google: 'https://generativelanguage.googleapis.com/v1beta'
@@ -67,6 +69,9 @@ function normalizeProvider(raw) {
   if (provider.base_url === undefined && DEFAULT_BASE_URLS[provider.type]) {
     provider.base_url = DEFAULT_BASE_URLS[provider.type];
   }
+  if (ASR_TYPES.includes(provider.type) && !nonEmptyString(provider.model) && nonEmptyString(provider.asr_model)) {
+    provider.model = provider.asr_model; // legacy field
+  }
   if (!CHAT_TYPES.includes(provider.type)) return provider;
 
   const presetModels = preset?.models || [];
@@ -105,12 +110,29 @@ function normalizeProviderConfig(config) {
     enabled_models: Array.isArray(config.enabled_models) ? [...config.enabled_models] : [],
     roles: isObject(config.roles) ? { ...config.roles } : {},
     fallback_models: Array.isArray(config.fallback_models) ? [...config.fallback_models] : [],
+    voice: isObject(config.voice) ? { ...config.voice } : {},
     providers
   };
 }
 
 function apiKeyOptional(provider) {
   return provider.requires_api_key === false || provider.auth === 'none' || provider.preset === 'ollama';
+}
+
+function validateVoiceSection(voice, providers) {
+  if (voice === undefined || voice === null) return;
+  if (!isObject(voice)) throw new Error('voice must be an object');
+  const rules = [['active_tts', TTS_TYPES, 'tts_*'], ['active_asr', ASR_TYPES, 'asr_*']];
+  for (const [field, types, label] of rules) {
+    const key = voice[field];
+    if (key === undefined || key === null) continue;
+    if (!nonEmptyString(key)) throw new Error(`voice.${field} must be a non-empty string`);
+    const provider = providers[key];
+    if (!provider) throw new Error(`voice.${field} references unknown provider: ${key}`);
+    if (!types.includes(provider.type)) {
+      throw new Error(`voice.${field} provider ${key} must be a ${label} type (got ${provider.type})`);
+    }
+  }
 }
 
 function validateConfig(config) {
@@ -143,7 +165,7 @@ function validateConfig(config) {
       throw new Error(`provider ${name} type must be one of: ${SUPPORTED_TYPES.join(', ')}`);
     }
 
-    if (CHAT_TYPES.includes(type) || type === 'asr_openai_compatible') {
+    if (CHAT_TYPES.includes(type) || type === 'asr_openai_compatible' || type === 'tts_openai_compatible') {
       if (!nonEmptyString(provider.base_url)) {
         throw new Error(`provider ${name} must define base_url`);
       }
@@ -176,12 +198,25 @@ function validateConfig(config) {
         throw new Error(`provider ${name} must define base_url`);
       }
     }
+    if (type === 'tts_openai_compatible') {
+      if (!nonEmptyString(provider.tts_model)) {
+        throw new Error(`provider ${name} must define tts_model`);
+      }
+      if (!nonEmptyString(provider.tts_voice)) {
+        throw new Error(`provider ${name} must define tts_voice`);
+      }
+      if (provider.format !== undefined && !TTS_FORMATS.includes(provider.format)) {
+        throw new Error(`provider ${name} format must be one of: ${TTS_FORMATS.join(', ')}`);
+      }
+    }
     const hasInlineKey = nonEmptyString(provider.api_key);
     const hasEnvKey = nonEmptyString(provider.api_key_env);
     if (!hasInlineKey && !hasEnvKey && !apiKeyOptional(provider)) {
       throw new Error(`provider ${name} must define api_key or api_key_env`);
     }
   }
+
+  validateVoiceSection(config.voice, providers);
 
   const known = new Set();
   for (const [name, provider] of Object.entries(providers)) {
@@ -259,5 +294,6 @@ module.exports = {
   splitModelRef,
   CHAT_TYPES,
   ASR_TYPES,
+  TTS_TYPES,
   SUPPORTED_TYPES
 };

@@ -1,9 +1,9 @@
 const WebSocket = require('ws');
 const { randomUUID } = require('node:crypto');
 
-const { ProviderConfigStore } = require('../../../runtime/config/providerConfigStore');
-
-const TTS_PROVIDER_KEY = process.env.TTS_PROVIDER_KEY || 'qwen3_tts';
+const { ProviderConfigStore, normalizeProviderConfig } = require('../../../runtime/config/providerConfigStore');
+const { realtimeModelOf } = require('../../../runtime/voice/tts');
+const { resolveVoiceProvider, TTS_TYPES } = require('../../../runtime/config/modelCatalog');
 
 function resolveApiKey(provider) {
   if (!provider || typeof provider !== 'object') return '';
@@ -73,10 +73,11 @@ class QwenTtsRealtimeClient {
   }
 
   loadProviderConfig() {
-    const config = this.providerStore.load();
-    const provider = config?.providers?.[TTS_PROVIDER_KEY];
-    if (!provider || provider.type !== 'tts_dashscope') {
-      const err = new Error(`tts provider ${TTS_PROVIDER_KEY} is missing or invalid`);
+    const config = normalizeProviderConfig(this.providerStore.load());
+    const picked = resolveVoiceProvider(config, TTS_TYPES, [config.voice?.active_tts, process.env.TTS_PROVIDER_KEY]);
+    const provider = picked ? config.providers[picked.key] : null;
+    if (!provider || provider.type !== 'tts_dashscope' || !realtimeModelOf(provider)) {
+      const err = new Error('active tts provider does not support realtime (needs tts_dashscope with tts_realtime_model)');
       err.code = 'TTS_CONFIG_MISSING';
       throw err;
     }
@@ -105,7 +106,23 @@ class QwenTtsRealtimeClient {
     };
   }
 
-  async streamSynthesis({
+  // True only when the active tts provider is tts_dashscope with a realtime model configured.
+  supportsRealtime() {
+    try {
+      this.loadProviderConfig();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Exposed as a getter so that `typeof client.streamSynthesis !== 'function'` (desktopSuite's
+  // realtime availability check) falls back to non-streaming when the active provider can't stream.
+  get streamSynthesis() {
+    return this.supportsRealtime() ? this.runStreamSynthesis.bind(this) : undefined;
+  }
+
+  async runStreamSynthesis({
     text,
     model,
     voice,
