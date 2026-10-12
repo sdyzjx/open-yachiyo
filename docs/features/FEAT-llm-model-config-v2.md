@@ -2,7 +2,7 @@
 
 > 类型: feature
 > 状态: active
-> 负责人: sonnet-ws2
+> 负责人: sonnet-ws2 / Codex
 > 更新: 2026-10-13
 > 关联: docs/features/FEAT-gateway-config-webui.md, docs/plans/PLAN-android-companion-contracts.md §C4, docs/plans/PLAN-android-ws2-llm-models.md, docs/testing/TC-llm-model-config-v2.md
 
@@ -24,6 +24,7 @@
 
 - `providerPresets.js`：`listPresets()`、`getPreset(id)`；预设 id：openai、deepseek、qwen、moonshot、zhipu、siliconflow、openrouter、ollama、anthropic、gemini、custom。provider 写 `preset: <id>` 即继承 type/base_url/api_key_env/models/compat。
 - `modelCatalog.loadModelCatalog({store})`：返回 `models/enabled/active/resolve/forRole/fallbackChain/tts/asr`（契约 C4.2）。描述符的 `headers/compat/extra_body/temperature` 为 provider 与模型级字段合并（模型级优先）；`api_key` 由 `api_key` 或 `api_key_env` 解析。
+- 描述符同时公开安全能力元数据 `input[]`、`output[]`、`transport=request|realtime` 与 `audio`。Qwen 预设包含 `qwen3.8-omni-flash` 和 `qwen3.8-omni-flash-realtime`。
 
 ### 3.2 运行时（legacy 循环）
 
@@ -56,7 +57,7 @@
 
 ### 3.4 配置页
 
-`/config-v2.html`（重构见 FEAT-gateway-config-webui）的「模型与路由」页：模型选择（启用/当前/按用途/回退链）、provider 列表与编辑器（预设添加、模型列表、发现模型、测试连接、保存/删除）。安全快照不展示 headers/extra_body 内容，页面只提示这些隐藏字段存在且在 patch 保存时保留。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。概览页同时展示当前模型与已启用模型数量。
+`/config-v2.html`（重构见 FEAT-gateway-config-webui）的「模型与路由」页：模型选择（启用/默认/按用途/回退链）、provider 列表与编辑器（预设添加、能力与 transport、Realtime URL、发现模型、测试连接、保存/删除）。安全快照不展示 headers/extra_body 内容，页面只提示这些隐藏字段存在且在 patch 保存时保留。所有动态文本使用 `textContent` 渲染；API Key 输入框不回显。概览页同时展示当前模型与已启用模型数量。
 
 ## 4. 配置项
 
@@ -68,8 +69,8 @@
 
 - `anthropic`/`google` 类型当前仅由 Model Catalog 描述，legacy 循环尚不直接调用，由 pi 核心（WS1）消费。
 
-- 模型目录、provider 编辑、选择与会话 `model_ref` API 只接受电脑 loopback；Android 不读取或修改模型配置。
+- Provider 编辑与默认/启用模型配置只接受电脑 loopback。Android 只通过 Device Hub 读取已启用模型的安全目录并为当前聊天选择 `model_ref`，不能读取或修改 provider、凭据、默认值或启用列表。
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-028，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-LLM-001 ~ TC-LLM-028、TC-LLM-040 ~ TC-LLM-042，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-016，见 `docs/testing/TC-gateway-config-webui.md`。

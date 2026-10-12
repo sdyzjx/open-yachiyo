@@ -186,7 +186,7 @@ class GatewayRuntimeClient {
     }
   }
 
-  async runInput({ input, permissionLevel, inputImages } = {}) {
+  async runInput({ input, permissionLevel, inputImages, modelRef } = {}) {
     const content = String(input || '').trim();
     const normalizedInputImages = normalizeInputImages(inputImages);
     if (!content && normalizedInputImages.length === 0) {
@@ -210,6 +210,9 @@ class GatewayRuntimeClient {
     }
     if (permissionLevel) {
       payload.params.permission_level = permissionLevel;
+    }
+    if (typeof modelRef === 'string' && modelRef.trim()) {
+      payload.params.model_ref = modelRef.trim();
     }
     void this.emitDebug('chain.electron.run.start', 'electron runInput start', {
       session_id: this.sessionId,

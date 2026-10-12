@@ -25,3 +25,5 @@
 | TC-VOC-021 | 桌面包装器对无远程 URL 的 provider 返回 data URL | unit | active_tts=tts_openai_compatible | QwenTtsClient.synthesizeNonStreaming / fetchAudioBuffer | audioUrl 为 data:；fetchAudioBuffer 解码；supportsRealtime=false | test/desktop-live2d/qwenTtsClient.test.js |
 | TC-VOC-022 | 实时 TTS 仅在 provider 支持时可用 | unit | 切换 voice.active_tts | 读取 realtime client 的 streamSynthesis | dashscope+实时模型为函数；其他为 undefined（桌面回退非流式） | test/desktop-live2d/qwenTtsRealtimeClient.test.js |
 | TC-VOC-023 | asrService 遵循 voice.active_asr | unit | 两个 ASR provider | loadAsrProvider | 返回 active_asr 指定项，model 兼容 asr_model | test/gateway/deviceHub/audioInput.test.js |
+| TC-VOC-024 | Qwen3.8 Omni 整段音频直通 | integration | 选择 `qwen3.8-omni-flash` | 手机上传 PCM 并结束录音 | WAV 以内联 `input_audio` 送给所选模型；不调用独立 ASR；转出的用户文本携同一 `model_ref` 进入 Agent | `test/gateway/deviceHub/audioInput.test.js`, `test/gateway/deviceHub/omniAudio.test.js` |
+| TC-VOC-025 | Qwen3.8 Omni Realtime 双工音频 | integration | 工作区专属 URL 与假 WebSocket | start/chunk/end；注入 text/audio delta | PCM 逐块 append，end 发送 commit/create；文字与 24 kHz PCM 定向回手机；不重复 enqueue Agent | 同上 |

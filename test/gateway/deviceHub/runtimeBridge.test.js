@@ -23,9 +23,10 @@ test('Runtime bridge maps chat, aggregates tools and prevents publication loops'
   a.send('pub', { value: 1 }, { topic: 'plugin.demo.tick' }); await a.sync();
   assert.equal(count, 1);
   assert.equal(a.inbox.filter((m) => m.topic === 'plugin.demo.tick').length, 1);
-  a.send('pub', { text: 'hi', session_id: 'another-session' }, { topic: 'chat.input' });
+  a.send('pub', { text: 'hi', session_id: 'another-session', model_ref: 'qwen/qwen3.8-omni-flash' }, { topic: 'chat.input' });
   assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'done');
   assert.equal(runs[0].params.session_id, 'device-phone');
+  assert.equal(runs[0].params.model_ref, 'qwen/qwen3.8-omni-flash');
   bus.publish('runtime.event', { session_id: 'desktop', trace_id: 'legacy', seq: 3, event: 'done', payload: { output: 'complete' } });
   bus.publish('runtime.final', { session_id: 'desktop', trace_id: 'legacy', output: 'complete' });
   assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'complete');

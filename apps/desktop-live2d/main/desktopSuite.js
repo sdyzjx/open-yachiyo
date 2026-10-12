@@ -3272,6 +3272,7 @@ async function startDesktopSuite({
     onChatInput: (payload) => {
       const text = String(payload?.text || '').trim();
       const inputImages = Array.isArray(payload?.input_images) ? payload.input_images : [];
+      const modelRef = typeof payload?.model_ref === 'string' ? payload.model_ref.trim() : '';
       const isNewSession = isNewSessionCommand(text);
       const imageLabel = inputImages.length > 1 ? `[Images x${inputImages.length}]` : '[Image]';
       const userDisplayText = text && inputImages.length > 0
@@ -3337,7 +3338,7 @@ async function startDesktopSuite({
         input_chars: text.length,
         input_images: inputImages.length
       });
-      void gatewayRuntimeClient.runInput({ input: text, inputImages }).catch((err) => {
+      void gatewayRuntimeClient.runInput({ input: text, inputImages, modelRef }).catch((err) => {
         logger.error?.('[desktop-live2d] gateway runtime input failed', err);
         emitDesktopDebug('chain.electron.run.failed', 'electron main runInput failed', {
           session_id: gatewayRuntimeClient.getSessionId(),
@@ -3646,6 +3647,7 @@ function normalizeChatInputPayload(payload) {
     role: allowedRoles.has(role) ? role : 'user',
     text,
     input_images: inputImages,
+    model_ref: typeof payload?.model_ref === 'string' ? payload.model_ref.trim().slice(0, 256) : '',
     source: String(payload?.source || 'chat-panel'),
     timestamp: Number.isFinite(Number(payload?.timestamp)) ? Number(payload.timestamp) : Date.now()
   };

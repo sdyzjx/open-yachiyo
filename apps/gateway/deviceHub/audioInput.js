@@ -13,7 +13,7 @@ function pcmToWav(pcm, sampleRate = 16000, channels = 1) {
   return Buffer.concat([header, pcm]);
 }
 
-function attachAudioInput({ hub, directory, transcribe = createAsrService(), maxBytes = 16000 * 2 * 120, streamTimeoutMs = 130000 }) {
+function attachAudioInput({ hub, directory, transcribe = createAsrService(), omniAudio = null, maxBytes = 16000 * 2 * 120, streamTimeoutMs = 130000 }) {
   fs.mkdirSync(directory, { recursive: true });
   const streams = new Map();
   const busy = new Set();
@@ -51,9 +51,19 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
         forgetRejected(device, data.stream_id);
         if (busy.has(device) || streams.has(device)) throw fault(-32600, 'Audio stream already active');
         if (data.format !== 'pcm_s16le' || data.sample_rate !== 16000 || data.channels !== 1 || !['push_to_talk', 'continuous'].includes(data.mode) || !['auto', 'zh', 'en'].includes(data.lang || 'auto')) throw fault(-32602, 'Expected 16 kHz mono PCM s16le');
-        const stream = { ...data, chunks: [], bytes: 0, nextSeq: 0 };
+        if (!['transcribe', 'direct', 'realtime'].includes(data.audio_mode || 'transcribe')) throw fault(-32602, 'Invalid audio_mode');
+        if ((data.audio_mode === 'direct' || data.audio_mode === 'realtime') && (typeof data.model_ref !== 'string' || !data.model_ref)) throw fault(-32602, 'model_ref required for audio pass-through');
+        const stream = { ...data, audio_mode: data.audio_mode || 'transcribe', chunks: [], bytes: 0, nextSeq: 0 };
+        if (stream.audio_mode !== 'transcribe' && !omniAudio) throw fault(-32601, 'Omni audio unavailable');
+        if (stream.audio_mode === 'realtime') {
+          stream.realtime = omniAudio.startRealtime({ device, streamId: stream.stream_id, modelRef: stream.model_ref });
+        }
         stream.timer = setTimeout(() => {
-          if (clear(device, data.stream_id)) transcript(device, data.stream_id, '', { code: -32003, message: 'Audio stream timeout' });
+          const expired = clear(device, data.stream_id);
+          if (expired) {
+            expired.realtime?.cancel();
+            transcript(device, data.stream_id, '', { code: -32003, message: 'Audio stream timeout' });
+          }
         }, streamTimeoutMs);
         streams.set(device, stream);
       } else {
@@ -68,11 +78,19 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
           const chunk = Buffer.from(data.data_b64, 'base64');
           if (!chunk.length || chunk.length % 2 || stream.bytes + chunk.length > maxBytes) throw fault(-32602, 'Audio size invalid or recording limit exceeded');
           stream.chunks.push(chunk); stream.bytes += chunk.length; stream.nextSeq++;
+          stream.realtime?.append(data.data_b64);
         } else if (topic === 'audio.input.end') {
           if (!['released', 'vad', 'cancel'].includes(data.reason)) throw fault(-32602, 'Invalid end reason');
           clear(device, data.stream_id);
-          if (data.reason === 'cancel') return;
+          if (data.reason === 'cancel') {
+            stream.realtime?.cancel();
+            return;
+          }
           if (!stream.bytes) throw fault(-32602, 'Empty recording');
+          if (stream.audio_mode === 'realtime') {
+            await stream.realtime.finish();
+            return;
+          }
           const wav = pcmToWav(Buffer.concat(stream.chunks));
           // Keep the contract's stream_id filename; refuse overwrites/cross-device collisions.
           const file = path.join(directory, `${stream.stream_id}.wav`);
@@ -80,7 +98,9 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
           busy.add(device);
           let result;
           try {
-            result = await transcribe({ wav, file, lang: stream.lang || 'auto', device });
+            result = stream.audio_mode === 'direct'
+              ? await omniAudio.transcribe({ wav, file, modelRef: stream.model_ref, device })
+              : await transcribe({ wav, file, lang: stream.lang || 'auto', device });
           } finally { busy.delete(device); }
           if (stopped || hub.devices.get(device.device_id) !== device) return;
           const text = typeof result?.text === 'string' ? result.text.trim() : '';
@@ -89,20 +109,23 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), max
             return;
           }
           transcript(device, stream.stream_id, text);
-          await hub.runInput(device, { text, input_audio: { audio_ref: file, format: 'wav', lang: stream.lang || 'auto', transcribed_text: text } });
+          await hub.runInput(device, { text, model_ref: stream.model_ref, input_audio: { audio_ref: file, format: 'wav', lang: stream.lang || 'auto', transcribed_text: text } });
         }
       }
     } catch (err) {
       if (topic === 'audio.input.start') {
         if (streams.get(device)?.stream_id !== data.stream_id) rememberRejected(device, data.stream_id);
-      } else clear(device, data.stream_id);
+      } else {
+        const stream = clear(device, data.stream_id);
+        stream?.realtime?.cancel();
+      }
       if (!stopped) transcript(device, data.stream_id, '', { code: typeof err.code === 'number' ? err.code : -32600, message: typeof err.code === 'number' ? err.message : 'Audio processing failed' });
     }
   };
   const listener = (event) => { void handle(event); };
-  const offline = (device) => { clearCurrent(device); forgetRejected(device); };
+  const offline = (device) => { clearCurrent(device)?.realtime?.cancel(); forgetRejected(device); };
   hub.on('publication', listener); hub.on('offline', offline);
-  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clearCurrent(device); rejected.clear(); });
+  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) clearCurrent(device)?.realtime?.cancel(); rejected.clear(); });
   return { handle, streams };
 }
 module.exports = { pcmToWav, attachAudioInput };

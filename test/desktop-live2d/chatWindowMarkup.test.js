@@ -33,7 +33,8 @@ test('TC-DSK-017 toolbar uses two roomy rows and never overlays transfer status'
   assert.match(html, /\.toolbar-select \{[^}]*height: 32px/);
   assert.match(html, /id="transfer-status" class="visually-hidden"/);
   assert.doesNotMatch(html, /#transfer-status \{[^}]*top:/);
-  assert.match(script, /modelActiveElement\.title = active \? `当前模型：\$\{modelLabel\(active\)\}`/);
+  assert.match(script, /modelActiveElement\.title = active \? `本次对话：\$\{modelLabel\(active\)\}`/);
+  assert.match(script, /model_ref: state\.selectedModelRef/);
 });
 
 test('TC-DSK-018 composer grows to six lines and preserves readable send states', () => {

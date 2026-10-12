@@ -60,10 +60,12 @@ test('mapGatewayMessageToDesktopEvent maps runtime notifications', () => {
 test('GatewayRuntimeClient forwards runtime notifications and resolves rpc result', async () => {
   const port = await getFreePort();
   const wss = new WebSocketServer({ host: '127.0.0.1', port, path: '/ws' });
+  let capturedRequest = null;
 
   wss.on('connection', (socket) => {
     socket.on('message', (raw) => {
       const request = JSON.parse(String(raw));
+      capturedRequest = request;
       socket.send(JSON.stringify({
         jsonrpc: '2.0',
         method: 'runtime.start',
@@ -100,9 +102,10 @@ test('GatewayRuntimeClient forwards runtime notifications and resolves rpc resul
       onNotification: (event) => events.push(event)
     });
 
-    const result = await client.runInput({ input: 'hello from panel' });
+    const result = await client.runInput({ input: 'hello from panel', modelRef: 'qwen/qwen3.8-omni-flash' });
 
     assert.equal(result.output, 'assistant-final');
+    assert.equal(capturedRequest.params.model_ref, 'qwen/qwen3.8-omni-flash');
     assert.equal(events.length, 4);
     assert.equal(events[0].type, 'runtime.start');
     assert.equal(events[1].type, 'runtime.event');

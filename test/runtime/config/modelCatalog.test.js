@@ -78,7 +78,11 @@ providers:
     model: whisper-1
     api_key: sk-a
 `) });
-    assert.equal(catalog.models.length, 5);
+    assert.equal(catalog.models.length, 7);
+    const qwenOmni = catalog.resolve('qwen/qwen3.8-omni-flash');
+    assert.deepEqual(qwenOmni.input, ['text', 'image', 'audio', 'video']);
+    assert.equal(qwenOmni.audio.mode, 'direct');
+    assert.equal(catalog.resolve('qwen/qwen3.8-omni-flash-realtime').transport, 'realtime');
     assert.equal(catalog.active.ref, 'deepseek/deepseek-reasoner');
     assert.equal(catalog.active.reasoning, true);
     assert.equal(catalog.active.api_key, 'env-secret');

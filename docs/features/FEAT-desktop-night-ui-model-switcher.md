@@ -8,16 +8,16 @@
 
 ## 1. 概述
 
-桌面透明桌宠保持原来的透明人物窗口，聊天、气泡、布局/口型/拖拽区控制浮层统一为深蓝紫夜景视觉，并在聊天窗口内提供真实模型选择与 Provider 模型列表拉取。
+桌面透明桌宠保持原来的透明人物窗口，聊天、气泡、布局/口型/拖拽区控制浮层统一为深蓝紫夜景视觉；聊天窗口提供请求级模型选择，电脑设置页集中管理 Provider 与模型列表。
 
 ## 2. 行为说明
 
-聊天窗标题栏显示当前模型。点击“模型”打开浮层时，界面依次进入加载、可用、空或错误状态：
+聊天窗标题栏显示当前模型，加载时依次进入加载、可用、空或错误状态：
 
 1. 通过 main process 读取 `GET /api/config/models` 并渲染已配置模型与 Provider。
-2. 用户选择模型并点“应用”，调用 `PUT /api/config/models/selection`，同时确保所选模型位于 `enabled_models`。
-3. 用户选择 Provider 并点“拉取列表”，调用 `POST /api/config/models/discover`，显示 Provider 返回的模型；该动作只预览远端列表，不修改 Provider 配置。
-4. IPC 或网关错误在浮层内显示，聊天输入继续可用。
+2. 用户在聊天标题栏选择模型，只改变当前聊天随请求发送的 `model_ref`，不会改写电脑端全局默认模型。默认值与启用列表在设置窗口管理。
+3. Provider 编辑、远端模型列表拉取、能力声明、启用列表、默认模型、用途模型与回退链都在电脑设置页的“模型与路由”完成。
+4. IPC 或网关错误显示在聊天标题栏，聊天输入继续可用。
 
 人物窗口继续使用透明背景。仅实际出现的聊天、气泡和调试控制浮层使用玻璃质感、细描边、暖金与淡紫强调色。
 
@@ -41,9 +41,9 @@ Renderer 不接收配对 token、Provider API key 或原始配置文件。Main p
 
 ## 5. 限制与已知问题
 
-- “拉取列表”只显示 Provider 实时返回结果；向 Provider 配置新增模型仍在 WebUI 模型配置页完成。
+- Provider 模型发现与增删统一在设置窗口完成；聊天窗口只显示已启用模型。
 - Provider 不支持模型枚举或网络不可用时，浮层显示错误/空状态，不影响已有模型选择与聊天。
 
 ## 6. 测试用例
 
-TC-DESKTOP-001..TC-DESKTOP-004（`docs/testing/TC-desktop-ui.md`）；自动化 `test/desktop-live2d/modelConfigClient.test.js`。
+TC-DESKTOP-001..TC-DESKTOP-005（`docs/testing/TC-desktop-ui.md`）；自动化 `test/desktop-live2d/modelConfigClient.test.js`、`test/desktop-live2d/gatewayRuntimeClient.test.js` 与 `test/desktop-live2d/desktopSuite.test.js`。

@@ -147,7 +147,7 @@
     mic.seq = 0;
     mic.buf = [];
     emit('mic.state', { state: 'recording', stream_id: mic.id });
-    send('pub', { stream_id: mic.id, format: 'pcm_s16le', sample_rate: 16000, channels: 1, mode: (options && options.mode) || 'push_to_talk', lang: 'auto' }, { topic: 'audio.input.start' });
+    send('pub', { stream_id: mic.id, format: 'pcm_s16le', sample_rate: 16000, channels: 1, mode: (options && options.mode) || 'push_to_talk', lang: 'auto', model_ref: options && options.model_ref, audio_mode: (options && options.audio_mode) || 'transcribe' }, { topic: 'audio.input.start' });
     try {
       mic.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
       mic.ctx = new (global.AudioContext || global.webkitAudioContext)();

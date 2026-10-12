@@ -31,6 +31,7 @@ function toDescriptor(providerKey, provider, model = {}, {
     name: model.name || id,
     api: CHAT_TYPES.get(provider.type),
     base_url: String(provider.base_url || '').replace(/\/$/, ''),
+    realtime_url: String(model.realtime_url || provider.realtime_url || ''),
     api_key: chatgptPlan ? chatgptAccessToken : resolveApiKey(provider),
     api_key_env: provider.api_key_env || null,
     headers: chatgptPlan ? {} : { ...(provider.headers || {}), ...(model.headers || {}) },
@@ -40,6 +41,11 @@ function toDescriptor(providerKey, provider, model = {}, {
     max_tokens: Number(model.max_tokens) || null,
     reasoning: Boolean(model.reasoning),
     input: Array.isArray(model.input) ? model.input : ['text'],
+    output: Array.isArray(model.output) ? model.output : ['text'],
+    transport: String(model.transport || 'request'),
+    audio: model.audio && typeof model.audio === 'object' && !Array.isArray(model.audio)
+      ? { ...model.audio }
+      : null,
     compat: { ...(provider.compat || {}), ...(model.compat || {}) },
     extra_body: chatgptPlan ? {} : { ...(provider.extra_body || {}), ...(model.extra_body || {}) },
     chatgpt_plan: chatgptPlan,

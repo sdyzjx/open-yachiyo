@@ -207,3 +207,10 @@ flowchart TD
 - 配置 WebUI 重构仅完成只读盘点与方案文档 `5db6a91`，产品代码未开始。当前 `/api/config/models` 仍会返回 Provider `headers`/`extra_body`，且整个 `/api/config/**` 尚未实施真实 socket loopback-only 门禁；恢复工作时先修安全边界。
 - ChatGPT OAuth/Responses 候选链 `111c933` → `5b8f67f` → `f99f2d2` → `95260ee` 已完成代码与修复候选审查，但未合主、未做真实 OAuth/API；恢复时必须在当前主线重放并处理文档/配置 UI 冲突后再跑隔离全量测试。
 - 详细分支、测试、运行态、设备状态和下一步见 [HANDOFF-20261013-companion.md](../process/HANDOFF-20261013-companion.md)。A15 仍为 55.96 FPS、未到 60；身体抽动未通过。共享 mask 局部 dirty 候选 `7ff5774` 因会清空共享 FBO 后漏画未变化 source，已由 `bb4a197` 撤销，未安装、未合主。
+
+### 请求级模型选择与 Omni 音频（2026-10-13）
+
+- 用户最新要求覆盖「手机不显示模型」的旧决定：Provider、API Key、启用列表和默认模型仍只在电脑配置页管理；手机只读取电脑端已启用模型的安全目录，并可为当前文字或语音请求选择模型。
+- Desktop Chat 与 Android Chat 均把 `model_ref` 随本次输入发送，不再因聊天切换而修改全局 `active_model`。手机目录通过 Device Hub RPC `model.catalog.get` 提供，明确排除 URL、环境变量名、headers、extra_body 与凭据。
+- Qwen 预设新增 `qwen3.8-omni-flash`（整段 WAV 音频直通）和 `qwen3.8-omni-flash-realtime`（16 kHz PCM 输入、24 kHz PCM 输出）。普通 Omni 先提取原话再进入 Pi 工具循环；Realtime 文字与音频直接流回手机，当前不桥接 Pi 工具调用。
+- 模型配置 schema 新增能力校验，拒绝未知 input/output/transport、缺失 audio 输入以及 Realtime mode/transport 不匹配。自动化覆盖 TC-LLM-040 ~ 042、TC-VOC-024/025、TC-AND-053、TC-DESKTOP-005。

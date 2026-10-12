@@ -26,7 +26,7 @@ class MicController(private val hub: HubClient) {
 
     @Synchronized
     @Suppress("MissingPermission")
-    fun start(mode: String, sink: MicSink, deviceId: String): String? {
+    fun start(mode: String, sink: MicSink, deviceId: String, modelRef: String? = null, audioMode: String = "transcribe"): String? {
         if (running) return "already recording"
         if (hub.state != HubState.CONNECTED) return "hub not connected"
         val min = AudioRecord.getMinBufferSize(Pcm.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -40,7 +40,8 @@ class MicController(private val hub: HubClient) {
         val out = object : PipelineOut {
             override fun onStart(streamId: String, mode: String) {
                 hub.publish("audio.input.start", JSONObject().put("stream_id", streamId).put("format", "pcm_s16le")
-                    .put("sample_rate", Pcm.SAMPLE_RATE).put("channels", 1).put("mode", mode).put("lang", "auto"))
+                    .put("sample_rate", Pcm.SAMPLE_RATE).put("channels", 1).put("mode", mode).put("lang", "auto")
+                    .put("audio_mode", audioMode).apply { if (!modelRef.isNullOrBlank()) put("model_ref", modelRef) })
                 sink.micState("recording", streamId)
             }
             override fun onChunk(streamId: String, seq: Int, pcm: ByteArray) {

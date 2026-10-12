@@ -298,7 +298,7 @@ async function loadRuntimeModelCatalog({ modelRef } = {}) {
     chatgptRefreshAccessToken: () => chatgptAuthService.refreshAccessToken(profile.id)
   });
 }
-const runner = createGatewayRunner({
+const piRunner = createGatewayRunner({
   bus, executor, sessionStore, personaContextBuilder, skillConfigStore,
   modelCatalog: loadRuntimeModelCatalog,
   deviceHub: getDeviceHub,
@@ -321,6 +321,27 @@ const runner = createGatewayRunner({
     maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
   })
 });
+const omniTextRuntime = require('./deviceHub/omniAudio').createOmniAudioService({
+  hub: { publish() {} }, llmManager
+});
+const runner = {
+  ...piRunner,
+  async run(args) {
+    const selected = llmManager.getCatalog().resolve(args.modelRef || args.model_ref || args.runtimeContext?.model_ref);
+    if (selected?.transport !== 'realtime') return piRunner.run(args);
+    if (Array.isArray(args.inputImages) && args.inputImages.length) {
+      throw new Error('Realtime text sessions do not accept image attachments in this client');
+    }
+    return omniTextRuntime.generateText({
+      text: args.input,
+      modelRef: selected.ref,
+      onDelta: (delta, traceId) => args.onEvent?.({
+        event: 'llm.stream.delta', session_id: args.sessionId, trace_id: traceId,
+        step_index: 0, seq: 0, payload: { delta }
+      })
+    });
+  }
+};
 
 const dispatcher = new ToolCallDispatcher({
   bus,
@@ -1103,7 +1124,7 @@ const server = app.listen(port, host, () => {
 const discovery = attachGatewayDiscovery({ server });
 
 const wss = new WebSocketServer({ noServer: true });
-const deviceHub = require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, config: deviceHubConfig });
+const deviceHub = require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, llmManager, config: deviceHubConfig });
 
 let shutdownPromise = null;
 function shutdownGateway() {

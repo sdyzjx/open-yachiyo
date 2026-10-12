@@ -42,6 +42,26 @@ const PRESETS = [
     api_key_env: 'DASHSCOPE_API_KEY',
     requires_api_key: true,
     models: [
+      {
+        id: 'qwen3.8-omni-flash',
+        name: 'Qwen 3.8 Omni Flash',
+        context_window: 1048576,
+        max_tokens: 131072,
+        input: ['text', 'image', 'audio', 'video'],
+        output: ['text'],
+        transport: 'request',
+        audio: { mode: 'direct', input_format: 'wav' }
+      },
+      {
+        id: 'qwen3.8-omni-flash-realtime',
+        name: 'Qwen 3.8 Omni Flash Realtime',
+        context_window: 65536,
+        max_tokens: 8192,
+        input: ['text', 'audio', 'video'],
+        output: ['text', 'audio'],
+        transport: 'realtime',
+        audio: { mode: 'realtime', input_format: 'pcm_s16le', input_sample_rate: 16000, output_format: 'pcm_s16le', output_sample_rate: 24000 }
+      },
       { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', context_window: 131072, max_tokens: 8192, input: ['text', 'image'] },
       { id: 'qwen-max', name: 'Qwen Max', context_window: 32768, max_tokens: 8192, input: ['text'] }
     ],

@@ -47,6 +47,10 @@
       <span id="mic-level" class="mic-level"></span>
     </button>
     <form id="chat-form" class="chat-form" autocomplete="off">
+      <label class="mobile-model-control" aria-label="对话模型">
+        <span id="model-mode-badge" class="model-mode-badge">模型</span>
+        <select id="chat-model" title="选择本次对话使用的模型"><option value="">连接后加载模型</option></select>
+      </label>
       <input id="chat-text" type="text" enterkeyhint="send" placeholder="对八千代说点什么…">
       <button type="submit" class="btn-primary">发送</button>
     </form>

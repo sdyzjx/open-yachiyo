@@ -89,6 +89,39 @@ test('validation rejects unknown refs, empty models and missing keys', () => {
   assert.throws(() => validateConfig(bad), /type must be one of/);
 });
 
+test('TC-LLM-042 validates model capability and audio routing metadata', () => {
+  const config = (model) => ({
+    active_model: `qwen/${model.id}`,
+    providers: {
+      qwen: {
+        type: 'openai_compatible',
+        base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        api_key: 'k',
+        models: [model]
+      }
+    }
+  });
+  validateConfig(config({
+    id: 'qwen3.8-omni-flash-realtime',
+    input: ['text', 'audio'],
+    output: ['text', 'audio'],
+    transport: 'realtime',
+    audio: { mode: 'realtime', input_format: 'pcm_s16le' }
+  }));
+  assert.throws(
+    () => validateConfig(config({ id: 'bad-input', input: ['text', 'sound'] })),
+    /input must contain only/
+  );
+  assert.throws(
+    () => validateConfig(config({ id: 'bad-audio', input: ['text'], audio: { mode: 'direct' } })),
+    /requires input: audio/
+  );
+  assert.throws(
+    () => validateConfig(config({ id: 'bad-realtime', input: ['audio'], audio: { mode: 'realtime' } })),
+    /requires transport: realtime/
+  );
+});
+
 test('TC-LLM-036 ChatGPT plan type is restricted to its service-owned provider key', () => {
   const provider = {
     type: 'openai_chatgpt_plan',

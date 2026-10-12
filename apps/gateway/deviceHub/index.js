@@ -50,6 +50,7 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   const settings = config || loadConfig();
   const hub = setDeviceHub(new DeviceHub(settings));
   require('./avatarHost').attachAvatarHost({ hub, statePath: settings.home ? require('node:path').join(settings.home, 'data/device-hub/state.json') : null, ...options.avatar });
+  if (options.llmManager) require('./modelControl').attachModelControl({ hub, llmManager: options.llmManager });
   const upgrade = (req, socket, head) => {
     let pathname;
     try { pathname = new URL(req.url, 'http://localhost').pathname; } catch { socket.destroy(); return; }
@@ -69,6 +70,9 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   if (options.bus && (settings.home || options.voice)) require('./voiceRelay').attachVoiceRelay({ hub, bus: options.bus, directory: settings.home && require('node:path').join(settings.home, 'data/device-media'), ...options.voice });
   if (options.bus && (settings.home || options.audio)) {
     const { createAsrService } = require('./asrService');
+    const omniAudio = options.llmManager
+      ? require('./omniAudio').createOmniAudioService({ hub, llmManager: options.llmManager })
+      : null;
     require('./audioInput').attachAudioInput({
       hub,
       directory: settings.home && require('node:path').join(settings.home, 'data/device-audio'),
@@ -78,6 +82,7 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
         if (!result.ok) throw new Error('ASR tool failed');
         return result.result;
       } : undefined }),
+      omniAudio,
       ...options.audio
     });
   }

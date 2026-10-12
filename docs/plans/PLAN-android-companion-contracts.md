@@ -153,12 +153,12 @@ sequenceDiagram
 ### C1.7 麦克风上行
 
 ```
-pub audio.input.start {stream_id, format:"pcm_s16le", sample_rate:16000, channels:1, mode:"push_to_talk"|"continuous", lang:"auto"}
+pub audio.input.start {stream_id, format:"pcm_s16le", sample_rate:16000, channels:1, mode:"push_to_talk"|"continuous", lang:"auto", model_ref?, audio_mode?:"transcribe"|"direct"|"realtime"}
 pub audio.input.chunk {stream_id, seq, data_b64}          // 每块 100 ms（3200 字节 PCM）
 pub audio.input.end   {stream_id, reason:"released"|"vad"|"cancel"}
 ```
 
-网关拼接为 WAV 保存到 `~/yachiyo/data/device-audio/<stream_id>.wav`，调用 ASR（C4 中 `asr_*` provider；无 ASR 配置时回退到现有 `voice.asr_aliyun` 工具），推送 `audio.input.transcript {final:true}`，然后以设备会话执行 `runtime.run`（`input_audio` 字段沿用现有网关格式，`transcribed_text` 预填）。`reason:"cancel"` 不触发识别。
+`transcribe` 时网关拼接 WAV 并调用 ASR；`direct` 时 WAV 作为 `input_audio` 送给所选 Omni 模型，得到的用户文本继续进入 Pi；`realtime` 时从 start 起把 PCM 逐块送入工作区专属 Realtime WebSocket，并把返回的 `chat.*` 与 `voice.stream.*` 定向发回设备。后两种模式必须携带支持对应能力的 `model_ref`。`reason:"cancel"` 不触发识别或响应。
 
 ### C1.8 HTTP 辅助接口（网关）
 
@@ -438,6 +438,8 @@ catalog.tts / catalog.asr  // 对应类型 provider 的规范化配置（无则 
 | DELETE | `/api/config/models/providers/:key` | 删除 provider（被引用时 400） |
 
 响应补充（WS2 实现，2026-10-12 统筹确认）：`GET /api/config/models` 中 `active` / `enabled` 为 ref 字符串，另含 `providers{}`（无密钥）；`/test` 返回 `{ok, latency_ms, status, error}`、`/discover` 返回 `{ok, models[]}`，上游失败时 HTTP 200 + `ok:false`；草稿 provider 只有在 `base_url` 与已存储 provider 一致时才继承其凭据。Descriptor `name` 为 `model.name || id`；`timeout_ms` 缺省 20000。
+
+Descriptor 能力字段：`input[]`、`output[]`、`transport`（`request|realtime`）及可选 `audio`。手机调用 Device Hub 本地方法 `model.catalog.get` 只获得 `{active,models}`，其中 `models` 限于电脑端已启用项且使用安全描述符；不得返回或修改 provider/key/headers/extra_body/default/enabled 配置。手机文字 `chat.input` 与麦克风 start 均可携带请求级 `model_ref`。
 
 运行时切换模型：`runtime.run` 的 `params.model_ref`（可选）覆盖本次使用的模型；会话设置 `PUT /api/sessions/:id/settings {model_ref}` 持久覆盖。
 

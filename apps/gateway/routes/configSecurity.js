@@ -40,6 +40,7 @@ function safeProviderSnapshot(key, provider) {
     preset: provider.preset || null,
     display_name: provider.display_name || key,
     base_url: provider.base_url || null,
+    realtime_url: provider.realtime_url || null,
     api_key_env: provider.api_key_env || null,
     has_api_key: Boolean(provider.api_key) || hasEnvKey(provider),
     requires_api_key: requiresApiKey(provider),
@@ -70,11 +71,19 @@ function safeProviderSnapshot(key, provider) {
 
 // Descriptor (modelCatalog.toDescriptor) -> public view without credentials or free-form objects.
 function safeModelDescriptor(descriptor, enabled) {
-  const { api_key: apiKey, headers, extra_body: extraBody, compat, ...rest } = descriptor;
+  const { api_key: apiKey, headers, extra_body: extraBody, compat, audio, ...rest } = descriptor;
   delete rest.refresh_access_token;
+  const safeAudio = isObject(audio) ? {
+    mode: ['direct', 'realtime'].includes(audio.mode) ? audio.mode : null,
+    input_format: typeof audio.input_format === 'string' ? audio.input_format : null,
+    input_sample_rate: Number(audio.input_sample_rate) || null,
+    output_format: typeof audio.output_format === 'string' ? audio.output_format : null,
+    output_sample_rate: Number(audio.output_sample_rate) || null
+  } : null;
   return {
     ...rest,
     compat: safeCompat(compat),
+    audio: safeAudio,
     has_api_key: Boolean(apiKey),
     has_custom_headers: hasKeys(headers),
     has_extra_body: hasKeys(extraBody),

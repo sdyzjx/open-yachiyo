@@ -407,3 +407,13 @@
 | 步骤 | 1) 记录完整模型 bounds 与双列矩形；2) 检查两列内侧间距和宽屏上限；3) 分别打开左右侧栏并记录设置齿轮与侧栏矩形；4) 截图复核标题区 |
 | 期望结果 | 双列内侧距完整模型 bounds 约 16 px，消息不覆盖头发、袖子或身体，单列不超过 420 px且宽屏额外空间留在外侧；任一侧栏终态齿轮均在面板内容外，右侧插件栏展开过程中齿轮与面板同步移动 |
 | 自动化 | `test/android-web/layout.test.js`（full model bounds / lane max width / settings shift）+ manual-device |
+
+## TC-AND-053 手机聊天模型选择与音频模式
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | Device Hub 已连接；电脑已启用普通文本、Omni direct、Omni realtime 模型 |
+| 步骤 | 打开聊天栏切换三种模型；分别发送文字与按住说话；检查 Hub 帧 |
+| 期望结果 | 手机只显示已启用模型；文字携带 `model_ref`；麦克风携带正确 `audio_mode`；页面没有 provider/key/配置 API |
+| 自动化 | `test/android-web/modelPicker.test.js`；真机语音为 manual-device |

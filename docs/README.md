@@ -35,6 +35,7 @@
 - [插件打包、存储与推送](features/FEAT-plugin-push.md)
 - [插件系统（Android 宿主与 SDK）](features/FEAT-plugin-system.md)
 - [pi Agent 核心](features/FEAT-runtime-pi-agent-core.md)
+- [Omni 音频直通与 Realtime 对话](features/FEAT-voice-omni-audio.md)
 - [语音 Provider 配置（TTS / ASR 可切换）](features/FEAT-voice-provider-config.md)
 
 ## 指南 Guides

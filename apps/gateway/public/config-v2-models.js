@@ -60,15 +60,45 @@
   }
 
   function modelsToText(models) {
-    return (models || []).map((m) => (m.name && m.name !== m.id ? `${m.id} | ${m.name}` : m.id)).join('\n');
+    return (models || []).map((m) => [
+      m.id,
+      m.name && m.name !== m.id ? m.name : '',
+      Array.isArray(m.input) ? m.input.join(',') : '',
+      Array.isArray(m.output) ? m.output.join(',') : '',
+      m.transport || 'request',
+      m.audio?.mode || ''
+    ].join(' | ').replace(/(?:\s*\|\s*)+$/, '')).join('\n');
   }
   function textToModels(text, previous) {
     const prev = new Map((previous || []).map((m) => [m.id, m]));
     return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
-      const [id, name] = line.split('|').map((s) => s.trim());
-      return { ...(prev.get(id) || {}), id, ...(name ? { name } : {}) };
+      const parts = line.split('|').map((s) => s.trim());
+      const [id, name, inputText] = parts;
+      const legacy = parts.length <= 4;
+      const outputText = legacy ? '' : parts[3];
+      const transport = legacy ? parts[3] : parts[4];
+      const audioMode = legacy ? '' : parts[5];
+      const input = inputText ? inputText.split(',').map((item) => item.trim()).filter(Boolean) : null;
+      const output = outputText ? outputText.split(',').map((item) => item.trim()).filter(Boolean) : null;
+      const prior = prev.get(id) || {};
+      const next = {
+        ...prior,
+        id,
+        ...(name ? { name } : {}),
+        input: input || prior.input || ['text'],
+        output: output || prior.output || ['text'],
+        transport: transport || prior.transport || 'request'
+      };
+      if (audioMode === 'direct') next.audio = { mode: 'direct', input_format: 'wav' };
+      if (audioMode === 'realtime') next.audio = {
+        mode: 'realtime', input_format: 'pcm_s16le', input_sample_rate: 16000,
+        output_format: 'pcm_s16le', output_sample_rate: 24000
+      };
+      if (!legacy && !audioMode) delete next.audio;
+      return next;
     });
   }
+  window.CV2.modelCodec = { modelsToText, textToModels };
 
   function renderEditor() {
     const existing = state.providers[editing.key] || null;
@@ -96,6 +126,7 @@
         type: typeSelect.value,
         display_name: ids.display.value.trim() || undefined,
         base_url: ids.base.value.trim(),
+        realtime_url: ids.realtime.value.trim() || undefined,
         timeout_ms: Number(ids.timeout.value) || undefined,
         models: textToModels(modelsArea.value, base.models)
       };
@@ -119,13 +150,14 @@
         field('显示名', input('display', base.display_name)),
         field('类型', typeSelect),
         field('Base URL', input('base', base.base_url)),
+        field('Realtime WebSocket URL', input('realtime', base.realtime_url), '仅 Realtime 模型需要；可留空并从工作区 Base URL 自动推导'),
         field('API Key', input('apikey', '', 'password', { autocomplete: 'new-password', placeholder: existing && existing.has_api_key ? '••••••••' : '' }), keyHint),
         field('API Key 环境变量', input('env', base.api_key_env), '例如 DEEPSEEK_API_KEY；没有内联密钥时读取该变量'),
         field('超时（毫秒）', input('timeout', base.timeout_ms, 'number')),
         existing && existing.has_api_key
           ? h('label', { class: 'cv-check cv-field' }, clearKey, h('span', { text: '清除已保存的密钥' }))
           : null,
-        field('模型（每行一个：id 或 id | 显示名）', modelsArea, null, true)),
+        field('模型（id | 显示名 | 输入 | 输出 | 传输 | 音频模式）', modelsArea, '普通：model-id | 名称 | text,image | text | request；Omni：qwen3.8-omni-flash | Qwen Omni | text,image,audio,video | text | request | direct；实时型号把传输和音频模式都写 realtime。', true)),
       existing && (existing.has_custom_headers || existing.has_extra_body)
         ? h('p', { class: 'cv-hint', text: '此服务商包含自定义请求头或额外请求体：出于安全不在此显示，保存时会原样保留；需要修改请直接编辑 providers.yaml。' })
         : null,
@@ -214,6 +246,7 @@
           h('div', { class: 'cv-row-meta' },
             m.reasoning ? chip('推理') : null,
             (m.input || []).includes('image') ? chip('看图') : null,
+            (m.input || []).includes('audio') ? chip(m.transport === 'realtime' ? '实时语音' : '音频直通', 'good') : null,
             !m.has_api_key && state.providers[m.provider]?.requires_api_key ? chip('缺少密钥', 'warn') : null)));
       }
     }

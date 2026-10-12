@@ -42,10 +42,13 @@ class NativeFeatures(private val host: WebHostActivity) {
             host.runOnUiThread { host.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC) }
             return
         }
-        val mode = YachiyoNativeBridge.parseObject(optionsJson)?.optString("mode").orEmpty()
+        val options = YachiyoNativeBridge.parseObject(optionsJson) ?: JSONObject()
+        val mode = options.optString("mode").orEmpty()
             .ifEmpty { app.config.get().getJSONObject("audio").optString("mic_mode", "push_to_talk") }
+        val modelRef = options.optString("model_ref").ifBlank { null }
+        val audioMode = options.optString("audio_mode", "transcribe")
         HubService.start(host, mic = true)
-        val err = app.mic.start(mode, sink, app.config.deviceId())
+        val err = app.mic.start(mode, sink, app.config.deviceId(), modelRef, audioMode)
         if (err != null) sink.micState("error", error = err)
         else micSink = sink
     }

@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: agent/v2-voice-providers
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-desktop-companion-v2.md §2 (C8), apps/runtime/voice/, apps/runtime/config/providerConfigStore.js, apps/runtime/config/modelCatalog.js, docs/testing/TC-voice-provider-config.md
+> 关联: docs/plans/PLAN-desktop-companion-v2.md §2 (C8), docs/features/FEAT-voice-omni-audio.md, apps/runtime/voice/, apps/runtime/config/providerConfigStore.js, apps/runtime/config/modelCatalog.js, docs/testing/TC-voice-provider-config.md
 
 ## 1. 概述
 
@@ -64,4 +64,4 @@ providers:
 
 ## 6. 测试用例
 
-见 `docs/testing/TC-voice-provider-config.md`：TC-VOC-001 … TC-VOC-006（schema 与解析）、TC-VOC-010 … TC-VOC-016（运行时客户端）、TC-VOC-020 … TC-VOC-023（消费方切换）。
+见 `docs/testing/TC-voice-provider-config.md`：TC-VOC-001 … TC-VOC-006（schema 与解析）、TC-VOC-010 … TC-VOC-016（运行时客户端）、TC-VOC-020 … TC-VOC-025（消费方切换与 Omni 音频）。

@@ -25,6 +25,10 @@ const CHAT_TYPES = ['openai_compatible', 'openai_chatgpt_plan', 'anthropic', 'go
 const ASR_TYPES = ['asr_openai_compatible', 'asr_dashscope'];
 const TTS_TYPES = ['tts_dashscope', 'tts_openai_compatible'];
 const TTS_FORMATS = ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'];
+const MODEL_INPUT_TYPES = ['text', 'image', 'audio', 'video'];
+const MODEL_OUTPUT_TYPES = ['text', 'audio'];
+const MODEL_TRANSPORTS = ['request', 'realtime'];
+const MODEL_AUDIO_MODES = ['direct', 'realtime'];
 const SUPPORTED_TYPES = [...CHAT_TYPES, ...TTS_TYPES, ...ASR_TYPES];
 const DEFAULT_BASE_URLS = {
   anthropic: 'https://api.anthropic.com',
@@ -222,6 +226,26 @@ function validateConfig(config) {
       for (const model of provider.models) {
         if (!nonEmptyString(model.id)) {
           throw new Error(`provider ${name} models[].id must be a non-empty string`);
+        }
+        for (const [field, allowed] of [['input', MODEL_INPUT_TYPES], ['output', MODEL_OUTPUT_TYPES]]) {
+          if (model[field] === undefined) continue;
+          if (!Array.isArray(model[field]) || model[field].length === 0 || model[field].some((item) => !allowed.includes(item))) {
+            throw new Error(`provider ${name} model ${model.id} ${field} must contain only: ${allowed.join(', ')}`);
+          }
+        }
+        if (model.transport !== undefined && !MODEL_TRANSPORTS.includes(model.transport)) {
+          throw new Error(`provider ${name} model ${model.id} transport must be one of: ${MODEL_TRANSPORTS.join(', ')}`);
+        }
+        if (model.audio !== undefined) {
+          if (!isObject(model.audio) || !MODEL_AUDIO_MODES.includes(model.audio.mode)) {
+            throw new Error(`provider ${name} model ${model.id} audio.mode must be one of: ${MODEL_AUDIO_MODES.join(', ')}`);
+          }
+          if (!Array.isArray(model.input) || !model.input.includes('audio')) {
+            throw new Error(`provider ${name} model ${model.id} audio configuration requires input: audio`);
+          }
+          if (model.audio.mode === 'realtime' && model.transport !== 'realtime') {
+            throw new Error(`provider ${name} model ${model.id} realtime audio requires transport: realtime`);
+          }
         }
       }
     }

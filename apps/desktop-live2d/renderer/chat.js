@@ -36,6 +36,7 @@
     pendingUploads: [],
     models: null,
     modelsLoading: false,
+    selectedModelRef: '',
     followOutput: true,
     shell: { connected: false, phones: [], send: { canSend: false, reason: '网关未连接' } },
     selectedTransferTarget: '',
@@ -88,11 +89,11 @@
     }
     for (const model of enabledModels) {
       const option = new Option(modelLabel(model), model.ref);
-      option.selected = model.ref === snapshot.active;
+      option.selected = model.ref === (state.selectedModelRef || snapshot.active);
       modelActiveElement.append(option);
     }
-    const active = snapshot.models.find((model) => model.ref === snapshot.active);
-    modelActiveElement.title = active ? `当前模型：${modelLabel(active)}` : '选择对话模型';
+    const active = snapshot.models.find((model) => model.ref === (state.selectedModelRef || snapshot.active));
+    modelActiveElement.title = active ? `本次对话：${modelLabel(active)}` : '选择对话模型';
     setModelControlsDisabled(false);
   }
 
@@ -104,6 +105,9 @@
     if (!quiet) setModelStatus('正在从本机网关加载模型…');
     try {
       state.models = await bridge.modelConfigRequest({ method: 'GET', path: '/api/config/models' });
+      if (!state.selectedModelRef || !state.models.models?.some((model) => model.ref === state.selectedModelRef && model.enabled)) {
+        state.selectedModelRef = state.models.active || '';
+      }
       renderModelConfig();
       if (!quiet) setModelStatus(`已加载 ${state.models.models?.length || 0} 个模型`);
     } catch (err) {
@@ -116,23 +120,13 @@
     }
   }
 
-  async function saveActiveModel() {
+  function selectChatModel() {
     const ref = String(modelActiveElement?.value || '');
     if (!ref || !state.models) return;
-    setModelControlsDisabled(true);
-    setModelStatus('正在保存模型选择…');
-    try {
-      state.models = await bridge.modelConfigRequest({
-        method: 'PUT',
-        path: '/api/config/models/selection',
-        body: { active_model: ref }
-      });
-      renderModelConfig();
-      setModelStatus('模型选择已保存，下一次对话开始生效');
-    } catch (err) {
-      setModelStatus(`保存失败：${err?.message || err}`, true);
-      setModelControlsDisabled(false);
-    }
+    state.selectedModelRef = ref;
+    renderModelConfig();
+    const model = state.models.models.find((item) => item.ref === ref);
+    setModelStatus(`本次对话使用 ${modelLabel(model)}`);
   }
 
   async function discoverProviderModels() {
@@ -913,7 +907,8 @@
         data_url: upload.dataUrl
       })),
       timestamp: Date.now(),
-      source: 'chat-panel-window'
+      source: 'chat-panel-window',
+      model_ref: state.selectedModelRef || undefined
     });
     if (chatInputElement) {
       chatInputElement.value = '';
@@ -1024,7 +1019,7 @@
   newChatElement?.addEventListener('click', () => {
     bridge?.sendChatInput?.({ role: 'user', text: '/new', input_images: [] });
   });
-  modelActiveElement?.addEventListener('change', () => { void saveActiveModel(); });
+  modelActiveElement?.addEventListener('change', selectChatModel);
   transferSelectElement?.addEventListener('change', () => {
     state.selectedTransferTarget = transferSelectElement.value;
     renderShellState(state.shell);
@@ -1040,7 +1035,7 @@
   bridge?.onShellStateSync?.((next) => renderShellState(next));
   modelPickerToggleElement?.addEventListener('click', () => setModelPickerOpen(modelPickerElement?.hidden !== false));
   modelPickerCloseElement?.addEventListener('click', () => setModelPickerOpen(false));
-  modelSaveElement?.addEventListener('click', () => { void saveActiveModel(); });
+  modelSaveElement?.addEventListener('click', selectChatModel);
   modelDiscoverElement?.addEventListener('click', () => { void discoverProviderModels(); });
   syncCompactLayout();
   if (typeof ResizeObserver === 'function' && chatPanelElement) {

@@ -8,7 +8,7 @@
 
 ## 1. 概述
 
-手机上的客户端设置入口（独立 `SettingsActivity` 加载 `/web/settings.html`，主页面不重载，改动经 `config.changed` 实时生效）：服务器连接、外观、任务画布、语音、插件管理、桌面与锁屏。模型、Provider 与服务凭据统一在电脑端配置。
+手机上的客户端设置入口（独立 `SettingsActivity` 加载 `/web/settings.html`，主页面不重载，改动经 `config.changed` 实时生效）：服务器连接、外观、任务画布、语音、插件管理、桌面与锁屏。Provider、默认/启用模型与服务凭据统一在电脑端配置；手机主聊天栏只从电脑读取已启用模型并选择本次会话模型。
 
 ## 2. 行为说明
 
@@ -22,13 +22,13 @@
 | 桌面与锁屏 | 默认桌面状态 + 跳转系统设置（`openHomeSettings`）、启用桌面抽屉、锁屏显示人物（`setLockscreenEnabled` + 配置）、设备别名 |
 所有写入都是 `setConfig(patch)`（原生深合并，数组整体替换）；页面监听 `config.changed`、`hub.state`、`plugins.changed`、`picker.result` 重新渲染。返回按钮/返回键 → `closeSettings()`。无原生（桌面浏览器）时由 mockNative 提供全部能力，便于调试。
 
-设置页不读取模型目录，不展示模型或 Provider API key，也不调用 `/api/config/models*`。服务器区的配对 token 仅用于手机连接 Device Hub，不是模型服务凭据。
+设置页不读取模型目录，不展示模型或 Provider API key，也不调用 `/api/config/models*`。主界面通过 Device Hub `model.catalog.get` 获取脱敏的已启用目录。服务器区的配对 token 仅用于手机连接 Device Hub，不是模型服务凭据。
 
 设置页是独立 `SettingsActivity`，保持 `adjustResize` 以便表单随键盘正常滚动；只有含 Live2D 舞台的主界面/锁屏页使用 `adjustNothing` + C2.2 `ime` 事件。
 
 ## 3. 接口与协议
 
-契约 C2.1 / C2.2 / C2.3。模型配置接口属于电脑端管理面，不在 Android WebView 暴露。
+契约 C2.1 / C2.2 / C2.3。模型配置接口属于电脑端管理面，不在 Android WebView 暴露；主界面只使用 Device Hub 安全目录与请求级 `model_ref`。
 
 ## 4. 配置项
 

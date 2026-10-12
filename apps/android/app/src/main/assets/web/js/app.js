@@ -24,6 +24,7 @@
     away: $('away'), awayWhere: $('away-where'), awayCall: $('away-call'), dot: $('hub-dot'),
     transfer: $('btn-transfer'), transferReason: $('transfer-reason'),
     mic: $('mic-level'), micBtn: $('btn-mic'), chatBtn: $('btn-chat'), chatForm: $('chat-form'), chatText: $('chat-text'),
+    chatModel: $('chat-model'), modelModeBadge: $('model-mode-badge'),
     settings: $('btn-settings'), sheet: $('sheet'), drawer: $('drawer'), menu: $('menu'), toast: $('toast')
   };
 
@@ -32,8 +33,51 @@
     hub: B.hubState(), view: { w: innerWidth, h: innerHeight }, landscape: innerWidth > innerHeight,
     ime: { visible: false, css: 0 }, panelState: 0, drawerOpen: false, sheetOpen: false, editing: false,
     parked: false, exited: false, anim: null, paused: false, firstFrame: true, modelPromise: null, presented: false,
-    transferRequestPending: false
+    transferRequestPending: false, modelCatalog: null, selectedModelRef: ''
   };
+
+  function selectedModel() {
+    return (S.modelCatalog?.models || []).find((model) => model.ref === S.selectedModelRef) || null;
+  }
+
+  function audioModeForSelectedModel() {
+    const model = selectedModel();
+    if (!model || !(model.input || []).includes('audio')) return 'transcribe';
+    return model.transport === 'realtime' || model.audio?.mode === 'realtime' ? 'realtime' : 'direct';
+  }
+
+  function renderModelCatalog() {
+    if (!el.chatModel) return;
+    const models = Array.isArray(S.modelCatalog?.models) ? S.modelCatalog.models : [];
+    el.chatModel.replaceChildren();
+    if (!models.length) {
+      el.chatModel.append(new Option('没有已启用模型', ''));
+      el.chatModel.disabled = true;
+      return;
+    }
+    for (const model of models) {
+      const suffix = model.transport === 'realtime' ? ' · 实时语音' : (model.input || []).includes('audio') ? ' · 音频直通' : '';
+      el.chatModel.append(new Option(`${model.name || model.id}${suffix}`, model.ref));
+    }
+    if (!S.selectedModelRef || !models.some((model) => model.ref === S.selectedModelRef)) {
+      S.selectedModelRef = S.modelCatalog.active || models[0].ref;
+    }
+    el.chatModel.value = S.selectedModelRef;
+    el.chatModel.disabled = false;
+    const modeName = { transcribe: '转写', direct: '直通', realtime: '实时' }[audioModeForSelectedModel()];
+    if (el.modelModeBadge) el.modelModeBadge.textContent = modeName;
+  }
+
+  async function loadModelCatalog() {
+    if (lockscreen || S.hub.state !== 'connected') return;
+    try {
+      S.modelCatalog = await B.rpc('model.catalog.get', {}, '', 8000);
+      renderModelCatalog();
+    } catch (err) {
+      if (el.chatModel) el.chatModel.replaceChildren(new Option('模型加载失败', ''));
+      log('warn', `model catalog: ${err && err.message}`);
+    }
+  }
   const ownerTracker = O.createOwnerTracker({ deviceId, initialHub: S.hub });
   const transferEvents = TC.createTransferEventGuard();
   const cam = {
@@ -656,6 +700,7 @@
     refreshAway();
     refreshTransferControl();
     kick();
+    if (S.hub.state === 'connected') void loadModelCatalog();
   }
 
   /* ------------------------------------------------------------------ mic / chat */
@@ -666,7 +711,11 @@
     micOn = true;
     micDownAt = performance.now();
     el.micBtn.classList.add('rec');
-    B.call('micStart', JSON.stringify({ mode: (cfg.audio || {}).mic_mode || 'push_to_talk' }));
+    B.call('micStart', JSON.stringify({
+      mode: (cfg.audio || {}).mic_mode || 'push_to_talk',
+      model_ref: S.selectedModelRef || undefined,
+      audio_mode: audioModeForSelectedModel()
+    }));
     B.call('vibrate', 10);
   }
   function micStop(reason) {
@@ -702,11 +751,20 @@
     e.preventDefault();
     const text = el.chatText.value.trim();
     if (!text) return;
-    B.publish('chat.input', { text });
+    B.publish('chat.input', { text, model_ref: S.selectedModelRef || undefined });
     taskCanvas.showUser(text);
     el.chatText.value = '';
   };
-  el.chatText.addEventListener('blur', () => setTimeout(() => { if (!el.chatText.value) { el.chatForm.classList.remove('open'); document.body.dataset.chat = '0'; } }, 150));
+  el.chatText.addEventListener('blur', () => setTimeout(() => {
+    if (!el.chatText.value && !el.chatForm.contains(document.activeElement)) {
+      el.chatForm.classList.remove('open');
+      document.body.dataset.chat = '0';
+    }
+  }, 150));
+  el.chatModel?.addEventListener('change', () => {
+    S.selectedModelRef = el.chatModel.value;
+    renderModelCatalog();
+  });
   el.settings.onclick = () => B.call('openSettings');
   $('btn-unlock').onclick = () => B.call('dismissKeyguard');
 
@@ -824,6 +882,7 @@
     }
 
     B.start();
+    if (S.hub.state === 'connected') void loadModelCatalog();
     if (qs.get('debug') === '1') { const s = document.createElement('script'); s.src = 'js/debug.js'; document.body.appendChild(s); }
 
     // Let the hub settle before deciding who shows the character (avoids a flash on non-host devices).

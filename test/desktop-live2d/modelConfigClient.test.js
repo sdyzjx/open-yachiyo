@@ -100,7 +100,9 @@ test('desktop model config IPC projects successful responses onto non-sensitive 
     key: 'demo', display_name: 'Demo', has_api_key: true, requires_api_key: true
   });
   assert.deepEqual(snapshot.models[0], {
-    ref: 'demo/first', id: 'first', name: 'First', provider: 'demo', has_api_key: true, enabled: true
+    ref: 'demo/first', id: 'first', name: 'First', provider: 'demo',
+    input: ['text'], output: ['text'], transport: 'request', audio: null,
+    has_api_key: true, enabled: true
   });
 });
 

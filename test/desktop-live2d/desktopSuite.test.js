@@ -386,11 +386,13 @@ test('normalizeChatInputPayload sanitizes and validates payload', () => {
   const result = normalizeChatInputPayload({
     role: 'assistant',
     text: ' hello ',
+    model_ref: ' qwen/qwen3.8-omni-flash ',
     source: 'chat-panel',
     timestamp: 1234
   });
   assert.equal(result.role, 'assistant');
   assert.equal(result.text, 'hello');
+  assert.equal(result.model_ref, 'qwen/qwen3.8-omni-flash');
   assert.equal(result.source, 'chat-panel');
   assert.equal(result.timestamp, 1234);
 

@@ -70,6 +70,16 @@ function sanitizeModel(model) {
     id,
     name: safeString(model.name, id),
     provider: safeString(model.provider),
+    input: Array.isArray(model.input) ? model.input.filter((item) => typeof item === 'string').slice(0, 8) : ['text'],
+    output: Array.isArray(model.output) ? model.output.filter((item) => typeof item === 'string').slice(0, 8) : ['text'],
+    transport: safeString(model.transport, 'request'),
+    audio: isObject(model.audio) ? {
+      mode: safeString(model.audio.mode),
+      input_format: safeString(model.audio.input_format),
+      input_sample_rate: Number(model.audio.input_sample_rate) || null,
+      output_format: safeString(model.audio.output_format),
+      output_sample_rate: Number(model.audio.output_sample_rate) || null
+    } : null,
     has_api_key: model.has_api_key !== false,
     enabled: model.enabled === true
   };

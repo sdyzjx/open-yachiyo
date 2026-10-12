@@ -16,15 +16,15 @@
 | 期望结果 | 仅 GET models、PUT selection、POST discover 三个精确组合及各自最小请求体通过；成功响应只保留 UI 字段，失败与网络异常脱敏，renderer 不得到敏感配置 |
 | 自动化 | `test/desktop-live2d/modelConfigClient.test.js` |
 
-## TC-DESKTOP-002 模型选择与列表拉取
+## TC-DESKTOP-002 模型管理与列表拉取
 
 | 字段 | 内容 |
 |---|---|
 | 类型 | integration |
 | 前置条件 | 桌面端使用模型配置 v2 网关 |
-| 步骤 | 打开模型浮层；切换当前模型并应用；选择 Provider 后拉取列表；分别模拟空列表与请求失败 |
-| 期望结果 | 加载/可用/空/错误状态均可辨识；selection 真实保存；discover 结果显示且不擅自修改 Provider |
-| 自动化 | `test/desktop-live2d/modelConfigClient.test.js` 以状态化本地 HTTP 网关覆盖保存后重开、discover 成功/空列表和服务离线；窗口交互 manual |
+| 步骤 | 打开电脑配置页；编辑 Provider、启用模型与默认模型；拉取 Provider 模型列表；分别模拟空列表与请求失败 |
+| 期望结果 | 加载/可用/空/错误状态均可辨识；配置真实保存；discover 结果显示且不擅自修改 Provider |
+| 自动化 | `test/desktop-live2d/modelConfigClient.test.js` 覆盖安全快照与 discover 成功/空列表和服务离线；完整配置页交互 manual |
 
 ## TC-DESKTOP-003 夜景视觉与透明人物窗口
 
@@ -45,3 +45,13 @@
 | 步骤 | 全新启动桌面端，不做额外刷新；打开聊天窗模型浮层 |
 | 期望结果 | chat renderer 执行前模型 IPC 已注册；首次启动直接显示当前模型，不出现 “No handler registered” |
 | 自动化 | `test/desktop-live2d/modelConfigClient.test.js` 验证注册顺序；2026-10-13 Electron + 本机隔离网关实测 |
+
+## TC-DESKTOP-005 聊天请求级模型选择
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | integration |
+| 前置条件 | 网关存在多个已启用模型 |
+| 步骤 | 在聊天窗选择模型并发送消息；随后打开新会话或修改电脑端默认模型 |
+| 期望结果 | 本次 `runtime.run` 携带选择的 `model_ref`；聊天选择不改写电脑端全局默认模型 |
+| 自动化 | `test/desktop-live2d/gatewayRuntimeClient.test.js`、`test/desktop-live2d/desktopSuite.test.js`、`test/desktop-live2d/chatWindowMarkup.test.js` |

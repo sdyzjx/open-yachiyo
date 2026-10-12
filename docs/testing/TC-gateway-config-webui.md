@@ -25,3 +25,4 @@
 | TC-CFG-015 | 语音配置路由仅限 loopback | integration | 伪造非本机 TCP peer | GET/PUT/DELETE/POST 所有语音配置入口 | 全部返回 403 | `test/gateway/voiceConfig.test.js` |
 | TC-CFG-016 | 概览聚合状态与快捷入口 | unit | 无 | 检查概览脚本 | 读取 models/voice/devices，展示四类状态并提供三个设置页快捷入口 | `test/gateway/configUi.test.js` |
 | TC-CFG-017 | 本机对端的 DNS 重绑定 / 外域 Origin 被拒 | integration | 本机 TCP 对端访问 `/api/config/**` | 分别以 Host `127.0.0.1`/`localhost`/`[::1]`、Host `evil.example`、Origin `http://evil.example`、Origin `null` 请求 | 本机 Host 且无 Origin 或本机 Origin → 200；其他 → 403 | `test/gateway/configSecurity.test.js` / TC-CFG-017 |
+| TC-CFG-018 | 模型编辑器完整保存能力与音频模式 | unit | 配置页模型编辑器 | 将 Omni 的 input、output、transport、audio mode 编码为六列后再解析；解析旧四列格式 | 六列能力无损回写并补齐 Realtime PCM 默认值；旧格式仍按 request/realtime 传输列解析 | `test/gateway/configV2ModelCodec.test.js` |

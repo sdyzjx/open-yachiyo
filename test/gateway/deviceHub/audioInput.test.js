@@ -52,6 +52,67 @@ test('ASR DashScope inline WAV and legacy fallback are deterministic', async () 
   assert.equal((await fallback({ wav, file: 'test.wav' })).text, 'fallback');
 });
 
+test('TC-VOC-024 Omni direct audio bypasses ASR and keeps the selected model for the agent turn', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-omni-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const calls = [];
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]),
+    publish() {},
+    async runInput(_device, input) { calls.push(input); }
+  });
+  let asrCalls = 0;
+  const audio = attachAudioInput({
+    hub,
+    directory,
+    transcribe: async () => { asrCalls += 1; return { text: 'wrong' }; },
+    omniAudio: { transcribe: async ({ modelRef, wav }) => {
+      assert.equal(modelRef, 'qwen/qwen3.8-omni-flash');
+      assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+      return { text: 'direct request' };
+    } }
+  });
+  t.after(() => hub.emit('shutdown'));
+  await audio.handle(audioEvent('audio.input.start', device, {
+    ...startData('direct'), audio_mode: 'direct', model_ref: 'qwen/qwen3.8-omni-flash'
+  }));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'direct', seq: 0, data_b64: Buffer.alloc(3200, 1).toString('base64') }));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'direct', reason: 'released' }));
+  assert.equal(asrCalls, 0);
+  assert.equal(calls[0].text, 'direct request');
+  assert.equal(calls[0].model_ref, 'qwen/qwen3.8-omni-flash');
+});
+
+test('TC-VOC-025 Realtime audio streams chunks and does not enqueue a second agent turn', async (t) => {
+  const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const device = { device_id: 'phone', ws: {} };
+  const chunks = [];
+  let finished = 0;
+  let runs = 0;
+  const hub = Object.assign(new EventEmitter(), {
+    devices: new Map([[device.device_id, device]]), publish() {}, async runInput() { runs += 1; }
+  });
+  const audio = attachAudioInput({
+    hub, directory, transcribe: async () => ({ text: 'wrong' }),
+    omniAudio: { startRealtime: ({ modelRef }) => {
+      assert.equal(modelRef, 'qwen/qwen3.8-omni-flash-realtime');
+      return { append: (value) => chunks.push(value), finish: async () => { finished += 1; }, cancel() {} };
+    } }
+  });
+  t.after(() => hub.emit('shutdown'));
+  const data = Buffer.alloc(3200, 2).toString('base64');
+  await audio.handle(audioEvent('audio.input.start', device, {
+    ...startData('rt'), audio_mode: 'realtime', model_ref: 'qwen/qwen3.8-omni-flash-realtime'
+  }));
+  await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'rt', seq: 0, data_b64: data }));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'rt', reason: 'released' }));
+  assert.deepEqual(chunks, [data]);
+  assert.equal(finished, 1);
+  assert.equal(runs, 0);
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
