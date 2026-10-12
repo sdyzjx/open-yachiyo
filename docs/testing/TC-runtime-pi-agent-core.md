@@ -21,3 +21,5 @@
 | TC-PI-009 | 总线与 Avatar 权限 | unit | 假 Hub/controller | 发布合法/非法主题、移交、deny | 非法发布拒绝，移交参数保留 | deviceTools.test.js: TC-PI-009 bus namespace, schema, policy and avatar routing are enforced |
 | TC-PI-010 | Prompt 与旧核心逐段比对 | integration | 离线假 reasoner | 捕获旧循环 system messages，对比新 builder | 每个原有段落存在 | promptBuilder.test.js: TC-PI-010 prompt migration preserves each legacy system paragraph |
 | TC-PI-011 | 低权限和语音关闭 | unit | low、voice off | 构造 prompt | 不含 memory seed 与语音强制规则 | promptBuilder.test.js: TC-PI-011 low permission omits memory seeds and voice force-off instructions |
+| TC-PI-012 | pi JSONL 恢复与路径隔离 | integration | 临时目录、实际 SessionManager | 写入并重建 bridge | 第一轮上下文可恢复，seed 不重复，路径安全 | sessionBridge.test.js: TC-PI-012 stable pi sessions restore history and do not duplicate seeds |
+| TC-PI-013 | 串行与 UI 镜像 | integration | 真 FileSessionStore | 并发同 session、写历史 | 顺序稳定、关闭镜像不重复写 | sessionBridge.test.js: TC-PI-013 session serialization and optional UI history mirror |

@@ -91,3 +91,7 @@ loadPi 缓存加载、Model Catalog 映射与隔离 provider 注册完成；模�
 ### 任务 5
 
 提示词迁移完成，与真实旧 ToolLoopRunner 生成的 system 段落逐段比对；`npm run test:ci` 520 / 520 通过。
+
+### 任务 6
+
+SessionManager 持久化、稳定安全路径、旧历史单次导入、同会话串行、UI 镜像开关及压缩配置完成；`npm run test:ci` 522 / 522 通过。

@@ -37,3 +37,5 @@
 设备工具在请求边界刷新，支持 tools.changed 通知和显式释放订阅。bus_publish 仅接受 plugin./avatar./ui./task.；avatar_status 查询 host/devices，avatar_transfer 经注入的服务端控制器执行，未装配时明确失败。
 
 Prompt 已迁移：persona 与技能上下文、原 memory SOP/bootstrap system seeds、语音强制/自动回复、persona 修改和截图规则逐段保留，并附会话权限说明。low 权限过滤传入的 memory seeds。
+
+会话由 SessionManager 写入 pi-sessions 的 SHA-256(session_id).jsonl，同一会话串行处理；首次恢复导入旧 UI 历史，后续不重复 seed。支持独立模式镜像 FileSessionStore；网关模式关闭镜像并继续使用原 hooks。压缩默认 enabled=true/reserveTokens=16384/keepRecentTokens=20000，可由工厂 compaction 覆盖。
