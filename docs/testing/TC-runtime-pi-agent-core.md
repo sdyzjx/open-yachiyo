@@ -35,3 +35,5 @@
 | TC-PI-023 | 自动压缩持久化 | integration | 小上下文模型、本地 mock usage | 三轮对话触发 threshold | 实际生成并持久化 compaction entry，下一轮继续 | piRuntime.test.js: TC-PI-023 automatic compaction persists a summary and resumes through pi |
 | TC-PI-024 | 自定义推理字段 | unit | 字节切分 UTF-8 SSE | 转换字段并回放历史 | 中文与 DONE 帧保留，历史映射到配置字段 | modelAdapter.test.js: TC-PI-024 custom reasoning fields normalize split UTF-8 SSE and history replay |
 | TC-PI-025 | 多 provider 工具名编码 | integration | 含点、冲突候选、超长名称的工具，本地 SSE mock | 发送工具 schema、由模型调用含点工具 | 线上名称合法无碰撞；executor、Live2D 控制与所有兼容事件使用原名 | piRuntime.test.js: TC-PI-025 provider-safe tool names execute and emit their original names without collisions |
+| TC-PI-026 | 需要审批的工具返回审批 ID 而不是错误 | unit | `shell.exec` 抛 `APPROVAL_REQUIRED`（含 approval_id） | 经 pi 工具桥执行 | 工具结果为普通观察：含 code、details.approval_id、指向 `shell__approve` 的 next_step；不计入工具错误次数 | `test/runtime/agent-pi/toolBridge.test.js` / TC-PI-026 |
+| TC-PI-027 | 其他工具失败保留错误码与详情 | unit | 工具抛带 details 的 ToolingError | 经 pi 工具桥执行 | 抛出的错误文本包含错误码与 details JSON | `test/runtime/agent-pi/toolBridge.test.js` / TC-PI-027 |

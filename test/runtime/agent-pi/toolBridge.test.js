@@ -48,3 +48,27 @@ test('TC-PI-007 desktop capture result includes an actual image block', async (t
   const result = await tool.execute('call', {});
   assert.deepEqual(result.content[1], { type: 'image', data: Buffer.from('offline-image').toString('base64'), mimeType: 'image/png' });
 });
+
+test('TC-PI-026 APPROVAL_REQUIRED is returned as an observation carrying approval_id, not a tool error', async () => {
+  const { ToolingError, ErrorCode } = require('../../../apps/runtime/tooling/errors');
+  const executor = new ToolExecutor({
+    'shell.exec': { run: () => { throw new ToolingError(ErrorCode.APPROVAL_REQUIRED, 'shell command requires approval before execution', { approval_id: 'appr-123', scope_options: ['once'] }); } },
+    'shell.approve': { run: () => 'ok' }
+  });
+  const reported = [];
+  const tools = bridgeTools({ executor, context: { reportToolError: (id, r) => reported.push(r) } });
+  const exec = tools.find((t) => t.name === 'shell__exec');
+  const result = await exec.execute('call-1', {});
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.code, 'APPROVAL_REQUIRED');
+  assert.equal(payload.details.approval_id, 'appr-123');
+  assert.match(payload.next_step, /shell__approve/);
+  assert.equal(reported.length, 0);
+});
+
+test('TC-PI-027 other tool failures keep their code and details in the error text', async () => {
+  const { ToolingError, ErrorCode } = require('../../../apps/runtime/tooling/errors');
+  const executor = new ToolExecutor({ broken: { run: () => { throw new ToolingError(ErrorCode.RUNTIME_ERROR, 'boom', { hint: 'x' }); } } });
+  const [tool] = bridgeTools({ executor });
+  await assert.rejects(tool.execute('c', {}), (err) => /boom/.test(err.message) && /"hint":"x"/.test(err.message));
+});
