@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Yachiyo Native Shell</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:24px; font:14px/1.5 system-ui,sans-serif; background:#1d2233; color:#e8ecf5; }
+  h1 { font-size:18px; margin:0 0 8px; }
+  button { margin:4px 4px 4px 0; padding:8px 12px; border:0; border-radius:8px; background:#3b4a7a; color:#fff; font-size:14px; }
+  pre { background:#12151f; padding:10px; border-radius:8px; white-space:pre-wrap; word-break:break-all; max-height:36vh; overflow:auto; }
+</style>
+</head>
+<body>
+<h1>Yachiyo Native Shell (fallback page)</h1>
+<p>assets/web/index.html not found. This page exercises the native bridge.</p>
+<div>
+  <button onclick="call('getDeviceInfo')">deviceInfo</button>
+  <button onclick="call('getConfig')">getConfig</button>
+  <button onclick="call('hubState')">hubState</button>
+  <button onclick="N('hubConnect')">connect</button>
+  <button onclick="N('hubDisconnect')">disconnect</button>
+  <button onclick="N('vibrate',80)">vibrate</button>
+  <button onclick="N('micStart','{&quot;mode&quot;:&quot;push_to_talk&quot;}')">micStart</button>
+  <button onclick="N('micStop','released')">micStop</button>
+  <button onclick="call('listPlugins')">plugins</button>
+  <button onclick="N('pickPluginPackage')">pickPlugin</button>
+  <button onclick="N('pickBackground')">pickBg</button>
+  <button onclick="call('listLaunchableApps')">apps</button>
+  <button onclick="N('openHomeSettings')">homeSettings</button>
+  <button onclick="N('setOrientation','landscape')">landscape</button>
+  <button onclick="N('setOrientation','auto')">auto</button>
+  <button onclick="N('setLockscreenEnabled',true)">lockscreen on</button>
+</div>
+<pre id="out"></pre>
+<script>
+  var out = document.getElementById('out');
+  function log(s) { out.textContent = s + '\n' + out.textContent; }
+  function N(m) { try { var a = Array.prototype.slice.call(arguments, 1); window.YachiyoNative[m].apply(window.YachiyoNative, a); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  function call(m) { try { log(m + ' -> ' + window.YachiyoNative[m]()); } catch (e) { log('ERR ' + m + ' ' + e); } }
+  window.__yachiyoNative = { dispatch: function (msg) { log('EVT ' + JSON.stringify(msg).slice(0, 300)); } };
+  log('mode=' + location.search + ' bridge=' + (typeof window.YachiyoNative));
+</script>
+</body>
+</html>
