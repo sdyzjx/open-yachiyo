@@ -17,11 +17,14 @@
 
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/CHAT_IMAGE_FLOW_WEBUI_DESKTOP.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/DESKTOP_MARKDOWN_MERMAID_FEATURE.md)
+- [Android 桌面接管（Launcher）与锁屏显示人物](features/FEAT-android-launcher-lockscreen.md)
+- [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 
 ## 指南 Guides
 
 配置、安装、打包等使用指南。
 
+- [Android 客户端构建与真机调试指南](guides/ANDROID_BUILD_GUIDE.md)
 - [macOS Packaging Guide](guides/MAC_PACKAGING_GUIDE.md)
 - [Onboarding API Guide](guides/ONBOARDING_API_GUIDE.md)
 - [Provider 配置指南](guides/PROVIDER_CONFIGURATION_GUIDE.md)
@@ -123,6 +126,7 @@
 
 测试策略与用例集（TC-*）。
 
+- [Android 原生壳测试用例](testing/TC-android-native.md)
 - [Testing and CI](testing/TESTING.md)
 - [Test Skill Smoke Guide](testing/TEST_SKILL_SMOKE_GUIDE.md)
 
