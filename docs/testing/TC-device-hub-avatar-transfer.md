@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../features/FEAT-device-hub-avatar-transfer.md
 
 | ID | 标题 | 类型 | 前置条件 | 步骤 | 期望结果 | 自动化 |
@@ -21,3 +21,5 @@
 | TC-AVT-008 | 移交中断与并发 | integration | 两假设备 | prepare 后并发请求；exit 时目标离线 | 并发拒绝；原请求失败且 host 回滚，transfer_id 一致 | `test/gateway/deviceHub/avatarHost.test.js` / Avatar target disconnect during exit rolls back and concurrent transfers are rejected |
 
 | TC-AVT-009 | 真实桌面/手机往返 | manual-device | 合并 WS3/WS4/WS5；桌面与手机在线 | 从设备页/托盘双向移交；在播音时移交；中途断网 | 下蹲/滑出/进入动画符合 C1.5；非 host 不显示/发声；目标失败源恢复 | manual（统筹者待执行） |
+| TC-AVT-010 | Android desktop owner 断线稳定 | unit | owner=desktop | socket lost → reconnect → 重复 welcome desktop | 全程非 host；普通状态刷新不触发 enter/exit | `test/android-web/avatarOwnerState.test.js` / desktop owner remains hidden through socket loss, reconnect and repeated welcome；Hub state refresh does not start enter or exit animations |
+| TC-AVT-011 | Android unknown/phone owner 断线 | unit | owner 未知或本机 | 首次 connecting；本机 owner 后断线 | unknown 保持隐藏；本机保持显示；均不伪造 owner transition | 同文件 / unknown owner stays hidden and last phone owner survives disconnect without a new transition |

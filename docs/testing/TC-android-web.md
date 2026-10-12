@@ -317,3 +317,93 @@
 | 步骤 | RPC 写入 `ParamBodyAngleX`，推进多个 `beforeModelUpdate`，动作队列回到 Idle 后继续推进 |
 | 期望结果 | RPC 时不直接改 coreModel；参数只在 `beforeModelUpdate` overlay 层平滑写入；Idle 复位后权重渐退并最终移除 |
 | 自动化 | `test/desktop-live2d/live2dParameterOverlay.test.js` |
+
+## TC-AWB-032 统一主题 token 接入
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 已执行 `npm run android:sync-assets` |
+| 步骤 | 检查 `generated/shared/yachiyo-theme.css` 存在；主页面与设置页正常渲染 |
+| 期望结果 | 同步脚本复制 `apps/desktop-live2d/shared/theme/yachiyo-theme.css`；`index.html` / `settings.html` 先加载主题再加载自身样式；`app.css` / `settings.css` 只引用 `--y-*` 颜色变量，不再自定义重复色板 |
+| 自动化 | `test/android-web/theme.test.js` / Android pages link the shared Yachiyo theme |
+
+## TC-AWB-033 竖屏对话面板不遮脸且可滚动
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 竖屏，人物显示；可通过 CDP 向 WebView 注入 `chat.final` / `chat.delta` / `task.update`（`YachiyoBridge.emitLocal('hub.event', {topic, data})`） |
+| 步骤 | 注入多条超长回复；观察面板位置；在面板上上下滑动；上滑后再注入新增量；横屏重复 |
+| 期望结果 | 面板在画面下半部，上沿始终低于人物脸部；超长文本在面板内滚动，不触发抽屉/舞台手势；用户上滑后新内容不强制滚到底，自己发送消息后回到底部 |
+| 自动化 | `test/android-web/layout.test.js`、`test/android-web/chatPanel.test.js` + manual-device |
+
+## TC-AWB-034 软键盘只上移输入与对话面板
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 竖屏主界面，人物已显示，可通过 CDP 读取元素与 canvas 几何信息 |
+| 步骤 | 1) 记录 `#stage`/canvas 外框与人物取景参数；2) 点击输入框弹出键盘；3) 记录输入栏、对话面板与舞台位置；4) 关闭键盘 |
+| 期望结果 | Activity 不 resize/pan；人物与舞台前后几何信息完全一致；输入栏和对话面板平滑移到键盘上方，键盘关闭后复位 |
+| 自动化 | `apps/android/app/src/test/java/com/yachiyo/companion/bridge/ImeMetricsTest.kt`、`test/android-web/chatPanel.test.js` + manual-device |
+
+## TC-AWB-035 HUD 常驻迁移控件与取消安全
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 主界面连接隔离测试 Hub；可注入 avatar 事件；真机观察时不点击迁移按钮 |
+| 步骤 | 1) 切换 connected/disconnected、desktop/mobile owner 和 desktop online/offline 快照；2) 连续点击控件；3) 注入 prepare/enter 后立即注入 failed/cancel；4) 让旧异步模型加载/动画完成 |
+| 期望结果 | HUD 文案为「叫回电脑」/「让她过来」并准确显示 owner+pending+在线；pending 期禁止重复 RPC；所有终止路径清理 pending；cancel 后旧 continuation 不发 `entered` |
+| 自动化 | `test/android-web/transferControl.test.js`、`test/android-web/avatarOwnerState.test.js` + manual-device |
+
+## TC-AWB-036 脖子线对话框纯函数布局
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | 无 |
+| 步骤 | 分别输入竖屏、横屏居中、左侧栏、右侧栏、HUD 与全屏插件面板矩形 |
+| 期望结果 | 面板上沿不越过模型 bounds 的 24% 脖子线，下沿在输入栏上方；侧栏态在侧栏外；迁移/设置/插件矩形均不重叠，无安全空间时隐藏 |
+| 自动化 | `test/android-web/layout.test.js`（B9 portrait / landscape center / open side layouts） |
+
+## TC-AWB-037 对话框跟手与吸附连续插值
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 小米 6 横屏，已有多条对话内容 |
+| 步骤 | 左右慢拖并在多个进度连续截图或录屏；分别松手吸附到左右侧栏；检查 `t=0/0.5/1` 及越界输入 |
+| 期望结果 | 面板位置、宽高、圆角、不透明度、对齐偏置逐帧连续变化，与人物和侧栏同步；松手使用同一面板弹簧，无跳变；插值端点精确且 t 被限制到 0..1 |
+| 自动化 | `test/android-web/layout.test.js`（B9 chat interpolation）+ manual-device |
+
+## TC-AWB-038 对话框四态、方向切换与键盘联合回归
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | manual-device |
+| 前置条件 | 小米 6，竖屏/横屏旋转可控，已有长文本，可读取 WebView 元素矩形 |
+| 步骤 | 截图竖屏、横屏居中、横屏左滑、横屏右滑四态；连续截图一次横竖屏切换；竖屏弹出键盘并滚动长文本 |
+| 期望结果 | 四态均不挡脸，不与输入栏、迁移控件、设置按钮、侧栏或插件面板重叠；方向切换无闪烁跳变；键盘只移动输入和对话区域，长文本仍在面板内滚动且不触发舞台手势 |
+| 自动化 | manual；方向初始矩形归一化由 `test/android-web/layout.test.js`（B9 orientation remap）覆盖 |
+
+## TC-AWB-039 横屏居中双列对话与合并过渡
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 小米 6 横屏居中；可注入多轮长回答与用户消息；可读取三套滚动区矩形 |
+| 步骤 | 1) 交替注入多轮回答和用户消息；2) 分别上翻左右列后继续注入；3) 左右慢拖到 `t=0.5` 后吸附；4) 从两侧栏反向拖回中心；5) 旋转到竖屏 |
+| 期望结果 | 回答只显示在人物左列、用户消息只显示在右列；两列避开模型和全部 HUD、各自滚动且互不改变贴底状态；`t=0/0.5/1` 时双列连续合并为单面板，最终按完整时间顺序显示；吸附及方向切换无跳变 |
+| 自动化 | `test/android-web/layout.test.js`（split lanes / split interpolation）、`test/android-web/chatPanel.test.js`（independent lane pinning）+ manual-device |
+
+## TC-AWB-040 横屏分栏边界与侧栏齿轮避让
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 小米 6 横屏居中并有多轮长对话；可用页面状态函数打开左右侧栏，不发送坐标点击 |
+| 步骤 | 1) 记录完整模型 bounds 与双列矩形；2) 检查两列内侧间距和宽屏上限；3) 分别打开左右侧栏并记录设置齿轮与侧栏矩形；4) 截图复核标题区 |
+| 期望结果 | 双列内侧距完整模型 bounds 约 16 px，消息不覆盖头发、袖子或身体，单列不超过 420 px且宽屏额外空间留在外侧；任一侧栏终态齿轮均在面板内容外，右侧插件栏展开过程中齿轮与面板同步移动 |
+| 自动化 | `test/android-web/layout.test.js`（full model bounds / lane max width / settings shift）+ manual-device |

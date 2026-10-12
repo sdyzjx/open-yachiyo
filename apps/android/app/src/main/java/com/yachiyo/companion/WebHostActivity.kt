@@ -22,6 +22,10 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.provider.Settings
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.yachiyo.companion.bridge.ImeMetrics
+import com.yachiyo.companion.bridge.ImeState
 import androidx.webkit.WebViewAssetLoader
 
 /** Full-screen immersive WebView host shared by the main and lockscreen activities. */
@@ -78,6 +82,7 @@ abstract class WebHostActivity : Activity() {
         setContentView(webView)
         applyImmersive()
         bridge = YachiyoNativeBridge(this, webView)
+        observeIme()
         webView.addJavascriptInterface(bridge.gate, "__YachiyoBridge")
         bridge.attach()
         registerReceiver(screenState, android.content.IntentFilter().apply {
@@ -92,6 +97,37 @@ abstract class WebHostActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         webView.saveState(outState)
+    }
+
+    private var lastIme = ImeState(false, 0, 0)
+    private var imeInsetBottom = 0
+    private var imeInsetVisible = false
+
+    /**
+     * B8: with `adjustNothing` the WebView is never resized or panned; the Web layer moves only the input bar.
+     * Height comes from WindowInsetsCompat.Type.ime(); the visible-frame diff covers devices that do not deliver IME insets.
+     */
+    private fun observeIme() {
+        val decor = window.decorView
+        ViewCompat.setOnApplyWindowInsetsListener(decor) { v, insets ->
+            imeInsetVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            imeInsetBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            publishIme()
+            // Do not dispatch the same insets back through this listener: returning them keeps
+            // system-bar handling intact without risking recursive delivery on older AndroidX.
+            insets
+        }
+        decor.viewTreeObserver.addOnGlobalLayoutListener { publishIme() }
+    }
+
+    private fun publishIme() {
+        val decor = window.decorView
+        val frame = android.graphics.Rect()
+        decor.getWindowVisibleDisplayFrame(frame)
+        val state = ImeMetrics.compute(imeInsetBottom, imeInsetVisible, decor.rootView.height, frame.bottom, resources.displayMetrics.density)
+        if (state == lastIme) return
+        lastIme = state
+        if (::bridge.isInitialized) bridge.emitIme(state)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

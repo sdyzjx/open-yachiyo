@@ -46,10 +46,12 @@ test('panel transforms: apps panel visible on left swipe, widgets on right swipe
   assert.equal(left.modelDx, -geom.shiftPx);
   assert.equal(left.appsX, 0);
   assert.equal(left.widgetsX, -geom.panelW);
+  assert.equal(left.settingsX, -geom.panelW);
   const right = L.panelTransforms(1, geom);
   assert.equal(right.modelDx, geom.shiftPx);
   assert.equal(right.widgetsX, 0);
   assert.equal(right.appsX, geom.panelW);
+  assert.equal(right.settingsX, 0);
   const mid = L.panelTransforms(0, geom);
   assert.equal(Math.abs(mid.modelDx), 0);
   assert.ok(Math.abs(mid.modelScaleMul - 1) < 1e-9);
@@ -102,4 +104,163 @@ test('quality and focus resolution', () => {
   assert.equal(L.resolveFocus({ landscape: true, config: { landscape_focus: 'upper_body' } }), 'upper');
   assert.equal(L.resolveFocus({ landscape: true, config: { landscape_focus: 'full_body' } }), 'full');
   assert.equal(L.resolveFocus({ landscape: false, config: { portrait_full_body: true } }), 'full');
+});
+
+test('face region covers the top 30% of the drawn character in screen space', () => {
+  const f = L.computeFrame({ viewW: 1080, viewH: 1920, content: { x0: 0, y0: 0, x1: 1000, y1: 2000 }, focus: 'full' });
+  const p = L.placeModel(f);
+  const face = L.faceRegion({ content: { x0: 0, y0: 0, x1: 1000, y1: 2000 }, scale: p.scale, x: p.x, y: p.y });
+  assert.ok(Math.abs(face.top - 1920 * 0.04) < 1);
+  assert.ok(Math.abs(face.bottom - (face.top + 0.3 * 2000 * p.scale)) < 1e-6);
+  assert.ok(face.bottom < 1920 * 0.4);
+});
+
+test('chat panel stays below the face, is capped, and hides when there is no room', () => {
+  const roomy = L.chatPanelBounds({ viewH: 1920, faceBottom: 650, bottomOffset: 92 });
+  assert.equal(roomy.hidden, false);
+  assert.equal(roomy.maxHeight, Math.floor(1920 * 0.42)); // capped by max ratio, top edge = 1920-92-806 = 1022 > face bottom
+  assert.ok(1920 - 92 - roomy.maxHeight >= 650 + 10);
+  const withIme = L.chatPanelBounds({ viewH: 1920, faceBottom: 650, bottomOffset: 92 + 800 });
+  assert.equal(withIme.maxHeight, 1920 - 892 - 660); // 368: limited by the face, not by the cap
+  const cramped = L.chatPanelBounds({ viewH: 1920, faceBottom: 650, bottomOffset: 92 + 1200 });
+  assert.equal(cramped.hidden, true);
+  assert.equal(cramped.maxHeight >= 0, true);
+});
+
+test('B9 portrait chat stays below the 24% neck line and above the input', () => {
+  const modelBounds = { left: 80, top: 40, right: 280, bottom: 600 };
+  const result = L.computeChatPanelLayout({
+    viewport: { width: 360, height: 640 }, modelBounds,
+    hud: { input: { left: 0, top: 560, right: 360, bottom: 640 } }
+  });
+  const neckY = 40 + (600 - 40) * 0.24;
+  assert.equal(result.neckY, neckY);
+  assert.ok(result.top >= neckY + 10);
+  assert.ok(result.bottom <= 550);
+  assert.deepEqual([result.left, result.right], [14, 346]);
+  assert.equal(result.hidden, false);
+});
+
+test('B9 landscape center uses the wider blank side and avoids HUD rectangles', () => {
+  const result = L.computeChatPanelLayout({
+    viewport: { width: 640, height: 360 },
+    modelBounds: { left: 260, top: 10, right: 400, bottom: 500 },
+    preferredSide: 'left',
+    hud: {
+      input: { left: 0, top: 304, right: 640, bottom: 360 },
+      transfer: { left: 38, top: 90, right: 210, bottom: 160 },
+      settings: { left: 584, top: 10, right: 626, bottom: 52 }
+    }
+  });
+  assert.ok(result.right <= 250); // left of the character plus the 10 px gap
+  assert.ok(result.top >= 170); // pushed under the overlapping transfer control
+  assert.ok(result.bottom <= 294); // above the input bar plus gap
+  assert.equal(result.style.alignment, 1);
+});
+
+test('B9 landscape center split lanes fill both sides and avoid every HUD rectangle', () => {
+  const result = L.computeChatSplitLayout({
+    viewport: { width: 640, height: 360 },
+    modelBounds: { left: 250, top: 10, right: 390, bottom: 500 },
+    hud: {
+      status: { left: 18, top: 18, right: 26, bottom: 26 },
+      transfer: { left: 38, top: 10, right: 220, bottom: 50 },
+      settings: { left: 584, top: 10, right: 626, bottom: 52 },
+      input: { left: 0, top: 304, right: 640, bottom: 360 },
+      chat: { left: 22, top: 290, right: 70, bottom: 338 },
+      mic: { left: 554, top: 282, right: 618, bottom: 346 }
+    }
+  });
+  assert.deepEqual([result.agent.left, result.agent.right], [14, 234]);
+  assert.deepEqual([result.user.left, result.user.right], [406, 626]);
+  assert.ok(result.agent.top >= 66);
+  assert.ok(result.user.top >= 68);
+  assert.ok(result.agent.bottom <= 274);
+  assert.ok(result.user.bottom <= 266);
+  assert.equal(result.hidden, false);
+});
+
+test('B9 split lanes keep a 16px gap outside the full model bounds and cap width on wide screens', () => {
+  const result = L.computeChatSplitLayout({
+    viewport: { width: 1600, height: 700 },
+    modelBounds: { left: 500, top: 0, right: 1100, bottom: 900 },
+    hud: {}
+  });
+  assert.deepEqual([result.agent.left, result.agent.right, result.agent.width], [64, 484, 420]);
+  assert.deepEqual([result.user.left, result.user.right, result.user.width], [1116, 1536, 420]);
+});
+
+test('B9 open side layouts exclude either drawer and plugin sheet', () => {
+  const base = {
+    viewport: { width: 640, height: 360 },
+    modelBounds: { left: 200, top: 8, right: 440, bottom: 500 },
+    panelWidth: 294,
+    hud: { input: { left: 0, top: 304, right: 640, bottom: 360 } }
+  };
+  const apps = L.computeChatPanelLayout({ ...base, panelState: -1,
+    sidePanel: { left: 346, top: 0, right: 640, bottom: 360 } });
+  assert.ok(apps.right <= 336);
+  const widgets = L.computeChatPanelLayout({ ...base, panelState: 1,
+    sidePanel: { left: 0, top: 0, right: 294, bottom: 360 } });
+  assert.ok(widgets.left >= 304);
+  const fullPlugin = L.computeChatPanelLayout({ ...base, panelState: -1,
+    hud: { ...base.hud, pluginPanel: { left: 0, top: 0, right: 640, bottom: 360 } } });
+  assert.equal(fullPlugin.hidden, true);
+});
+
+test('B9 chat interpolation is exact at t=0/0.5/1 and clamps boundaries', () => {
+  const a = { left: 10, top: 100, right: 210, bottom: 300, width: 200, height: 200, neckY: 90, hidden: false,
+    style: { radius: 20, opacity: 0.96, alignment: 1 } };
+  const b = { left: 300, top: 150, right: 620, bottom: 290, width: 320, height: 140, neckY: 140, hidden: false,
+    style: { radius: 14, opacity: 0.9, alignment: 0 } };
+  assert.deepEqual(L.interpolateChatPanelLayout(a, b, 0), a);
+  assert.deepEqual(L.interpolateChatPanelLayout(a, b, 1), b);
+  const mid = L.interpolateChatPanelLayout(a, b, 0.5);
+  assert.equal(mid.left, 155);
+  assert.equal(mid.width, 260);
+  assert.equal(mid.style.radius, 17);
+  assert.ok(Math.abs(mid.style.opacity - 0.93) < 1e-9);
+  assert.equal(mid.style.alignment, 0.5);
+  assert.deepEqual(L.interpolateChatPanelLayout(a, b, -2), a);
+  assert.deepEqual(L.interpolateChatPanelLayout(a, b, 2), b);
+});
+
+test('B9 split lanes interpolate into one merged panel at t=0/0.5/1', () => {
+  const style = { radius: 20, opacity: 0.96, alignment: 1 };
+  const agent = { left: 14, top: 60, right: 230, bottom: 280, width: 216, height: 220, neckY: 0, hidden: false, style, presence: 1 };
+  const user = { left: 410, top: 64, right: 626, bottom: 270, width: 216, height: 206, neckY: 0, hidden: false,
+    style: { ...style, alignment: -1 }, presence: 1 };
+  const merged = { left: 14, top: 180, right: 336, bottom: 288, width: 322, height: 108, neckY: 170, hidden: false,
+    style: { radius: 14, opacity: 0.9, alignment: 0 } };
+  const start = L.interpolateSplitChatLayout({ split: { agent, user }, merged, progress: 0 });
+  assert.deepEqual(start.agent, agent);
+  assert.deepEqual(start.user, user);
+  assert.equal(start.merged.presence, 0);
+  const mid = L.interpolateSplitChatLayout({ split: { agent, user }, merged, progress: 0.5 });
+  assert.equal(mid.agent.left, 14);
+  assert.equal(mid.agent.top, 120);
+  assert.equal(mid.user.left, 212);
+  assert.equal(mid.agent.presence, 0.5);
+  assert.equal(mid.merged.presence, 0.5);
+  const end = L.interpolateSplitChatLayout({ split: { agent, user }, merged, progress: 1 });
+  assert.equal(end.agent.presence, 0);
+  assert.equal(end.user.presence, 0);
+  assert.equal(end.merged.presence, 1);
+  assert.deepEqual([end.agent.left, end.agent.top, end.agent.width], [merged.left, merged.top, merged.width]);
+});
+
+test('B9 orientation remap preserves normalized rectangle before interpolation', () => {
+  const layout = { left: 36, top: 128, right: 324, bottom: 548, width: 288, height: 420, neckY: 120,
+    hidden: false, style: { radius: 20, opacity: 0.96, alignment: 0 } };
+  const mapped = L.remapChatPanelLayout(layout, { width: 360, height: 640 }, { width: 640, height: 360 });
+  assert.equal(mapped.left, 64);
+  assert.equal(mapped.top, 72);
+  assert.equal(mapped.width, 512);
+  assert.equal(mapped.height, 236.25);
+  assert.deepEqual(mapped.style, layout.style);
+});
+
+test('isNearBottom pins only when the reader has not scrolled up', () => {
+  assert.equal(L.isNearBottom({ scrollTop: 500, clientHeight: 300, scrollHeight: 810 }), true);
+  assert.equal(L.isNearBottom({ scrollTop: 200, clientHeight: 300, scrollHeight: 810 }), false);
 });

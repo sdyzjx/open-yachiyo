@@ -5,6 +5,8 @@
   const B = window.YachiyoBridge;
   const L = window.YachiyoLayout;
   const T = window.YachiyoTransfer;
+  const TC = window.YachiyoTransferControl;
+  const O = window.YachiyoAvatarOwnerState;
   const qs = new URLSearchParams(location.search);
   const $ = (id) => document.getElementById(id);
   const log = (level, msg) => B.log(level, msg);
@@ -20,16 +22,20 @@
   const el = {
     stage: $('stage'), bg: $('bg'), widgetsPanel: $('widgets-panel'), appsPanel: $('apps-panel'), canvas: $('canvas'),
     away: $('away'), awayWhere: $('away-where'), awayCall: $('away-call'), dot: $('hub-dot'),
+    transfer: $('btn-transfer'), transferReason: $('transfer-reason'),
     mic: $('mic-level'), micBtn: $('btn-mic'), chatBtn: $('btn-chat'), chatForm: $('chat-form'), chatText: $('chat-text'),
-    settings: $('btn-settings'), drawer: $('drawer'), menu: $('menu'), toast: $('toast')
+    settings: $('btn-settings'), sheet: $('sheet'), drawer: $('drawer'), menu: $('menu'), toast: $('toast')
   };
 
   /* ------------------------------------------------------------------ state */
   const S = {
     hub: B.hubState(), view: { w: innerWidth, h: innerHeight }, landscape: innerWidth > innerHeight,
-    panelState: 0, drawerOpen: false, sheetOpen: false, editing: false,
-    parked: false, exited: false, anim: null, paused: false, firstFrame: true, modelPromise: null, presented: false
+    ime: { visible: false, css: 0 }, panelState: 0, drawerOpen: false, sheetOpen: false, editing: false,
+    parked: false, exited: false, anim: null, paused: false, firstFrame: true, modelPromise: null, presented: false,
+    transferRequestPending: false
   };
+  const ownerTracker = O.createOwnerTracker({ deviceId, initialHub: S.hub });
+  const transferEvents = TC.createTransferEventGuard();
   const cam = {
     scale: L.createSpring({ stiffness: 110, damping: 21 }),
     x: L.createSpring({ stiffness: 110, damping: 21 }),
@@ -37,9 +43,10 @@
   };
   const panel = L.createSpring({ stiffness: 260, damping: 27 });
   const drawer = L.createSpring({ stiffness: 300, damping: 31 });
+  const chatOrientation = L.createSpring({ value: 1, stiffness: 110, damping: 21 });
   let geom = L.panelGeometry({ viewW: innerWidth, viewH: innerHeight });
 
-  const isHost = () => !(S.hub.state === 'connected' && S.hub.avatar_host && S.hub.avatar_host !== deviceId);
+  const isHost = () => ownerTracker.snapshot().isHost;
   const stageShown = () => !!stage.model && (S.parked || !!S.anim || (isHost() && !S.exited));
 
   /* ------------------------------------------------------------------ stage */
@@ -109,6 +116,133 @@
     if (!stage.content) return;
     const t = cameraTarget();
     if (snap) { cam.scale.snap(t.scale); cam.x.snap(t.x); cam.y.snap(t.y); } else { cam.scale.to(t.scale); cam.x.to(t.x); cam.y.to(t.y); }
+    updateChatLayout();
+    kick();
+  }
+
+  /* Chat panel (B6/B9): pure endpoint layouts, interpolated with the stage panel progress. */
+  let sabProbe = null;
+  function safeBottomPx() {
+    if (!sabProbe) {
+      sabProbe = document.createElement('div');
+      sabProbe.style.cssText = 'position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none';
+      document.body.appendChild(sabProbe);
+    }
+    return sabProbe.offsetHeight || 0;
+  }
+  let lastChatPresentation = null;
+  let chatOrientationFrom = null;
+  let lastChatKey = '';
+
+  function elementRect(node) {
+    if (!node || node.hidden || getComputedStyle(node).display === 'none') return null;
+    const r = node.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  }
+
+  function chatInputRect() {
+    const sab = safeBottomPx();
+    const reserve = S.landscape ? 78 : 92;
+    const top = S.view.h - sab - S.ime.css - reserve;
+    return { left: 0, top, right: S.view.w, bottom: S.view.h };
+  }
+
+  function modelPose(tr, transferY = 0) {
+    const c = stage.content;
+    const pvx = (c.x0 + c.x1) / 2;
+    const pvy = c.y1;
+    const mul = tr.modelScaleMul;
+    const sc = cam.scale.value;
+    return {
+      scale: sc * mul,
+      x: cam.x.value + pvx * sc * (1 - mul) + tr.modelDx,
+      y: cam.y.value + pvy * sc * (1 - mul) + transferY
+    };
+  }
+
+  function chatEndpoint(panelState) {
+    const fallback = S.landscape
+      ? { left: S.view.w * 0.4, top: S.view.h * 0.04, right: S.view.w * 0.6, bottom: S.view.h * 1.2 }
+      : { left: S.view.w * 0.25, top: S.view.h * 0.04, right: S.view.w * 0.75, bottom: S.view.h * 0.94 };
+    const pose = stage.content ? modelPose(L.panelTransforms(panelState, geom)) : null;
+    const bounds = pose ? L.modelScreenBounds({ content: stage.content, ...pose }) : fallback;
+    const sidePanel = panelState < 0
+      ? { left: S.view.w - geom.panelW, top: 0, right: S.view.w, bottom: S.view.h }
+      : { left: 0, top: 0, right: geom.panelW, bottom: S.view.h };
+    const hud = chatHud();
+    return L.computeChatPanelLayout({
+      viewport: { width: S.view.w, height: S.view.h }, modelBounds: bounds, panelState,
+      panelWidth: geom.panelW, sidePanel, hud,
+      preferredSide: (cfg.task_canvas || {}).position === 'right' ? 'right' : 'left'
+    });
+  }
+
+  function chatHud() {
+    return {
+      input: chatInputRect(),
+      status: elementRect(el.dot),
+      transfer: elementRect(el.transfer && el.transfer.closest('.transfer-control')),
+      settings: elementRect(el.settings),
+      mic: elementRect(el.micBtn),
+      chat: elementRect(el.chatBtn),
+      send: elementRect(el.chatForm && el.chatForm.querySelector('button[type="submit"]')),
+      pluginPanel: S.sheetOpen ? elementRect(el.sheet) : null
+    };
+  }
+
+  function chatSplitEndpoint() {
+    const fallback = { left: S.view.w * 0.4, top: S.view.h * 0.04, right: S.view.w * 0.6, bottom: S.view.h * 1.2 };
+    const pose = stage.content ? modelPose(L.panelTransforms(0, geom)) : null;
+    const bounds = pose ? L.modelScreenBounds({ content: stage.content, ...pose }) : fallback;
+    return L.computeChatSplitLayout({
+      viewport: { width: S.view.w, height: S.view.h }, modelBounds: bounds, hud: chatHud()
+    });
+  }
+
+  function containChatLayout(layout, safe) {
+    const out = { ...layout, style: { ...layout.style } };
+    out.left = Math.max(out.left, safe.left);
+    out.top = Math.max(out.top, safe.top);
+    out.right = Math.min(out.right, safe.right);
+    out.bottom = Math.min(out.bottom, safe.bottom);
+    out.width = Math.max(0, out.right - out.left);
+    out.height = Math.max(0, out.bottom - out.top);
+    out.hidden = out.width < 96 || out.height < 56;
+    return out;
+  }
+
+  function applyChatLayout(progress) {
+    if (!el.canvas) return;
+    const p = S.landscape ? clamp(progress, -1, 1) : 0;
+    let presentation;
+    if (S.landscape) {
+      const split = chatSplitEndpoint();
+      const merged = chatEndpoint(p < 0 ? -1 : 1);
+      presentation = L.interpolateSplitChatLayout({ split, merged, progress: Math.abs(p) });
+    } else {
+      presentation = L.singleChatPresentation(chatEndpoint(0));
+    }
+    if (chatOrientationFrom && !chatOrientation.settled()) {
+      const safe = presentation;
+      presentation = L.interpolateChatPresentation(chatOrientationFrom, presentation, chatOrientation.value);
+      for (const key of ['agent', 'user', 'merged']) presentation[key] = containChatLayout(presentation[key], safe[key]);
+    } else if (chatOrientation.settled()) {
+      chatOrientationFrom = null;
+    }
+    const key = ['agent', 'user', 'merged'].flatMap((name) => {
+      const layout = presentation[name];
+      return [layout.left, layout.top, layout.width, layout.height, layout.style.radius,
+        layout.style.opacity, layout.presence, layout.hidden];
+    }).map((v) => typeof v === 'number' ? v.toFixed(2) : v).join('|');
+    if (key === lastChatKey) return;
+    lastChatKey = key;
+    if (taskCanvas) taskCanvas.setPresentation(presentation);
+    lastChatPresentation = presentation;
+  }
+
+  function updateChatLayout() {
+    lastChatKey = '';
+    applyChatLayout(panel.value);
     kick();
   }
 
@@ -145,12 +279,13 @@
 
   function step(dt, now) {
     let busy = false;
-    for (const s of [cam.scale, cam.x, cam.y, panel, drawer]) { if (!s.settled() && !dragging) s.step(dt); if (!s.settled()) busy = true; }
+    for (const s of [cam.scale, cam.x, cam.y, panel, drawer, chatOrientation]) { if (!s.settled() && !dragging) s.step(dt); if (!s.settled()) busy = true; }
     if (dragging) busy = true;
 
     const p = lockscreen || !S.landscape ? 0 : panel.value;
     const tr = L.panelTransforms(p, geom);
     applyPanels(tr, p);
+    applyChatLayout(p);
     applyDrawer();
 
     if (stage.model && stage.app) {
@@ -159,15 +294,7 @@
       const ty = transferOffset(now);
       if (S.anim || S.parked) busy = true;
       if (show) {
-        const c = stage.content;
-        const pvx = (c.x0 + c.x1) / 2; const pvy = c.y1;
-        const mul = tr.modelScaleMul;
-        const sc = cam.scale.value;
-        const pose = {
-          scale: sc * mul,
-          x: cam.x.value + pvx * sc * (1 - mul) + tr.modelDx,
-          y: cam.y.value + pvy * sc * (1 - mul) + ty
-        };
+        const pose = modelPose(tr, ty);
         lipsync.step();
         const interacting = !!dragging || !!S.anim || [cam.scale, cam.x, cam.y, panel, drawer].some((s) => !s.settled());
         const full = !interacting || now - lastFullUpdate >= 90;
@@ -185,7 +312,7 @@
   let lastFullUpdate = 0;
   let lastPanelKey = '';
   function applyPanels(tr, p) {
-    const key = `${tr.appsX.toFixed(1)}|${tr.widgetsX.toFixed(1)}|${S.landscape}`;
+    const key = `${tr.appsX.toFixed(1)}|${tr.widgetsX.toFixed(1)}|${tr.settingsX.toFixed(1)}|${S.landscape}`;
     if (key === lastPanelKey) return;
     lastPanelKey = key;
     const on = S.landscape && !lockscreen;
@@ -193,6 +320,7 @@
     el.widgetsPanel.style.transform = `translate3d(${tr.widgetsX}px,0,0)`;
     el.appsPanel.style.opacity = on ? tr.appsOpacity : 0;
     el.widgetsPanel.style.opacity = on ? tr.widgetsOpacity : 0;
+    el.settings.style.transform = `translate3d(${on ? tr.settingsX : 0}px,0,0)`;
     el.appsPanel.classList.toggle('live', on && p < -0.5);
     el.widgetsPanel.classList.toggle('live', on && p > 0.5);
   }
@@ -209,7 +337,13 @@
 
   /* ------------------------------------------------------------------ view / config */
   function onResize() {
-    S.view = { w: innerWidth, h: innerHeight };
+    const oldView = S.view;
+    const oldLandscape = S.landscape;
+    const oldChat = lastChatPresentation;
+    // Some Android WebViews report stale innerWidth for the first orientation callback. The
+    // document viewport already has the committed CSS size and is therefore authoritative.
+    const viewport = document.documentElement;
+    S.view = { w: viewport.clientWidth || innerWidth, h: viewport.clientHeight || innerHeight };
     const was = S.landscape;
     S.landscape = innerWidth > innerHeight;
     document.body.dataset.landscape = S.landscape ? '1' : '0';
@@ -217,6 +351,13 @@
     document.documentElement.style.setProperty('--panel-w', `${Math.round(geom.panelW)}px`);
     lastPanelKey = '';
     if (!S.landscape && was) { S.panelState = 0; panel.snap(0); closeSheet(true); }
+    if (oldLandscape !== S.landscape && oldChat) {
+      chatOrientationFrom = L.remapChatPresentation(oldChat,
+        { width: oldView.w, height: oldView.h }, { width: S.view.w, height: S.view.h });
+      chatOrientation.snap(0);
+      chatOrientation.to(1);
+    }
+    lastChatKey = '';
     stage.resize();
     retargetCamera(false);
     if (plugins) plugins.relayout(geom);
@@ -244,7 +385,7 @@
   let dragging = null;   // 'panel' | 'drawer' | null
   let press = null;
   let longTimer = 0;
-  const IGNORE = 'button,input,textarea,form,.sheet,.menu,.away-card,.drawer-list,.widget-card,.toast';
+  const IGNORE = 'button,input,textarea,form,.sheet,.menu,.away-card,.transfer-control,.drawer-list,.widget-card,.toast,.chat-scroll,.tc-bubble,.tc-task';
 
   const panelsEnabled = () => !lockscreen && S.landscape && !S.sheetOpen && !S.drawerOpen && !S.editing;
   const drawerEnabled = () => !lockscreen && (cfg.launcher || {}).enabled && !S.sheetOpen && S.panelState === 0;
@@ -353,7 +494,7 @@
   /* ------------------------------------------------------------------ menu / toast */
   function openMenu(x, y) {
     const items = [];
-    if (S.hub.state === 'connected') items.push(['去电脑那边', () => transferTo('desktop')]);
+    if (S.hub.state === 'connected') items.push(['叫回电脑', () => transferTo('desktop')]);
     if (!lockscreen) items.push(['设置', () => B.call('openSettings')]);
     items.push(['打招呼', () => actions && actions.act({ type: 'motion', name: 'Greet', args: { group: 'Greet', index: 0 } }, 3)]);
     el.menu.replaceChildren(...items.map(([label, fn]) => {
@@ -379,16 +520,47 @@
   }
 
   /* ------------------------------------------------------------------ avatar transfer (C1.5) */
-  function transferTo(to) {
-    return B.rpc('avatar.transfer', { to }, '', 12000).catch((err) => toast(`移交失败：${err.message}`));
+  const transferPending = () => S.transferRequestPending || !!transferEvents.activeId;
+
+  function renderTransferControl(view) {
+    if (lockscreen || !el.transfer) return;
+    el.transfer.textContent = view.label;
+    el.transfer.disabled = view.disabled;
+    el.transfer.dataset.target = view.target || '';
+    el.transfer.setAttribute('aria-busy', String(transferPending()));
+    el.transferReason.textContent = view.reason || '';
+    el.transferReason.title = view.reason || '';
+  }
+
+  const transferController = TC.createAndroidTransferController({
+    getSnapshot: () => ({ hub: S.hub, deviceId, pending: transferPending() }),
+    request: (to) => B.rpc('avatar.transfer', { to }, '', 20000),
+    setPending: (pending) => { S.transferRequestPending = pending; },
+    onView: renderTransferControl
+  });
+
+  function refreshTransferControl() { return transferController.refresh(); }
+
+  async function transferTo(to) {
+    const result = await transferController.activate(to);
+    if (!result.ok && result.reason) toast(`迁移失败：${result.reason}`);
   }
 
   function runAnim(kind, id) {
     return new Promise((resolve) => {
+      cancelAnim();
       S.anim = { kind, id, t0: performance.now(), done: false, resolve };
       if (kind === 'enter') { S.parked = false; S.exited = false; }
       kick();
     });
+  }
+
+  function cancelAnim() {
+    const anim = S.anim;
+    if (!anim) return null;
+    S.anim = null;
+    anim.resolve(false);
+    return anim.kind;
   }
 
   function finishAnim(a) {
@@ -396,13 +568,16 @@
     S.anim = null;
     if (a.kind === 'exit') S.exited = true;
     refreshAway();
-    a.resolve();
+    a.resolve(true);
     kick();
   }
 
   async function onPrepare(d) {
     if (!d || (d.to && d.to !== deviceId)) return;
+    const ticket = transferEvents.begin(d.transfer_id);
+    refreshTransferControl();
     try { await ensureModel(); } catch { return; }
+    if (!transferEvents.isCurrent(ticket)) return;
     S.parked = true;
     S.exited = false;
     refreshAway();
@@ -411,41 +586,75 @@
   }
 
   async function onExit(d) {
-    if (!d || !stage.model) { if (d) B.publish('avatar.transfer.exited', { transfer_id: d.transfer_id }); return; }
-    await runAnim('exit', d.transfer_id);
+    if (!d) return;
+    const ticket = transferEvents.begin(d.transfer_id);
+    refreshTransferControl();
+    if (!stage.model) { if (transferEvents.isCurrent(ticket)) B.publish('avatar.transfer.exited', { transfer_id: d.transfer_id }); return; }
+    const completed = await runAnim('exit', d.transfer_id);
+    if (!completed || !transferEvents.isCurrent(ticket)) return;
     B.publish('avatar.transfer.exited', { transfer_id: d.transfer_id });
   }
 
   async function onEnter(d) {
     if (!d) return;
-    try { await ensureModel(); } catch { B.publish('avatar.transfer.entered', { transfer_id: d.transfer_id }); return; }
-    await runAnim('enter', d.transfer_id);
+    const ticket = transferEvents.begin(d.transfer_id);
+    refreshTransferControl();
+    try { await ensureModel(); } catch { return; }
+    if (!transferEvents.isCurrent(ticket)) return;
+    const completed = await runAnim('enter', d.transfer_id);
+    if (!completed || !transferEvents.isCurrent(ticket)) return;
     if (actions) actions.act({ type: 'motion', name: 'Greet', args: { group: 'Greet', index: 0 } }, 3);
     B.publish('avatar.transfer.entered', { transfer_id: d.transfer_id });
   }
 
-  async function onCancel2() {
-    if (S.parked) { S.parked = false; refreshAway(); kick(); return; }
-    if (S.exited || S.anim) { S.anim = null; await runAnim('enter', 'cancel'); }
+  async function onCancel2(d) {
+    if (!transferEvents.clear(d && d.transfer_id)) return;
+    const interrupted = cancelAnim();
+    S.parked = false;
+    refreshTransferControl();
+    if (S.exited || interrupted === 'exit') await runAnim('enter', 'cancel');
+    refreshAway();
+    kick();
   }
 
   function refreshAway() {
     const away = !lockscreen && (!isHost() || S.exited) && !S.parked && !S.anim;
     el.away.hidden = !away;
-    if (away) el.awayWhere.textContent = S.hub.avatar_host === 'desktop' || !S.hub.avatar_host ? '电脑' : '另一台设备';
+    if (away) {
+      const title = el.away.querySelector('.away-title');
+      if (S.hub.state !== 'connected') {
+        title.textContent = '服务器未连接，正在等待角色位置';
+        el.awayCall.hidden = true;
+      } else if (!S.hub.avatar_host) {
+        title.textContent = '正在同步角色位置';
+        el.awayCall.hidden = true;
+      } else {
+        title.textContent = S.hub.avatar_host === 'desktop' ? '八千代在电脑上' : '八千代在另一台设备上';
+        el.awayCall.hidden = false;
+      }
+    }
   }
   el.awayCall.onclick = () => { transferTo(deviceId); };
+  el.transfer.onclick = () => {
+    const target = el.transfer.dataset.target;
+    if (target) transferTo(target);
+  };
 
   /* ------------------------------------------------------------------ hub state */
   function onHubState(st) {
-    const wasHost = isHost();
-    S.hub = st || S.hub;
+    const next = st || S.hub;
+    const owner = ownerTracker.update(next);
+    S.hub = { ...next, avatar_host: owner.host };
     el.dot.dataset.state = S.hub.state;
+    if (S.hub.state !== 'connected') {
+      transferEvents.clear();
+      S.transferRequestPending = false;
+      cancelAnim();
+      S.parked = false;
+    }
     if (!isHost()) S.exited = false;
     refreshAway();
-    if (S.presented && !wasHost && isHost() && !S.parked && !S.anim) { // became host without a transfer sequence
-      ensureModel().then(() => { runAnim('enter', 'host'); });
-    }
+    refreshTransferControl();
     kick();
   }
 
@@ -520,6 +729,19 @@
   B.on('back', () => { if (consumeBack()) B.call('consumeBack'); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') consumeBack(); });
 
+  /* ------------------------------------------------------------------ soft keyboard (B8)
+     Native uses adjustNothing: the WebView is never resized, so the stage/canvas stays exactly in place.
+     Only the input bar and chat panel follow the keyboard (--ime drives their `bottom`, with a CSS transition). */
+  function onIme(d) {
+    const css = d && d.visible ? Math.max(0, Math.round(Number(d.height_css) || 0)) : 0;
+    S.ime = { visible: css > 0, css };
+    document.documentElement.style.setProperty('--ime', `${css}px`);
+    document.body.dataset.ime = css > 0 ? '1' : '0';
+    updateChatLayout();
+    if (!S.ime.visible && document.activeElement === el.chatText) el.chatText.blur(); // keyboard dismissed (e.g. back key)
+  }
+  B.on('ime', onIme);
+
   /* ------------------------------------------------------------------ lifecycle */
   B.on('lifecycle', (d) => {
     if (!d) return;
@@ -535,7 +757,8 @@
     if (document.hidden) { S.paused = true; } else { S.paused = false; const gl = stage.app && stage.app.renderer && stage.app.renderer.gl; if (gl && gl.isContextLost && gl.isContextLost()) rebuildStage('visible-context-lost'); kick(); }
   });
   window.addEventListener('resize', onResize);
-  window.addEventListener('orientationchange', () => setTimeout(onResize, 60));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', () => { setTimeout(onResize, 60); setTimeout(onResize, 240); });
   B.on('config.changed', (c) => {
     const q = quality();
     cfg = c;
@@ -558,9 +781,11 @@
     applyConfig();
     onResize();
     el.dot.dataset.state = S.hub.state;
+    refreshTransferControl();
 
     const taskCanvasApi = window.YachiyoTaskCanvas.createCanvas({ root: el.canvas });
     taskCanvas = taskCanvasApi;
+    updateChatLayout();
     voice = window.YachiyoVoice.createVoice({ bridge: B, lipsync, getConfig: () => cfg, log });
 
     B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta));
@@ -572,9 +797,10 @@
         case 'avatar.transfer.prepare': onPrepare(d); break;
         case 'avatar.transfer.exit': onExit(d); break;
         case 'avatar.transfer.enter': onEnter(d); break;
-        case 'avatar.transfer.cancel': onCancel2(); break;
+        case 'avatar.transfer.cancel': onCancel2(d); break;
         case 'avatar.host.changed': if (d && d.host) onHubState({ ...S.hub, avatar_host: d.host }); break;
-        case 'avatar.transfer.failed': toast(`移交失败：${(d && d.reason) || ''}`); break;
+        case 'avatar.transfer.completed': transferEvents.clear(d && d.transfer_id); refreshTransferControl(); break;
+        case 'avatar.transfer.failed': onCancel2(d); toast(`迁移失败：${(d && d.reason) || ''}`); break;
         default:
       }
     });
@@ -582,7 +808,7 @@
 
     if (!lockscreen) {
       plugins = window.YachiyoPluginHost.create({
-        bridge: B, geom, getTheme: () => ({ mode: 'dark', accent: '#7aa2ff' }), toast,
+        bridge: B, geom, getTheme: () => ({ mode: 'dark', accent: '#b6a1ff' }), toast,
         els: { appsGrid: $('apps-grid'), appsEmpty: $('apps-empty'), widgetsGrid: $('widgets-grid'), widgetsEmpty: $('widgets-empty'), widgetsEdit: $('widgets-edit'), widgetsPanel: el.widgetsPanel, sheet: $('sheet'), sheetBody: $('sheet-body'), sheetTitle: $('sheet-title'), sheetClose: $('sheet-close'), sheetExpand: $('sheet-expand') },
         getConfig: () => cfg,
         onSheet: (open) => { S.sheetOpen = open; if (open) { S.panelState = -1; panel.to(-1); } kick(); },
@@ -603,9 +829,7 @@
     // Let the hub settle before deciding who shows the character (avoids a flash on non-host devices).
     const wantHub = (cfg.server || {}).auto_connect && S.hub.state !== 'connected';
     if (wantHub) await new Promise((r) => { const off = B.on('hub.state', (s) => { if (s && s.state !== 'connecting') { off(); r(); } }); setTimeout(r, 1800); });
-    S.hub = B.hubState();
-    el.dot.dataset.state = S.hub.state;
-    refreshAway();
+    onHubState(B.hubState());
 
     try {
       await ensureModel();
@@ -620,7 +844,7 @@
     get plugins() { return plugins; },
     S, stage, cam, panel, drawer, kick, setPanel, setDrawer, toast, rebuildStage, ensureModel,
     get actions() { return actions; }, get voice() { return voice; }, lipsync,
-    onPrepare, onExit, onEnter, onCancel: onCancel2, onHubState
+    onPrepare, onExit, onEnter, onCancel: onCancel2, onHubState, onIme
   };
 
   boot();

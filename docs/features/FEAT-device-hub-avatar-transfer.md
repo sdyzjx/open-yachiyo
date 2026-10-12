@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-companion-contracts.md §C1.5, ../testing/TC-device-hub-avatar-transfer.md
 
 ## 概述
@@ -15,6 +15,12 @@
 网关顺序执行 prepare → ready → exit → exited → 更新 host → enter → entered → completed。prepare 最多 8 秒，失败不切 host；exit/enter 最多各 4 秒，超时继续。目标中途离线回滚 host 并发送 failed/cancel；同一时刻仅允许一个移交。回执绑定 transfer_id 与预期设备连接，其他设备伪造无效。
 
 host 原子写入 `~/yachiyo/data/device-hub/state.json`，重启恢复；`desktop` 代表唯一桌面设备。没有桌面连接时可跳过源端退出，但目标必须在线。
+
+### Android owner 显示规则
+
+Android 只使用 Device Hub 返回的权威 `avatar_host` 决定人物是否显示。首次连接尚未收到 owner 时保持人物隐藏并显示“正在同步角色位置”；已知 owner 为 desktop 时，socket 短暂断开会保留最后 owner 并显示服务器断开提示，不得临时把本机视为 host。最后 owner 为本机时断线可保持当前人物，但不得重新播放入场动画。
+
+welcome、重复的 `hub.state`、lifecycle resume 和 reconnect 只刷新连接与 owner 显示，不触发 enter/exit。迁移动画仍只由 `avatar.transfer.enter/exit` 驱动。
 
 ### 桌面客户端
 
@@ -38,4 +44,4 @@ RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/
 
 ## 测试用例
 
-[TC-device-hub-avatar-transfer.md](../testing/TC-device-hub-avatar-transfer.md)：TC-AVT-001～009，自动化 `test/gateway/deviceHub/avatarHost.test.js`。
+[TC-device-hub-avatar-transfer.md](../testing/TC-device-hub-avatar-transfer.md)：TC-AVT-001～011，Android owner 回归自动化位于 `test/android-web/avatarOwnerState.test.js`。

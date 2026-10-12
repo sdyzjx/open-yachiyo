@@ -16,3 +16,17 @@ test('Android panel uses a pre-blurred internal layer instead of Live2D backdrop
   assert.match(css, /\.panel::before\s*\{[^}]*filter:\s*blur\(/s);
   assert.doesNotMatch(css, /\.panel(?:\.live)?\s*\{[^}]*backdrop-filter/s);
 });
+
+test('Android pages link the shared Yachiyo theme before their own stylesheet and use --y-* tokens', () => {
+  const { SHARED_FILES } = require('../../scripts/android-sync-assets');
+  assert.ok(SHARED_FILES.some(([from, to]) => to === 'yachiyo-theme.css' && from === 'apps/desktop-live2d/shared/theme/yachiyo-theme.css'));
+  for (const [page, own] of [['index.html', 'css/app.css'], ['settings.html', 'css/settings.css']]) {
+    const html = fs.readFileSync(path.join(WEB, page), 'utf8');
+    const theme = html.indexOf('/generated/shared/yachiyo-theme.css');
+    assert.ok(theme > 0, `${page} links the theme`);
+    assert.ok(theme < html.indexOf(own), `${page} loads the theme before ${own}`);
+    const css = fs.readFileSync(path.join(WEB, own), 'utf8');
+    assert.match(css, /var\(--y-/);
+    assert.doesNotMatch(css, /--(?:accent-2|glass-line|glass-strong|gold-line|ink-dim|surface-strong)\s*:/, 'no duplicated colour variables');
+  }
+});

@@ -98,6 +98,10 @@ class YachiyoNativeBridge(
     fun emitLifecycle(state: String) =
         dispatcher.post("lifecycle", JSONObject().put("state", state).put("mode", mode))
 
+    /** Soft keyboard visibility/height (C2.2 `ime`). The WebView itself is never resized (adjustNothing). */
+    fun emitIme(state: ImeState) =
+        dispatcher.post("ime", JSONObject().put("visible", state.visible).put("height_px", state.heightPx).put("height_css", state.heightCss))
+
     /** Called by the activity on the back key; Web has 300 ms to answer with consumeBack(). */
     fun requestBack() {
         if (backPending) return

@@ -2,7 +2,7 @@
 
 > 类型: feature
 > 状态: active
-> 负责人: sonnet-ws5
+> 负责人: Codex（工作流 A）
 > 更新: 2026-10-13
 > 关联: apps/android/app/src/main/assets/web/settings.html, js/settings.js, docs/plans/PLAN-android-companion-contracts.md §C2.3, TC-AWB-021..TC-AWB-023, TC-AWB-027
 
@@ -24,6 +24,8 @@
 
 设置页不读取模型目录，不展示模型或 Provider API key，也不调用 `/api/config/models*`。服务器区的配对 token 仅用于手机连接 Device Hub，不是模型服务凭据。
 
+设置页是独立 `SettingsActivity`，保持 `adjustResize` 以便表单随键盘正常滚动；只有含 Live2D 舞台的主界面/锁屏页使用 `adjustNothing` + C2.2 `ime` 事件。
+
 ## 3. 接口与协议
 
 契约 C2.1 / C2.2 / C2.3。模型配置接口属于电脑端管理面，不在 Android WebView 暴露。
@@ -32,6 +34,10 @@
 
 见契约 C2.3；本页面读写其中全部键。官网夜景预设写入 `appearance.background={type:"image", image_url:"https://www.cho-kaguyahime.com/assets/img/character/character_bg.jpg", color:"#090b20"}`，没有把图片复制进发布包。
 
+统一主题：设置页与主页面先加载 `/generated/shared/yachiyo-theme.css`（同步自 `apps/desktop-live2d/shared/theme/yachiyo-theme.css`），自身样式只用 `--y-*` token，规范见 `docs/architecture/UI_DESIGN_SYSTEM.md`。
+
+顶部迁移 HUD 无独立配置项：owner、pending 与在线信息均来自 Device Hub 权威状态，避免本地偏好与真实位置分叉。
+
 ## 5. 限制与已知问题
 
 - 设置页的"测试连接"通过原生 WebSocket 验证，不直接 `fetch` 网关。
@@ -39,4 +45,4 @@
 
 ## 6. 测试用例
 
-TC-AWB-021、TC-AWB-022、TC-AWB-023、TC-AWB-027（`docs/testing/TC-android-web.md`）。
+TC-AWB-021、TC-AWB-022、TC-AWB-023、TC-AWB-027、TC-AWB-032、TC-AWB-034、TC-AWB-035（`docs/testing/TC-android-web.md`）。

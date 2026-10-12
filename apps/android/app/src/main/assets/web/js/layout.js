@@ -60,6 +60,206 @@
     return { scale, x: frame.anchorX + dx - frame.boxCx * scale, y: frame.anchorBottom + dy - frame.boxY1 * scale };
   }
 
+  /* ---------- chat panel (B6 / B9) ---------- */
+
+  // Screen-space box of the face: the top `faceRatio` of the drawn character. pose = { scale, x, y } as in placeModel.
+  function faceRegion({ content, scale, x, y, faceRatio = 0.3 }) {
+    const h = content.y1 - content.y0;
+    return { left: x + content.x0 * scale, right: x + content.x1 * scale, top: y + content.y0 * scale, bottom: y + (content.y0 + h * faceRatio) * scale };
+  }
+
+  // Portrait chat panel: sits above the input bar and never rises into the face region.
+  // bottomOffset = distance from the screen bottom to the panel's bottom edge (already includes IME height).
+  function chatPanelBounds({ viewH, faceBottom, bottomOffset, gap = 10, maxRatio = 0.42, minHeight = 56 }) {
+    const room = viewH - bottomOffset - (faceBottom + gap);
+    const maxHeight = Math.max(0, Math.min(viewH * maxRatio, room));
+    return { maxHeight: Math.floor(maxHeight), hidden: maxHeight < minHeight };
+  }
+
+  function modelScreenBounds({ content, scale, x, y }) {
+    return {
+      left: x + content.x0 * scale,
+      top: y + content.y0 * scale,
+      right: x + content.x1 * scale,
+      bottom: y + content.y1 * scale
+    };
+  }
+
+  function rectWidth(r) { return Math.max(0, r.right - r.left); }
+  function rectHeight(r) { return Math.max(0, r.bottom - r.top); }
+  function overlapsX(a, b, gap = 0) { return a.left < b.right + gap && a.right > b.left - gap; }
+
+  // Calculates one snapped chat state. panelState: 0=center, -1=right drawer, +1=left drawer.
+  // `hud` accepts input/transfer/settings/pluginPanel rectangles; `sidePanel` is the fully-open drawer.
+  function computeChatPanelLayout({
+    viewport, modelBounds, panelState = 0, panelWidth = 0, hud = {}, sidePanel = null,
+    neckRatio = 0.24, margin = 14, gap = 10, minHeight = 56, preferredSide = 'left'
+  }) {
+    const viewW = Math.max(0, viewport.width);
+    const viewH = Math.max(0, viewport.height);
+    const landscape = viewW > viewH;
+    const modelH = rectHeight(modelBounds);
+    const neckY = clamp(modelBounds.top + modelH * neckRatio, margin, viewH - margin);
+    const inputTop = hud.input ? hud.input.top : viewH - margin;
+    let bottom = clamp(inputTop - gap, margin, viewH - margin);
+    let left = margin;
+    let right = viewW - margin;
+
+    if (landscape && panelState === 0) {
+      const leftSpace = Math.max(0, modelBounds.left - gap - margin);
+      const rightSpace = Math.max(0, viewW - margin - modelBounds.right - gap);
+      const useLeft = leftSpace === rightSpace ? preferredSide !== 'right' : leftSpace > rightSpace;
+      if (useLeft) right = Math.max(left, modelBounds.left - gap);
+      else left = Math.min(right, modelBounds.right + gap);
+    } else if (landscape && panelState !== 0) {
+      const drawer = sidePanel || (panelState < 0
+        ? { left: viewW - panelWidth, right: viewW }
+        : { left: 0, right: panelWidth });
+      if (panelState < 0) right = Math.min(right, drawer.left - gap);
+      else left = Math.max(left, drawer.right + gap);
+    }
+
+    // A plugin sheet is also a hard horizontal exclusion zone.
+    if (hud.pluginPanel) {
+      if (hud.pluginPanel.left >= viewW / 2) right = Math.min(right, hud.pluginPanel.left - gap);
+      else left = Math.max(left, hud.pluginPanel.right + gap);
+    }
+
+    let top = neckY + gap;
+    const horizontal = { left, right };
+    for (const obstacle of [hud.transfer, hud.settings]) {
+      if (obstacle && overlapsX(horizontal, obstacle, gap) && obstacle.bottom > top) top = obstacle.bottom + gap;
+    }
+    top = clamp(top, margin, bottom);
+
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    const centerX = (left + right) / 2;
+    const modelCenterX = (modelBounds.left + modelBounds.right) / 2;
+    const alignment = landscape && panelState === 0 ? (centerX < modelCenterX ? 1 : -1) : 0;
+    return {
+      left, top, right, bottom, width, height, neckY,
+      hidden: width < 120 || height < minHeight,
+      style: {
+        radius: landscape && panelState !== 0 ? 14 : 20,
+        opacity: landscape && panelState !== 0 ? 0.9 : 0.96,
+        alignment
+      }
+    };
+  }
+
+  // Landscape center: agent messages occupy the left lane, user messages the right lane.
+  function computeChatSplitLayout({
+    viewport, modelBounds, hud = {}, margin = 14, gap = 16,
+    maxWidth = 420, minWidth = 96, minHeight = 72
+  }) {
+    const viewW = Math.max(0, viewport.width);
+    const viewH = Math.max(0, viewport.height);
+    const bottomLimit = hud.input ? hud.input.top - gap : viewH - margin;
+    const topObstacles = [hud.status, hud.transfer, hud.settings].filter(Boolean);
+    const bottomObstacles = [hud.input, hud.mic, hud.chat, hud.send].filter(Boolean);
+
+    function lane(left, right, alignment) {
+      let top = margin;
+      let bottom = Math.min(viewH - margin, bottomLimit);
+      const horizontal = { left, right };
+      for (const obstacle of topObstacles) {
+        if (overlapsX(horizontal, obstacle, gap)) top = Math.max(top, obstacle.bottom + gap);
+      }
+      for (const obstacle of bottomObstacles) {
+        if (overlapsX(horizontal, obstacle, gap)) bottom = Math.min(bottom, obstacle.top - gap);
+      }
+      top = clamp(top, margin, viewH - margin);
+      bottom = clamp(bottom, top, viewH - margin);
+      const width = Math.max(0, right - left);
+      const height = Math.max(0, bottom - top);
+      return {
+        left, top, right, bottom, width, height,
+        hidden: width < minWidth || height < minHeight,
+        style: { radius: 20, opacity: 0.96, alignment }, presence: 1
+      };
+    }
+
+    const agentRight = clamp(modelBounds.left - gap, margin, viewW - margin);
+    const userLeft = clamp(modelBounds.right + gap, margin, viewW - margin);
+    const agent = lane(Math.max(margin, agentRight - maxWidth), agentRight, 1);
+    const user = lane(userLeft, Math.min(viewW - margin, userLeft + maxWidth), -1);
+    return { agent, user, hidden: agent.hidden && user.hidden };
+  }
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // Pure state interpolation used both while following the finger and during spring snap.
+  function interpolateChatPanelLayout(a, b, progress) {
+    const t = clamp(progress, 0, 1);
+    const out = {};
+    for (const key of ['left', 'top', 'right', 'bottom', 'width', 'height', 'neckY']) out[key] = lerp(a[key], b[key], t);
+    out.hidden = (t === 0 ? a.hidden : (t === 1 ? b.hidden : out.width < 120 || out.height < 56));
+    out.style = {
+      radius: lerp(a.style.radius, b.style.radius, t),
+      opacity: lerp(a.style.opacity, b.style.opacity, t),
+      alignment: lerp(a.style.alignment, b.style.alignment, t)
+    };
+    return out;
+  }
+
+  function withPresence(layout, presence) {
+    return { ...layout, style: { ...layout.style }, presence };
+  }
+
+  // Morphs two independent center lanes into one chronological drawer panel.
+  function interpolateSplitChatLayout({ split, merged, progress }) {
+    const t = clamp(progress, 0, 1);
+    const agent = interpolateChatPanelLayout(split.agent, merged, t);
+    const user = interpolateChatPanelLayout(split.user, merged, t);
+    return {
+      agent: withPresence(agent, 1 - t),
+      user: withPresence(user, 1 - t),
+      merged: withPresence(merged, t)
+    };
+  }
+
+  function singleChatPresentation(merged) {
+    return {
+      agent: withPresence(merged, 0), user: withPresence(merged, 0), merged: withPresence(merged, 1)
+    };
+  }
+
+  function interpolateChatPresentation(a, b, progress) {
+    const t = clamp(progress, 0, 1);
+    const out = {};
+    for (const key of ['agent', 'user', 'merged']) {
+      out[key] = interpolateChatPanelLayout(a[key], b[key], t);
+      out[key].presence = lerp(a[key].presence, b[key].presence, t);
+    }
+    return out;
+  }
+
+  function remapChatPanelLayout(layout, fromViewport, toViewport) {
+    if (!layout || !fromViewport.width || !fromViewport.height) return layout;
+    const sx = toViewport.width / fromViewport.width;
+    const sy = toViewport.height / fromViewport.height;
+    const mapped = { ...layout, style: { ...layout.style } };
+    for (const key of ['left', 'right', 'width']) mapped[key] *= sx;
+    for (const key of ['top', 'bottom', 'height', 'neckY']) mapped[key] *= sy;
+    return mapped;
+  }
+
+  function remapChatPresentation(presentation, fromViewport, toViewport) {
+    if (!presentation) return presentation;
+    const out = {};
+    for (const key of ['agent', 'user', 'merged']) {
+      out[key] = remapChatPanelLayout(presentation[key], fromViewport, toViewport);
+      out[key].presence = presentation[key].presence;
+    }
+    return out;
+  }
+
+  // True when the scroll container is within `threshold` px of its end (so new text should keep it pinned).
+  function isNearBottom({ scrollTop, clientHeight, scrollHeight }, threshold = 24) {
+    return scrollHeight - scrollTop - clientHeight <= threshold;
+  }
+
   /* ---------- panels ---------- */
 
   function panelGeometry({ viewW, viewH }) {
@@ -75,7 +275,9 @@
       appsX: p < 0 ? geom.panelW * (1 + p) : geom.panelW,       // translateX of right panel (px)
       widgetsX: (p > 0 ? -geom.panelW * (1 - p) : -geom.panelW) + 0,  // translateX of left panel (px)
       appsOpacity: clamp(-p * 1.4, 0, 1),
-      widgetsOpacity: clamp(p * 1.4, 0, 1)
+      widgetsOpacity: clamp(p * 1.4, 0, 1),
+      // The settings button stays immediately outside the right-side plugin panel.
+      settingsX: p < 0 ? -geom.panelW * clamp(-p, 0, 1) : 0
     };
   }
 
@@ -157,7 +359,10 @@
   }
 
   return {
-    clamp, stepSpring, createSpring, computeFrame, placeModel, panelGeometry, panelTransforms,
+    clamp, stepSpring, createSpring, computeFrame, placeModel, faceRegion, chatPanelBounds, modelScreenBounds,
+    computeChatPanelLayout, computeChatSplitLayout, interpolateChatPanelLayout, interpolateSplitChatLayout,
+    singleChatPresentation, interpolateChatPresentation, remapChatPanelLayout, remapChatPresentation,
+    isNearBottom, panelGeometry, panelTransforms,
     rubberband, SNAP, resolvePanelSnap, resolveDrawerSnap, createGestureTracker, resolveQuality, isLandscape, resolveFocus
   };
 });

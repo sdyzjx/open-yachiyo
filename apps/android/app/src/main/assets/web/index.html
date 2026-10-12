@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#090b20">
   <title>Yachiyo</title>
+  <link rel="stylesheet" href="/generated/shared/yachiyo-theme.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body data-mode="normal" data-landscape="0" data-pos="top">
@@ -31,6 +32,10 @@
 
   <div id="hud">
     <div id="hub-dot" class="hub-dot" title="网关连接状态"></div>
+    <div id="transfer-control" class="transfer-control">
+      <button id="btn-transfer" class="transfer-btn" type="button" disabled>设备未连接</button>
+      <span id="transfer-reason" class="transfer-reason">连接后可迁移角色</span>
+    </div>
     <button id="btn-settings" class="hud-btn hud-settings" type="button" aria-label="设置">
       <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zm7.4-2.5c.05-.33.1-.66.1-1s-.05-.67-.1-1l2.1-1.65-2-3.46-2.5 1a7.6 7.6 0 0 0-1.7-1L15 4.2h-4l-.3 2.7a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.46L6.6 11c-.05.33-.1.66-.1 1s.05.67.1 1l-2.1 1.65 2 3.46 2.5-1c.5.4 1.1.75 1.7 1l.3 2.7h4l.3-2.7c.6-.25 1.2-.6 1.7-1l2.5 1 2-3.46L19.4 13z" fill="currentColor"/></svg>
     </button>
@@ -85,6 +90,8 @@
   <script src="/generated/shared/realtimeVoicePlayer.js"></script>
   <script src="js/layout.js"></script>
   <script src="js/transfer.js"></script>
+  <script src="js/avatarOwnerState.js"></script>
+  <script src="js/transferControl.js"></script>
   <script src="js/pluginProtocol.js"></script>
   <script src="js/pluginGrid.js"></script>
   <script src="js/stage.js"></script>

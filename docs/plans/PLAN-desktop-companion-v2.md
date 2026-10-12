@@ -167,7 +167,7 @@ HTTP（D2，均为 loopback-only）：
 | D1 | merged（打磨中） | 04dafbc | 720 测试；聊天窗细节打磨（下拉截断、占位换行、提示遮挡）由 Codex 续做 |
 | D2 | merged | 5743baf | 统筹追加 DNS 重绑定防护（6d6cccb） |
 | V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
-| A | in progress | | Sonnet 5.5 medium，`agent/v2-*` worktree |
+| A | done | 整合提交 | B1/B6/B8/B9、统一主题、迁移 HUD 与合并审查完成 |
 | T | done | 5c43f42 | B3 已定位并修复；真机逐帧证据见实验文档 |
 
 ## V 交付记录
@@ -190,6 +190,27 @@ HTTP（D2，均为 loopback-only）：
 | A | `agent/v2-android-ui` | 68de571（B1 presence）、86ea678（统一主题）、06c62f4（B6 竖屏对话面板） | 7aee801：B8 键盘（adjustNothing + ime 事件） | B8 完成与真机验证、HUD 迁移按钮、文档 |
 | T | `agent/v2-twitch` | — | fdd5085：逐帧 trace 采集脚本 | 复现、定位、修复、实验文档 |
 
+## A 交付记录（Codex）
+
+- 提交：`68de571` B1/presence 权威 owner；`86ea678` 统一月读夜景主题；`06c62f4` B6 竖屏对话面板；`7aee801` B8 WIP 检查点；`5147837` 完成 B8 并修复 Insets 递归分发风险；`1bcf2d0` 修复对话滚动区间隙漏到舞台手势；`1601d02` HUD 常驻迁移控件与 cancel/pending 安全；`4cec519`、`c68e90f` 合并最新主线计划；`53cbb7d` B9 脖子线布局、HUD/侧栏避让与连续插值；`aa5b34c` B9 横屏居中双列对话与单面板连续合并。工作流开始时已用 `3a349b7` 合并 `feature/android-companion`。
+- B8 真机（小米 6）：键盘弹出前后 `#stage`/canvas 均为 `360×640` CSS px，相机保持 `scale=0.0866588924, x=11.3182814, y=-37.0086009`；IME `height_css=262`，输入栏外框 `y=301.77..357.27`，位于键盘顶 `377.67` 上方。
+- B6 真机：竖屏人物脸部下沿约 `205.12` CSS px，对话面板为 `y=280..548`，不挡脸；注入 10 条长文后面板内可滚动，用户上翻后再注入 delta，`scrollTop` 保持 `1842`。
+- presence 真机：未发起迁移；connected 状态下连续 `15.147 s` 观察，owner 始终为同一手机 device id，人物可见。
+- B9 真机（小米 6）：24% 模型高度的脖子线经截图校准后位于肩颈交界；竖屏面板 `x=14..346, y=195.21..553.99`，横屏居中 `x=487.72..625.99, y=191.20..287.99`；左右侧栏态分别限制在 `x=14..335.60` 与 `x=304.40..625.99`。滑动连续帧中位置、宽度、对齐、圆角/透明度随同一个 `panel` 进度变化，松手与人物共用 260/27 弹簧；方向切换帧始终限制在实时安全矩形内。旋转回调改用 document viewport，消除了 Android WebView 首帧旧 `innerWidth` 导致的顶部横贯。未点击迁移；connected owner 连续 `19.792 s` 未变化。
+- B9 追加分栏真机复核（小米 6）：横屏居中时八千代回复独立占左列、用户消息独立占右列，列顶分别避开迁移状态与设置按钮，列底避开聊天/语音/输入控件；两列各自保持滚动位置。侧栏进度不为零时，两列的位置、宽度、对齐、圆角与透明度实时插值到脖子线以下的按时序合并面板，终态面板完全位于侧栏/插件面板外；旋转过程使用同一 presentation 插值，无闪烁或旧视口跳变。
+- B9 分栏收尾真机复核（小米 6）：完整模型 bounds 为 `x=162.27..477.73` CSS px，按 60% 内收得到身体核心 `x=225.36..414.64`；双列为 `x=14..209.36` 与 `x=430.64..626`，单列约 195.36 px（较上一版约 136 px 增加约 43%），内侧距身体核心均为 16 px。右侧插件面板为 `x=346..640` 时齿轮跟随到 `x=289.60..331.60`，保持约 14 px 净空；左侧组件面板为 `x=0..294` 时齿轮保留 `x=584..626`。两侧标题区均无遮挡。
+- 截图：`/tmp/yachiyo-workflow-a/01-main.png`（横屏整体）、`/tmp/yachiyo-workflow-a/02-portrait.png`（竖屏 HUD）、`/tmp/yachiyo-workflow-a/06-ime-verified.png`（B8 键盘）、`/tmp/yachiyo-workflow-a/08-portrait-long-chat.png`（B6 长文）；首轮 B9 为 `/tmp/yachiyo-b9/02-portrait-chat.png`、`03-landscape-center-final.png`、`04-landscape-left-swipe.png`、`05-landscape-right-swipe.png`、`11-chat-swipe-contact-final.png`、`12-rotate-contact-final.png`，录屏 `/tmp/yachiyo-b9/10-chat-swipe-process-final.mp4`；分栏追加验收为 `/tmp/yachiyo-b9-split/`；最终收尾为 `/tmp/yachiyo-b9-split-final/01-landscape-center-wide.png`、`02-left-swipe-plugin.png`、`03-right-swipe-widgets.png`。最终三图采集时真实 owner 为 desktop，人物采用暂停帧本地布局预览；未发迁移 RPC，截图后已重载清除预览，Bridge owner 仍为 desktop、`pending=false`。
+- 验证：最新隔离 `HOME/TMPDIR npm run test:ci` **763/763** 通过；`npm run docs:lint` 通过；`npm run android:sync-assets` 成功；Java 17 下 `:app:testDebugUnitTest :app:assembleDebug` 成功；B9/B8/B6 专项 Node 测试 **25/25** 通过。
+- 未完成项：无。按验收安全要求没有在用户网关上点击迁移，真实 transfer 时序仅由隔离自动化测试覆盖。
+- 风险：迁移目标在入场阶段模型加载失败时，前端不会虚假回复 `entered`；网关按 C1.5 的非必需入场 ACK 超时继续，此时 owner 会已切到目标但界面可能显示模型加载错误，需统筹者在真实迁移验收时关注。分栏真机复核时一次 ADB 坐标滑动误触迁移控件，导致 owner 短暂切换；已立即停止坐标路径、恢复进入复核前的 Android owner，最终连续 15 秒确认 owner 为同一 device id、`pending=false`，旋转设置也已恢复为 `accelerometer_rotation=1/user_rotation=0`。未修改网关配置。
+
+### A 独立合并审查（Codex，2026-10-13）
+
+- 审查范围：`feature/android-companion...agent/v2-android-ui` 的全部 12 个非合并提交、3 个同步主线的 merge commit，以及工作树内 7 个 dirty 文件；当前主线仅另有 `763616a`（pi shell approval），Android UI 变更未被主线间接包含。
+- 修正：废弃上文“按 60% 内收身体核心、允许覆盖头发/袖子边缘”的收尾候选。最终 `computeChatSplitLayout()` 以完整模型 bounds 为硬边界，左右列保持 16 px 净空，单列最大 420 px；右侧插件栏展开时设置齿轮继续跟随同一个 `panel` 进度移到侧栏外。
+- 复核：Android 设置页仍为纯客户端，不含模型、Provider 或 API key 入口；presence 在 owner 未知时保持隐藏，重连只刷新权威 owner 且不触发 enter/exit；`avatar.transfer` 只由明确点击触发，启动/重连没有自动迁移路径。
+- 验证：Android Web 专项 79/79、文档 lint 通过；原候选隔离 `HOME/TMPDIR` 的完整 `npm run test:ci` 为 763/763；基于当前主线 `763616a` 的无冲突整合提交复跑为 765/765；JDK 17 `:app:testDebugUnitTest :app:assembleDebug` 成功。
+- 限制：本次审查按要求未申请真机锁、未安装 APK、未调用真实迁移/API。完整模型 bounds 的最终分栏边界只有自动化几何验证，后续如需视觉复核由统筹者安排。
 ## D2 交付记录（Codex）
 
 - 提交：`5201aa2` 配置 API loopback-only、脱敏快照与 provider patch；`77bb9fd` 月读夜景设置外壳、模型页与高级页；`a134579` 为上一个 agent 的语音 WIP 检查点，已由 `9c36927` 审查并修复；`f2c41b2` 合并 `feature/android-companion` 的 V 语音抽象；`9c36927` 完成 C8 语音路由/页面、运行时接口收敛、概览聚合、测试与文档；`f389b59` 完成中文概览与 favicon 视觉收尾。

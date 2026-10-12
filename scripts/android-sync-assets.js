@@ -33,7 +33,8 @@ const SHARED_FILES = [
   ['apps/desktop-live2d/renderer/live2dActionExecutor.js', 'live2dActionExecutor.js'],
   ['apps/desktop-live2d/renderer/lipsyncViseme.js', 'lipsyncViseme.js'],
   ['apps/desktop-live2d/renderer/lipsyncMouthTransition.js', 'lipsyncMouthTransition.js'],
-  ['apps/desktop-live2d/renderer/realtimeVoicePlayer.js', 'realtimeVoicePlayer.js']
+  ['apps/desktop-live2d/renderer/realtimeVoicePlayer.js', 'realtimeVoicePlayer.js'],
+  ['apps/desktop-live2d/shared/theme/yachiyo-theme.css', 'yachiyo-theme.css']
 ];
 
 function log(msg) { console.log(`[android-sync] ${msg}`); }

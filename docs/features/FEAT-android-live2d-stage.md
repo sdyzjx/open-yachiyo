@@ -2,9 +2,9 @@
 
 > 类型: feature
 > 状态: active
-> 负责人: sonnet-ws5, Codex（工作流 T）
+> 负责人: sonnet-ws5, Codex（工作流 A / T）
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-031
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-040
 
 ## 1. 概述
 
@@ -73,7 +73,9 @@ sequenceDiagram
 | `avatar.transfer.cancel` | parked 则隐藏；已离场则重新入场恢复 |
 | `avatar.host.changed` | 更新 host；非 host 隐藏人物、不播 TTS |
 
-非 host 时：人物隐藏、帧循环不渲染模型；显示提示卡片与"叫她过来"按钮（`hubRpc avatar.transfer {to: 本机}`）；人物长按菜单"去电脑那边"触发 `avatar.transfer {to:'desktop'}`。未连接网关时本机始终显示人物（离线独立运行）。动画时间线是纯函数（`js/transfer.js`），有单测。
+顶部 HUD 常驻迁移控件：本机持有角色时显示「叫回电脑」，非本机持有时显示「让她过来」；辅助文字同时显示 owner 和电脑在线状态。断线、owner 未知、电脑离线或迁移中时按钮禁用，不会重复发起 RPC。非 host 时仍保留居中提示卡与「叫她过来」快捷按钮。
+
+每次迁移以 `transfer_id` 和本地 generation 共同校验异步 `prepare/exit/enter`。`failed/cancel`会使旧 continuation 失效并解决被取消的动画 Promise，因此 cancel 之后不会误发 `avatar.transfer.entered`；`failed/completed/cancel/断线` 都会清理对应 pending。人物只在 owner 明确为本机时渲染；断线时保留最后一个权威 owner，不会自动把本机当成 host。动画时间线是纯函数（`js/transfer.js`），有单测。
 
 ### 2.5 音频与口型
 
@@ -84,9 +86,15 @@ sequenceDiagram
 - 麦克风：按钮按住说话（< 280 ms 视为误触取消）或连续模式；`micStart/micStop`，电平 `mic.level` 驱动按钮光圈；`audio.input.transcript` 显示为用户气泡。
 - 自动播放策略：首次触摸时解锁 AudioContext（原生 WebView 还需 WS4 关闭 `mediaPlaybackRequiresUserGesture`）。URL 和实时流播放都必须在 2 秒内进入 `running`，并在开始后 300 ms 内保持 running 且推进音频时钟；仍挂起、恢复超时或启动失败时清理当前播放并只发 ended，不误报 started。
 
-### 2.6 任务画布 / 聊天气泡
+### 2.6 对话面板（任务画布 / 聊天气泡）
 
-订阅 `chat.delta`（流式追加到助手气泡）、`chat.final`（定稿，14 s 后淡出）、`task.update`（任务卡：标题 + 最近 4 步，完成/失败 8 s 后淡出）。位置取 `task_canvas.position`（top/bottom/left/right/hidden），不透明度 `task_canvas.opacity`。文本输入框发送 `chat.input {text}`。
+订阅 `chat.delta`（流式追加到助手气泡）、`chat.final`（定稿；淡出延时 `16 s + 0.09 s × 字数`，上限 60 s，用户正在触摸/滚动时顺延）、`audio.input.transcript`（用户气泡）、`task.update`（任务卡：标题 + 最近 4 步，完成/失败 8 s 后淡出）。文本输入框发送 `chat.input {text}`。
+
+- **竖屏**：以模型 bounds 顶部向下 24% 的脖子线为上界，面板位于脖子线 + 10 px 到输入栏上方，可覆盖身体而不覆盖脸；左右各留 14 px。`task_canvas.position` 在竖屏只有 `hidden` 生效。
+- **横屏**：居中态为人物左侧回答列、右侧用户消息列，两列与完整模型 bounds 保持 16 px 间距（单列上限 420 px），不覆盖头发、袖子或身体；侧栏打开态合并为脖子线以下、严格位于侧栏之外的单面板。拖动时双列向单面板矩形移动并淡出，按完整时间顺序排列的合并视图淡入，松手与人物共用面板弹簧。状态点、迁移控件、设置按钮、输入区、语音/聊天按钮、侧栏及插件面板均参与避让；右侧插件栏打开时设置齿轮同步移到栏外。
+- **滚动**：回答列、用户列和合并视图各自拥有 `.chat-scroll`（`pointer-events:auto; touch-action:pan-y`），整个滚动区都在 `IGNORE` 选择器中，不会触发舞台滑动/抽屉。每列新内容默认自动滚到底；用户上滑离底超过 24 px 后只停止该列自动跟随。合并视图按事件发生顺序排列；保留最近 8 条气泡。
+- **动效**：面板首次出现 `translateY(16px)→0` 240 ms；消息 `translateY(8px)→0` 140 ms；淡出 420 ms（见 `UI_DESIGN_SYSTEM.md` §6）。不透明度 `task_canvas.opacity`，下限 0.9 以保证可读。
+- **软键盘**：主界面和锁屏 Activity 使用 `adjustNothing`。原生层以 `WindowInsetsCompat.Type.ime()` 读取高度（旧系统使用 visible-frame 差值兜底），通过 C2.2 `ime {visible,height_px,height_css}` 下发。Web 层只更新 `--ime` 并重算输入栏上方的面板端点；舞台 canvas、人物取景与面板弹簧坐标不变。键盘占用后可读高度不足 56 px 时，对话面板暂时隐藏，输入栏仍位于键盘上方。
 
 ### 2.7 锁屏模式（`?mode=lockscreen`）
 
@@ -118,4 +126,4 @@ sequenceDiagram
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-031（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js`。
+TC-AWB-001..TC-AWB-040（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js` 与 `apps/android/app/src/test/**/ImeMetricsTest.kt`。
