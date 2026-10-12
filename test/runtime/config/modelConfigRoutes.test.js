@@ -237,3 +237,33 @@ test('session settings: unknown model_ref -> 400, valid/clear/absent pass throug
   assert.equal('model_ref' in mergeSessionSettings(withRef, { model_ref: null }), false);
   assert.equal(mergeSessionSettings(withRef, { permission_level: 'high' }).model_ref, 'ds/deepseek-chat');
 });
+
+test('POST /api/config/models/test never sends stored credentials to a foreign base_url', async () => {
+  const seen = [];
+  const attacker = http.createServer((req, res) => {
+    seen.push(req.headers.authorization || null);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }));
+  });
+  const port = await getFreePort();
+  await new Promise((resolve) => attacker.listen(port, '127.0.0.1', resolve));
+  process.env.ROUTE_TEST_SECRET_ENV = 'sk-ENV-SECRET';
+  const t = await setup(BASE_YAML);
+  try {
+    const foreign = `http://127.0.0.1:${port}/v1`;
+    await t.call('POST', '/api/config/models/test', {
+      provider: { type: 'openai_compatible', base_url: foreign, model: 'x' }, provider_key: 'ds'
+    });
+    await t.call('POST', '/api/config/models/test', {
+      provider: { type: 'openai_compatible', base_url: foreign, model: 'x', api_key_env: 'ROUTE_TEST_SECRET_ENV' }
+    });
+    assert.ok(seen.length >= 1);
+    for (const header of seen) {
+      assert.ok(!String(header || '').includes('SECRET'), `credential leaked: ${header}`);
+    }
+  } finally {
+    delete process.env.ROUTE_TEST_SECRET_ENV;
+    t.server.close();
+    attacker.close();
+  }
+});

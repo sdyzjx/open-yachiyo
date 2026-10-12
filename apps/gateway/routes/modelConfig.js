@@ -29,6 +29,10 @@ function redact(text, secret) {
   return out.slice(0, 600);
 }
 
+function normalizeEndpoint(url) {
+  return String(url || '').trim().replace(/\/+$/, '').toLowerCase();
+}
+
 function joinUrl(base, suffix) {
   return `${String(base).replace(/\/+$/, '')}${suffix}`;
 }
@@ -199,11 +203,17 @@ function createModelConfigRouter({
     }
     if (!isObject(provider)) throw new Error('body.ref or body.provider is required');
     const draft = { ...provider };
-    if (inheritFrom && stored[inheritFrom]) {
-      if (!draft.api_key && !draft.api_key_env) {
-        if (stored[inheritFrom].api_key) draft.api_key = stored[inheritFrom].api_key;
-        if (stored[inheritFrom].api_key_env) draft.api_key_env = stored[inheritFrom].api_key_env;
-      }
+    // Stored credentials (inline keys or env vars) may only be sent to the endpoint they
+    // were configured for; otherwise a draft with a foreign base_url could exfiltrate them.
+    const source = inheritFrom ? stored[inheritFrom] : null;
+    const sameEndpoint = Boolean(source) && normalizeEndpoint(draft.base_url) === normalizeEndpoint(source.base_url);
+    if (typeof body.provider !== 'string' && draft.api_key_env
+      && !(sameEndpoint && draft.api_key_env === source.api_key_env)) {
+      delete draft.api_key_env;
+    }
+    if (sameEndpoint && !draft.api_key && !draft.api_key_env) {
+      if (source.api_key) draft.api_key = source.api_key;
+      if (source.api_key_env) draft.api_key_env = source.api_key_env;
     }
     const modelId = body.model
       || draft.model
