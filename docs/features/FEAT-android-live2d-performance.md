@@ -30,7 +30,7 @@ sequenceDiagram
   end
 ```
 
-渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部顶点、UV 和 index 分别使用一个 packed buffer；UV/index 只初始化一次，position 每个显示帧一次 `bufferSubData`。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
+渲染优化保留 drawable 原有 painter order、texture、blend、cull、clip 与 inverted-mask 语义。全部顶点、UV 和 index 分别使用一个 packed buffer；UV/index 只初始化一次，position 每个显示帧一次 `bufferSubData`。若 Worker 启动、消息形状或运行时发生错误，stage 立即回退到同步 Core。启动超过 12 秒或单帧超过 3 秒没有响应也会终止 Worker 并回退；页面进入后台时暂停计时，恢复可见后重新开始完整截止期。若 GL 方法不能安全安装优化包装，则 renderer 使用原始路径。
 
 ## 3. 接口与协议
 
@@ -40,7 +40,7 @@ sequenceDiagram
 - `ready`: drawable 数量、顶点值数量。
 - `update`: `Float32Array parameters`、`Float32Array parts`，以及可复用的上一组 drawable buffer。
 - `frame`: 顶点、透明度、绘制顺序、动态标志、参数回收 buffer 和 Worker 耗时。
-- `error` / `destroy` / `destroyed`: 回退、释放与确认。
+- `error` / `destroy` / `destroyed`: 回退、释放与确认。主线程还以可见页面时间约束启动和单帧响应。
 
 参数、部件和 drawable typed array 通过 transferable buffer 循环复用。Worker 为 7 MiB 生产 moc 预留 64 MiB Core heap；销毁时释放 model 与 moc，主线程等待确认并有 250 ms terminate 兜底。
 

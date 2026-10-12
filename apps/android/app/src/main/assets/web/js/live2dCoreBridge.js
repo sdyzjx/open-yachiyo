@@ -10,7 +10,11 @@
     target.set(source);
   }
 
-  function create({ model, workerUrl, coreUrl, modelUrl, WorkerClass, log = () => {}, now = () => performance.now() }) {
+  function create({
+    model, workerUrl, coreUrl, modelUrl, WorkerClass, log = () => {}, now = () => performance.now(),
+    visibilityTarget = typeof document !== 'undefined' ? document : null,
+    initTimeoutMs = 12000, updateTimeoutMs = 3000
+  }) {
     if (!model || typeof model.getModel !== 'function' || typeof WorkerClass !== 'function') return null;
     const raw = model.getModel();
     const originalUpdate = model.update.bind(model);
@@ -32,6 +36,38 @@
     let partPool = null;
     let previousPayload = null;
     let recyclePayload = null;
+    let initTimer = null;
+    let updateTimer = null;
+
+    const pageVisible = () => !visibilityTarget || visibilityTarget.visibilityState !== 'hidden';
+    const clearTimer = (name) => {
+      if (name === 'init' && initTimer !== null) { clearTimeout(initTimer); initTimer = null; }
+      if (name === 'update' && updateTimer !== null) { clearTimeout(updateTimer); updateTimer = null; }
+    };
+
+    function armTimeout(name) {
+      clearTimer(name);
+      if (!pageVisible() || state.failed || state.destroyed) return;
+      const delay = name === 'init' ? initTimeoutMs : updateTimeoutMs;
+      const callback = () => {
+        if (!pageVisible()) return;
+        if (name === 'init' && !state.ready) fail('startup timed out');
+        if (name === 'update' && state.pending) fail('frame timed out');
+      };
+      if (name === 'init') initTimer = setTimeout(callback, delay);
+      else updateTimer = setTimeout(callback, delay);
+    }
+
+    function onVisibilityChange() {
+      if (!pageVisible()) {
+        clearTimer('init');
+        clearTimer('update');
+        return;
+      }
+      // Background time does not count against the Worker. A visible resume starts fresh deadlines.
+      if (!state.ready) armTimeout('init');
+      if (state.pending) armTimeout('update');
+    }
 
     function fail(reason) {
       if (state.failed || state.destroyed) return;
@@ -39,6 +75,11 @@
       state.ready = false;
       state.active = false;
       state.pending = false;
+      clearTimer('init');
+      clearTimer('update');
+      if (visibilityTarget && typeof visibilityTarget.removeEventListener === 'function') {
+        visibilityTarget.removeEventListener('visibilitychange', onVisibilityChange);
+      }
       log('warn', `Cubism worker fallback: ${reason}`);
       try { worker.terminate(); } catch { /* ignore */ }
     }
@@ -122,11 +163,13 @@
     worker.onmessage = (event) => {
       const data = event && event.data || {};
       if (data.type === 'ready') {
+        clearTimer('init');
         state.ready = true;
         log('info', `Cubism worker ready (${data.drawables} drawables, ${data.vertexValues} vertex values)`);
         return;
       }
       if (data.type === 'frame') {
+        clearTimer('update');
         state.pending = false;
         try { applyFrame(data); } catch (err) { fail(err.message); }
         return;
@@ -135,7 +178,13 @@
       if (data.type === 'error') fail(data.message || 'unknown worker error');
     };
     worker.onerror = (event) => fail((event && event.message) || 'worker error');
-    worker.postMessage({ type: 'init', coreUrl, modelUrl });
+    if (visibilityTarget && typeof visibilityTarget.addEventListener === 'function') {
+      visibilityTarget.addEventListener('visibilitychange', onVisibilityChange);
+    }
+    try {
+      worker.postMessage({ type: 'init', coreUrl, modelUrl });
+      armTimeout('init');
+    } catch (err) { fail(err.message); }
 
     function update() {
       if (state.destroyed || state.failed || !state.ready) return originalUpdate();
@@ -154,7 +203,10 @@
         state.jobs += 1;
         const transfer = [parameters.buffer, parts.buffer];
         if (recycle) transfer.push(recycle.vertices.buffer, recycle.opacities.buffer, recycle.renderOrders.buffer, recycle.dynamicFlags.buffer);
-        worker.postMessage({ type: 'update', parameters, parts, recycle }, transfer);
+        try {
+          worker.postMessage({ type: 'update', parameters, parts, recycle }, transfer);
+          armTimeout('update');
+        } catch (err) { fail(err.message); return originalUpdate(); }
       }
       // Keep the synchronous path only until the first complete worker frame exists.
       if (!state.active) return originalUpdate();
@@ -164,6 +216,11 @@
 
     function destroy() {
       state.destroyed = true;
+      clearTimer('init');
+      clearTimer('update');
+      if (visibilityTarget && typeof visibilityTarget.removeEventListener === 'function') {
+        visibilityTarget.removeEventListener('visibilitychange', onVisibilityChange);
+      }
       try { worker.postMessage({ type: 'destroy' }); } catch { /* ignore */ }
       setTimeout(() => { try { worker.terminate(); } catch { /* ignore */ } }, 250);
     }

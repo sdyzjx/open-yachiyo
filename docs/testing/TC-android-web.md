@@ -274,8 +274,8 @@
 |---|---|
 | 类型 | unit |
 | 前置条件 | fake Worker、typed-array drawable 模型 |
-| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；再次 update；销毁 |
-| 期望结果 | ready 前同步回退；首帧后不再同步 Core；worker 到达不跳网格；显示帧生成中间顶点与透明度并保持 mask vertex-changed；上一组 typed array 返回 Worker 池；Worker 释放 |
+| 步骤 | 初始化；ready 前调用 update；连续发送两个 frame；推进插值时间；模拟启动/单帧无响应及页面后台恢复；再次 update；销毁 |
+| 期望结果 | ready 前同步回退；首帧后不再同步 Core；worker 到达不跳网格；显示帧生成中间顶点与透明度并保持 mask vertex-changed；上一组 typed array 返回 Worker 池；可见页面超时回退同步 Core，后台时间不误判且恢复后重置截止期；Worker 释放 |
 | 自动化 | `test/android-web/live2dPerformance.test.js`（TC-AWB-027） |
 
 ## TC-AWB-028 Cubism Worker 求值协议

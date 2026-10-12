@@ -14,6 +14,15 @@ class FakeWorker {
   emit(data) { this.onmessage({ data }); }
 }
 
+class FakeVisibility {
+  constructor() { this.visibilityState = 'visible'; this.listeners = new Set(); }
+  addEventListener(name, listener) { if (name === 'visibilitychange') this.listeners.add(listener); }
+  removeEventListener(name, listener) { if (name === 'visibilitychange') this.listeners.delete(listener); }
+  set(state) { this.visibilityState = state; for (const listener of this.listeners) listener(); }
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 test('TC-AWB-027 bridge falls back until a worker frame then applies drawable state asynchronously', () => {
   let instance;
   class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
@@ -163,4 +172,70 @@ test('TC-AWB-028 worker evaluates Cubism and returns transferable drawable array
   context.onmessage({ data: { type: 'destroy' } });
   assert.equal(modelReleased, 1);
   assert.equal(mocReleased, 1);
+});
+
+test('TC-AWB-027 bridge falls back when Worker startup or a frame stalls', async () => {
+  let instance;
+  class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
+  const raw = {
+    parameters: { values: new Float32Array(0) }, parts: { opacities: new Float32Array(0) },
+    drawables: {
+      vertexPositions: [], opacities: new Float32Array(0), renderOrders: new Int32Array(0),
+      dynamicFlags: new Uint8Array(0)
+    }
+  };
+  let syncUpdates = 0;
+  const startup = Bridge.create({
+    model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
+    initTimeoutMs: 15
+  });
+  await wait(30);
+  assert.equal(startup.state.failed, true);
+  assert.equal(instance.terminated, true);
+  startup.update();
+  assert.equal(syncUpdates, 1, 'startup timeout restores synchronous Core updates');
+
+  const stalled = Bridge.create({
+    model: { getModel: () => raw, update: () => { syncUpdates += 1; } },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
+    initTimeoutMs: 100, updateTimeoutMs: 15
+  });
+  instance.emit({ type: 'ready', drawables: 0, vertexValues: 0 });
+  stalled.update();
+  await wait(30);
+  assert.equal(stalled.state.failed, true);
+  assert.equal(instance.terminated, true);
+});
+
+test('TC-AWB-027 background time resets the pending frame deadline', async () => {
+  let instance;
+  class Worker extends FakeWorker { constructor(url) { super(url); instance = this; } }
+  const visibility = new FakeVisibility();
+  const raw = {
+    parameters: { values: new Float32Array(0) }, parts: { opacities: new Float32Array(0) },
+    drawables: {
+      vertexPositions: [], opacities: new Float32Array(0), renderOrders: new Int32Array(0),
+      dynamicFlags: new Uint8Array(0)
+    }
+  };
+  const bridge = Bridge.create({
+    model: { getModel: () => raw, update() {} },
+    workerUrl: '/worker.js', coreUrl: '/core.js', modelUrl: '/model.json', WorkerClass: Worker,
+    visibilityTarget: visibility, initTimeoutMs: 100, updateTimeoutMs: 25
+  });
+  instance.emit({ type: 'ready', drawables: 0, vertexValues: 0 });
+  bridge.update();
+  visibility.set('hidden');
+  await wait(40);
+  assert.equal(bridge.state.failed, false, 'hidden time does not expire a Worker job');
+  visibility.set('visible');
+  await wait(10);
+  instance.emit({
+    type: 'frame', vertices: new Float32Array(0), opacities: new Float32Array(0),
+    renderOrders: new Int32Array(0), dynamicFlags: new Uint8Array(0), workerMs: 1
+  });
+  assert.equal(bridge.state.failed, false, 'visible resume receives a fresh deadline');
+  bridge.destroy();
+  assert.equal(visibility.listeners.size, 0);
 });
