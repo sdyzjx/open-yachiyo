@@ -448,6 +448,63 @@ providers:
   }
 });
 
+test('voice adapter follows voice.active_tts instead of the legacy qwen3_tts key', async () => {
+  const { ttsAliyunVc, cooldownStore, idempotencyStore } = voiceAdapters.__internal;
+  cooldownStore.calls.clear();
+  idempotencyStore.clear();
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-active-tts-'));
+  const configPath = path.join(tmp, 'providers.yaml');
+  await fs.writeFile(configPath, `
+active_provider: chat
+voice:
+  active_tts: openai_tts
+providers:
+  chat:
+    type: openai_compatible
+    base_url: https://example.invalid/v1
+    model: mock-chat
+    api_key: test
+  qwen3_tts:
+    type: tts_dashscope
+    base_url: https://dashscope.example.invalid/api/v1
+    api_key: test
+    tts_model: qwen3-tts-flash
+    tts_voice: Cherry
+  openai_tts:
+    type: tts_openai_compatible
+    base_url: https://tts.example.invalid/v1
+    api_key: test
+    tts_model: gpt-4o-mini-tts
+    tts_voice: alloy
+`, 'utf8');
+
+  const prevMode = process.env.VOICE_PATH_MODE;
+  const prevProviderPath = process.env.PROVIDER_CONFIG_PATH;
+  const prevKey = process.env.TTS_PROVIDER_KEY;
+  process.env.VOICE_PATH_MODE = 'electron_native';
+  process.env.PROVIDER_CONFIG_PATH = configPath;
+  delete process.env.TTS_PROVIDER_KEY;
+  const events = [];
+
+  try {
+    await ttsAliyunVc(
+      { text: 'active tts provider', voiceTag: 'zh', replyMeta: { inputType: 'audio', sentenceCount: 1 } },
+      { session_id: 'session-active-tts', publishEvent: (topic, payload) => events.push({ topic, payload }) }
+    );
+    const started = events.find((item) => item.topic === 'voice.job.started');
+    assert.ok(started);
+    assert.equal(started.payload.model, 'gpt-4o-mini-tts');
+    assert.equal(started.payload.voice_id, 'alloy');
+  } finally {
+    if (prevMode !== undefined) process.env.VOICE_PATH_MODE = prevMode;
+    else delete process.env.VOICE_PATH_MODE;
+    if (prevProviderPath !== undefined) process.env.PROVIDER_CONFIG_PATH = prevProviderPath;
+    else delete process.env.PROVIDER_CONFIG_PATH;
+    if (prevKey !== undefined) process.env.TTS_PROVIDER_KEY = prevKey;
+  }
+});
+
 test('voice adapter normalizes jp tts text before dispatching electron_native request', async () => {
   const {
     ttsAliyunVc,

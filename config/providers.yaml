@@ -11,6 +11,9 @@ roles:                                       # 可选：按用途指定模型（
   summary: deepseek/deepseek-chat
 fallback_models:                             # 主模型遇到网络错误 / 429 / 5xx 时依次尝试
   - deepseek/deepseek-chat
+voice:                                       # 可选：语音 provider 选择（缺省 → 环境变量 TTS_PROVIDER_KEY → 第一个 tts_*/asr_*）
+  active_tts: qwen_tts
+  # active_asr: aliyun_asr
 providers:
   qwen35_plus:
     type: openai_compatible
@@ -33,12 +36,29 @@ providers:
     model: gpt-4o-mini
     api_key_env: OPENAI_API_KEY
     timeout_ms: 20000
-  qwen3_tts:
+  qwen_tts:
     type: tts_dashscope
-    tts_model: qwen3-tts-vc-2026-01-22
-    tts_voice: qwen-tts-vc-yachiyo-voice-20260224022238839-5679
-    # Optional realtime defaults for desktop-live2d realtime transport.
-    tts_realtime_model: qwen3-tts-vc-realtime-2026-01-15
-    tts_realtime_voice: Cherry
+    display_name: 通义千问 TTS
     base_url: https://dashscope.aliyuncs.com/api/v1
     api_key_env: DASHSCOPE_API_KEY
+    tts_model: qwen3-tts-flash
+    tts_voice: Cherry
+    # 可选：桌面端实时（流式）播放；仅 tts_dashscope 支持
+    tts_realtime_model: qwen3-tts-flash-realtime
+    tts_realtime_voice: Cherry
+  # 声音克隆示例（见 docs/guides/TTS_VOICE_CLONE_GUIDE.md）：把 tts_model/tts_voice 换成克隆模型与 voice id。
+  # OpenAI 兼容 TTS 示例（POST {base_url}/audio/speech），启用后把 voice.active_tts 指向它：
+  # openai_tts:
+  #   type: tts_openai_compatible
+  #   display_name: OpenAI TTS
+  #   base_url: https://api.openai.com/v1
+  #   api_key_env: OPENAI_API_KEY
+  #   tts_model: gpt-4o-mini-tts
+  #   tts_voice: alloy
+  #   format: mp3                            # mp3|wav|opus|aac|flac|pcm
+  # ASR 示例：asr_dashscope 或 asr_openai_compatible（POST {base_url}/audio/transcriptions）
+  # aliyun_asr:
+  #   type: asr_dashscope
+  #   base_url: https://dashscope.aliyuncs.com/api/v1
+  #   api_key_env: DASHSCOPE_API_KEY
+  #   model: qwen3-asr-flash

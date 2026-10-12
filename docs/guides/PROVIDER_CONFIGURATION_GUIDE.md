@@ -481,3 +481,21 @@ providers:
 
 - 配置页 `/config-v2.html` 的 **models** 标签页：选择预设添加 provider、编辑 base_url / 密钥 / 模型列表 / headers / compat / extra_body，「发现模型」调用 `GET {base_url}/models`，「测试连接」发送最小请求，勾选启用、选择当前模型、按用途分配、编辑回退链。已保存的 API Key 不会回显，留空表示保持不变。
 - HTTP：`GET /api/config/models`、`PUT /api/config/models/selection`、`GET /api/config/models/presets`、`POST /api/config/models/test`、`POST /api/config/models/discover`（详见 FEAT 文档）。保存后会提交到 config 目录的 git 仓库。
+
+## 16. 语音 provider（TTS / ASR）与 `voice` 段
+
+`providers.yaml` 可声明多个语音 provider，并用顶层 `voice` 段选择当前使用的一个（可选，缺省保持旧行为）：
+
+```yaml
+voice:
+  active_tts: qwen_tts          # 缺省 → 环境变量 TTS_PROVIDER_KEY → 第一个 tts_* provider
+  active_asr: aliyun_asr        # 缺省 → 第一个 asr_* provider
+providers:
+  qwen_tts:   { type: tts_dashscope, base_url: https://dashscope.aliyuncs.com/api/v1, api_key_env: DASHSCOPE_API_KEY, tts_model: qwen3-tts-flash, tts_voice: Cherry, tts_realtime_model: qwen3-tts-flash-realtime }
+  openai_tts: { type: tts_openai_compatible, base_url: https://api.openai.com/v1, api_key_env: OPENAI_API_KEY, tts_model: gpt-4o-mini-tts, tts_voice: alloy, format: mp3 }
+  aliyun_asr: { type: asr_dashscope, base_url: https://dashscope.aliyuncs.com/api/v1, api_key_env: DASHSCOPE_API_KEY, model: qwen3-asr-flash }   # 旧字段 asr_model 仍可读
+```
+
+- 校验：`voice.active_tts` 必须指向存在的 `tts_*` provider，`voice.active_asr` 必须指向存在的 `asr_*` provider，否则保存时给出明确错误。
+- 旧配置的 `qwen3_tts` key 无需迁移；本指南前文中对 `qwen3_tts` 的描述等价于「`voice.active_tts` 指向的 `tts_dashscope` provider」。
+- 完整行为、接口与错误码见 `docs/features/FEAT-voice-provider-config.md`。

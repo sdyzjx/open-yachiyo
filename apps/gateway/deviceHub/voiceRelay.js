@@ -1,9 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { QwenTtsClient } = require('../../desktop-live2d/main/voice/qwenTtsClient');
+const { createTtsClient } = require('../../runtime/voice');
 
-function attachVoiceRelay({ hub, bus, directory, ttsClient = new QwenTtsClient(), ttlMs = 600000, now = Date.now }) {
+function attachVoiceRelay({ hub, bus, directory, ttsClient = null, ttlMs = 600000, now = Date.now }) {
   fs.mkdirSync(directory, { recursive: true });
   const media = new Map();
   const requests = new Map();
@@ -29,17 +29,18 @@ function attachVoiceRelay({ hub, bus, directory, ttsClient = new QwenTtsClient()
     if (requests.size > 512) requests.delete(requests.keys().next().value);
     try {
       const timeoutMs = Math.max(1000, Math.min(120000, Number(data.timeoutSec || 45) * 1000));
-      const result = await ttsClient.synthesizeNonStreaming({ text: data.text, model: data.model, voice: data.voiceId, timeoutMs });
-      const buffer = await ttsClient.fetchAudioBuffer({ audioUrl: result.audioUrl, timeoutMs });
+      // Resolve the provider per request so voice.active_tts changes apply without a restart.
+      const result = await (ttsClient || createTtsClient()).synthesize({ text: data.text, model: data.model, voice: data.voiceId, timeoutMs });
+      const buffer = result.buffer;
       if (buffer.length > 20 * 1024 * 1024) throw new Error('TTS audio exceeds 20 MiB');
       if (stopped || !hub.isHost(device)) return; // Do not replay a stale utterance on a new host.
       const id = randomUUID();
       const file = path.join(directory, `${id}.audio`);
       fs.writeFileSync(file, buffer, { mode: 0o600 });
-      media.set(id, { file, mime: result.mimeType || 'audio/wav', expires: now() + ttlMs });
+      media.set(id, { file, mime: result.mime || 'audio/wav', expires: now() + ttlMs });
       const url = new URL(`/api/device/media/${id}`, device.ws.baseUrl);
       url.searchParams.set('token', hub.token);
-      hub.publish('voice.play', { request_id: requestId, url: url.toString(), mime: result.mimeType || 'audio/wav', text: data.text, session_id: data.session_id }, { target: device.device_id, direct: true });
+      hub.publish('voice.play', { request_id: requestId, url: url.toString(), mime: result.mime || 'audio/wav', text: data.text, session_id: data.session_id }, { target: device.device_id, direct: true });
     } catch (err) {
       if (!stopped && hub.isHost(device)) hub.publish('voice.stream.error', { request_id: requestId, error: 'TTS synthesis failed' }, { target: device.device_id, direct: true });
     }
