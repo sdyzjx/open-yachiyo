@@ -277,3 +277,13 @@
 | 步骤 | 在设置中选择“使用官网夜景”；横向拖出插件/组件面板；观察拖动中与吸附后的面板；检查发布资源目录 |
 | 期望结果 | 背景切换为带来源说明的官网宫殿夜景；面板、HUD、设置页使用统一深蓝紫/暖金/淡紫视觉；面板用内部预模糊层且不对 Live2D 使用大型 `backdrop-filter`；发布包不包含该第三方图片副本 |
 | 自动化 | `test/android-web/theme.test.js`（来源 URL 与预模糊层性能边界）+ manual-device |
+
+## TC-AWB-028 口型结束中性复位
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit / manual-device |
+| 前置条件 | 模型已加载；可播放本地参考 WAV；能读取 Cubism 口型参数 |
+| 步骤 | 1) 静音 Idle 15 秒并切换 Greet/Error motion；2) 播放本地参考音频并观察口型；3) 等待播放结束；4) 设置一次 `ParamMouthForm` overlay；5) 再播放一段音频 |
+| 期望结果 | 静音及 motion 切换时不自发持续张嘴，连续真实模型更新后 `ParamMouthOpenY`/`ParamMouthForm` 均为 MOC 默认值；播放中嘴形随音频自然变化且优先于 overlay；结束后迅速回到中性；显式 overlay 优先于静音中性层 |
+| 自动化 | `test/android-web/lipsync.test.js`、`test/android-web/stageMouth.test.js`（TC-AWB-028）；真机三状态为 manual |

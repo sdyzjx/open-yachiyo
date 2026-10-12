@@ -107,8 +107,10 @@
       this.stage.mouth.form = this.cur.mouthForm;
       if (this.releasing && this.Mouth.isMouthTransitionSettled({ current: this.cur, target: this.target })) {
         this.releasing = false;
-        this.stage.mouth.active = false;
         this.cur = { mouthOpen: 0, mouthForm: 0 };
+        this.stage.mouth.open = 0;
+        this.stage.mouth.form = 0;
+        this.stage.mouth.active = false;
       }
     }
   }

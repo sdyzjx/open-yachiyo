@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws5
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-026
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-028
 
 ## 1. 概述
 
@@ -77,7 +77,7 @@ sequenceDiagram
 
 - `voice.play {request_id,url}`：`fetch`（URL 自动补 `http://host:port` 与 `?token=`）→ `decodeAudioData` → AnalyserNode → 口型驱动；回执 `voice.playback.started/ended`。新的播放会打断旧的。Android 使用 `latencyHint:'playback'` 避开部分 ROM 无法启动的 AAudio 低延迟 MMAP 路径；旧 WebView 不接受该选项时回退到无参构造。
 - `voice.stream.start/chunk/end/error`：复用桌面 `RealtimeVoicePlayer`（PCM s16le，24 kHz 默认，预缓冲 160 ms）。
-- 口型：`js/lipsync.js` 把 AnalyserNode 频谱送入 `Live2DVisemeLipSync.resolveVisemeFrame`，经与桌面一致的增益/死区整形与 `Live2DMouthTransition` 平滑，写 `ParamMouthOpenY/ParamMouthForm`。
+- 口型：`js/lipsync.js` 把 AnalyserNode 频谱送入 `Live2DVisemeLipSync.resolveVisemeFrame`，经与桌面一致的增益/死区整形与 `Live2DMouthTransition` 平滑，写 `ParamMouthOpenY/ParamMouthForm`。无语音时，舞台在每次真实模型更新的 `beforeModelUpdate` 中恢复 MOC 声明的口型默认值，避免 Idle/Greet/Error motion 内恒定的 `ParamMouthForm=1` 留下持续怪嘴。优先级为 motion < 中性默认层 < action/RPC 参数 overlay < 活跃语音口型；中性层不会令显式口型动作失效。
 - 麦克风：按钮按住说话（< 280 ms 视为误触取消）或连续模式；`micStart/micStop`，电平 `mic.level` 驱动按钮光圈；`audio.input.transcript` 显示为用户气泡。
 - 自动播放策略：首次触摸时解锁 AudioContext（原生 WebView 还需 WS4 关闭 `mediaPlaybackRequiresUserGesture`）。URL 和实时流播放都必须在 2 秒内进入 `running`，并在开始后 300 ms 内保持 running 且推进音频时钟；仍挂起、恢复超时或启动失败时清理当前播放并只发 ended，不误报 started。
 
@@ -112,4 +112,4 @@ sequenceDiagram
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-026（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`。
+TC-AWB-001..TC-AWB-028（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`。
