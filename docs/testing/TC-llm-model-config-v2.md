@@ -17,3 +17,11 @@
 | TC-LLM-007 | 每个非 custom 预设生成合法 provider | unit | 仅 `preset` + `api_key` | `validateConfig` | 全部通过 | 同上「every non-custom preset…」 |
 | TC-LLM-008 | Catalog v2：多模型、enabled 顺序、roles、回退链、asr、密钥解析 | unit | v2 yaml（deepseek/qwen/openrouter/asr） | `loadModelCatalog` | 描述符字段（headers/extra_body/compat/api_key）正确；回退链去重且忽略不存在项 | test/runtime/config/modelCatalog.test.js「catalog v2…」 |
 | TC-LLM-009 | Catalog 的 api 映射与 ollama 无密钥 | unit | anthropic/gemini/ollama 预设 | `loadModelCatalog` | api 为 anthropic-messages / google-generative-ai / openai-completions；ollama key 为 null | 同上「catalog maps anthropic/google…」 |
+| TC-LLM-010 | headers / extra_body / max_tokens_field / developer 角色兼容 | integration | 本地 mock HTTP | `OpenAIReasoner.decide` | 请求头、请求体字段符合配置 | test/runtime/config/llmCompat.test.js「headers, extra_body…」 |
+| TC-LLM-011 | 无密钥本地 provider；reasoning 模型不发默认 temperature | integration | mock | `requireApiKey:false`、`reasoning:true` | 无 Authorization；无 temperature | 同上「no api key required…」 |
+| TC-LLM-012 | deepseek-reasoner 流式 `reasoning_content` 不污染输出，历史剥离 | integration | mock SSE | `decideStream` | output 仅含 content；`onReasoningDelta` 收到思考；历史消息不含 reasoning_content | 同上「deepseek-reasoner stream…」 |
+| TC-LLM-013 | `strip_reasoning_in_history=false` 保留 reasoning | integration | mock | `decide` | assistantMessage 带 reasoning_content，历史原样发送 | 同上「strip_reasoning_in_history=false…」 |
+| TC-LLM-014 | 回退链：首模型 503 → 次模型成功并报告 fallback | integration | 两个 mock，`fallback_models` | `manager.getReasoner({onFallback})` | 返回次模型输出；回调含 from/to/status | 同上「fallback chain…」 |
+| TC-LLM-015 | 不可重试错误（401）不触发回退 | integration | 同上 | `decide` | 抛出 401，次模型零请求 | 同上「fallback does not trigger…」 |
+| TC-LLM-016 | `model_ref` 覆盖与未知 ref 报错；provider 选项进入请求 | integration | 两个 mock | `getReasoner({modelRef})` | 使用指定模型；未知 ref 抛 `Unknown model_ref` | 同上「model_ref override…」 |
+| TC-LLM-017 | Runner 透传 modelRef 并在 bus 发布 `llm.fallback` | unit | stub reasoner | `ToolLoopRunner.run({modelRef})` | getReasoner 收到 modelRef/sessionId；bus 收到 llm.fallback | 同上「ToolLoopRunner forwards modelRef…」 |

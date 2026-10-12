@@ -255,7 +255,7 @@ async function persistSessionInputImages(sessionId, inputImages = [], workspaceR
 
 const runner = new ToolLoopRunner({
   bus,
-  getReasoner: () => llmManager.getReasoner(),
+  getReasoner: (opts) => llmManager.getReasoner(opts),
   listTools: () => executor.listTools(),
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),

@@ -1,14 +1,24 @@
 const { OpenAIReasoner } = require('../llm/openaiReasoner');
+const { FallbackReasoner } = require('../llm/fallbackReasoner');
+const { normalizeProviderConfig } = require('./providerConfigStore');
+const { loadModelCatalog } = require('./modelCatalog');
 
 class LlmProviderManager {
   constructor({ store }) {
     this.store = store;
-    this.cacheKey = null;
-    this.cachedReasoner = null;
+    this.reasonerCache = new Map();
+  }
+
+  clearCache() {
+    this.reasonerCache.clear();
+  }
+
+  getCatalog() {
+    return loadModelCatalog({ store: this.store });
   }
 
   getActiveProviderSnapshot() {
-    const config = this.store.load();
+    const config = normalizeProviderConfig(this.store.load());
     const activeName = config.active_provider;
     const provider = config.providers[activeName];
 
@@ -21,20 +31,22 @@ class LlmProviderManager {
     };
   }
 
-  getReasoner() {
-    const snapshot = this.getActiveProviderSnapshot();
-    const provider = snapshot.provider;
-    const apiKey = provider.api_key || process.env[provider.api_key_env];
-
-    if (!apiKey) {
+  buildReasoner(descriptor, provider) {
+    if (!descriptor.api_key && provider.requires_api_key !== false
+      && provider.auth !== 'none' && provider.preset !== 'ollama') {
       throw new Error(
-        `No API key for provider "${snapshot.active_name}". Set api_key in YAML or env ${provider.api_key_env}.`
+        `No API key for provider "${descriptor.provider}". Set api_key in YAML or env ${descriptor.api_key_env}.`
+      );
+    }
+    if (descriptor.api !== 'openai-completions') {
+      throw new Error(
+        `Model ${descriptor.ref} uses api "${descriptor.api}", which the legacy agent loop cannot call; use AGENT_CORE=pi.`
       );
     }
 
     const maxRetries = Number(
-      provider.max_retries !== undefined
-        ? provider.max_retries
+      descriptor.max_retries !== null && descriptor.max_retries !== undefined
+        ? descriptor.max_retries
         : process.env.LLM_REQUEST_MAX_RETRIES
     );
     const retryDelayMs = Number(
@@ -43,30 +55,58 @@ class LlmProviderManager {
         : process.env.LLM_REQUEST_RETRY_DELAY_MS
     );
 
-    const key = JSON.stringify({
-      name: snapshot.active_name,
-      base_url: provider.base_url,
-      model: provider.model,
-      timeout_ms: provider.timeout_ms || 20000,
-      api_key: apiKey,
-      max_retries: Number.isFinite(maxRetries) ? maxRetries : undefined,
-      retry_delay_ms: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined
-    });
-
-    if (this.cacheKey === key && this.cachedReasoner) {
-      return this.cachedReasoner;
-    }
-
-    this.cachedReasoner = new OpenAIReasoner({
-      apiKey,
-      baseUrl: provider.base_url,
-      model: provider.model,
-      timeoutMs: Number(provider.timeout_ms) || 20000,
+    const options = {
+      apiKey: descriptor.api_key,
+      requireApiKey: false,
+      baseUrl: descriptor.base_url,
+      model: descriptor.id,
+      timeoutMs: descriptor.timeout_ms,
       maxRetries: Number.isFinite(maxRetries) ? maxRetries : undefined,
-      retryDelayMs: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined
-    });
-    this.cacheKey = key;
-    return this.cachedReasoner;
+      retryDelayMs: Number.isFinite(retryDelayMs) ? retryDelayMs : undefined,
+      headers: descriptor.headers,
+      extraBody: descriptor.extra_body,
+      compat: descriptor.compat,
+      temperature: descriptor.temperature,
+      maxTokens: descriptor.max_tokens,
+      reasoning: descriptor.reasoning
+    };
+
+    const key = JSON.stringify({ ref: descriptor.ref, options });
+    const cached = this.reasonerCache.get(key);
+    if (cached) return cached;
+    const reasoner = new OpenAIReasoner(options);
+    // Only the latest config generation is kept.
+    this.reasonerCache.set(key, reasoner);
+    return reasoner;
+  }
+
+  // getReasoner() -> active model (plus fallback chain when configured).
+  // getReasoner({ modelRef }) -> that model first, then the configured fallbacks.
+  // onFallback({from,to,error,status}) is invoked when the chain switches model.
+  getReasoner({ modelRef = null, onFallback = null } = {}) {
+    const catalog = this.getCatalog();
+    const config = this.store.load();
+    let primary = catalog.active;
+    if (modelRef) {
+      primary = catalog.resolve(modelRef);
+      if (!primary) throw new Error(`Unknown model_ref: ${modelRef}`);
+    }
+    if (!primary) throw new Error('No chat model configured');
+
+    const providerOf = (d) => normalizeProviderConfig(config).providers[d.provider] || {};
+    const primaryReasoner = this.buildReasoner(primary, providerOf(primary));
+
+    const extras = catalog.fallbackChain().filter((m) => m.ref !== primary.ref);
+    const chain = [{ ref: primary.ref, reasoner: primaryReasoner }];
+    for (const model of extras) {
+      try {
+        chain.push({ ref: model.ref, reasoner: this.buildReasoner(model, providerOf(model)) });
+      } catch {
+        // A fallback without credentials / supported api is skipped, not fatal.
+      }
+    }
+    if (chain.length === 1) return primaryReasoner;
+    return new FallbackReasoner({ chain, onFallback });
   }
 
   loadYaml() {
@@ -79,28 +119,31 @@ class LlmProviderManager {
 
   saveYaml(rawYaml) {
     const config = this.store.saveRawYaml(rawYaml);
-    this.cacheKey = null;
-    this.cachedReasoner = null;
+    this.clearCache();
     return config;
   }
 
   saveConfig(config) {
     this.store.save(config);
-    this.cacheKey = null;
-    this.cachedReasoner = null;
+    this.clearCache();
     return this.store.load();
   }
 
   getConfigSummary() {
-    const config = this.store.load();
+    const config = normalizeProviderConfig(this.store.load());
     const activeName = config.active_provider;
     const active = config.providers[activeName];
     const hasApiKey = Boolean(active.api_key || process.env[active.api_key_env]);
+    const activeRef = config.active_model || null;
+    const activeModelId = activeRef && activeRef.startsWith(`${activeName}/`)
+      ? activeRef.slice(activeName.length + 1)
+      : active.model;
 
     return {
       active_provider: activeName,
       providers: Object.keys(config.providers),
-      active_model: active.model,
+      active_model: activeModelId,
+      active_ref: activeRef,
       active_base_url: active.base_url,
       active_type: active.type,
       has_api_key: hasApiKey

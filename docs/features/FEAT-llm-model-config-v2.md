@@ -25,6 +25,14 @@
 - `providerPresets.js`：`listPresets()`、`getPreset(id)`；预设 id：openai、deepseek、qwen、moonshot、zhipu、siliconflow、openrouter、ollama、anthropic、gemini、custom。provider 写 `preset: <id>` 即继承 type/base_url/api_key_env/models/compat。
 - `modelCatalog.loadModelCatalog({store})`：返回 `models/enabled/active/resolve/forRole/fallbackChain/tts/asr`（契约 C4.2）。描述符的 `headers/compat/extra_body/temperature` 为 provider 与模型级字段合并（模型级优先）；`api_key` 由 `api_key` 或 `api_key_env` 解析。
 
+### 3.2 运行时（legacy 循环）
+
+- `OpenAIReasoner` 新选项：`headers`、`extraBody`（合并进请求体）、`compat.{max_tokens_field,supports_developer_role,reasoning_content_field,strip_reasoning_in_history}`、`temperature`、`maxTokens`、`reasoning`、`requireApiKey`。流式 `delta.reasoning_content` 不进入输出文本，通过 `onReasoningDelta` 与 `decision.reasoning_content` 提供；历史消息默认剥离 reasoning 字段。
+- `LlmProviderManager.getReasoner({ modelRef, onFallback })`：按 catalog 解析 active 模型（或 `modelRef` 覆盖），并在配置了 `fallback_models` 时返回 `FallbackReasoner`。仅当错误可重试（网络/408/409/429/5xx，`error.retriable`）且尚未向消费者流出文本时切换下一个模型。
+- 回退时 runner 发出 runtime 事件 `llm.fallback` 并在 bus 发布 topic `llm.fallback`：`{session_id, trace_id, from, to, error, status}`。
+- `runtime.run` 的 `params.model_ref` → `RuntimeRpcWorker` → `runtimeContext.model_ref` 与 `runner.run({modelRef})`（pi 路径读取同一字段）。
+- legacy 循环仅能调用 `openai-completions`；anthropic/google 模型在 legacy 下会报明确错误。
+
 ## 4. 配置项
 
 支持的 `type`：`openai_compatible`、`anthropic`、`google`、`tts_dashscope`、`asr_openai_compatible`、`asr_dashscope`。完整 schema 见契约 C4.1。
@@ -35,4 +43,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-009，见 `docs/testing/TC-llm-model-config-v2.md`。
+TC-LLM-001 ~ TC-LLM-017，见 `docs/testing/TC-llm-model-config-v2.md`。
