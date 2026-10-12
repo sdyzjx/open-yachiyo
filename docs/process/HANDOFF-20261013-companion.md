@@ -1,10 +1,20 @@
 # Android Companion 停止交接记录
 
 > 类型: handoff
-> 状态: active
+> 状态: done
 > 负责人: ui_integration_review agent
 > 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-companion.md, ../plans/PLAN-android-companion-contracts.md, ../experiments/EXP-20261013-android-mouth-neutral.md, ../experiments/EXP-20261012-companion-integration-acceptance.md
+
+## 恢复后闭环状态（2026-10-13）
+
+本交接所列 Android presence/UI、Desktop D1、配置 WebUI 安全与 ChatGPT plan 后端候选均已在当前主线基线上完成独立审查与整合。下文保留为停止时的历史快照，其中“未合并 checkpoint”和“恢复顺序”不再代表当前执行状态。
+
+- Desktop D1 与紧凑布局打磨已合入；仍需 macOS 最终人工视觉验收。
+- Android B1/B6/B8/B9、迁移 HUD 与完整模型 bounds 约束已合入；最终 bounds 仍需小米 6 真机视觉复核。本轮闭环没有安装 APK、调用设备或发起 transfer。
+- ChatGPT OAuth/OIDC、凭据存储、模型目录与 Responses 后端已合入；Desktop Continue with ChatGPT UI、真实 OAuth 与真实 Responses 调用仍未验收。
+- A15 / 60 FPS 已按用户决定放弃，不再恢复。B3 抽动修复保留，旧 Worker/VBO/physics/mask 性能候选没有进入主线。
+- 闭环集成通过隔离 `HOME/TMPDIR` 的 Node 789/789、文档 lint，以及 JDK 17 Android 单测与 debug APK 构建（41 tasks）。
 
 ## 停止范围
 

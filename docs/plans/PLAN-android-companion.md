@@ -6,6 +6,15 @@
 > 更新: 2026-10-13
 > 关联: PLAN-android-companion-contracts.md, EXP-20261012-android-live2d-webview-feasibility.md, 各 PLAN-android-ws*.md
 
+## 当前集成状态（2026-10-13）
+
+- Desktop D1 外壳、标准聊天窗及紧凑布局打磨已完成代码集成；macOS 最终人工视觉验收仍需统筹者执行。
+- Android B1/B6/B8/B9、统一主题、迁移 HUD 与完整模型 bounds 几何约束已完成代码和自动化整合；最终 bounds 仍需小米 6 真机视觉复核。本次最终集成不安装 APK、不触发 transfer。
+- ChatGPT plan 后端（OAuth/OIDC、凭据存储、账户模型目录、统一模型选择、Responses 适配）已合入；Desktop Continue with ChatGPT UI、真实账户 OAuth 与真实 Responses 调用尚未验收。
+- A15 / 60 FPS 已按用户决定放弃，不再列为阻塞或恢复项。B3 身体抽动已有逐帧修复证据；Worker/VBO/physics/mask 等历史失败性能候选保持未合入。
+- 仍需完成的产品验收只包括上述 macOS 视觉、Android 最终 bounds 真机视觉，以及 ChatGPT UI/真实账号链路；不得把 mock 自动化结果表述为真实 OAuth/API 通过。
+- 当前集成在隔离 `HOME/TMPDIR` 下通过 Node 789/789 与文档 lint；JDK 17 Android 单测和 debug APK 构建通过（41 tasks）。
+
 ## 1. 目标
 
 1. 把 Live2D 桌宠移植到 Android（WebView 渲染，见实验文档结论）。

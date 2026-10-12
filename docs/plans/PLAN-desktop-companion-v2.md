@@ -164,11 +164,12 @@ HTTP（D2，均为 loopback-only）：
 | 工作流 | 状态 | 提交 | 备注 |
 |---|---|---|---|
 | 统筹：设计规范 + 本计划 | done | 06e6898 | |
-| D1 | merged（打磨中） | 04dafbc | 720 测试；聊天窗细节打磨（下拉截断、占位换行、提示遮挡）由 Codex 续做 |
+| D1 | done（含视觉打磨） | 04dafbc + 425268b + 517e6d7 | 标准聊天窗与 360×480 紧凑布局已完成；最终集成仍需 macOS 人工视觉验收 |
 | D2 | merged | 5743baf | 统筹追加 DNS 重绑定防护（6d6cccb） |
 | V | merged | 5446d32 | 685 测试通过；遗留：agent 语音工具 `voice.js` 仍硬编码 qwen3_tts（统筹修） |
-| A | done | 整合提交 | B1/B6/B8/B9、统一主题、迁移 HUD 与合并审查完成 |
+| A | done（代码与自动化） | 0e1897b | B1/B6/B8/B9、统一主题、迁移 HUD 与合并审查完成；完整模型 bounds 的最终布局仍需真机视觉复核 |
 | T | done | 5c43f42 | B3 已定位并修复；真机逐帧证据见实验文档 |
+| ChatGPT plan 后端 | merged（未完成产品验收） | 8e52853…72a5936 | OAuth/OIDC、模型目录与 Responses 适配已合；Desktop Continue with ChatGPT UI、真实 OAuth/Responses 尚未验收 |
 
 ## V 交付记录
 
@@ -249,3 +250,11 @@ HTTP（D2，均为 loopback-only）：
 - 最小窗量测：viewport/body 为 360/360 px，toolbar 与 composer 的 client/scroll 宽度均为 340/340 px；无横向溢出或按钮换行。
 - 未完成项：无。
 - 风险：截图位于临时目录，系统清理临时文件后不可用；高级排版 CDN 限制沿用上一轮交付说明。
+
+## 最终集成状态（2026-10-13）
+
+- 已在当前主线基线 `763616a` 上按顺序重放 D1 打磨、Android 审查整合与 ChatGPT plan 后端；未带入旧分支相对主线的删除，也未带入 Worker/VBO/physics/mask 等失败性能候选。
+- ChatGPT plan 的 OAuth/OIDC、凭据存储、模型目录、统一选择与 Responses 适配已进入集成链。Desktop 的 Continue with ChatGPT 登录/状态 UI 仍未实现，真实账户 OAuth 与真实 Responses 调用未执行，不能视为端到端验收通过。
+- Android B1/B6/B8/B9 和完整模型 bounds 几何约束已进入集成链；本次集成不触设备，最终 bounds 仍需在小米 6 上做视觉复核。
+- A15 / 60 FPS 目标已按用户决定放弃，不再是待恢复工作。本集成保留稳定帧路径与 B3 抽动修复，没有恢复历史性能实验。
+- 最终隔离验证：`HOME/TMPDIR` 隔离的 `npm run test:ci` 789/789 通过，`npm run docs:lint` 通过；JDK 17 下 `:app:testDebugUnitTest :app:assembleDebug` 通过（41 tasks）。
