@@ -1058,7 +1058,11 @@ app.post('/api/config/git/restore', async (req, res) => {
   }
 });
 
-const port = Number(process.env.PORT) || 3000;
+const configuredPort = String(process.env.PORT ?? '').trim();
+const parsedPort = Number(configuredPort);
+const port = configuredPort && Number.isInteger(parsedPort) && parsedPort >= 0 && parsedPort <= 65535
+  ? parsedPort
+  : 3000;
 const host = process.env.HOST || '0.0.0.0';
 
 const server = app.listen(port, host, () => {
@@ -1070,24 +1074,38 @@ const server = app.listen(port, host, () => {
 });
 const discovery = attachGatewayDiscovery({ server });
 
-let shutdownStarted = false;
-async function shutdownGateway() {
-  if (shutdownStarted) return;
-  shutdownStarted = true;
-  await discovery.stop();
-  server.close((error) => {
-    if (error) {
-      console.error(`[gateway] shutdown failed: ${error.message}`);
-      process.exitCode = 1;
-    }
-  });
+const wss = new WebSocketServer({ noServer: true });
+const deviceHub = require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, config: deviceHubConfig });
+
+let shutdownPromise = null;
+function shutdownGateway() {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    await discovery.stop();
+    worker.stop();
+    dispatcher.stop();
+    skillRuntimeManager.stop();
+    debugEventStream.dispose();
+    deviceHub.close();
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+    await new Promise((resolve) => {
+      if (!server.listening) { resolve(); return; }
+      server.close((error) => {
+        if (error) {
+          console.error(`[gateway] shutdown failed: ${error.message}`);
+          process.exitCode = 1;
+        }
+        resolve();
+      });
+      server.closeAllConnections?.();
+    });
+  })();
+  return shutdownPromise;
 }
 
 process.once('SIGINT', () => { void shutdownGateway(); });
 process.once('SIGTERM', () => { void shutdownGateway(); });
-
-const wss = new WebSocketServer({ noServer: true });
-require('./deviceHub').attachDeviceHub({ server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, config: deviceHubConfig });
 
 function sendSafe(ws, payload) {
   if (ws.readyState !== 1) return;

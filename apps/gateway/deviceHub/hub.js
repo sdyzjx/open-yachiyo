@@ -196,6 +196,8 @@ class DeviceHub extends EventEmitter {
     if (error) pending.reject(error); else pending.resolve(result);
   }
   close() {
+    if (this.closed) return;
+    this.closed = true;
     clearInterval(this.timer);
     for (const id of this.pending.keys()) this.settle(id, fault(-32010, 'Hub stopped'));
     for (const ws of this.wss.clients) ws.terminate();

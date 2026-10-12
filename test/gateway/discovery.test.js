@@ -128,6 +128,34 @@ test('Gateway discovery failure does not stop the HTTP server', async (t) => {
   await controller.stop();
 });
 
+test('Gateway discovery handles asynchronous multicast errors', async (t) => {
+  const server = http.createServer();
+  const warnings = [];
+  let multicastError = null;
+  class ErroringBonjour {
+    constructor(_options, onError) {
+      multicastError = onError;
+    }
+    publish() { return { on() {}, stop: (done) => done?.() }; }
+    unpublishAll(done) { done?.(); }
+    destroy() {}
+  }
+  const controller = attachGatewayDiscovery({
+    server,
+    Bonjour: ErroringBonjour,
+    env: {},
+    logger: { info() {}, warn: (message) => warnings.push(message) }
+  });
+  t.after(() => server.listening ? close(server) : undefined);
+  await listen(server);
+
+  assert.equal(typeof multicastError, 'function');
+  multicastError(new Error('socket unavailable'));
+  assert.match(warnings[0], /multicast error: socket unavailable/);
+  assert.equal(server.listening, true);
+  await controller.stop();
+});
+
 test('Gateway discovery helpers normalize defaults and the disable flag', () => {
   assert.equal(isDiscoveryEnabled({}), true);
   assert.equal(isDiscoveryEnabled({ YACHIYO_DISCOVERY_ENABLED: ' FALSE ' }), false);

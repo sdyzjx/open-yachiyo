@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: done
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: PLAN-android-companion-contracts.md §C1 §C3.5 §C5
 
 ## 1. 目标
@@ -15,6 +15,7 @@
 - 新增：`apps/gateway/deviceHub/**`（统筹者已提交 `index.js` 桩，保持 `getDeviceHub()` 导出与契约 C5 中的接口签名）
   - 建议拆分：`hub.js`（连接、信封、订阅匹配、RPC）、`topics.js`（通配匹配）、`avatarHost.js`（状态机 + 持久化）、`runtimeBridge.js`（bus ↔ hub 桥接、`message.delta`/`runtime.final`→`chat.*`、tool_call→`task.update` 聚合）、`voiceRelay.js`、`audioInput.js`（PCM→WAV + ASR）、`asrService.js`、`pluginStore.js`、`httpRoutes.js`、`config.js`（`device-hub.yaml`、token 生成）
 - 修改：`apps/gateway/server.js`（**仅**在 `wss` 创建附近增加 `attachDeviceHub({ server, app, bus, ... })` 一处调用；注意 `/ws` 现有 `WebSocketServer({server, path})` 与新路径共存需改为 `noServer` + `upgrade` 分发，改动保持局部）
+- 新增：`apps/gateway/discovery.js`（C7 DNS-SD 广播、退出清理与失败降级）；修改 `package.json` 增加精确版本 `bonjour-service` 依赖，锁文件由统筹统一生成
 - 修改：`apps/runtime/tooling/adapters/live2d.js`（当 avatar host 不是 desktop 时，RPC 经 `getDeviceHub().invoke(host, method, params)` 路由到手机；其余不变）
 - 修改：`apps/desktop-live2d/**`（Electron 主进程连接 Hub、移交动画、非 host 隐藏与静音、托盘菜单「把八千代送到手机/接回电脑」）
 - 新增：`scripts/plugin-pack.js`、`scripts/plugin-push.js`（纯 Node 实现 zip 打包，可用 `zlib.deflateRawSync` 写最小 zip；或添加依赖 `yazl` / `yauzl`，需在交付记录说明）
@@ -72,15 +73,21 @@
 
 - 任务 9 完成：三份功能文档、Gateway 模块文档、Hub/Avatar 自动与手工 TC、文档索引已补齐。
 
-## 5. 待统筹决策
+## 5. 集成收尾结论
 
-- C1.7 transcribed_text 透传：现有 `server.js::normalizeInputAudio` 与 `runtimeRpcWorker.js::normalizeInputAudio` 会移除此字段，非空 input 路径也未注入 runtime_context.input_audio。WS3 已按契约传入该字段并以识别文本作 input，保证不重复识别；请 WS1/统筹者保留该字段并注入 context/历史元数据。受负责路径限制未修改这些规范化段。
+- C1.7 已闭环：`server.js` 和 `RuntimeRpcWorker` 保留 `transcribed_text`、confidence、segments；非空 input 同样注入 input_audio context，预转录音频跳过重复 ASR。
+- 局域网管理边界已闭环：远程 `/api/*`、`/debug/*` 和 runtime `/ws` 使用 pairing token，loopback 保持兼容；provider 旧 config/raw 接口脱敏并支持脱敏结果安全回写；Android appassets 使用精确 origin CORS；设备发布保留主题被拒绝。
+- pi 动态设备工具改为显式 opt-in。默认模板允许 `*__device_*`、`*__plugin_*`，候选仍只来自已配对在线设备的 `expose_as_tool: true` 方法；全局 deny、provider deny 和会话权限继续生效。
+- 桌面与手机路由复核通过：Live2D 工具和 action 服从 avatar host，桌面旧 `/ws` 不重复动作；桌面语音仅在当前 host 时处理，移交或 Hub 断线会隐藏人物并停止语音。
+- C7 已实现：网关 listening 后广播 `_yachiyo._tcp.` 的实际端口和无敏感信息 TXT，支持禁用、友好名称、多实例、失败降级及退出清理。
 
 ## 6. 交付记录
 
 ### 完成项
 
 任务 1～9 已按顺序实现并独立提交：Hub 核心、runtime 桥接、Avatar 状态机、桌面接入/动画、手机语音中继、麦克风/ASR、插件包/推送、设备页、功能/模块/测试文档。另有统筹新增 C5 API 同步和收尾竞态修复提交。
+
+2026-10-12～13 在 `agent/ws3-integration` 上完成跨工作流收尾：局域网远程鉴权与凭据脱敏、C1.7 音频上下文、pi 流式别名去重、动态设备工具默认授权，以及 C7 局域网服务发现。所有提交均未操作 Android 设备。
 
 - 工作目录：`/Volumes/data/Users/Programming/yachiyo-wt/ws3-device-hub`；分支：`agent/ws3-device-hub`。
 - `server.js` 仅修改原 wss 创建附近两行；package.json/package-lock.json 均未修改，新增依赖为零。
@@ -105,11 +112,22 @@
 | 收尾启动/竞态/鉴权回归 | `364e442` | 533/533 |
 | 9 功能/模块/测试文档与索引 | `08e6bd9` | 533/533；docs:index；JS 语法检查 |
 
+集成收尾提交可由统筹按需逐个 cherry-pick，避免重复合并既有 WS3 历史：
+
+| 集成项 | 提交 | 验证 |
+|---|---|---|
+| 远程管理鉴权、provider 脱敏、appassets CORS、保留 topic | `2cb9de1` | 593/593 |
+| C1.7 预转录音频上下文 | `4e1c504` | 594/594 |
+| pi 流式别名去重与失败任务状态 | `d553318` | 595/595 |
+| 动态设备工具显式授权 | `400969a` | 595/595 |
+| C7 DNS-SD 服务广播 | `e976ec3` | 599/599；bonjour-service 1.4.4 API smoke |
+| 在线 WS 优雅退出、PORT=0 与 mDNS 异步错误 | `64ca3ca` | 601/601；真实网关子进程 + 在线设备 WS + SIGTERM |
+
 本交付记录作为最后的 `docs(device-hub)` 提交；其提交号可用 `git log -1 --format=%h -- docs/plans/PLAN-android-ws3-device-hub.md` 查询，避免在提交内容中自引用尚不存在的哈希。
 
 ### 未完成项与待集成
 
-- WS3 负责的实现任务无剩余。C1.7 的 `transcribed_text` 在旧 gateway/worker 规范化后丢失，属于跨负责路径修改，已在「待统筹决策」明确说明。当前以识别文本作为 input 可正常执行设备对话，不会再次 ASR；历史/context 音频元数据完整性仍需 WS1/统筹者修复。
+- WS3 与本轮集成收尾负责的实现任务无剩余。统筹需在汇合分支生成并提交包含 `bonjour-service` 1.4.4 的 lockfile，再执行跨工作流 companion e2e。
 - 真机/真实云端验收未执行：TC-AVT-009、TC-HUB-016、TC-HUB-017 由统筹者在合并 WS1/WS2/WS4/WS5 后执行。
 
 ### 已知风险与限制
@@ -118,6 +136,7 @@
 - 单桌面假设；离线 host 不自动回桌面；损坏的 state.json 需要运维处理。桌面现在依赖 Hub 握手确定可见性，无法连接 Hub 时保持隐藏/静音。
 - ASR DashScope 支持 Qwen inline WAV 短音频接口；不支持 Paraformer 的异步 URL 任务。录音文件与插件包无自动保留上限，运维需清理；TTS 媒体 10 分钟自动过期。
 - 默认 HTTP/WS 与 pairing token 面向可信局域网；公网部署需 TLS。插件细粒度权限/安装由 Android 插件宿主执行。
+- mDNS 依赖局域网组播；组播被访客网络、VPN 或防火墙阻断时需手动填写服务端地址，连接鉴权仍使用 pairing token。
 - 设备页按任务允许的 URL + token 简化配对，不生成二维码；旧首页未增加链接，可直接打开 `/devices.html`。
 
 ### 如何验证
@@ -130,6 +149,6 @@ npm run docs:index
 git diff --check
 ```
 
-全量最终结果：533 tests / 533 pass / 0 fail / 0 skip。新增测试只使用本机随机端口、固定测试 token、mock TTS/ASR、临时文件和假 Electron/设备，不依赖云端或真实硬件。
+原 WS3 交付结果为 533/533；集成收尾分支最终结果为 601 tests / 601 pass / 0 fail / 0 skip。新增测试只使用本机随机端口、固定测试 token、mock TTS/ASR、临时文件、内存 Bonjour 和假 Electron/设备，不依赖云端或真实硬件。
 
 启动网关后打开 `http://localhost:3000/devices.html`；按 TC-AVT-009 / TC-HUB-016 / TC-HUB-017 执行真实跨端验收。完整接口和路径说明见 [device-hub.md](../modules/gateway/device-hub.md)。

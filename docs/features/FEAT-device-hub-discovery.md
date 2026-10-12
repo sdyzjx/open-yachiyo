@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-companion-contracts.md §C7, ../../apps/gateway/discovery.js, ../testing/TC-device-hub-discovery.md
 
 ## 1. 概述
@@ -14,7 +14,7 @@
 
 HTTP server 进入 listening 后，网关读取实际监听端口并发布 `_yachiyo._tcp.local.`。每个网关进程创建独立 Bonjour 实例，因此同一网络可同时运行多个实例，重名由 Bonjour 自动处理。广播初始化或发布失败只记录发现功能不可用，HTTP、runtime WS 与手动连接继续运行。
 
-收到 SIGINT/SIGTERM 时，网关先停止服务广播并释放 Bonjour 资源，再关闭 HTTP server。调用 `server.close()` 也触发相同清理；开始和停止操作均幂等。
+收到 SIGINT/SIGTERM 时，网关先停止服务广播并释放 Bonjour 资源，再停止 runtime worker、终止 Device Hub 与旧 runtime WS 客户端，最后关闭 HTTP server。调用 `server.close()` 也触发发现广播清理；开始和停止操作均幂等。`PORT=0` 可用于让系统分配随机端口，广播和启动日志都使用实际端口。
 
 ## 3. 接口与协议
 
@@ -41,4 +41,4 @@ mDNS 需要局域网支持组播，部分访客网络、VPN、系统防火墙或
 
 ## 6. 测试用例
 
-[TC-device-hub-discovery.md](../testing/TC-device-hub-discovery.md) 包含 TC-HUB-026～029。自动化位于 `test/gateway/discovery.test.js`，使用随机本机端口与内存 Bonjour 替身，不发送真实组播包。
+[TC-device-hub-discovery.md](../testing/TC-device-hub-discovery.md) 包含 TC-HUB-026～030。自动化位于 `test/gateway/discovery.test.js` 与 `test/gateway/shutdown.test.js`，使用随机本机端口与内存 Bonjour 替身，不发送真实组播包。

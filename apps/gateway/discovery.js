@@ -68,7 +68,7 @@ function attachGatewayDiscovery({
       const BonjourCtor = typeof Bonjour === 'function' && Bonjour.prototype?.publish
         ? Bonjour
         : Bonjour();
-      instance = new BonjourCtor();
+      instance = new BonjourCtor({}, (error) => warn('multicast error', error));
       const definition = {
         name: serviceName(env, hostname),
         type: SERVICE_TYPE,
