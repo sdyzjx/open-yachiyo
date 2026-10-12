@@ -26,6 +26,7 @@ class CompanionApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.yachiyo.companion.device.DeviceMethods(this).install(hub)
     }
 
     private fun buildHello(): JSONObject {
