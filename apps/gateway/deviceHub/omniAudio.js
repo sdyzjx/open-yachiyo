@@ -302,11 +302,16 @@ function createOmniAudioService({
     };
   }
 
-  function generateText({ text, modelRef, onDelta = null }) {
+  function generateText({ text, modelRef, sessionId = 'default', onDelta = null, onEvent = null }) {
     const descriptor = resolve(modelRef, 'realtime');
     const traceId = `omni-text-${randomUUID()}`;
+    const { tools, names } = buildRealtimeTools(executor);
+    const toolPromises = new Set();
     let output = '';
     let ready = false;
+    let responseDone = false;
+    let responseHadTools = false;
+    let continuationSent = false;
     let settled = false;
     let timer;
     let resolveDone;
@@ -314,6 +319,10 @@ function createOmniAudioService({
     const done = new Promise((resolvePromise, rejectPromise) => { resolveDone = resolvePromise; rejectDone = rejectPromise; });
     done.catch(() => {});
     const ws = new WebSocketImpl(realtimeUrl(descriptor), { headers: { Authorization: `Bearer ${descriptor.api_key}`, ...descriptor.headers } });
+    const send = (event) => ws.send(JSON.stringify(event));
+    const emit = (event, payload = {}) => onEvent?.({
+      event, session_id: sessionId, trace_id: traceId, step_index: 0, payload
+    });
     const finish = (error = null) => {
       if (settled) return;
       settled = true;
@@ -322,23 +331,78 @@ function createOmniAudioService({
       if (error) rejectDone(error);
       else resolveDone({ output: output.trim(), traceId, state: 'DONE', metrics: { transport: 'realtime' } });
     };
+    const continueAfterTools = () => {
+      if (!responseDone || !responseHadTools || toolPromises.size || continuationSent || settled) return;
+      continuationSent = true;
+      responseDone = false;
+      responseHadTools = false;
+      send({ type: 'response.create' });
+    };
+    const executeTool = (event) => {
+      responseHadTools = true;
+      const callId = String(event.call_id || event.item_id || randomUUID());
+      const originalName = names.get(String(event.name || ''));
+      const execution = (async () => {
+        let result;
+        let args = {};
+        try {
+          if (!originalName) throw new Error(`Unknown realtime tool: ${event.name || ''}`);
+          args = event.arguments ? JSON.parse(event.arguments) : {};
+          const settings = await sessionStore?.getSessionSettings?.(sessionId);
+          const common = { call_id: callId, name: originalName, args };
+          emit('tool.call', common);
+          emit('tool_call.started', common);
+          result = await executor.execute({ name: originalName, args }, {
+            permission_level: settings?.permission_level || 'high',
+            workspaceRoot: settings?.workspace?.root_dir || process.cwd(),
+            meta: { session_id: sessionId, trace_id: traceId, call_id: callId, permission_level: settings?.permission_level || 'high' },
+            bus,
+            publishEvent: (topic, payload = {}) => bus?.publish(topic, {
+              ...payload, session_id: sessionId, trace_id: traceId, call_id: callId, tool_name: originalName
+            })
+          });
+        } catch (error) {
+          result = { ok: false, code: error.code || 'INVALID_TOOL_CALL', error: error.message || String(error) };
+        }
+        const toolOutput = JSON.stringify(result?.ok
+          ? { ok: true, result: result.result }
+          : { ok: false, code: result?.code || 'TOOL_ERROR', error: result?.error || 'Tool execution failed', details: result?.details || null });
+        send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: toolOutput } });
+        const payload = { call_id: callId, name: originalName || String(event.name || ''), args, ok: Boolean(result?.ok), result: result?.result, error: result?.error, code: result?.code };
+        emit('tool.result', payload);
+        emit(result?.ok ? 'tool_call.completed' : 'tool_call.failed', payload);
+      })();
+      toolPromises.add(execution);
+      execution.catch((error) => finish(error)).finally(() => { toolPromises.delete(execution); continueAfterTools(); });
+    };
     timer = setTimeout(() => finish(new Error('Realtime Omni text request timed out')), timeoutMs);
     ws.on('message', (raw) => {
       let event;
       try { event = JSON.parse(raw.toString()); } catch { return; }
       if (event.type === 'session.created') {
-        ws.send(JSON.stringify({ type: 'session.update', session: { modalities: ['text'], turn_detection: null } }));
+        void buildInstructions({ sessionId, input: text }).then((instructions) => {
+          send({ type: 'session.update', session: { modalities: ['text'], instructions, tools, tool_choice: 'auto', turn_detection: null } });
+        }).catch((error) => finish(error));
       } else if (event.type === 'session.updated' && !ready) {
         ready = true;
-        ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }));
-        ws.send(JSON.stringify({ type: 'response.create' }));
+        void sessionStore?.appendMessage?.(sessionId, { role: 'user', content: text, trace_id: traceId, metadata: { input_type: 'text', model_ref: modelRef } });
+        send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
+        send({ type: 'response.create' });
       } else if (event.type === 'response.text.delta') {
         const delta = String(event.delta || '');
         output += delta;
         if (delta) onDelta?.(delta, traceId);
+      } else if (event.type === 'response.function_call_arguments.done') {
+        executeTool(event);
+      } else if (event.type === 'response.created') {
+        continuationSent = false;
       } else if (event.type === 'error') {
         finish(new Error(event.error?.message || 'Realtime Omni failed'));
       } else if (event.type === 'response.done') {
+        responseDone = true;
+        if (Array.isArray(event.response?.output) && event.response.output.some((item) => item?.type === 'function_call')) responseHadTools = true;
+        if (responseHadTools) { continueAfterTools(); return; }
+        void sessionStore?.appendMessage?.(sessionId, { role: 'assistant', content: output, trace_id: traceId, metadata: { output_type: 'text', model_ref: modelRef } });
         finish();
       }
     });

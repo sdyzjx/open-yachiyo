@@ -59,7 +59,7 @@ Realtime 原生音频的 `realtime_voice` 预设默认是官方音色 `Tina`，�
 ## 5. 限制与已知问题
 
 - 普通 Omni 音频先由同一模型提取用户原话，再进入 Pi 工具循环；Pi 当前消息类型不直接承载 audio part。
-- Realtime 语音会话复用 Pi 所在运行时的 ToolExecutor、人格、技能和会话存储，但模型循环由 Qwen Realtime 的 Function Calling 驱动；其工具规划行为可能与 Pi 不同。
+- Realtime 语音和桌面键盘会话复用 Pi 所在运行时的 ToolExecutor、人格、技能和会话存储，但模型循环由 Qwen Realtime 的 Function Calling 驱动；其工具规划行为可能与 Pi 不同。
 - 手机近场录音会受扬声器、耳机和环境噪声影响；链路成功不等于转写内容准确，声学识别需要用真人近讲和安静环境单独验收。
 - API Key 必须是允许自定义应用调用的 Model Studio API 凭据，不能使用限制在编程工具内的 Token Plan 专属 Key。
 

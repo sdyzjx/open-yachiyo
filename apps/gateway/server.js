@@ -322,7 +322,9 @@ const piRunner = createGatewayRunner({
   })
 });
 const omniTextRuntime = require('./deviceHub/omniAudio').createOmniAudioService({
-  hub: { publish() {} }, llmManager
+  hub: { publish() {} }, llmManager, executor, bus, sessionStore,
+  resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
+  resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input })
 });
 const runner = {
   ...piRunner,
@@ -335,6 +337,8 @@ const runner = {
     return omniTextRuntime.generateText({
       text: args.input,
       modelRef: selected.ref,
+      sessionId: args.sessionId,
+      onEvent: args.onEvent,
       onDelta: (delta, traceId) => args.onEvent?.({
         event: 'llm.stream.delta', session_id: args.sessionId, trace_id: traceId,
         step_index: 0, seq: 0, payload: { delta }

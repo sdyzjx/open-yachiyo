@@ -165,6 +165,7 @@ test('TC-LLM-041 realtime model accepts keyboard text over its WebSocket transpo
   const resultPromise = service.generateText({ text: 'hello', modelRef: descriptor.ref, onDelta: (delta) => deltas.push(delta) });
   const ws = FakeWs.instance;
   ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  await new Promise((resolve) => setImmediate(resolve));
   ws.emit('message', JSON.stringify({ type: 'session.updated' }));
   ws.emit('message', JSON.stringify({ type: 'response.text.delta', delta: 'hi' }));
   ws.emit('message', JSON.stringify({ type: 'response.done' }));
@@ -172,4 +173,45 @@ test('TC-LLM-041 realtime model accepts keyboard text over its WebSocket transpo
   assert.equal(result.output, 'hi');
   assert.deepEqual(deltas, ['hi']);
   assert.deepEqual(ws.sent.map((event) => event.type), ['session.update', 'conversation.item.create', 'response.create']);
+});
+
+test('TC-LLM-044 realtime keyboard chat can call computer tools and continue once', async () => {
+  class FakeWs extends EventEmitter {
+    constructor() { super(); this.sent = []; FakeWs.instance = this; }
+    send(raw) { this.sent.push(JSON.parse(raw)); }
+    close() {}
+  }
+  const descriptor = {
+    ref: 'qwen/rt', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime', input: ['text', 'audio'],
+    transport: 'realtime', api_key: 'secret', headers: {}, base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
+  };
+  const calls = [];
+  const events = [];
+  const service = createOmniAudioService({
+    hub: { publish() {} }, llmManager: manager(descriptor), WebSocketImpl: FakeWs, timeoutMs: 1000,
+    executor: {
+      listTools: () => [{ name: 'desktop.capture.screen', description: 'screen', input_schema: { type: 'object', properties: {} } }],
+      execute: async (call) => { calls.push(call); return { ok: true, result: 'captured' }; }
+    },
+    sessionStore: {
+      getSession: async () => ({ messages: [] }), getSessionSettings: async () => ({ permission_level: 'high' }), appendMessage: async () => {}
+    }
+  });
+  const resultPromise = service.generateText({ text: '看一下屏幕', modelRef: descriptor.ref, sessionId: 'desktop-1', onEvent: (event) => events.push(event) });
+  const ws = FakeWs.instance;
+  ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ws.sent[0].session.tools[0].function.name, 'desktop__capture__screen');
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  ws.emit('message', JSON.stringify({ type: 'response.function_call_arguments.done', call_id: 'text-call', name: 'desktop__capture__screen', arguments: '{}' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done', response: { output: [{ type: 'function_call' }] } }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [{ name: 'desktop.capture.screen', args: {} }]);
+  assert.equal(ws.sent.filter((event) => event.type === 'response.create').length, 2);
+  ws.emit('message', JSON.stringify({ type: 'response.created' }));
+  ws.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '我看到了' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done', response: { output: [{ type: 'message' }] } }));
+  assert.equal((await resultPromise).output, '我看到了');
+  assert.ok(events.some((event) => event.event === 'tool_call.started' && event.payload.name === 'desktop.capture.screen'));
+  assert.ok(events.some((event) => event.event === 'tool_call.completed'));
 });

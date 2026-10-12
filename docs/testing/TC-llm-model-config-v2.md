@@ -40,3 +40,4 @@
 | TC-LLM-041 | Realtime 模型接受键盘文字 | unit | 假 Realtime WebSocket | 选择 realtime 模型并发送文字 | 使用 session.update + conversation.item.create + response.create，增量与最终文本正常返回 | `test/gateway/deviceHub/omniAudio.test.js` |
 | TC-LLM-042 | 模型能力与音频路由配置校验 | unit | 带 input/output/transport/audio 的模型配置 | 调用 `validateConfig` | 合法 Realtime Omni 通过；未知能力、缺少 audio 输入、Realtime mode 与 transport 不匹配均被拒绝 | `test/runtime/config/providerConfigSchemaV2.test.js` |
 | TC-LLM-043 | 旧发现记录迁移 Omni 权威能力 | unit | 自定义 Provider 中已保存 text/request 形式的已知 Omni 型号 | 调用 `normalizeProviderConfig` | 按内置型号资料恢复 input/output、Realtime transport 与 audio mode | `test/runtime/config/providerConfigSchemaV2.test.js` |
+| TC-LLM-044 | Realtime 键盘聊天调用电脑工具 | integration | 假 Realtime WebSocket、电脑工具、桌面会话 | 发送文字；注入 Function Call 和工具轮 response.done；返回最终文字 | 注册安全工具名；按会话权限执行；回送 function_call_output；所有工具完成后只续答一次；工具事件与最终文字正常返回 | `test/gateway/deviceHub/omniAudio.test.js` |
