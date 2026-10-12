@@ -13,3 +13,5 @@
 
 | TC-AVT-003 | 桌面 Hub 接入 | integration | 本机 Hub 与 desktop client | pairing、welcome、RPC、移交到手机 | IPC 被调用；回执自动发送；桌面失去 host 后静音 | `test/gateway/deviceHub/desktopClient.test.js` / Desktop Hub client pairs, acknowledges handoff, mutes and invokes renderer RPC |
 | TC-AVT-004 | 桌面动画控制器 | unit | mock 元素/动画 | 退出、准备、进入、断线 | 120/480/520 ms；非 host 隐藏并停声；进入 greet | 同文件 / Desktop avatar animation follows timing and hides/stops voice off host |
+
+| TC-AVT-005 | 统筹新增 Hub API | integration | 本机 Hub | 查询 alias、观察设备事件、失败移交、avatar-host RPC | alias 和事件正确；失败 resolve；desktop 别名 -32010 | `test/gateway/deviceHub/avatarHost.test.js` / Coordinator Hub API resolves failed transfers and avatar-host alias |

@@ -24,7 +24,7 @@ Electron 主进程从本机 pairing 接口取得 token，远程网关可通过 `
 
 ## 接口与协议
 
-RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/transfer {to}`。Hub 提供 `transferAvatar({to})`、`getAvatarHost()`。事件见契约 C1.5；移交控制事件直接发给目标，不依赖订阅。
+RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/transfer {to}`。Hub 提供 `transferAvatar({to})`、`getAvatarHost()`；统筹新增 API `requestAvatarTransfer(to, {reason})` 在成功/失败时均 resolve `{transfer_id,host,status,reason?}`。`invoke` 接受 `avatar-host` 别名，desktop host 则返回 -32010 由调用方走本机 RPC；提供 devices.changed/avatar.host.changed 事件。事件见契约 C1.5；移交控制事件直接发给目标，不依赖订阅。
 
 `ui.live2d.action` 和 `voice.*` 只发 host。live2d adapter 在手机为 host 时经 Hub RPC 调用；桌面仍使用原本本机 RPC。
 

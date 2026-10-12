@@ -63,6 +63,7 @@ class DeviceHub extends EventEmitter {
       }
       this.emit('tools.changed');
       this.emit('offline', device);
+      this.emit('devices.changed');
       this.publish('sys.device.offline', this.deviceInfo(device));
     });
   }
@@ -73,12 +74,13 @@ class DeviceHub extends EventEmitter {
     if (!ws.device) {
       if (msg.type !== 'hello' || !/^[\w-]{1,128}$/.test(data.device_id || '') || !['android', 'desktop', 'web'].includes(data.device_type) || (data.mode && !['normal', 'lockscreen'].includes(data.mode))) throw fault(-32600, 'Valid hello required');
       if (this.devices.has(data.device_id)) { ws.close(1008, 'Device already connected'); return; }
-      const device = { device_id: data.device_id, device_type: data.device_type, name: String(data.name || data.device_id).slice(0, 128), mode: data.mode || 'normal', capabilities: Array.isArray(data.capabilities) ? data.capabilities.filter((v) => typeof v === 'string') : [], ws, subscriptions: new Set(), methods: new Map() };
+      const device = { device_id: data.device_id, device_type: data.device_type, name: String(data.name || data.device_id).slice(0, 128), mode: data.mode || 'normal', alias: String(data.alias || data.name || data.device_id).slice(0, 128), capabilities: Array.isArray(data.capabilities) ? data.capabilities.filter((v) => typeof v === 'string') : [], ws, subscriptions: new Set(), methods: new Map() };
       ws.device = device;
       this.devices.set(device.device_id, device);
       this.send(ws, 'welcome', { device_id: device.device_id, server_version: '0.1.1', heartbeat_ms: this.heartbeatMs, avatar_host: this.avatarHost, devices: this.listDevices(), session_id: `device-${device.device_id}` });
       this.publish('sys.device.online', this.deviceInfo(device));
       this.emit('online', device);
+      this.emit('devices.changed');
       return;
     }
     const device = ws.device;
@@ -101,6 +103,7 @@ class DeviceHub extends EventEmitter {
         if (msg.topic === 'sys.device.mode') {
           if (!['normal', 'lockscreen'].includes(data.mode)) throw fault(-32602, 'Invalid mode');
           device.mode = data.mode;
+          this.emit('devices.changed');
           this.emit('tools.changed');
         }
         // Device publications cannot impersonate gateway/runtime control events.
@@ -151,7 +154,7 @@ class DeviceHub extends EventEmitter {
   listToolMethods() {
     const result = [];
     for (const device of this.devices.values()) {
-      const alias = device.name.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 24) || 'device';
+      const alias = device.alias.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 24) || 'device';
       const suffix = createHash('sha256').update(device.device_id).digest('hex').slice(0, 8);
       for (const method of device.methods.values()) {
         if (!method.expose_as_tool || (device.mode === 'lockscreen' && method.name.startsWith('plugin.'))) continue;
@@ -164,6 +167,10 @@ class DeviceHub extends EventEmitter {
     return result.map(({ _suffix, ...item }) => ({ ...item, tool_name: counts.get(item.tool_name) > 1 ? `${item.tool_name}_${_suffix}` : item.tool_name }));
   }
   async invoke(deviceId, method, params = {}, { timeoutMs = this.rpcTimeoutMs } = {}) {
+    if (deviceId === 'avatar-host') {
+      deviceId = this.getAvatarHost();
+      if (deviceId === 'desktop') throw fault(-32010, 'Desktop host uses local RPC');
+    }
     const device = this.resolveDevice(deviceId);
     if (!device) throw fault(-32010, 'Target device offline');
     if (device.mode === 'lockscreen' && method.startsWith('plugin.')) throw fault(-32006, 'Plugins unavailable while locked');

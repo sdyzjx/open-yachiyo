@@ -62,6 +62,8 @@
 
 - 任务 6 完成：PCM/WAV、两类 ASR、权限保留的工具回退、转录后设备会话执行。
 
+- 契约同步：工作期间检测到统筹者外部更新 C5，已补齐 alias、requestAvatarTransfer、avatar-host 与状态变化事件；不提交该外部契约文件。
+
 ## 5. 待统筹决策
 
 - C1.7 transcribed_text 透传：现有 `server.js::normalizeInputAudio` 与 `runtimeRpcWorker.js::normalizeInputAudio` 会移除此字段，非空 input 路径也未注入 runtime_context.input_audio。WS3 已按契约传入该字段并以识别文本作 input，保证不重复识别；请 WS1/统筹者保留该字段并注入 context/历史元数据。受负责路径限制未修改这些规范化段。

@@ -24,6 +24,10 @@ class NullDeviceHub extends EventEmitter {
     throw err;
   }
 
+  async requestAvatarTransfer() {
+    return { transfer_id: require('node:crypto').randomUUID(), host: 'desktop', status: 'failed', reason: 'Device Hub disabled' };
+  }
+
   publish() {}
 }
 

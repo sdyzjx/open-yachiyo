@@ -43,7 +43,11 @@ function attachAvatarHost({ hub, statePath, prepareTimeoutMs = 8000, stepTimeout
     const source = hub.resolveDevice(prev);
     const target = hub.resolveDevice(to);
     let waiter;
-    const signal = (topic, data, destination) => hub.publish(topic, { transfer_id: transferId, ...data }, { target: destination, direct: true });
+    const signal = (topic, data, destination) => {
+      const payload = { transfer_id: transferId, ...data };
+      hub.publish(topic, payload, { target: destination, direct: true });
+      if (topic === 'avatar.host.changed') hub.emit(topic, payload);
+    };
     try {
       if (!target) throw fault(-32010, 'Target device offline');
       waiter = waitAck('avatar.transfer.ready', target, transferId, prepareTimeoutMs, true);
@@ -68,6 +72,7 @@ function attachAvatarHost({ hub, statePath, prepareTimeoutMs = 8000, stepTimeout
         persist(prev);
         signal('avatar.host.changed', { host: prev, prev: to });
       }
+      err.transfer_id = transferId;
       signal('avatar.transfer.failed', { reason: err.message });
       if (source) signal('avatar.transfer.cancel', {}, prev);
       throw err;
@@ -75,6 +80,10 @@ function attachAvatarHost({ hub, statePath, prepareTimeoutMs = 8000, stepTimeout
       waiter?.cancel();
       active = null;
     }
+  };
+  hub.requestAvatarTransfer = async (to, { reason } = {}) => {
+    try { return { ...await hub.transferAvatar({ to }), status: 'completed' }; }
+    catch (err) { return { transfer_id: err.transfer_id || randomUUID(), host: hub.getAvatarHost(), status: 'failed', reason: err.message }; }
   };
   hub.methods.set('avatar.transfer', hub.transferAvatar);
   hub.methods.set('avatar.status', () => ({ host: hub.getAvatarHost(), devices: hub.listDevices() }));

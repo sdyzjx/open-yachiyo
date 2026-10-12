@@ -47,3 +47,12 @@ test('Avatar prepare timeout and offline target retain host; forged ready ignore
   const response = await fetch(`${f.base}/api/device/avatar/transfer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: 'missing' }) });
   assert.equal((await response.json()).error.code, -32010);
 });
+
+test('Coordinator Hub API resolves failed transfers and avatar-host alias', async (t) => {
+  const f = await fixture(t);
+  let changes = 0; f.hub.on('devices.changed', () => changes++);
+  await f.client('phone', { alias: 'mi6' });
+  assert.equal(changes, 1); assert.equal(f.hub.listDevices()[0].alias, 'mi6');
+  assert.equal((await f.hub.requestAvatarTransfer('missing')).status, 'failed');
+  await assert.rejects(f.hub.invoke('avatar-host', 'state.get'), { code: -32010 });
+});
