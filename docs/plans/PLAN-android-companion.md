@@ -182,3 +182,11 @@ flowchart TD
 - UI 与音频文档批次已通过独立工作树验证，允许合入 `feature/android-companion`；最终手机安装、背景重启持久化和竖横屏观感仍由设备验收工作流通过 USB 执行，不能用历史截图替代本轮验收。
 - A15 仍未通过：最终 UI 包此前采样未达到 60 FPS，人物抽动也没有验收通过。用户最新报告空闲时人物持续张嘴且嘴形异常；最终 UI 包已复现静音后 `mouth form` 残留，此问题由独立口型修复工作流处理，未把任何 Worker/VBO/physics 候选并入本批次。
 - ChatGPT 认证/模型资料工作仍在独立计划分支，尚未审查合并。实时 TTS 仅完成设计 checkpoint；物理扬声器在系统音量 17/25、应用音量 1 下由用户确认正常，真实讲话 ASR→pi 回复仍未完成。
+
+### 静音口型修复与桌面恢复（2026-10-13）
+
+- 独立审查后把口型修复 `ecdfb6b` 映射为主线 `59a805d`，验收文档 `57d6cd4` 映射为 `000c504`。修复在 Cubism 的真实 `beforeModelUpdate` 中持续恢复 MOC 口型默认值，同时保留 action/RPC overlay 与活跃语音的更高优先级；release 同帧把 stage 的 open/form/active 归零。
+- 小米 6 USB 真机子集通过：静音 Idle 15 秒 466 次真实更新全为 0/0；本地参考音频播放中口型自然变化；结束后 3 秒 94 次真实更新全为 0/0。Greet/ReactError 和显式 overlay 尚未单独真机操作，由资源审计与自动化覆盖。合并后隔离 Node 667/667、Android JDK17 单测与 Debug APK 构建均通过。
+- 用户反馈电脑端不可见时，隔离 gateway `127.0.0.1:3002` 与 Electron 均在运行，实际原因是 `avatar_host` 仍为 Android。手机验收释放设备后，正常 `avatar.transfer` 已切回 `desktop`；CUA 分别确认角色窗口和聊天主界面实际可见。主界面常驻双向迁移按钮由独立 UI 工作流实现，复用现有 transfer/owner/pending 状态。
+- A15 仍未通过，身体抽动也未验收通过。本轮口型结论不能替代 60 FPS、连续身体动画或性能候选验收；设备当时温度 46°C、电量 27%，不用于性能基准。
+- ChatGPT 认证候选的独立审查发现 ID token 经 authorization URL 泄漏、loopback 写 API CSRF/DNS rebinding、并发 start listener 泄漏和 OIDC `azp` 缺失；修复候选仍在复审，未合入主线。实时 TTS 与真实讲话 ASR→pi 回复仍在进行。

@@ -82,3 +82,9 @@ DocumentsUI 实测通过背景 PNG 复制/持久化和 `pomodoro.yplug` 覆盖�
 Android 夜景 UI 与设置职责调整对应原提交 `08f3198`、`1169fd3`。手机设置已删除模型目录、模型选择、Provider 和 API key UI/调用，保留服务连接、设备外观与音频设置；模型配置集中在电脑端。官网夜景提供来源链接和在线预设，离线持久化继续使用系统选图复制到 `files/user/backgrounds/` 的既有链路。
 
 审查确认侧面板高斯效果只作用于内部静态伪元素，未修改 `stage.js`、Live2D core 或动作逻辑。隔离全量 Node 665/665、Android JDK17 单测与 Debug APK 构建通过。最终手机 USB 安装复验、60 FPS、人物抽动和静音后嘴形归零仍未通过；渲染/口型候选不属于本批次。
+
+### 2026-10-13 静音口型复位（codex-ui-review / render-acceptance）
+
+用户报告最终 UI 包在无语音时持续怪嘴。资源审计确认 Idle、Greet、ReactError motion 每次更新都写 `ParamMouthForm=1`；一次性在 lipsync release 后清零会被下一帧覆盖。`59a805d` 在每次真实 `beforeModelUpdate` 中恢复 MOC 的 `OpenY/Form` 默认值，再依次应用 action/RPC overlay 和活跃语音口型，并在 release 完成的同一帧清理 stage 口型值。
+
+小米 6 USB 真机子集通过：静音 Idle 15 秒的 466 次真实更新全为 0/0；本地 18 秒参考音频播放时 `OpenY` 为 0–0.9976、`Form` 为 -0.6899–0.0311，视觉自然；结束后 3 秒的 94 次真实更新全为 0/0。Greet/ReactError 与显式 overlay 本轮由相同无分支代码路径、资源审计和自动化覆盖，尚未单独完成真机手工步骤。身体抽动和 60 FPS 保持未通过；详见 `EXP-20261013-android-mouth-neutral.md`。

@@ -286,4 +286,4 @@
 | 前置条件 | 模型已加载；可播放本地参考 WAV；能读取 Cubism 口型参数 |
 | 步骤 | 1) 静音 Idle 15 秒并切换 Greet/Error motion；2) 播放本地参考音频并观察口型；3) 等待播放结束；4) 设置一次 `ParamMouthForm` overlay；5) 再播放一段音频 |
 | 期望结果 | 静音及 motion 切换时不自发持续张嘴，连续真实模型更新后 `ParamMouthOpenY`/`ParamMouthForm` 均为 MOC 默认值；播放中嘴形随音频自然变化且优先于 overlay；结束后迅速回到中性；显式 overlay 优先于静音中性层 |
-| 自动化 | `test/android-web/lipsync.test.js`、`test/android-web/stageMouth.test.js`（TC-AWB-028）；真机三状态为 manual；2026-10-13 在 `ecdfb6b` 通过（静音 466 次更新全 0/0、播放中动态覆盖、结束后 94 次更新全 0/0），详见 `EXP-20261013-android-mouth-neutral.md` |
+| 自动化 | `test/android-web/lipsync.test.js`、`test/android-web/stageMouth.test.js`（TC-AWB-028）；2026-10-13 在 `ecdfb6b` 完成真机子集（静音 466 次更新全 0/0、播放中动态覆盖、结束后 94 次更新全 0/0）。Greet/ReactError 与显式 overlay 本轮由资源审计和自动化覆盖，尚未单独完成真机手工步骤；详见 `EXP-20261013-android-mouth-neutral.md` |
