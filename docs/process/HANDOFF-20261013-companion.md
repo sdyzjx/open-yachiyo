@@ -119,3 +119,17 @@
 4. 先完成整个 `/api/config/**` loopback-only、CORS 收窄、safe snapshot 与 patch 语义，再按 `5db6a91` 的 IA 实现统一模型/TTS/ASR WebUI；手机继续没有模型配置。
 5. 在当前主线逐提交重放 ChatGPT 候选并重新审查；只做 mock 测试，获得用户后续授权前不做真实 OAuth/API。
 6. 最后单独恢复性能工作；任何 mask/Worker/VBO 候选必须同时证明共享 mask 正确、动作连续、口型不回归与 60 FPS，不能用低频截图替代逐帧稳定性。
+
+## 远端归档与 worktree 收口（2026-10-13）
+
+本轮以当前 `feature/android-companion` 的已验证状态作为唯一稳定集成基线，并使用独立远端分支 `feature/android-companion-integrated` 管理后续工作。旧工作流不再整体合并；已经进入集成线的功能以集成线实现为准，本地分支引用继续保留用于追溯。
+
+| 远端分支 | 来源 | 用途 |
+|---|---|---|
+| `feature/android-companion-integrated` | 当前稳定集成线 | 后续开发、回归与发布候选的唯一基线 |
+| `archive/android-live2d-performance-experiments` | `agent/ws1-pi-completion` (`d476836`) | 保留 Worker、插值、VBO 与性能实验；不得整体合回集成线 |
+| `archive/config-ui-rebuild-plan` | `agent/config-ui-rebuild` (`5db6a91`) | 保留配置 WebUI 重构方案；产品实现已由集成线后续提交取代 |
+
+旧 `chatgpt-plan`、迁移 UI、Android UI、Desktop shell 与 Device Hub 集成工作树的有效功能均已被当前集成线包含或替代，因此只保留本地分支引用。`ws1-pi-core` 与 `ws3-device-hub` 未提交的契约文本与当前 `docs/plans/PLAN-android-companion-contracts.md` 已有内容一致，清理 worktree 时丢弃这两份重复修改。
+
+收口前的最终验证为 Node `885/885`、`npm run docs:lint`、Android `:app:testDebugUnitTest` 与 `:app:assembleDebug` 全部通过；最新 APK 已在小米 6 上完成 Wi-Fi ADB 手势回归，设备锁与修改过的系统设置均已释放和恢复。远端分支哈希与 worktree 清理结果在本节后续提交中补记。
