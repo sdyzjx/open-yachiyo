@@ -37,6 +37,8 @@ sequenceDiagram
 
 模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。RuntimeRpcWorker 会并发把同一会话的新输入交给长生命周期 AgentSession：显式用户纠正使用 Pi 原生 `steer`，普通文字使用 `followUp`。steer 在当前 assistant turn 的工具结束后、下一次模型调用前插入。新的手机语音采用“最新输入优先”：worker 通过 Pi 当前 run 的 `AbortSignal` 取消旧模型、审批等待和支持取消的工具，等待旧 run 以 `ABORTED` 完整收口，再把新语音送入同一个 `AgentSession`；尚在上下文准备阶段的旧请求也会被跳过。每个输入拥有独立 trace、事件和最终结果。音频 turn 默认最长 90 s，其他 turn 默认最长 180 s。
 
+模型若没有发出任何 tool call，却以“我这就查看/执行/打开……”一类外部行动承诺结束，运行时不会把该轮直接视为已完成。Pi 在同一个长期 `AgentSession` 中追加一次内部纠偏 follow-up，要求实际调用可用工具、观察结果后再回答；若能力目录中没有相应工具，则必须直接说明限制。纠偏最多一次，避免错误模型形成无限自激循环。正常问候、解释、建议和已经产生工具调用的回合不进入该分支。
+
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 Pi 解析并通过标准 Skills 区段展示。项目工作目录中的 `AGENTS.override.md`、`AGENTS.md` 或 `CLAUDE.md` 按 Pi 原生祖先目录规则加载一次；Yachiyo prompt、项目 context 与 Skills 各自占独立区段，不重复拼接。
 
 语音自动回复开启时，prompt 会标明本轮输入来自文字或音频。模型判断适合语音后，`voice.tts_aliyun_vc` 必须成为本轮第一个可观察动作，先于 Live2D、搜索、截图和其他工具：可立即口述短答案；如果仍需调用工具，则先口述简短确认，再继续处理。`force_on` 模式对所有非空用户回复强制采用同一顺序。音频输入、短对话、问候、确认与情感回应具有较高语音优先级；代码、表格、链接密集内容和详细排障仍保持文字输出。默认限流为同一会话间隔 0.5 秒、每分钟 12 次，以支持连续一问一答。
@@ -71,6 +73,7 @@ RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入
 | done | output、state、metrics |
 | tool.error | error |
 | llm.fallback | from、to（模型引用，不含凭证） |
+| agent.action.recovery | reason=`commitment_without_tool`、原回复 preview；表示 Pi 已启动一次内部纠偏续轮 |
 | pi.compaction_start/end | reason、aborted、error |
 
 bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 worker 继续将事件映射到 WS runtime.start/message.delta/tool_call.event/runtime.final。pi 工具直接调用 executor，不发布 dispatcher 的 tool.call.requested 命令，避免重复执行。
@@ -99,7 +102,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 Pi 标准 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 使用 Pi 1.1.0 原生本地实现、schema、流式输出、进程树取消、输出截断与完整输出临时文件。`grep`、`find`、`ls` 使用专用只读接口，避免模型为了目录探索反复拼接 shell 命令；它们与 `read` 可并行，bash/edit/write 串行。Yachiyo 不再代理标准文件或 shell 执行；原 `shell.exec` 与 `workspace.write_file` 仅保留给 legacy core 和兼容配置，不进入 Pi 模型目录，也不是 Pi 标准工具后端。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
 
-Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 采集入口只负责把 PCM 封装为受限 WAV，不注册工具、不创建回答。原始音频引用作为 Pi user message 的扩展字段进入同一个 `device-<id>` 会话，再由 provider 映射为 `input_audio`；转写事件只用于 UI 展示，不再触发第二次模型请求。每次请求只把最新且尚未完成消费的语音消息作为二进制 `input_audio` 发送；旧语音轮以转写文本或历史语音占位回放，工具续轮也不会重复上传同一段 PCM，避免长生命周期会话在第二轮被 Realtime 服务端断开。模型自行判断是否使用原生语音；正常回答可产生原生音频，其最终 transcript 同时作为文字回退。若模型调用 `ui.chat.post` 主动发送文字，工具续轮强制为 text-only，只返回不显示的内部确认，避免复刻音色之外再播放第二套语音。
+Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 采集入口只负责把 PCM 封装为受限 WAV，不注册工具、不创建回答。原始音频引用作为 Pi user message 的扩展字段进入同一个 `device-<id>` 会话；provider 提取 16 kHz PCM，以不超过 32000 bytes 的 `input_audio_buffer.append` 事件分块上传，随后发送一次 `input_audio_buffer.commit` 与 `response.create`。这避免整段 Base64 JSON 超过上游 256 KiB WebSocket 单帧限制。转写事件只用于 UI 展示，不再触发第二次模型请求。每次请求只上传最新且尚未完成消费的语音；旧语音轮以转写文本或历史语音占位回放，工具续轮也不会重复上传同一段 PCM。模型自行判断是否使用原生语音；正常回答可产生原生音频，其最终 transcript 同时作为文字回退。若模型调用 `ui.chat.post` 主动发送文字，工具续轮强制为 text-only，只返回不显示的内部确认，避免复刻音色之外再播放第二套语音。
 
 ## 4. 配置项
 
@@ -146,11 +149,12 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
 - Qwen Realtime 的本机 AgentSession 长期驻留且原始音频直接进入模型；provider adapter 每次模型请求仍会重新建立云端 WebSocket，但只在当前语音首次请求上传 PCM，工具续轮和后续用户轮不会重放历史二进制音频。
+- 行动承诺纠偏通过中英文短承诺模式识别触发，并且每个用户 run 最多执行一次；无法识别的其他语言或非常规措辞仍主要依赖 system prompt 约束。
 - 外部 Pi extensions、MCP、prompt templates 与 themes 仍关闭；Agent 循环、标准 Skills/context、会话和四个标准文件/shell 工具已启用。远程设备与应用能力继续通过 Yachiyo 工具目录接入，避免扩展绕过审批层。
 - package-lock.json 由统筹合并时更新；更新前不要用旧锁文件执行 npm ci。会话 JSONL 包含对话和工具结果，按现有用户数据目录保护。
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…045，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、Pi 原生工具策略 extension、EventBus 订阅、消息框独立投递与 Qwen Realtime provider。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…047，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、Pi 原生工具策略 extension、EventBus 订阅、消息框独立投递、工具空承诺纠偏与 Qwen Realtime 长音频分帧。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

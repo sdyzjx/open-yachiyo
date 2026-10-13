@@ -82,6 +82,7 @@ function basePrompt(toolErrorMaxRetries = 5) {
   return [
             'You are a runtime planner that can either return a final answer or call tools.',
             'If tools are needed, you may emit one or more tool calls and wait for results in the next turn.',
+            'Never end the turn with only a promise to inspect, search, run, change, send, or control something. If you say you will perform an external action, call the relevant tool in the same turn and wait for its result before the final answer.',
             'Long-term memory operations must go through tools (memory_write / memory_search).',
             'For every reply turn, decide one Live2D action and a duration_sec based on the chat context.',
             'When live2d tools are available, call exactly one live2d.* tool with valid preset/action names and explicit duration_sec before final text response.',

@@ -37,6 +37,28 @@ function modelWithImages(model, tools, images) {
   return { ...model, input: [...new Set([...(model.input || ['text']), 'image'])] };
 }
 
+const ACTION_COMMITMENT_PATTERNS = [
+  /(?:我|这边).{0,10}(?:这就|马上|现在就|立即|来|帮(?:你|您)?)(?:去)?(?:查看|查询|检查|执行|运行|打开|关闭|设置|调用|搜索|获取|处理|绘制|生成|修改|发送|播放|切换)/,
+  /(?:I(?:'ll| will)|let me|I am going to).{0,60}(?:check|look up|inspect|run|execute|open|close|set|search|fetch|create|send|play|switch)/i
+];
+
+function needsActionRecovery({ output, hasTools }) {
+  if (hasTools) return false;
+  const text = String(output || '').trim();
+  if (!text || text.length > 240) return false;
+  return ACTION_COMMITMENT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function actionRecoveryPrompt(output) {
+  return [
+    '[Yachiyo runtime policy correction; this is not a new user request.]',
+    `Your previous response only promised an external action: ${JSON.stringify(String(output || '').slice(0, 240))}`,
+    'Do not repeat the promise or return a final answer yet.',
+    'Use the available tools now to complete the requested action, observe the tool result, and only then give the user the concrete result.',
+    'If no available tool can complete it, state that limitation directly instead of claiming that you will do it.'
+  ].join('\n');
+}
+
 async function createPiRuntime(deps) {
   const { sdk } = await loadPi();
   const sessions = deps.sessionBridge || new SessionBridge({ rootDir: deps.sessionDir, sessionStore: deps.sessionStore,
@@ -354,10 +376,27 @@ async function createPiRuntime(deps) {
               }
             }
             prompting.catch((error) => entry.state.coordinator.fail(tracker, error));
-            const turn = await tracker.promise;
+            let turn = await tracker.promise;
             if (entry.state.coordinator.size === 0) await entry.session.waitForIdle();
             args.signal?.removeEventListener('abort', abort);
             if (tracker.limited) throw new Error('Runtime step or tool-error retry limit reached');
+            if (turn.state === 'DONE' && needsActionRecovery({ output: turn.output, hasTools: events.hasTools })) {
+              events.emit('agent.action.recovery', { reason: 'commitment_without_tool', preview: turn.output.slice(0, 160) });
+              entry.session.setActiveToolsByName(entry.allToolNames);
+              const recoveryInput = actionRecoveryPrompt(turn.output);
+              const recoveryTracker = entry.state.coordinator.register({
+                input: recoveryInput, events, runtimeContext, systemPrompt, startsImmediately: true
+              });
+              const recoveryAbort = () => void entry.session.abort();
+              args.signal?.addEventListener('abort', recoveryAbort, { once: true });
+              entry.session.prompt(recoveryInput, {
+                preflightResult: (disposition) => { recoveryTracker.disposition = disposition; }
+              }).catch((error) => entry.state.coordinator.fail(recoveryTracker, error));
+              turn = await recoveryTracker.promise;
+              if (entry.state.coordinator.size === 0) await entry.session.waitForIdle();
+              args.signal?.removeEventListener('abort', recoveryAbort);
+              if (recoveryTracker.limited) throw new Error('Runtime step or tool-error retry limit reached');
+            }
             if (turn.state === 'SUPERSEDED') {
               events.resolvedModelRef = descriptor.ref;
               result = events.finish(turn.output, 'ABORTED');
@@ -393,4 +432,6 @@ async function createPiRuntime(deps) {
   return runtime;
 }
 
-module.exports = { createPiRuntime, imageParts, sameModel, modelWithImages };
+module.exports = {
+  createPiRuntime, imageParts, sameModel, modelWithImages, needsActionRecovery, actionRecoveryPrompt
+};

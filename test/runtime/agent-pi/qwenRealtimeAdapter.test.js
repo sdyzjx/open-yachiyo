@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { loadPi } = require('../../../apps/runtime/agent-pi/loadPi');
 const {
-  QWEN_REALTIME_API, createQwenRealtimeStream, replayContext
+  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, createQwenRealtimeStream, replayContext, audioAppendEvents
 } = require('../../../apps/runtime/agent-pi/qwenRealtimeAdapter');
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -35,7 +35,11 @@ test('TC-PI-041 realtime context sends original audio instead of its placeholder
     assert.equal(audioRef, '/private/audio.wav');
     return 'AQI=';
   } });
-  assert.deepEqual(replay.events[0].item.content, [{ type: 'input_audio', audio: 'AQI=' }]);
+  assert.deepEqual(replay.events, []);
+  assert.deepEqual(replay.audioInputs, [{
+    audio: 'AQI=',
+    marker: { audio_ref: '/private/audio.wav', format: 'wav', stream_id: 'voice-1' }
+  }]);
   assert.equal(JSON.stringify(replay.events).includes('实时语音输入'), false);
 });
 
@@ -54,9 +58,9 @@ test('TC-PI-041 realtime context sends only the newest unconsumed audio and repl
   const replay = replayContext(messages, { loadAudio: (ref) => ref.endsWith('new.wav') ? 'TkVX' : 'T0xE' });
   assert.deepEqual(replay.events.map((event) => event.item.content?.[0]), [
     { type: 'input_text', text: '旧问题' },
-    { type: 'output_text', text: '旧回答' },
-    { type: 'input_audio', audio: 'TkVX' }
+    { type: 'output_text', text: '旧回答' }
   ]);
+  assert.deepEqual(replay.audioInputs.map((input) => input.audio), ['TkVX']);
   assert.deepEqual(replay.audioMarkers.map((audio) => audio.stream_id), ['voice-new']);
 
   const continued = replayContext(messages, {
@@ -66,6 +70,16 @@ test('TC-PI-041 realtime context sends only the newest unconsumed audio and repl
   assert.equal(continued.events.at(-1).item.content[0].type, 'input_text');
   assert.equal(continued.events.at(-1).item.content[0].text, '[历史语音消息]');
   assert.deepEqual(continued.audioMarkers, []);
+});
+
+test('TC-PI-047 realtime input audio is chunked below the provider frame limit and committed once', () => {
+  const pcm = Buffer.alloc(AUDIO_APPEND_BYTES * 9 + 17, 7);
+  const events = audioAppendEvents([{ audio: pcm.toString('base64') }]);
+  const appends = events.filter((event) => event.type === 'input_audio_buffer.append');
+  assert.equal(appends.length, 10);
+  assert.equal(events.at(-1).type, 'input_audio_buffer.commit');
+  assert.deepEqual(Buffer.concat(appends.map((event) => Buffer.from(event.audio, 'base64'))), pcm);
+  for (const event of appends) assert.ok(Buffer.byteLength(JSON.stringify(event)) < 64 * 1024);
 });
 
 test('TC-PI-039 realtime provider emits standard Pi text/tool events and keeps audio side-channel independent', async () => {

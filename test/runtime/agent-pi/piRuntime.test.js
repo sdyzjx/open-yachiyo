@@ -112,6 +112,25 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
   assert.ok(names.includes('ui__chat__post'));
 });
 
+test('TC-PI-046 a tool-free action promise gets one internal Pi recovery turn', async (t) => {
+  const f = await fixture(t, (body, requestNumber) => {
+    if (requestNumber === 1) return { text: '主人，我这就帮您查看电脑网卡的当前状态。' };
+    if (body.messages.at(-1).role === 'tool') return { text: '网卡状态正常，地址是 192.168.20.212。' };
+    return { tool: 'add', args: { a: 20, b: 22 } };
+  });
+  const events = [];
+  const result = await f.runtime.run({
+    sessionId: 'recover-action-promise', input: '查看电脑网卡状态',
+    onEvent: (event) => events.push(event)
+  });
+  assert.equal(result.state, 'DONE', result.output);
+  assert.equal(result.output, '网卡状态正常，地址是 192.168.20.212。');
+  assert.equal(f.requests.length, 3);
+  assert.match(f.requests[1].messages.at(-1).content, /runtime policy correction/);
+  assert.ok(events.some((event) => event.event === 'agent.action.recovery'));
+  assert.equal(events.filter((event) => event.event === 'tool_call.completed').length, 1);
+});
+
 test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a Pi tool continuation', async (t) => {
   const waitFor = async (predicate) => {
     for (let index = 0; index < 100; index += 1) {
@@ -154,9 +173,10 @@ test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a P
   const first = FakeWs.instances[0];
   first.emit('message', JSON.stringify({ type: 'session.created' }));
   first.emit('message', JSON.stringify({ type: 'session.updated' }));
-  const directAudio = first.sent.find((event) => event.item?.content?.[0]?.type === 'input_audio');
+  const directAudio = first.sent.find((event) => event.type === 'input_audio_buffer.append');
   assert.ok(directAudio, JSON.stringify(first.sent));
-  assert.equal(Buffer.from(directAudio.item.content[0].audio, 'base64').length, 3200);
+  assert.equal(Buffer.from(directAudio.audio, 'base64').length, 3200);
+  assert.equal(first.sent.filter((event) => event.type === 'input_audio_buffer.commit').length, 1);
   assert.equal(first.sent.some((event) => JSON.stringify(event).includes('实时语音输入')), false);
   first.emit('message', JSON.stringify({
     type: 'conversation.item.input_audio_transcription.completed', transcript: '算一下', item_id: 'voice-1'
@@ -168,7 +188,7 @@ test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a P
   await waitFor(() => first.sent.some((event) => event.item?.type === 'function_call_output'));
   assert.equal(FakeWs.instances.length, 1);
   assert.ok(first.sent.some((event) => event.item?.type === 'function_call_output' && event.item.output.includes('42')));
-  assert.equal(first.sent.filter((event) => event.item?.content?.[0]?.type === 'input_audio').length, 1);
+  assert.equal(first.sent.filter((event) => event.type === 'input_audio_buffer.append').length, 1);
   assert.equal(first.sent.filter((event) => event.type === 'response.create').length, 2);
   first.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
   first.emit('message', JSON.stringify({ type: 'response.done' }));

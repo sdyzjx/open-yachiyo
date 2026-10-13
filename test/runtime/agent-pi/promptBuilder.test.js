@@ -90,3 +90,11 @@ test('TC-PI-045 Realtime native speech and explicit chat delivery stay independe
   assert.match(systemPrompt, /text-only reply, call ui\.chat\.post/i);
   assert.match(systemPrompt, /Never call voice\.tts_aliyun_vc/i);
 });
+
+test('TC-PI-046 prompt forbids ending with an unexecuted action promise', async () => {
+  const { systemPrompt } = await buildPrompt({
+    sessionId: 'tool-obligation', input: '查看电脑网卡', runtimeContext: { permission_level: 'high' }
+  });
+  assert.match(systemPrompt, /Never end the turn with only a promise/i);
+  assert.match(systemPrompt, /call the relevant tool in the same turn/i);
+});

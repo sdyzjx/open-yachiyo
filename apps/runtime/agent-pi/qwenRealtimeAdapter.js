@@ -4,6 +4,7 @@ const WebSocket = require('ws');
 
 const QWEN_REALTIME_API = 'qwen-realtime';
 const UI_CHAT_TOOL = /^ui(?:__|\.)chat(?:__|\.)post$/;
+const AUDIO_APPEND_BYTES = 32_000;
 
 function realtimeUrl(descriptor) {
   let base;
@@ -80,6 +81,7 @@ function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => 
   let instructions = '';
   const tools = new Map();
   const events = [];
+  const audioInputs = [];
   const audioMarkers = [];
   const sourceMessages = messages || [];
   let latestAudioIndex = -1;
@@ -100,13 +102,7 @@ function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => 
     if (message.role === 'user') {
       const audio = message.yachiyoInputAudio;
       if (audio?.audio_ref && index === latestAudioIndex && !audioAlreadySent(audio)) {
-        events.push({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message', role: 'user',
-            content: [{ type: 'input_audio', audio: loadAudio(audio.audio_ref) }]
-          }
-        });
+        audioInputs.push({ audio: loadAudio(audio.audio_ref), marker: audio });
         audioMarkers.push(audio);
         continue;
       }
@@ -159,8 +155,24 @@ function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => 
       function: { name: tool.name, description: tool.description || tool.name, parameters: tool.parameters || {} }
     })),
     events,
+    audioInputs,
     audioMarkers
   };
+}
+
+function audioAppendEvents(audioInputs = [], chunkBytes = AUDIO_APPEND_BYTES) {
+  const events = [];
+  for (const input of audioInputs) {
+    const pcm = Buffer.from(String(input?.audio || ''), 'base64');
+    for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
+      events.push({
+        type: 'input_audio_buffer.append',
+        audio: pcm.subarray(offset, Math.min(offset + chunkBytes, pcm.length)).toString('base64')
+      });
+    }
+  }
+  if (events.length) events.push({ type: 'input_audio_buffer.commit' });
+  return events;
 }
 
 function createPartial(model) {
@@ -197,7 +209,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
       const missing = [...pending].filter((callId) => !returned.has(callId));
       if (missing.length) throw new Error(`Realtime tool continuation is missing results for: ${missing.join(', ')}`);
       prepared = {
-        instructions: '', tools: [], audioMarkers: [],
+        instructions: '', tools: [], audioInputs: [], audioMarkers: [],
         uiDeliveryCompleted: results.some((message) => {
           const name = String(message.toolName || continuation.pendingCallNames?.[message.toolCallId] || '');
           return UI_CHAT_TOOL.test(name);
@@ -339,6 +351,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
     if (event.type === 'session.updated') {
       for (const item of prepared.events) ws.send(JSON.stringify(item));
+      for (const item of audioAppendEvents(prepared.audioInputs)) ws.send(JSON.stringify(item));
       sendResponseCreate();
       return;
     }
@@ -454,4 +467,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
   return stream;
 }
 
-module.exports = { QWEN_REALTIME_API, createQwenRealtimeStream, realtimeUrl, replayContext, wavPcm };
+module.exports = {
+  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, createQwenRealtimeStream, realtimeUrl, replayContext, wavPcm,
+  audioAppendEvents
+};

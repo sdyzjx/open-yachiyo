@@ -239,3 +239,4 @@ flowchart TD
 - 提交 `656f9a1` 后完成真实联调：Node 869/869、Android 单测与 Debug APK 构建通过；小米 6 经 Wi-Fi ADB 安装，真实 Qwen3.5 Flash 调用 `ui.chat.post` 后只显示一张气泡，内部 final 标记 `ui_hidden=true`，25 秒截图确认最后气泡已消失。Electron 使用同一 3002 网关时，Desktop Chat 可见当前模型、麦克风按钮和“送到 mi6”，完成手机→电脑→手机迁移往返后释放设备锁。麦克风按钮未采集用户声音，避免在无人确认时把实际环境音频发送到模型。
 - `agent/pi-runtime-v2` 的 37 个提交已快进合并到 `feature/android-companion`，临时 worktree 与分支已删除；原主工作区未提交的 Qwen 3.7/3.6/3.5 预设更新在合并冲突中保留，并与 Qwen 3.8 Omni 条目合并，专项用例改为检查型号集合而非写死目录数量，覆盖 TC-LLM-045。
 - Worktree 收口审计用 `git cherry` 区分未交付提交与补丁等价副本；清理 11 个已合并或补丁等价且工作树干净的旧 checkout。仍保留的 9 个 worktree 均含主分支尚无的独立提交，或存在未提交改动，避免为追求目录整洁而丢失工作。
+- 真实 Qwen3.8 Omni Realtime 日志确认两种新故障：模型对“查看电脑网卡”只返回行动承诺，没有产生 function call；随后较长录音把整段 Base64 PCM 放进单个 conversation item，触发上游 `1009 Max frame length of 262144`。主线新增一次 Pi 内部行动纠偏续轮，并按官方 Realtime Manual 协议改为 `input_audio_buffer.append ×N → commit → response.create`，自动化覆盖 TC-PI-046/047。
