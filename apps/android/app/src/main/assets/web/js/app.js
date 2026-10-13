@@ -362,12 +362,13 @@
     };
   }
 
-  function chatSplitEndpoint() {
+  function chatWideEndpoint() {
     const fallback = { left: S.view.w * 0.4, top: S.view.h * 0.04, right: S.view.w * 0.6, bottom: S.view.h * 1.2 };
     const pose = stage.content ? modelPose(L.panelTransforms(0, geom)) : null;
     const bounds = pose ? L.modelScreenBounds({ content: stage.content, ...pose }) : fallback;
-    return L.computeChatSplitLayout({
-      viewport: { width: S.view.w, height: S.view.h }, modelBounds: bounds, hud: chatHud()
+    return L.computeChatWideLayout({
+      viewport: { width: S.view.w, height: S.view.h }, modelBounds: bounds, hud: chatHud(),
+      faceRatio: L.resolveChatFaceRatio(focusMode())
     });
   }
 
@@ -388,9 +389,10 @@
     const p = S.landscape ? clamp(progress, -1, 1) : 0;
     let presentation;
     if (S.landscape) {
-      const split = chatSplitEndpoint();
-      const merged = chatEndpoint(p < 0 ? -1 : 1);
-      presentation = L.interpolateSplitChatLayout({ split, merged, progress: Math.abs(p) });
+      const center = chatWideEndpoint();
+      const side = chatEndpoint(p < 0 ? -1 : 1);
+      const merged = L.interpolateChatPanelLayout(center, side, Math.abs(p));
+      presentation = L.singleChatPresentation(merged);
     } else {
       presentation = L.singleChatPresentation(chatEndpoint(0));
     }

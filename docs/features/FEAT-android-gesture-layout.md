@@ -50,13 +50,13 @@ stateDiagram-v2
 对话面板以模型屏幕外框顶部向下 24% 的「脖子线」为上界。`computeChatPanelLayout()` 接收视口、模型 bounds、吸附状态、侧栏宽度与输入栏/迁移控件/设置按钮/插件面板矩形，返回面板矩形和圆角、不透明度、内容对齐偏置。所有端点均在脖子线下方和输入栏上方，并将侧栏、插件面板和相交的顶部 HUD 视为硬障碍；不足 120×56 px 时隐藏，而不是盖住其他组件。
 
 - 竖屏：左右留 14 px，从脖子线下方延伸到输入栏上方，可覆盖身体但不覆盖脸。
-- 横屏居中：左半屏为八千代回答列，右半屏为用户消息列。`computeChatSplitLayout()` 以模型外框上 30% 的底边作为脸部保护线，两列从保护线下 16 px 开始，到输入区、聊天按钮或语音按钮上沿为止。每列横向填满对应半屏，中间留 16 px，允许气泡接触或覆盖下半身而不遮挡脸部。两列各自按时间向下排列、独立滚动和维护「是否贴底」状态。
+- 横屏居中：回答和用户消息按时间顺序进入一块完整宽屏对话区。`computeChatWideLayout()` 的脸部保护线随取景校准：默认全身取模型外框上 30%，上半身聚焦取 20%，避免被放大到视口外的下半身把保护线错误推到胸口。面板从保护线下 12 px 延伸到输入区上方并横向填满安全区，可覆盖下半身而不遮挡脸部。用户消息右对齐，八千代回答左对齐。
 - 横屏左/右侧栏：面板可覆盖角色身体，但水平方向限制在完全打开的侧栏之外。
 - 右侧插件栏随 `panel` 进度打开时，设置齿轮用同一进度向左移动并保持在插件栏外 14 px；左侧栏打开时齿轮保留在人物所在的右侧安全区。齿轮不使用额外 CSS 补间，拖动与吸附均跟随面板弹簧。
-- `interpolateSplitChatLayout({split, merged, progress})` 分别把左右列矩形插值到侧栏态的合并矩形，同时让双列淡出、按完整时间顺序渲染的合并视图淡入。拖动直接使用 `abs(panel.value)`，所以位置、宽高、圆角与透明度和人物/侧栏逐帧同步；松手继续读取同一个 `panel` 弹簧（260/27）。
+- 左右拖动时，`interpolateChatPanelLayout()` 直接把中心宽屏矩形插值为侧栏外的窄面板。拖动使用 `abs(panel.value)`，所以位置、宽高、圆角与透明度和人物/侧栏逐帧同步；没有双列交叉淡入造成的暂时消失，松手继续读取同一个 `panel` 弹簧（260/27）。
 - 横竖屏切换时，旧矩形先按新视口等比例映射，再由与相机相同参数的弹簧（110/21）插值到新端点，避免视口变化帧的跳变或闪烁。
 
-三个 `.chat-scroll`（回答列、用户列、合并视图，包括气泡间隙）都属于手势 `IGNORE` 区。中心态回答只写入左列、用户消息只写入右列，同时按事件顺序复制到不可见的合并视图；侧滑时切换交互层。长文本在各列内部滚动；任一列上翻后，该列新增内容不强制滚底，另一列不受影响。
+对话 `.chat-scroll`（包括气泡间隙）属于手势 `IGNORE` 区。横屏始终展示按事件顺序维护的合并视图，长文本在面板内部滚动；用户上翻离底后，新增内容不再强制滚底。
 
 软键盘弹出时 Activity 使用 `adjustNothing`，WebView 视口、`#stage` 和相机弹簧均不重算。原生层通过 C2.2 `ime` 事件发送键盘高度，Web 层只平滑改变输入栏和对话面板的 `bottom`。
 
@@ -66,7 +66,7 @@ stateDiagram-v2
 
 ## 3. 接口与协议
 
-纯函数模块 `layout.js`（UMD）：`createSpring`、`stepSpring`、`computeFrame`、`placeModel`、`panelGeometry`、`panelTransforms`、`rubberband`、`resolvePanelSnap`、`resolveDrawerSnap`、`createGestureTracker`、`resolveQuality`、`resolveFocus`，以及对话面板用的 `modelScreenBounds`、`computeChatPanelLayout`、`computeChatSplitLayout`、`interpolateChatPanelLayout`、`interpolateSplitChatLayout`、`interpolateChatPresentation`、`remapChatPresentation` 与 `isNearBottom`。
+纯函数模块 `layout.js`（UMD）：`createSpring`、`stepSpring`、`computeFrame`、`placeModel`、`panelGeometry`、`panelTransforms`、`rubberband`、`resolvePanelSnap`、`resolveDrawerSnap`、`createGestureTracker`、`resolveQuality`、`resolveFocus`、`resolveChatFaceRatio`，以及对话面板用的 `modelScreenBounds`、`computeChatPanelLayout`、`computeChatWideLayout`、`interpolateChatPanelLayout`、`interpolateChatPresentation`、`remapChatPresentation` 与 `isNearBottom`。旧 `computeChatSplitLayout` / `interpolateSplitChatLayout` 保留为兼容纯函数，主界面不再使用。
 
 ## 4. 配置项
 
@@ -84,4 +84,4 @@ stateDiagram-v2
 
 ## 6. 测试用例
 
-TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011、TC-AWB-027、TC-AWB-033、TC-AWB-034、TC-AWB-036、TC-AWB-037、TC-AWB-038、TC-AWB-039、TC-AWB-040、TC-AWB-043（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`、`test/android-web/theme.test.js`、`test/android-web/chatPanel.test.js`。
+TC-AWB-003、TC-AWB-004、TC-AWB-009、TC-AWB-010、TC-AWB-011、TC-AWB-027、TC-AWB-033、TC-AWB-034、TC-AWB-036、TC-AWB-037、TC-AWB-038、TC-AWB-039、TC-AWB-040、TC-AWB-043、TC-AWB-051（`docs/testing/TC-android-web.md`）；自动化 `test/android-web/layout.test.js`、`test/android-web/theme.test.js`、`test/android-web/chatPanel.test.js`。

@@ -104,6 +104,8 @@ test('quality and focus resolution', () => {
   assert.equal(L.resolveFocus({ landscape: true, config: { landscape_focus: 'upper_body' } }), 'upper');
   assert.equal(L.resolveFocus({ landscape: true, config: { landscape_focus: 'full_body' } }), 'full');
   assert.equal(L.resolveFocus({ landscape: false, config: { portrait_full_body: true } }), 'full');
+  assert.equal(L.resolveChatFaceRatio('upper'), 0.2);
+  assert.equal(L.resolveChatFaceRatio('full'), 0.3);
 });
 
 test('face region covers the top 30% of the drawn character in screen space', () => {
@@ -178,6 +180,42 @@ test('B9 landscape center split lanes fill both sides and avoid every HUD rectan
   assert.ok(result.agent.bottom <= 274);
   assert.ok(result.user.bottom <= 266);
   assert.equal(result.hidden, false);
+});
+
+test('TC-AWB-051 Xiaomi 6 upper-body framing keeps the landscape chat panel visible', () => {
+  const modelBounds = {
+    left: 162.27228501652118, top: 14.4,
+    right: 477.7277149834788, bottom: 642.7636363636365
+  };
+  const hud = { input: { left: 0, top: 282, right: 640, bottom: 360 } };
+  const oldLayout = L.computeChatSplitLayout({
+    viewport: { width: 640, height: 360 }, modelBounds, hud, faceRatio: 0.3
+  });
+  const layout = L.computeChatWideLayout({
+    viewport: { width: 640, height: 360 }, modelBounds, hud,
+    faceRatio: L.resolveChatFaceRatio('upper')
+  });
+  assert.equal(oldLayout.hidden, true);
+  assert.equal(layout.hidden, false);
+  assert.ok(layout.top >= layout.neckY + 12);
+  assert.ok(layout.height >= 110);
+  assert.equal(layout.width, 612);
+});
+
+test('TC-AWB-039 landscape centre uses one wide readable chat panel', () => {
+  const modelBounds = {
+    left: 162.27228501652118, top: 14.4,
+    right: 477.7277149834788, bottom: 642.7636363636365
+  };
+  const layout = L.computeChatWideLayout({
+    viewport: { width: 640, height: 360 }, modelBounds,
+    hud: { input: { left: 0, top: 282, right: 640, bottom: 360 } },
+    faceRatio: L.resolveChatFaceRatio('upper')
+  });
+  assert.deepEqual([layout.left, layout.right, layout.width], [14, 626, 612]);
+  assert.ok(layout.top >= layout.neckY + 12);
+  assert.ok(layout.height >= 110);
+  assert.equal(layout.hidden, false);
 });
 
 test('B9 split lanes use the wide lower screen while staying below the face region', () => {

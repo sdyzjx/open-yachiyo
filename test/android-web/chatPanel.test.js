@@ -207,8 +207,9 @@ test('chat panel is a bounded scroller that does not feed the stage swipe gestur
   assert.match(app, /const IGNORE = '[^']*\.chat-scroll[^']*\.tc-bubble[^']*\.tc-task/);
   assert.match(app, /L\.modelScreenBounds\(/);
   assert.match(app, /L\.computeChatPanelLayout\(/);
-  assert.match(app, /L\.computeChatSplitLayout\(/);
-  assert.match(app, /L\.interpolateSplitChatLayout\(/);
+  assert.match(app, /L\.computeChatWideLayout\(/);
+  assert.match(app, /faceRatio: L\.resolveChatFaceRatio\(focusMode\(\)\)/);
+  assert.match(app, /L\.interpolateChatPanelLayout\(center, side, Math\.abs\(p\)\)/);
 });
 
 test('keyboard (B8): native ime event only moves the input bar and chat panel, never the stage', () => {

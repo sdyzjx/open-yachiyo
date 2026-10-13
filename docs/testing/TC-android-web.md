@@ -388,15 +388,15 @@
 | 期望结果 | 四态均不挡脸，不与输入栏、迁移控件、设置按钮、侧栏或插件面板重叠；方向切换无闪烁跳变；键盘只移动输入和对话区域，长文本仍在面板内滚动且不触发舞台手势 |
 | 自动化 | manual；方向初始矩形归一化由 `test/android-web/layout.test.js`（B9 orientation remap）覆盖 |
 
-## TC-AWB-039 横屏居中双列对话与合并过渡
+## TC-AWB-039 横屏统一宽屏对话与侧栏过渡
 
 | 字段 | 内容 |
 |---|---|
 | 类型 | unit + manual-device |
-| 前置条件 | 小米 6 横屏居中；可注入多轮长回答与用户消息；可读取三套滚动区矩形 |
-| 步骤 | 1) 交替注入多轮回答和用户消息；2) 分别上翻左右列后继续注入；3) 左右慢拖到 `t=0.5` 后吸附；4) 从两侧栏反向拖回中心；5) 旋转到竖屏 |
-| 期望结果 | 回答只显示在人物左列、用户消息只显示在右列；两列避开模型和全部 HUD、各自滚动且互不改变贴底状态；`t=0/0.5/1` 时双列连续合并为单面板，最终按完整时间顺序显示；吸附及方向切换无跳变 |
-| 自动化 | `test/android-web/layout.test.js`（split lanes / split interpolation）、`test/android-web/chatPanel.test.js`（independent lane pinning）+ manual-device |
+| 前置条件 | 小米 6 横屏居中；可注入多轮长回答与用户消息；可读取合并滚动区矩形 |
+| 步骤 | 1) 交替注入多轮回答和用户消息；2) 上翻后继续注入；3) 左右慢拖到 `t=0.5` 后吸附；4) 从两侧栏反向拖回中心；5) 旋转到竖屏 |
+| 期望结果 | 中心态为接近全屏宽度的单一时间顺序面板，回答左对齐、用户消息右对齐；`t=0/0.5/1` 时同一面板连续收窄并移动到侧栏外；全程保持可见、可滚动，无交叉淡入空窗或方向切换跳变 |
+| 自动化 | `test/android-web/layout.test.js`（TC-AWB-039 landscape centre uses one wide readable chat panel / chat interpolation）、`test/android-web/chatPanel.test.js`；2026-10-13 小米 6 真机中心态为 612×118 dp，左右半程均约 467×95 dp 且连续可见 |
 
 ## TC-AWB-040 横屏分栏边界与侧栏齿轮避让
 
@@ -517,3 +517,13 @@
 | 步骤 | 显示一条足够长的完整回答并等待 24 s + 420 ms 淡出动画 |
 | 期望结果 | 气泡最迟 24 s 开始淡出并移除；它是最后一条消息时画布同步隐藏 |
 | 自动化 | `test/android-web/chatPanel.test.js`（TC-AWB-050 a direct final-only message always fades within 24 seconds）+ manual-device |
+
+## TC-AWB-051 小米 6 横屏上半身取景对话可见
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 小米 6 横屏 640×360 dp；默认 upper-body 取景；角色在手机；可注入消息 |
+| 步骤 | 1) 计算真实模型屏幕 bounds 与输入栏矩形；2) 注入用户消息和回答；3) 读取回答列、用户列的 visibility、矩形；4) 截图确认脸部边界 |
+| 期望结果 | 上半身取景使用 20% 脸部保护比例；宽屏面板宽约 612 dp、高至少 110 dp 且可见；上边界位于脸部保护线下 12 dp；气泡可覆盖胸口以下但不遮脸 |
+| 自动化 | `test/android-web/layout.test.js`（TC-AWB-051 Xiaomi 6 upper-body framing keeps the landscape chat panel visible）、`test/android-web/chatPanel.test.js`；2026-10-13 小米 6 截图与 CDP 验证通过，主题文字色 `#f7f3ff`，面板位于脸部下方 |

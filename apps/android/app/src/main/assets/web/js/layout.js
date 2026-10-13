@@ -196,6 +196,40 @@
     return { agent, user, hidden: agent.hidden && user.hidden };
   }
 
+  // One chronological wide panel for the landscape centre state. It uses the
+  // complete horizontal safe area and may cover the character below the face.
+  function computeChatWideLayout({
+    viewport, modelBounds, hud = {}, margin = 14, gap = 12,
+    faceRatio = 0.2, minWidth = 120, minHeight = 56
+  }) {
+    const viewW = Math.max(0, viewport.width);
+    const viewH = Math.max(0, viewport.height);
+    const bottomLimit = hud.input ? hud.input.top - gap : viewH - margin;
+    const faceBottom = clamp(
+      modelBounds.top + rectHeight(modelBounds) * faceRatio,
+      margin,
+      bottomLimit
+    );
+    const horizontal = { left: margin, right: viewW - margin };
+    let top = faceBottom + gap;
+    let bottom = Math.min(viewH - margin, bottomLimit);
+    for (const obstacle of [hud.status, hud.transfer, hud.settings].filter(Boolean)) {
+      if (overlapsX(horizontal, obstacle, gap)) top = Math.max(top, obstacle.bottom + gap);
+    }
+    for (const obstacle of [hud.input, hud.mic, hud.chat, hud.send].filter(Boolean)) {
+      if (overlapsX(horizontal, obstacle, gap)) bottom = Math.min(bottom, obstacle.top - gap);
+    }
+    top = clamp(top, margin, viewH - margin);
+    bottom = clamp(bottom, top, viewH - margin);
+    const width = Math.max(0, horizontal.right - horizontal.left);
+    const height = Math.max(0, bottom - top);
+    return {
+      ...horizontal, top, bottom, width, height, neckY: faceBottom,
+      hidden: width < minWidth || height < minHeight,
+      style: { radius: 20, opacity: 0.94, alignment: 0 }
+    };
+  }
+
   const lerp = (a, b, t) => a + (b - a) * t;
 
   // Pure state interpolation used both while following the finger and during spring snap.
@@ -367,11 +401,18 @@
     return config.portrait_full_body === false ? 'upper' : 'full';
   }
 
+  // Upper-body framing scales the full model far beyond the viewport, so a 30%
+  // full-model ratio reaches the chest on short landscape screens. Use the
+  // observed face extent for that framing mode while keeping full-body layouts unchanged.
+  function resolveChatFaceRatio(focus) { return focus === 'upper' ? 0.2 : 0.3; }
+
   return {
     clamp, stepSpring, createSpring, computeFrame, placeModel, faceRegion, chatPanelBounds, modelScreenBounds,
-    computeChatPanelLayout, computeChatSplitLayout, interpolateChatPanelLayout, interpolateSplitChatLayout,
+    computeChatPanelLayout, computeChatSplitLayout, computeChatWideLayout,
+    interpolateChatPanelLayout, interpolateSplitChatLayout,
     singleChatPresentation, interpolateChatPresentation, remapChatPanelLayout, remapChatPresentation,
     isNearBottom, panelGeometry, panelTransforms,
-    rubberband, SNAP, resolvePanelSnap, resolveDrawerSnap, createGestureTracker, resolveQuality, isLandscape, resolveFocus
+    rubberband, SNAP, resolvePanelSnap, resolveDrawerSnap, createGestureTracker, resolveQuality, isLandscape, resolveFocus,
+    resolveChatFaceRatio
   };
 });
