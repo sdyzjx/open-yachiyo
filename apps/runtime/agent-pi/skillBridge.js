@@ -10,11 +10,10 @@ async function createResourceLoader({ cwd = process.cwd(), agentDir, settingsMan
   let skillResources = { skills: [], diagnostics: [] };
   const loader = new sdk.DefaultResourceLoader({
     cwd, agentDir, settingsManager,
-    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: false,
     extensionFactories,
-    systemPromptOverride: () => [getSystemPrompt?.() ?? systemPrompt, sdk.formatSkillsForPrompt(skillResources.skills, 'indirect')].filter(Boolean).join('\n\n'),
+    systemPromptOverride: () => getSystemPrompt?.() ?? systemPrompt,
     appendSystemPromptOverride: () => [],
-    agentsFilesOverride: () => ({ agentsFiles: [] }),
     skillsOverride: () => {
       const config = store.load();
       const loaded = loadSkills({ workspaceDir: cwd, config });

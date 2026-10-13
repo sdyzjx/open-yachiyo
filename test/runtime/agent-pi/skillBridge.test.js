@@ -16,16 +16,18 @@ test('TC-PI-014 pi skills honor configured roots, disable rules, precedence and 
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nInstructions.`);
   }
+  await fs.writeFile(path.join(cwd, 'AGENTS.md'), '# Workspace rules\nUse the project context.');
   const config = { home: { envKey: 'WS1_UNUSED_SKILL_HOME', defaultPath: home }, load: { global: true, workspace: true, extraDirs: [] }, limits: {}, entries: { disabled: { enabled: false } } };
   const { sdk } = await loadPi();
   const loader = await createResourceLoader({ cwd, agentDir: path.join(root, 'agent'), systemPrompt: 'custom policy',
     settingsManager: sdk.SettingsManager.inMemory({}), skillConfigStore: { load: () => config } });
   assert.deepEqual(loader.getSkills().skills.map((skill) => skill.name), ['sample']);
   assert.equal(loader.getSkills().skills[0].description, 'workspace winner');
-  assert.match(loader.getSystemPrompt(), /^custom policy/);
-  assert.match(loader.getSystemPrompt(), /workspace winner/);
+  assert.equal(loader.getSystemPrompt(), 'custom policy');
+  assert.doesNotMatch(loader.getSystemPrompt(), /workspace winner/);
   assert.doesNotMatch(loader.getSystemPrompt(), /do not show/);
-  assert.deepEqual(loader.getAgentsFiles().agentsFiles, []);
+  assert.equal(loader.getAgentsFiles().agentsFiles.length, 1);
+  assert.match(loader.getAgentsFiles().agentsFiles[0].content, /Workspace rules/);
   assert.deepEqual(loader.getExtensions().extensions, []);
   config.entries.sample = { enabled: false };
   await loader.reload();

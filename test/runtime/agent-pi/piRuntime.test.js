@@ -106,7 +106,7 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
   });
   assert.deepEqual(events.find((e) => e.event === 'llm.stream.delta').payload, { delta: 'answer 42' });
   const names = f.requests[0].tools.map((tool) => tool.function.name);
-  for (const name of ['read', 'bash', 'edit', 'write']) assert.ok(!names.includes(name));
+  for (const name of ['read', 'bash', 'edit', 'write']) assert.ok(names.includes(name), name);
 });
 
 test('TC-PI-016 real session resume, image input and audio transcription', async (t) => {
@@ -364,4 +364,32 @@ test('TC-PI-036 high-priority bus events enter the resident AgentSession through
   assert.equal((await final).state, 'DONE');
   assert.ok(f.requests.at(-1).messages.some((message) => message.role === 'user'
     && String(message.content).includes('battery hot')));
+});
+
+test('TC-PI-037 Pi assembles AGENTS context and Skills once while Apple Music remains a skill', async (t) => {
+  const f = await fixture(t, () => ({ text: 'resources loaded' }));
+  await fs.writeFile(path.join(f.root, 'AGENTS.md'), '# Test context\nFollow resident session rules.');
+  const skillDir = path.join(f.root, 'skills', 'apple-events-music');
+  await fs.mkdir(skillDir, { recursive: true });
+  await fs.writeFile(path.join(skillDir, 'SKILL.md'), [
+    '---',
+    'name: apple-events-music',
+    'description: Control Apple Music through a script.',
+    '---',
+    'Read this file and run scripts/music_control.sh with bash.'
+  ].join('\n'));
+  f.deps.skillConfigStore.load = () => ({
+    home: { envKey: 'PI_UNUSED_RESOURCE_HOME', defaultPath: f.root },
+    load: { workspace: true, global: false, extraDirs: [] },
+    limits: {}, entries: {}
+  });
+  const result = await f.runtime.run({ sessionId: 'resources', input: 'play music' });
+  assert.equal(result.state, 'DONE');
+  const system = f.requests[0].messages.find((message) => message.role === 'system').content;
+  assert.match(system, /Follow resident session rules/);
+  assert.match(system, /apple-events-music/);
+  assert.equal((system.match(/Control Apple Music through a script\./g) || []).length, 1);
+  const names = f.requests[0].tools.map((tool) => tool.function.name);
+  assert.equal(names.some((name) => /apple.*music/i.test(name)), false);
+  assert.ok(names.includes('bash'));
 });

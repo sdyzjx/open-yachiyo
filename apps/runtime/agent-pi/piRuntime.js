@@ -13,6 +13,7 @@ const { ApprovalCoordinator } = require('../approval/approvalCoordinator');
 const { normalizeSessionApprovalMode } = require('../session/sessionPermissions');
 const { SessionEventSubscriptions } = require('./sessionEventSubscriptions');
 const { createBusTools } = require('./busTools');
+const { createStandardTools } = require('./standardTools');
 
 function imageParts(images) {
   return images.map((image) => {
@@ -30,7 +31,7 @@ function sameModel(left, right) {
 }
 
 function modelWithImages(model, tools, images) {
-  if (!images.length && !tools.some((tool) => tool.originalName.startsWith('desktop.capture.'))) return model;
+  if (!images.length && !tools.some((tool) => String(tool.originalName || tool.name).startsWith('desktop.capture.'))) return model;
   return { ...model, input: ['text', 'image'] };
 }
 
@@ -59,6 +60,8 @@ async function createPiRuntime(deps) {
     };
     const onlineNames = new Map();
     const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames, approvalCoordinator });
+    const standardTools = createStandardTools({ sdk, cwd, executor: deps.executor, approvalCoordinator,
+      bus: deps.bus, context });
     let dispatchBusSteer = () => {};
     const eventSubscriptions = new SessionEventSubscriptions({
       bus: deps.bus,
@@ -69,20 +72,20 @@ async function createPiRuntime(deps) {
       policy: deps.executor.policy, context, onlineNames });
     const devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
       bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });
-    const reservedNames = [...localTools, ...busTools].map((tool) => tool.originalName);
-    const tools = [...localTools, ...busTools, ...devices.snapshot(context, reservedNames, onlineNames)];
+    const reservedNames = [...localTools, ...standardTools, ...busTools].map((tool) => tool.originalName || tool.name);
+    const tools = [...localTools, ...standardTools, ...busTools, ...devices.snapshot(context, reservedNames, onlineNames)];
     const toolNames = new Map();
     for (const tool of tools) {
       if (toolNames.has(tool.name)) throw new Error(`Tool name encoding collision: ${toolNames.get(tool.name)} and ${tool.originalName}`);
-      toolNames.set(tool.name, tool.originalName);
+      toolNames.set(tool.name, tool.originalName || tool.name);
     }
     const onlineNameSet = new Set(tools.map((tool) => tool.name));
-    const aliases = tools.filter((tool) => tool.name !== tool.originalName && !onlineNameSet.has(tool.originalName)).map((tool) => ({
+    const aliases = tools.filter((tool) => tool.originalName && tool.name !== tool.originalName && !onlineNameSet.has(tool.originalName)).map((tool) => ({
       ...tool,
       name: tool.originalName,
       prepareLoadout: () => ({ hiddenDeclarations: [tool.originalName] })
     }));
-    const loader = await createResourceLoader({ cwd: deps.cwd || process.cwd(), agentDir: path.join(sessions.rootDir, '.agent'),
+    const loader = await createResourceLoader({ cwd, agentDir: path.join(sessions.rootDir, '.agent'),
       settingsManager: opened.settingsManager, getSystemPrompt: () => state.systemPrompt,
       skillConfigStore: deps.skillConfigStore });
     const model = models.getModel(chain[0].provider, chain[0].id);
