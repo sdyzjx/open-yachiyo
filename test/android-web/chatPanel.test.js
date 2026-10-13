@@ -135,6 +135,23 @@ test('a newer streamed reply does not cancel an older bubble fade timer', () => 
   assert.equal(root.classList.contains('has-content'), true);
 });
 
+test('TC-AWB-050 a direct final-only message always fades within 24 seconds', () => {
+  const { api, advance } = load();
+  const root = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root });
+  const bubbles = canvas.mergedScrollEl.children[0];
+
+  canvas.final('这是一条没有流式增量的完整长消息。'.repeat(40), { trace_id: 'trace-final-only' });
+  const bubble = bubbles.children[0];
+  advance(23999);
+  assert.equal(bubble.classList.contains('tc-out'), false);
+  advance(1);
+  assert.equal(bubble.classList.contains('tc-out'), true);
+  advance(420);
+  assert.equal(bubble.isConnected, false);
+  assert.equal(root.classList.contains('has-content'), false);
+});
+
 test('an interrupted assistant stream expires after 30 seconds without a final event', () => {
   const { api, advance } = load();
   const root = fakeDom().createElement('section');

@@ -5,6 +5,7 @@
   const chatInputElement = document.getElementById('chat-input');
   const chatSendElement = document.getElementById('chat-send');
   const chatImagePickElement = document.getElementById('chat-image-pick');
+  const chatMicElement = document.getElementById('chat-mic');
   const chatImageInputElement = document.getElementById('chat-image-input');
   const chatUploadPreviewElement = document.getElementById('chat-upload-preview');
   const chatComposerElement = document.getElementById('chat-panel-composer');
@@ -62,6 +63,7 @@
     }
   };
   let chatInputComposing = false;
+  let voiceCapture = null;
   const allowedRoles = new Set(['user', 'assistant', 'system', 'tool']);
   const approvalModes = Object.freeze({
     manual: { label: '每次询问', description: '高风险命令执行前，由你逐次允许或拒绝。' },
@@ -435,6 +437,9 @@
     }
     if (chatImagePickElement) {
       chatImagePickElement.disabled = !state.inputEnabled;
+    }
+    if (chatMicElement && !chatMicElement.classList.contains('sending')) {
+      chatMicElement.disabled = !state.inputEnabled;
     }
     if (chatSendElement) {
       chatSendElement.disabled = !canSubmit;
@@ -1078,6 +1083,90 @@
     updateComposerState();
   }
 
+  function encodePcmWav(chunks, sourceRate) {
+    const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const merged = new Float32Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.length; }
+    const ratio = Math.max(1, Number(sourceRate) / 16000);
+    const outputLength = Math.max(1, Math.floor(merged.length / ratio));
+    const buffer = new ArrayBuffer(44 + outputLength * 2);
+    const view = new DataView(buffer);
+    const write = (at, value) => { for (let i = 0; i < value.length; i += 1) view.setUint8(at + i, value.charCodeAt(i)); };
+    write(0, 'RIFF'); view.setUint32(4, 36 + outputLength * 2, true); write(8, 'WAVE'); write(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    write(36, 'data'); view.setUint32(40, outputLength * 2, true);
+    for (let i = 0; i < outputLength; i += 1) {
+      const start = Math.floor(i * ratio);
+      const end = Math.min(merged.length, Math.max(start + 1, Math.floor((i + 1) * ratio)));
+      let sample = 0;
+      for (let j = start; j < end; j += 1) sample += merged[j];
+      sample = Math.max(-1, Math.min(1, sample / Math.max(1, end - start)));
+      view.setInt16(44 + i * 2, sample < 0 ? sample * 32768 : sample * 32767, true);
+    }
+    return new Uint8Array(buffer);
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = '';
+    const size = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += size) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + size));
+    }
+    return btoa(binary);
+  }
+
+  function setMicState(stateName, message = '') {
+    if (!chatMicElement) return;
+    chatMicElement.classList.toggle('recording', stateName === 'recording');
+    chatMicElement.classList.toggle('sending', stateName === 'sending');
+    chatMicElement.disabled = stateName === 'sending' || !state.inputEnabled;
+    chatMicElement.textContent = stateName === 'recording' ? '■' : '🎙';
+    chatMicElement.title = message || (stateName === 'recording' ? '停止并发送录音' : '开始录音');
+    chatMicElement.setAttribute('aria-label', chatMicElement.title);
+  }
+
+  async function startVoiceCapture() {
+    if (voiceCapture || !navigator.mediaDevices?.getUserMedia) return;
+    if (typeof bridge?.requestChatAudioPermission === 'function') {
+      const permission = await bridge.requestChatAudioPermission();
+      if (permission?.granted !== true) throw new Error('请在系统设置中允许 Open Yachiyo 使用麦克风');
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true
+    } });
+    const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
+    const context = new AudioContextImpl();
+    const source = context.createMediaStreamSource(stream);
+    const processor = context.createScriptProcessor(4096, 1, 1);
+    const mute = context.createGain(); mute.gain.value = 0;
+    const chunks = [];
+    processor.onaudioprocess = (event) => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    source.connect(processor); processor.connect(mute); mute.connect(context.destination);
+    voiceCapture = { stream, context, source, processor, mute, chunks, sampleRate: context.sampleRate, startedAt: performance.now() };
+    setMicState('recording');
+  }
+
+  async function stopVoiceCapture() {
+    const capture = voiceCapture;
+    if (!capture) return;
+    voiceCapture = null;
+    capture.processor.disconnect(); capture.source.disconnect(); capture.mute.disconnect();
+    capture.stream.getTracks().forEach((track) => track.stop());
+    await capture.context.close();
+    if (performance.now() - capture.startedAt < 280 || capture.chunks.length === 0) {
+      setMicState('idle', '录音太短，请重试');
+      return;
+    }
+    const wav = encodePcmWav(capture.chunks, capture.sampleRate);
+    setMicState('sending', '正在发送语音');
+    bridge?.sendChatAudioInput?.({
+      audio_base64: bytesToBase64(wav), format: 'wav', sample_rate: 16000,
+      model_ref: state.selectedModelRef || undefined
+    });
+  }
+
   bridge?.onChatStateSync?.((payload) => {
     applyChatState(payload).catch(err => {
       console.error('Error applying chat state:', err);
@@ -1088,6 +1177,15 @@
   });
 
   chatSendElement?.addEventListener('click', submitInput);
+  chatMicElement?.addEventListener('click', () => {
+    if (voiceCapture) void stopVoiceCapture();
+    else void startVoiceCapture().catch((error) => setMicState('idle', `录音失败：${error?.message || error}`));
+  });
+  bridge?.onChatAudioStateSync?.((payload) => {
+    if (payload?.state === 'sending') setMicState('sending', '正在发送语音');
+    else if (payload?.state === 'error') setMicState('idle', `语音失败：${payload.error || '未知错误'}`);
+    else setMicState('idle');
+  });
   chatImagePickElement?.addEventListener('click', () => {
     if (!state.inputEnabled) {
       return;

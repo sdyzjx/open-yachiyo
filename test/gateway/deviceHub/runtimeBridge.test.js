@@ -19,6 +19,18 @@ test('Runtime bridge maps chat, aggregates tools and prevents publication loops'
   bus.publish('runtime.event', envelope); bus.publish('runtime.event', envelope);
   await a.next((m) => m.topic === 'chat.delta'); await a.sync();
   assert.equal(a.inbox.some((m) => m.topic === 'chat.delta'), false);
+  bus.publish('runtime.event', {
+    session_id: 'device-phone', trace_id: 'ui-trace', seq: 2, event: 'ui.chat.post',
+    payload: { message_id: 'msg-1', text: 'explicit reply', format: 'markdown', bubble: true }
+  });
+  assert.equal((await a.next((m) => m.topic === 'ui.chat.post')).data.text, 'explicit reply');
+  bus.publish('runtime.event', {
+    session_id: 'device-phone', trace_id: 'hidden', seq: 3, event: 'llm.stream.delta',
+    payload: { delta: 'internal only', ui_hidden: true }
+  });
+  bus.publish('runtime.final', { session_id: 'device-phone', trace_id: 'hidden', output: 'internal only', ui_hidden: true });
+  await a.sync();
+  assert.equal(a.inbox.some((m) => m.topic === 'chat.delta' || m.topic === 'chat.final'), false);
   let count = 0; bus.subscribe('plugin.demo.tick', (data) => { count++; assert.equal(data.__from_device, 'phone'); });
   a.send('pub', { value: 1 }, { topic: 'plugin.demo.tick' }); await a.sync();
   assert.equal(count, 1);

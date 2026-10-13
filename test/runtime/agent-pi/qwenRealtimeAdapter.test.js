@@ -122,3 +122,52 @@ test('TC-PI-039 realtime provider emits standard Pi text/tool events and keeps a
   assert.equal(events.at(-1).message.usage.totalTokens, 7);
   assert.deepEqual(audio.map((event) => event.topic), ['voice.stream.start', 'voice.stream.chunk', 'voice.stream.end']);
 });
+
+test('TC-PI-045 ui.chat.post continuation closes silently with text-only modality', async () => {
+  class FakeWs extends EventEmitter {
+    constructor() { super(); this.sent = []; this.readyState = 1; FakeWs.instance = this; }
+    send(raw) { this.sent.push(JSON.parse(raw)); }
+    close() {}
+  }
+  const { ai } = await loadPi();
+  const connectionPool = new Map();
+  const model = {
+    id: 'qwen3.8-omni-flash-realtime', name: 'Realtime', provider: 'qwen', api: QWEN_REALTIME_API,
+    input: ['text'], reasoning: false, contextWindow: 65536, maxTokens: 8192, cost: usage.cost
+  };
+  const descriptor = {
+    ...model, ref: 'qwen/realtime', base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    api_key: 'secret', headers: {}, realtime_output: 'native', realtime_voice: 'yachiyo'
+  };
+  const firstMessages = [
+    { role: 'system', content: 'Use explicit chat', toolsAdded: [{ name: 'ui__chat__post', description: 'post', parameters: { type: 'object' } }] },
+    { role: 'user', content: '只发文字' }
+  ];
+  const first = createQwenRealtimeStream({ ai, descriptor, model, context: { messages: firstMessages },
+    options: { sessionId: 'device-phone' }, WebSocketImpl: FakeWs, connectionPool });
+  const drainFirst = (async () => { for await (const event of first) void event; })();
+  const ws = FakeWs.instance;
+  ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  ws.emit('message', JSON.stringify({
+    type: 'response.function_call_arguments.done', call_id: 'ui-call', name: 'ui__chat__post',
+    arguments: '{"text":"只显示这段"}'
+  }));
+  ws.emit('message', JSON.stringify({ type: 'response.done' }));
+  await drainFirst;
+
+  const continuationMessages = [
+    ...firstMessages,
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'ui-call', name: 'ui__chat__post', arguments: { text: '只显示这段' } }] },
+    { role: 'toolResult', toolCallId: 'ui-call', toolName: 'ui__chat__post', content: [{ type: 'text', text: 'delivered' }] }
+  ];
+  const second = createQwenRealtimeStream({ ai, descriptor, model, context: { messages: continuationMessages },
+    options: { sessionId: 'device-phone' }, WebSocketImpl: FakeWs, connectionPool });
+  const drainSecond = (async () => { for await (const event of second) void event; })();
+  await new Promise((resolve) => setImmediate(resolve));
+  const responseCreates = ws.sent.filter((event) => event.type === 'response.create');
+  assert.deepEqual(responseCreates.at(-1).response.modalities, ['text']);
+  ws.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '内部收口' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done' }));
+  await drainSecond;
+});

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const WebSocket = require('ws');
 
 const QWEN_REALTIME_API = 'qwen-realtime';
+const UI_CHAT_TOOL = /^ui(?:__|\.)chat(?:__|\.)post$/;
 
 function realtimeUrl(descriptor) {
   let base;
@@ -197,6 +198,10 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
       if (missing.length) throw new Error(`Realtime tool continuation is missing results for: ${missing.join(', ')}`);
       prepared = {
         instructions: '', tools: [], audioMarkers: [],
+        uiDeliveryCompleted: results.some((message) => {
+          const name = String(message.toolName || continuation.pendingCallNames?.[message.toolCallId] || '');
+          return UI_CHAT_TOOL.test(name);
+        }),
         events: results.map((message) => ({
           type: 'conversation.item.create',
           item: { type: 'function_call_output', call_id: message.toolCallId, output: textOf(message.content) }
@@ -223,7 +228,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     prepared.tools = prepared.tools.filter((tool) => !/^voice(?:__|\.)tts_aliyun_vc$/.test(tool.function.name));
     prepared.instructions = [
       prepared.instructions,
-      'This realtime response already has Yachiyo native audio. Never call a TTS tool; use the native audio channel for spoken output.'
+      'Never call a TTS tool; use the Qwen native audio channel when speech is appropriate. Prefer ui.chat.post for intentional text-only delivery; otherwise the final transcript is the visible chat fallback.'
     ].filter(Boolean).join('\n\n');
   }
   const requestId = `qwen-rt-${randomUUID()}`;
@@ -298,9 +303,12 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
 
   const abort = () => fail(options.signal?.reason || new Error('Realtime request aborted'));
   options.signal?.addEventListener('abort', abort, { once: true });
+  const responseModalities = () => descriptor.realtime_output === 'native' && !prepared.uiDeliveryCompleted
+    ? ['text', 'audio']
+    : ['text'];
   const sendResponseCreate = () => ws.send(JSON.stringify({
     type: 'response.create',
-    response: { modalities: descriptor.realtime_output === 'native' ? ['text', 'audio'] : ['text'] }
+    response: { modalities: responseModalities() }
   }));
   handleMessage = (raw) => {
     if (terminal) return;
@@ -388,6 +396,9 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
           ws,
           nextMessageIndex: (context.messages || []).length + 1,
           pendingCallIds: partial.content.filter((item) => item.type === 'toolCall').map((item) => item.id),
+          pendingCallNames: Object.fromEntries(partial.content
+            .filter((item) => item.type === 'toolCall')
+            .map((item) => [item.id, item.name])),
           cleanup: null,
           timer: null
         };

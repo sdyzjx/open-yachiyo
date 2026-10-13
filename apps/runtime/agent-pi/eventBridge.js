@@ -6,7 +6,7 @@ function contentText(content) {
 
 class EventBridge {
   constructor({ bus, sessionId, onEvent, streaming = true, resolveToolName = (name) => name,
-    requestedModelRef = null, resolvedModelRef = null }) {
+    requestedModelRef = null, resolvedModelRef = null, uiHidden = false }) {
     this.bus = bus;
     this.sessionId = sessionId;
     this.traceId = randomUUID();
@@ -21,6 +21,8 @@ class EventBridge {
     this.resolveToolName = resolveToolName;
     this.requestedModelRef = requestedModelRef;
     this.resolvedModelRef = resolvedModelRef;
+    this.uiHidden = uiHidden;
+    this.uiDelivered = false;
     this.metrics = { run_started_ms: Date.now(), first_token_ms: null, first_tool_stable_ms: null,
       first_tool_result_ms: null, final_ms: null, out_of_order_events: 0, tool_dedup_hit: 0, tool_parse_error: 0 };
   }
@@ -38,6 +40,7 @@ class EventBridge {
   }
 
   emit(event, payload = {}) {
+    if (event === 'ui.chat.post') this.uiDelivered = true;
     const envelope = { trace_id: this.traceId, session_id: this.sessionId, task_id: null, step_index: this.step,
       seq: ++this.seq, event, source: 'runtime', latency_budget_ms: 1200, payload };
     this.events.push(envelope);
@@ -55,8 +58,8 @@ class EventBridge {
         this.hasOutput = true;
         this.mark('first_token_ms');
         if (this.streaming) {
-          this.emit('llm.stream.delta', { delta: update.delta });
-          this.bus?.publish('message.delta', { session_id: this.sessionId, trace_id: this.traceId, step_index: this.step, delta: update.delta });
+          this.emit('llm.stream.delta', { delta: update.delta, ui_hidden: this.uiHidden });
+          if (!this.uiHidden) this.bus?.publish('message.delta', { session_id: this.sessionId, trace_id: this.traceId, step_index: this.step, delta: update.delta });
         }
       } else if (update.type === 'toolcall_end') {
         this.mark('first_tool_stable_ms');
@@ -96,10 +99,12 @@ class EventBridge {
 
   finish(output, state = 'DONE') {
     this.mark('final_ms');
-    const result = { output, state, traceId: this.traceId, metrics: { ...this.metrics,
+    const finalHidden = this.uiHidden && this.uiDelivered;
+    const result = { output, state, traceId: this.traceId, uiHidden: finalHidden, metrics: { ...this.metrics,
       requested_model_ref: this.requestedModelRef, resolved_model_ref: this.resolvedModelRef } };
-    this.emit('done', { output, state, metrics: result.metrics });
-    this.bus?.publish('runtime.final', { session_id: this.sessionId, trace_id: this.traceId, output, state, metrics: result.metrics });
+    this.emit('done', { output, state, metrics: result.metrics, ui_hidden: finalHidden, ui_delivered: this.uiDelivered });
+    this.bus?.publish('runtime.final', { session_id: this.sessionId, trace_id: this.traceId, output, state, metrics: result.metrics,
+      ui_hidden: finalHidden, ui_delivered: this.uiDelivered });
     return result;
   }
 }

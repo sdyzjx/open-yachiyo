@@ -66,6 +66,9 @@
       #chat-composer-input-row { display: flex; align-items: center; gap: var(--y-sp-2); }
       #chat-input { flex: 1; min-width: 0; min-height: 42px; max-height: 142px; resize: none; overflow-y: hidden; line-height: 21px; }
       #chat-image-pick { width: 40px; flex: none; padding: 0; font-size: var(--y-fs-l); }
+      #chat-mic { width: 40px; flex: none; padding: 0; font-size: var(--y-fs-m); }
+      #chat-mic.recording { border-color: rgba(255,112,137,.75); background: rgba(190,54,83,.34); color: #fff; box-shadow: 0 0 0 3px rgba(255,92,125,.13); }
+      #chat-mic.sending { opacity: .7; cursor: wait; }
       #chat-send { min-width: 58px; flex: none; }
       #chat-send:disabled { border-color: var(--y-line-strong); background: var(--y-surface-hover); color: var(--y-ink-dim); box-shadow: none; opacity: .78; }
       #chat-image-input { display: none; }
@@ -126,7 +129,7 @@
       <section id="chat-panel-messages" class="y-scroll" aria-live="polite"></section>
       <footer id="chat-panel-composer">
         <div id="chat-upload-preview" class="y-scroll"></div>
-        <div id="chat-composer-input-row"><button id="chat-image-pick" class="y-btn" type="button" title="添加图片" aria-label="添加图片">＋</button><textarea id="chat-input" class="y-input" maxlength="4000" rows="1" placeholder="对八千代说点什么…"></textarea><button id="chat-send" class="y-btn y-btn--primary" type="button">发送</button></div>
+        <div id="chat-composer-input-row"><button id="chat-image-pick" class="y-btn" type="button" title="添加图片" aria-label="添加图片">＋</button><button id="chat-mic" class="y-btn" type="button" title="开始录音" aria-label="开始录音">🎙</button><textarea id="chat-input" class="y-input" maxlength="4000" rows="1" placeholder="对八千代说点什么…"></textarea><button id="chat-send" class="y-btn y-btn--primary" type="button">发送</button></div>
         <input id="chat-image-input" type="file" accept="image/*" multiple />
       </footer>
     </main>

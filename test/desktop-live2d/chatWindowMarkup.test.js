@@ -76,3 +76,19 @@ test('TC-DSK-027 desktop main process limits session controls to chat window IPC
   assert.match(suite, /throw new Error\('unsupported session control action'\)/);
   assert.match(preload, /sessionControlRequest\(payload = \{\}\)/);
 });
+
+test('TC-DSK-028 desktop chat records PCM WAV and sends it with the selected model', () => {
+  const suite = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/desktopSuite.js'), 'utf8');
+  const preload = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/preload.js'), 'utf8');
+  assert.match(html, /id="chat-mic"/);
+  assert.match(html, /#chat-mic\.recording/);
+  assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(script, /requestChatAudioPermission/);
+  assert.match(script, /encodePcmWav\(capture\.chunks, capture\.sampleRate\)/);
+  assert.match(script, /sendChatAudioInput/);
+  assert.match(script, /model_ref: state\.selectedModelRef/);
+  assert.match(preload, /chatAudioSubmit/);
+  assert.match(preload, /chatAudioPermissionRequest/);
+  assert.match(suite, /inputAudio: \{ audio_ref: file, format: 'wav'/);
+  assert.match(suite, /DESKTOP_VOICE_INPUT_MAX_BYTES/);
+});

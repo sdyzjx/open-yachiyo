@@ -71,3 +71,22 @@ test('TC-PI-028 forced voice mode requires TTS before every other action', async
   assert.match(systemPrompt, /TTS tool call MUST be the first assistant action/i);
   assert.match(systemPrompt, /before any Live2D, search, capture, or other tool call/i);
 });
+
+test('TC-PI-045 Realtime native speech and explicit chat delivery stay independent', async () => {
+  const { systemPrompt } = await buildPrompt({
+    sessionId: 'native-delivery',
+    input: '给我一个建议',
+    runtimeContext: {
+      permission_level: 'high',
+      voice_auto_reply_enabled: true,
+      voice_auto_reply_mode: 'policy',
+      native_voice_available: true,
+      explicit_ui_delivery: true,
+      input_type: 'text'
+    }
+  });
+  assert.match(systemPrompt, /Prefer ui\.chat\.post whenever.*user-visible text/i);
+  assert.match(systemPrompt, /normal assistant response is spoken/i);
+  assert.match(systemPrompt, /text-only reply, call ui\.chat\.post/i);
+  assert.match(systemPrompt, /Never call voice\.tts_aliyun_vc/i);
+});

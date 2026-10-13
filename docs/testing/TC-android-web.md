@@ -497,3 +497,23 @@
 | 步骤 | 确认手机显示「电脑离线」；启动桌面 Electron；接收 `sys.device.online`；点击「叫回电脑」 |
 | 期望结果 | 手机无需重连即显示「电脑在线」，按钮立即启用；重复上线不产生重复设备；离线后按钮重新禁用；点击后完成手机到桌面的迁移 |
 | 自动化 | `test/android-web/transferControl.test.js`（device presence events immediately refresh desktop availability）+ manual-device |
+
+## TC-AWB-049 独立消息框事件显示
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + integration |
+| 前置条件 | Pi 会话可调用 `ui.chat.post` |
+| 步骤 | 模型发布显式消息；另一次不调用消息工具而只返回 final |
+| 期望结果 | `ui.chat.post` 作为完整回答显示一次；内部工具确认不重复显示；未调用消息工具的 final 仍由兼容 `chat.final` 显示一次 |
+| 自动化 | `test/android-web/uiChatDelivery.test.js`, `test/gateway/deviceHub/runtimeBridge.test.js` |
+
+## TC-AWB-050 完整消息气泡有界自动收起
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 回答只收到 `ui.chat.post` 或 `chat.final`，没有先收到流式 delta |
+| 步骤 | 显示一条足够长的完整回答并等待 24 s + 420 ms 淡出动画 |
+| 期望结果 | 气泡最迟 24 s 开始淡出并移除；它是最后一条消息时画布同步隐藏 |
+| 自动化 | `test/android-web/chatPanel.test.js`（TC-AWB-050 a direct final-only message always fades within 24 seconds）+ manual-device |

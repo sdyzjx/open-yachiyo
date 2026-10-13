@@ -4004,7 +4004,19 @@
       } else if (method === 'server_event_forward') {
         const { name, data } = params || {};
         console.log('[Renderer] Received RPC invoke:', name);
-        if (name === 'voice.playback.electron' && avatarTransfer?.isHost) {
+        if (name === 'ui.chat.post') {
+          const text = String(data?.text || '').trim();
+          if (!text) throw createRpcError(-32602, 'ui.chat.post requires non-empty text');
+          if (data?.bubble !== false) {
+            if (!runtimeUiConfig?.chat?.bubble?.mirrorToPanel) {
+              appendChatMessage({ role: 'assistant', text, timestamp: Date.now(), requestId: data?.message_id }, 'assistant');
+            }
+            showBubble({ text, role: 'assistant', requestId: data?.message_id });
+          } else {
+            appendChatMessage({ role: 'assistant', text, timestamp: Date.now(), requestId: data?.message_id }, 'assistant');
+          }
+          result = { ok: true, handled: true, name };
+        } else if (name === 'voice.playback.electron' && avatarTransfer?.isHost) {
           const audioUrl = normalizeLegacyVoiceAudioUrl(data?.audio_ref || data?.audioRef || '');
           if (!audioUrl) {
             throw createRpcError(-32602, 'voice.playback.electron requires audio_ref');

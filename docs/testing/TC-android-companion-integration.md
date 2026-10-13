@@ -10,7 +10,7 @@
 
 | ID | 标题 | 类型 | 前置条件 | 步骤 | 期望结果 | 自动化 |
 |---|---|---|---|---|---|---|
-| TC-COMP-001 | 手机聊天经 pi 调用插件并回复 | e2e | 隔离 HOME；本地 SSE 模型；真实网关和 WebSocket 假手机 | 配对，注册 expose_as_tool 插件方法，移交 host，发布 chat.input；模型选择插件工具；手机响应 RPC | 工具参数和结果完整；模型线上工具名合法；delta/final 各投递一次；pi 会话持久化 | `test/integration/companion.e2e.test.js` / TC-COMP-001 paired phone chat executes a pi plugin tool and receives each delta once |
+| TC-COMP-001 | 手机聊天经 pi 调用插件并回复 | e2e | 隔离 HOME；本地 SSE 模型；真实网关和 WebSocket 假手机 | 配对，注册 expose_as_tool 插件方法，移交 host，发布 chat.input；模型选择插件工具；手机响应 RPC | 工具参数和结果完整；模型线上工具名合法；未调用消息框工具时抑制内部 delta，并由 final 回退恰好投递一次；pi 会话持久化 | `test/integration/companion.e2e.test.js` / TC-COMP-001 paired phone chat executes a pi plugin tool and receives one final fallback |
 | TC-COMP-002 | 集成 APK 显示与横屏布局 | manual-device | 已同步 generated 资源；小米 6；Wi-Fi ADB 设备锁 | 安装 APK，真实网关配对并移交到手机；切换横屏；左右滑动；恢复系统旋转 | 竖屏全身；横屏上半身；左滑右侧插件，右滑左侧组件；RPC state.get 返回正确 host、可见性和布局 | manual；2026-10-12 已通过功能检查，性能另见 TC-COMP-005 |
 | TC-COMP-003 | 电脑推送示例包和实际插件 RPC | manual-device | 手机已连接且解锁；真实网关 | 用 plugin-push 推送 pomodoro/clock-widget；打开番茄钟；通过另一个已配对客户端调用 plugin.com.yachiyo.pomodoro.start_timer | 两包安装成功；组件显示；start_timer 返回 `{ok:true,minutes:1}` | manual；2026-10-12 已通过（调用者为配对测试客户端，pi 调用见 TC-COMP-001） |
 | TC-COMP-004 | 局域网自动发现完整链路 | manual-device | 网关发布 C7 服务；手机同一 Wi-Fi | 配置页扫描；选中真实网关；停止/重试；切换到其他服务端 | 发现真实名称、IP、实际端口；更换端点清除旧令牌；手动配置仍可用；退出停止扫描 | manual；2026-10-13 真机发现 `Yachiyo Acceptance Mac`（192.168.20.212:3002）并选择成功，endpoint 变化清空 token 且提示重新配对；服务丢失移除和 multicast lock 释放未直接测量 |

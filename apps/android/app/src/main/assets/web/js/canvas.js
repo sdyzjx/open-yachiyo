@@ -12,6 +12,7 @@
   const STATUS_ICON = { running: '◔', done: '✓', failed: '✕', pending: '○' };
   const MAX_BUBBLES = 8;
   const STALE_STREAM_MS = 30000;
+  const COMPLETED_BUBBLE_MAX_MS = 24000;
 
   function compactTaskSteps(steps) {
     const compact = [];
@@ -179,7 +180,7 @@
       pin(mergedView);
       if (group) {
         const length = group.nodes[0].node.textContent.length;
-        scheduleFade(group, Math.min(60000, 16000 + length * 90));
+        scheduleFade(group, Math.min(COMPLETED_BUBBLE_MAX_MS, 16000 + length * 90));
       }
     }
 

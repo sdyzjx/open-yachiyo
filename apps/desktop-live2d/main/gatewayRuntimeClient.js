@@ -238,11 +238,19 @@ class GatewayRuntimeClient {
     });
   }
 
-  async runInput({ input, permissionLevel, inputImages, modelRef } = {}) {
+  async runInput({ input, permissionLevel, inputImages, inputAudio, modelRef } = {}) {
     const content = String(input || '').trim();
     const normalizedInputImages = normalizeInputImages(inputImages);
-    if (!content && normalizedInputImages.length === 0) {
-      throw new Error('gateway runtime input or inputImages must be non-empty');
+    const normalizedInputAudio = inputAudio && typeof inputAudio === 'object'
+      ? {
+        audio_ref: String(inputAudio.audio_ref || '').trim(),
+        format: String(inputAudio.format || '').trim().toLowerCase(),
+        lang: String(inputAudio.lang || 'auto').trim().toLowerCase(),
+        ...(String(inputAudio.stream_id || '').trim() ? { stream_id: String(inputAudio.stream_id).trim() } : {})
+      }
+      : null;
+    if (!content && normalizedInputImages.length === 0 && !normalizedInputAudio?.audio_ref) {
+      throw new Error('gateway runtime input, inputImages, or inputAudio must be non-empty');
     }
 
     const requestId = `desktop-${randomUUID()}`;
@@ -260,6 +268,7 @@ class GatewayRuntimeClient {
     if (normalizedInputImages.length > 0) {
       payload.params.input_images = normalizedInputImages;
     }
+    if (normalizedInputAudio?.audio_ref) payload.params.input_audio = normalizedInputAudio;
     if (permissionLevel) {
       payload.params.permission_level = permissionLevel;
     }
@@ -271,6 +280,7 @@ class GatewayRuntimeClient {
       request_id: requestId,
       input_chars: content.length,
       input_images: normalizedInputImages.length,
+      has_input_audio: Boolean(normalizedInputAudio?.audio_ref),
       permission_level: permissionLevel || null
     });
 

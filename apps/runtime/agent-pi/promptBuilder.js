@@ -11,6 +11,20 @@ function shouldHintPersonaTool(input) {
 
 function buildVoiceAutoReplyPrompt(runtimeContext = {}) {
   if (runtimeContext?.voice_auto_reply_enabled !== true) return null;
+  if (runtimeContext?.native_voice_available === true) {
+    return [
+      'Qwen Realtime native audio is available as an independent output channel for this turn.',
+      'Decide whether speaking improves the reply. A normal assistant response is spoken with the configured Yachiyo native voice.',
+      'To deliberately deliver visible text before the turn ends, call ui.chat.post with the complete message. Calling ui.chat.post does not itself request speech.',
+      'For a text-only reply, call ui.chat.post and do not produce conversational text before the tool call; the tool continuation is an internal silent acknowledgement.',
+      'For a spoken reply, answer normally without calling voice.tts_aliyun_vc. Its final transcript is posted to chat by the runtime fallback.',
+      'If both channels materially help, you may produce native speech and call ui.chat.post in the same response; the internal final acknowledgement is then hidden.',
+      'Never call voice.tts_aliyun_vc while native Realtime audio is available.',
+      runtimeContext?.voice_auto_reply_mode === 'force_on'
+        ? 'This session requires a native spoken reply for every non-empty user-facing response.'
+        : 'Prefer speech for audio input, short conversational answers, greetings, confirmations, and emotional responses; prefer text-only chat for code, tables, link-heavy content, long articles, or detailed troubleshooting.'
+    ].join(' ');
+  }
   if (runtimeContext?.voice_auto_reply_mode === 'force_on') {
     return [
       'Voice auto-reply force mode is enabled for this session.',
@@ -91,6 +105,9 @@ async function buildPrompt({ personaContextBuilder, resolvePersonaContext, resol
     .filter((message) => allowMemory || !/Long-term memory SOP|Bootstrap long-term memory/i.test(message.content));
   const sections = [
     basePrompt(toolErrorMaxRetries), persona?.prompt, skills?.prompt,
+    runtimeContext.explicit_ui_delivery === true
+      ? 'Yachiyo UI delivery is explicit. Prefer ui.chat.post whenever you intentionally send a user-visible text message; it is independent from audio and other tools. If you return a final result without calling ui.chat.post, the runtime posts that final result to the chat exactly once as a fallback. After ui.chat.post succeeds, any short internal acknowledgement is not rendered. Tool progress is displayed separately.'
+      : null,
     shouldHintPersonaTool(input) ? 'User intent likely about persona/addressing. Prefer persona.update_profile tool call with {custom_name}.' : null,
     buildVoiceAutoReplyPrompt(runtimeContext), buildDesktopCapturePrompt(tools),
     ...seeds.map((message) => message.content),

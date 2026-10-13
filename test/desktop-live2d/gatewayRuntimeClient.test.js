@@ -162,6 +162,33 @@ test('GatewayRuntimeClient runInput supports image-only runtime requests', async
   }
 });
 
+test('TC-DSK-028 GatewayRuntimeClient sends desktop microphone WAV as input_audio', async () => {
+  const port = await getFreePort();
+  const wss = new WebSocketServer({ host: '127.0.0.1', port, path: '/ws' });
+  let capturedRequest = null;
+  wss.on('connection', (socket) => socket.on('message', (raw) => {
+    capturedRequest = JSON.parse(String(raw));
+    socket.send(JSON.stringify({ jsonrpc: '2.0', id: capturedRequest.id, result: { ok: true } }));
+  }));
+  try {
+    const client = new GatewayRuntimeClient({
+      gatewayUrl: `http://127.0.0.1:${port}`,
+      sessionId: 'desktop-voice'
+    });
+    await client.runInput({
+      input: '', modelRef: 'qwen/realtime',
+      inputAudio: { audio_ref: '/tmp/desktop.wav', format: 'wav', lang: 'auto', stream_id: 'desktop-1' }
+    });
+    assert.deepEqual(capturedRequest.params.input_audio, {
+      audio_ref: '/tmp/desktop.wav', format: 'wav', lang: 'auto', stream_id: 'desktop-1'
+    });
+    assert.equal(capturedRequest.params.model_ref, 'qwen/realtime');
+    assert.equal(capturedRequest.params.input, undefined);
+  } finally {
+    await new Promise((resolve, reject) => wss.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
 test('GatewayRuntimeClient rejects when gateway returns rpc error', async () => {
   const port = await getFreePort();
   const wss = new WebSocketServer({ host: '127.0.0.1', port, path: '/ws' });

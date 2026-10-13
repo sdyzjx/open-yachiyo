@@ -84,8 +84,9 @@ ws://<gateway-host>:<port>/ws/device?token=<pairing_token>
 |---|---|---|
 | `ui.live2d.action` | runtime | 与桌面一致，payload 为 `apps/desktop-live2d/shared/live2dActionMessage.js` 规范化消息；**只投递给当前 avatar host** |
 | `ui.*` / `client.*` | runtime | 原 `/ws` 转发的事件，原样转发给订阅者 |
+| `ui.chat.post` | runtime | `{ message_id, session_id, trace_id, role:"assistant", text, format:"plain"\|"markdown", bubble }`；完整可见消息，与音频和工具事件独立 |
 | `chat.delta` | gateway | `{ session_id, trace_id, delta }`（映射自 `message.delta`） |
-| `chat.final` | gateway | `{ session_id, trace_id, output }`（映射自 `runtime.final`） |
+| `chat.final` | gateway | `{ session_id, trace_id, output }`（映射自未被 `ui.chat.post` 覆盖的 `runtime.final`，作为兼容回退） |
 | `chat.input` | device | `{ text, session_id? }` → 网关以设备会话执行 `runtime.run` |
 | `task.update` | gateway | 任务画布：`{ task_id, title, status: running\|done\|failed, steps: [{name, status}], updated_at }`，由 tool_call 事件聚合 |
 | `avatar.*` | gateway / device | 设备间移交，见 C1.5 |

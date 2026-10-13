@@ -41,6 +41,9 @@ const CHANNELS = Object.freeze({
   avatarTransferRequest: 'live2d:avatar-transfer:request',
   avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
+  chatAudioSubmit: 'live2d:chat:audio:submit',
+  chatAudioStateSync: 'live2d:chat:audio-state-sync',
+  chatAudioPermissionRequest: 'live2d:chat:audio-permission:request',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
   chatStreamSync: 'live2d:chat:stream-sync',
@@ -78,6 +81,7 @@ const BUBBLE_PADDING_HORIZONTAL_PX = 14;
 const BUBBLE_PADDING_VERTICAL_PX = 10;
 const BUBBLE_MIN_TEXT_UNITS_PER_LINE = 12;
 const BUBBLE_UNFILLED_DRAIN_DELAY_MS = 3000;
+const DESKTOP_VOICE_INPUT_MAX_BYTES = 20 * 1024 * 1024;
 
 function normalizeLive2dPresetConfig(config = {}) {
   const safe = config && typeof config === 'object' && !Array.isArray(config) ? config : {};
@@ -3135,6 +3139,13 @@ async function startDesktopSuite({
 
         if (eventName === ACTION_EVENT_NAME) {
           // Device Hub delivers avatar actions exactly once to the current host.
+        } else if (eventName === 'ui.chat.post') {
+          const message = desktopEvent.data.data || desktopEvent.data.payload || {};
+          const text = String(message.text || '').trim();
+          if (text) {
+            appendChatMessage({ role: 'assistant', text, timestamp: Date.now(), requestId: message.message_id }, 'assistant');
+            if (message.bubble !== false) showBubble({ text, role: 'assistant', requestId: message.message_id });
+          }
         } else if (eventName === 'voice.requested') {
           if (!deviceHubClient?.isHost) return;
           const voicePayload = desktopEvent.data.data;
@@ -3171,7 +3182,7 @@ async function startDesktopSuite({
             method: 'server_event_forward',
             params: {
               name: eventName,
-              data: desktopEvent.data.data
+              data: desktopEvent.data.data || desktopEvent.data.payload
             },
             timeoutMs: config.rendererTimeoutMs
           }).catch(() => { });
@@ -3180,6 +3191,7 @@ async function startDesktopSuite({
 
       // Handle message.delta for streaming bubble output
       if (desktopEvent.type === 'message.delta') {
+        if (desktopEvent.data?.ui_hidden === true) return;
         const delta = String(desktopEvent.data?.delta || '');
         const currentSessionId = desktopEvent.data?.session_id;
         const currentTraceId = desktopEvent.data?.trace_id;
@@ -3212,6 +3224,16 @@ async function startDesktopSuite({
       }
 
       if (desktopEvent.type !== 'runtime.final') {
+        return;
+      }
+
+      if (desktopEvent.data?.ui_hidden === true) {
+        resetBubbleStreamingState({ reason: 'explicit_ui_delivery', hideBubble: true });
+        syncChatStreamToRenderer({
+          type: 'reset',
+          sessionId: desktopEvent.data?.session_id || null,
+          traceId: desktopEvent.data?.trace_id || null
+        });
         return;
       }
 
@@ -3390,6 +3412,64 @@ async function startDesktopSuite({
   });
   ipcMain.on(CHANNELS.chatInputSubmit, chatInputListener);
 
+  ipcMain.handle(CHANNELS.chatAudioPermissionRequest, async (event) => {
+    if (event?.sender !== chatWindow.webContents) throw new Error('unauthorized chat audio permission request');
+    if (process.platform !== 'darwin') return { granted: true };
+    if (typeof systemPreferences?.getMediaAccessStatus === 'function') {
+      const status = systemPreferences.getMediaAccessStatus('microphone');
+      if (status === 'granted') return { granted: true };
+      if (status === 'denied' || status === 'restricted') return { granted: false, status };
+    }
+    const granted = typeof systemPreferences?.askForMediaAccess === 'function'
+      ? await systemPreferences.askForMediaAccess('microphone')
+      : false;
+    return { granted: Boolean(granted), status: granted ? 'granted' : 'denied' };
+  });
+
+  const desktopVoiceInputDir = path.join(path.dirname(config.runtimeSummaryPath), 'voice-input');
+  fs.mkdirSync(desktopVoiceInputDir, { recursive: true });
+  let desktopVoiceInputBusy = false;
+  const sendAudioState = (payload) => {
+    if (!chatWindow.isDestroyed()) chatWindow.webContents.send(CHANNELS.chatAudioStateSync, payload);
+  };
+  const chatAudioListener = (event, payload = {}) => {
+    if (event?.sender !== chatWindow.webContents || desktopVoiceInputBusy) return;
+    let audio;
+    try {
+      const encoded = String(payload.audio_base64 || '').trim();
+      audio = Buffer.from(encoded, 'base64');
+      if (!encoded || !audio.length || audio.length > DESKTOP_VOICE_INPUT_MAX_BYTES) {
+        throw new Error('录音为空或超过 20 MiB');
+      }
+      if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
+        throw new Error('录音必须是 PCM WAV');
+      }
+    } catch (error) {
+      sendAudioState({ state: 'error', error: error.message });
+      return;
+    }
+    const modelRef = String(payload.model_ref || '').trim();
+    const streamId = `desktop-voice-${randomUUID()}`;
+    const file = path.join(desktopVoiceInputDir, `${streamId}.wav`);
+    fs.writeFileSync(file, audio, { mode: 0o600 });
+    desktopVoiceInputBusy = true;
+    sendAudioState({ state: 'sending', stream_id: streamId });
+    appendChatMessage({ role: 'user', text: '🎙 语音消息', timestamp: Date.now() }, 'user');
+    void gatewayRuntimeClient.runInput({
+      input: '', modelRef,
+      inputAudio: { audio_ref: file, format: 'wav', lang: 'auto', stream_id: streamId }
+    }).then(() => sendAudioState({ state: 'idle', stream_id: streamId }))
+      .catch((error) => {
+        logger.error?.('[desktop-live2d] gateway runtime audio input failed', error);
+        appendChatMessage({ role: 'system', text: `[voice error] ${error?.message || error}`, timestamp: Date.now() }, 'system');
+        sendAudioState({ state: 'error', stream_id: streamId, error: error?.message || String(error) });
+      }).finally(() => {
+        desktopVoiceInputBusy = false;
+        try { fs.rmSync(file, { force: true }); } catch { /* best effort */ }
+      });
+  };
+  ipcMain.on(CHANNELS.chatAudioSubmit, chatAudioListener);
+
   const rendererReadyPromise = waitForRendererReady({ ipcMain, timeoutMs: 15000 });
 
   await avatarWindow.loadFile(path.join(config.assetRoot, 'apps', 'desktop-live2d', 'renderer', 'index.html'));
@@ -3498,6 +3578,8 @@ async function startDesktopSuite({
     ipcMain.off(CHANNELS.windowResizeRequest, windowResizeListener);
     ipcMain.off(CHANNELS.windowInteractivity, avatarWindowInteractivityListener);
     ipcMain.off(CHANNELS.chatInputSubmit, chatInputListener);
+    ipcMain.off(CHANNELS.chatAudioSubmit, chatAudioListener);
+    ipcMain.removeHandler(CHANNELS.chatAudioPermissionRequest);
     avatarWindow.webContents.off('console-message', rendererConsoleListener);
     mouthWaveformRecorder.dispose();
     captureCleanupController.stop();

@@ -1015,6 +1015,10 @@
 
     B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta, d));
     B.subscribe('chat.final', (d) => taskCanvasApi.final(d && d.output, d));
+    B.subscribe('ui.chat.post', (d) => {
+      const text = String(d && d.text || '').trim();
+      if (text) taskCanvasApi.final(text, { trace_id: d.trace_id || d.message_id });
+    });
     B.subscribe('task.update', (d) => taskCanvasApi.updateTask(d));
     B.subscribe('audio.input.transcript', (d) => {
       if (d && d.final && d.text) taskCanvasApi.showUser(d.text);

@@ -10,7 +10,7 @@ const WebSocket = require('ws');
 const { getFreePort } = require('../helpers/net');
 const { waitFor } = require('../helpers/wait');
 
-test('TC-COMP-001 paired phone chat executes a pi plugin tool and receives each delta once', { timeout: 45000 }, async (t) => {
+test('TC-COMP-001 paired phone chat executes a pi plugin tool and receives one final fallback', { timeout: 45000 }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'companion-e2e-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.mkdirSync(path.join(home, 'config'), { recursive: true });
@@ -119,7 +119,7 @@ test('TC-COMP-001 paired phone chat executes a pi plugin tool and receives each 
   assert.equal(final.data.output, '手机插件已完成');
   assert.deepEqual(calls.map((call) => ({ method: call.method, params: call.params })),
     [{ method: 'plugin.integration.echo', params: { text: 'hello phone' } }]);
-  assert.equal(frames.filter((m) => m.topic === 'chat.delta').map((m) => m.data.delta).join(''), '手机插件已完成');
+  assert.equal(frames.filter((m) => m.topic === 'chat.delta').length, 0);
   assert.equal(frames.filter((m) => m.topic === 'chat.final').length, 1);
   assert.equal(requests.length, 2);
   assert.ok(requests[1].messages.some((m) => m.role === 'tool' && /hello phone/.test(m.content)));

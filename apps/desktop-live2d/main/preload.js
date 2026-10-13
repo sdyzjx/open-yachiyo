@@ -13,6 +13,9 @@ const CHANNELS = {
   avatarTransferRequest: 'live2d:avatar-transfer:request',
   avatarContextMenuRequest: 'live2d:avatar-context-menu:request',
   chatInputSubmit: 'live2d:chat:input:submit',
+  chatAudioSubmit: 'live2d:chat:audio:submit',
+  chatAudioStateSync: 'live2d:chat:audio-state-sync',
+  chatAudioPermissionRequest: 'live2d:chat:audio-permission:request',
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
   chatStreamSync: 'live2d:chat:stream-sync',
@@ -47,6 +50,17 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   sendChatInput(payload = {}) {
     ipcRenderer.send(CHANNELS.chatInputSubmit, payload);
+  },
+  sendChatAudioInput(payload = {}) {
+    ipcRenderer.send(CHANNELS.chatAudioSubmit, payload);
+  },
+  requestChatAudioPermission() {
+    return ipcRenderer.invoke(CHANNELS.chatAudioPermissionRequest);
+  },
+  onChatAudioStateSync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.chatAudioStateSync, listener);
+    return () => ipcRenderer.off(CHANNELS.chatAudioStateSync, listener);
   },
   sendChatPanelToggle(payload = {}) {
     ipcRenderer.send(CHANNELS.chatPanelToggle, payload);

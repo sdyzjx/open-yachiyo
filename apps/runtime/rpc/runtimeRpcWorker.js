@@ -477,7 +477,7 @@ class RuntimeRpcWorker {
         context.sendEvent?.(toRpcEvent('runtime.event', event));
 
         const delta = extractMessageDeltaFromRuntimeEvent(event);
-        if (delta) {
+        if (delta && event?.payload?.ui_hidden !== true) {
           context.sendEvent?.(toRpcEvent('message.delta', {
             session_id: sessionId,
             trace_id: event.trace_id || null,
@@ -516,7 +516,8 @@ class RuntimeRpcWorker {
       output: result.output,
       trace_id: result.traceId,
       state: result.state,
-      metrics: result.metrics || null
+      metrics: result.metrics || null,
+      ui_hidden: result.uiHidden === true
     };
     publishChainEvent(this.bus, 'worker.runner.completed', {
       request_id: request?.id ?? null,

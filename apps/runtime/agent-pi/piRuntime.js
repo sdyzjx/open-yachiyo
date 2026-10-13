@@ -15,6 +15,7 @@ const { SessionEventSubscriptions } = require('./sessionEventSubscriptions');
 const { createBusTools } = require('./busTools');
 const { createStandardTools } = require('./standardTools');
 const { createPiPolicyExtension } = require('./piPolicyExtension');
+const { createUiChatTool, UI_CHAT_TOOL_NAME } = require('./uiChatTool');
 
 function imageParts(images) {
   return images.map((image) => {
@@ -82,7 +83,8 @@ async function createPiRuntime(deps) {
       return {
         ...(current?.runtimeContext || {}), trace_id: current?.events?.traceId || null,
         session_id: sessionId, step_index: current?.events?.step || 0,
-        reportToolError: (callId, failure) => current?.events?.toolFailures.set(callId, failure)
+        reportToolError: (callId, failure) => current?.events?.toolFailures.set(callId, failure),
+        publishRuntimeEvent: (event, payload) => current?.events?.emit(event, payload)
       };
     };
     const onlineNames = new Map();
@@ -97,6 +99,7 @@ async function createPiRuntime(deps) {
       excludeNames: ['shell.exec', 'workspace.write_file']
     });
     const standardTools = createStandardTools({ sdk, cwd, context });
+    const uiTools = [createUiChatTool({ context, onlineNames })];
     let dispatchBusSteer = () => {};
     const eventSubscriptions = new SessionEventSubscriptions({
       bus: deps.bus,
@@ -107,8 +110,8 @@ async function createPiRuntime(deps) {
       policy: deps.executor.policy, context, onlineNames });
     const devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
       bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });
-    const reservedNames = [...localTools, ...standardTools, ...busTools].map((tool) => tool.originalName || tool.name);
-    const tools = [...localTools, ...standardTools, ...busTools, ...devices.snapshot(context, reservedNames, onlineNames)];
+    const reservedNames = [...localTools, ...standardTools, ...uiTools, ...busTools].map((tool) => tool.originalName || tool.name);
+    const tools = [...localTools, ...standardTools, ...uiTools, ...busTools, ...devices.snapshot(context, reservedNames, onlineNames)];
     const toolNames = new Map();
     for (const tool of tools) {
       if (toolNames.has(tool.name)) throw new Error(`Tool name encoding collision: ${toolNames.get(tool.name)} and ${tool.originalName}`);
@@ -144,7 +147,7 @@ async function createPiRuntime(deps) {
         if (event.isError) current.failures += 1;
         else {
           const originalName = current.events.toolName(event.toolName);
-          if (originalName.startsWith('live2d.') || originalName === 'voice.tts_aliyun_vc') {
+          if (originalName.startsWith('live2d.') || originalName === 'voice.tts_aliyun_vc' || originalName === UI_CHAT_TOOL_NAME) {
             state.session.setActiveToolsByName(state.session.getActiveToolNames().filter((name) =>
               originalName.startsWith('live2d.')
                 ? !current.events.toolName(name).startsWith('live2d.')
@@ -245,6 +248,9 @@ async function createPiRuntime(deps) {
         const requestedModelRef = args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref || null;
         catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog({ modelRef: requestedModelRef }) : deps.modelCatalog;
         const chain = selectModels(catalog, requestedModelRef);
+        runtimeContext.explicit_ui_delivery = true;
+        runtimeContext.native_voice_available = Boolean(chain[0].transport === 'realtime'
+          && chain[0].realtime_output === 'native' && chain[0].output?.includes('audio'));
         const directRealtimeAudio = Boolean(inputAudio && chain[0].transport === 'realtime'
           && chain[0].input?.includes('audio'));
         if (!input.trim() && inputAudio && !directRealtimeAudio) {
@@ -257,7 +263,8 @@ async function createPiRuntime(deps) {
         const images = imageParts(args.inputImages || []);
         if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
         const resolvedModelRef = chain[0].ref;
-        events = new EventBridge({ bus: deps.bus, sessionId, onEvent, streaming, requestedModelRef, resolvedModelRef });
+        events = new EventBridge({ bus: deps.bus, sessionId, onEvent, streaming, requestedModelRef, resolvedModelRef,
+          uiHidden: runtimeContext.explicit_ui_delivery });
         const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
         entry = await registry.get(sessionId, { catalog, chain, cwd, seedMessages });
         if (!entry.models.getModel(chain[0].provider, chain[0].id)) {

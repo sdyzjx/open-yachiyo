@@ -106,9 +106,10 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
     assert.equal(event.task_id, null);
     assert.equal(event.latency_budget_ms, 1200);
   });
-  assert.deepEqual(events.find((e) => e.event === 'llm.stream.delta').payload, { delta: 'answer 42' });
+  assert.deepEqual(events.find((e) => e.event === 'llm.stream.delta').payload, { delta: 'answer 42', ui_hidden: true });
   const names = f.requests[0].tools.map((tool) => tool.function.name);
   for (const name of ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']) assert.ok(names.includes(name), name);
+  assert.ok(names.includes('ui__chat__post'));
 });
 
 test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a Pi tool continuation', async (t) => {

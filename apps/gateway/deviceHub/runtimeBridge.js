@@ -65,13 +65,14 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
   const handle = (topic, data = {}) => {
     if (!data || typeof data !== 'object' || data.__from_device) return; // Publications were already delivered by the Hub.
     if (/^(ui|client|voice|avatar|task|plugin|sys|approval)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
-    if (topic === 'message.delta') relayDelta(data);
-    if (topic === 'runtime.final' && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
+    if (topic === 'message.delta' && data.ui_hidden !== true) relayDelta(data);
+    if (topic === 'runtime.final' && data.ui_hidden !== true && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
     if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(topic)) aggregate(topic, data);
     if (topic === 'runtime.event') {
       if (data.seq != null && !mark(`${data.session_id}:${data.trace_id}:${data.seq}`)) return;
-      if (data.event === 'done') handle('runtime.final', { ...data, output: data.payload?.output || '' });
-      if (data.event === 'llm.stream.delta') relayDelta({ ...data, delta: data.payload?.delta || '' }, { expectCanonicalAlias: true });
+      if (data.event === 'ui.chat.post') handle('ui.chat.post', { ...data.payload, session_id: data.session_id, trace_id: data.trace_id });
+      if (data.event === 'done') handle('runtime.final', { ...data, output: data.payload?.output || '', ui_hidden: data.payload?.ui_hidden === true });
+      if (data.event === 'llm.stream.delta' && data.payload?.ui_hidden !== true) relayDelta({ ...data, delta: data.payload?.delta || '' }, { expectCanonicalAlias: true });
       if (data.event === 'llm.final' && !data.payload?.streamed && data.payload?.decision?.type === 'final') handle('message.delta', { ...data, delta: data.payload.decision.preview || '' });
       if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(data.event || '') || data.event === 'tool.result') aggregate(data.event, data);
     }

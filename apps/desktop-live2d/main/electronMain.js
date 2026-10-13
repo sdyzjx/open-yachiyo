@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, systemPreferences, Tray, Menu, nativeImage } = require('electron');
 
 const { startDesktopSuite } = require('./desktopSuite');
 const { createShellController } = require('./shellController');
@@ -227,6 +227,7 @@ async function bootstrap() {
       ipcMain,
       screen,
       shell,
+      systemPreferences,
       assetRoot: roots.assetRoot,
       workspaceRoot: roots.workspaceRoot,
       onShellStateChange: () => shellController?.refresh(),
