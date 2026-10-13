@@ -79,6 +79,6 @@ flowchart LR
 - [x] 2026-10-13：冻结 C5.1 架构边界和施工阶段。
 - [x] P1 长生命周期 AgentSession（registry、模型归因与持久历史已完成；steering/follow-up 与 TurnCoordinator 已启用）。
 - [ ] P2 工具与权限（副作用感知并行与 ApprovalCoordinator 已完成；标准 Skills/上下文资源与通用 shell 接入仍待完成）。
-- [ ] P3 Device Hub 与事件总线。
+- [x] P3 Device Hub 与事件总线（动态 RPC、Avatar、会话级 publish/subscribe/unsubscribe/pull/channels 与 high-priority steering 已接入）。
 - [ ] P4 Qwen Realtime Pi transport。
 - [ ] P5 双端 UI、自动化与真机验收。

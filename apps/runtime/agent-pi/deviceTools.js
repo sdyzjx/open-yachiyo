@@ -56,13 +56,6 @@ class DeviceTools {
         }
       } });
     };
-    add('bus_publish', 'Publish a plugin, avatar, ui or task event', {
-      type: 'object', properties: { topic: { type: 'string', pattern: '^(plugin|avatar|ui|task)\\..+' }, data: { type: 'object' } },
-      required: ['topic', 'data'], additionalProperties: false
-    }, { side_effect_level: 'write', requires_lock: false }, (args, ctx) => {
-      ctx.publishEvent(args.topic, args.data);
-      return JSON.stringify({ published: true, topic: args.topic });
-    });
     add('avatar_status', 'Get current avatar host and devices', EMPTY_SCHEMA,
       { side_effect_level: 'read', requires_lock: false }, async () => JSON.stringify(
       this.avatar?.status ? await this.avatar.status() : { host: this.hub?.getAvatarHost?.() || 'desktop', devices: this.hub?.listDevices?.() || [] }

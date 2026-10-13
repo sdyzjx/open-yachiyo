@@ -83,7 +83,11 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 | 新工具 | 参数 | 路由 |
 |---|---|---|
-| bus_publish | `{topic,data}` | 仅 plugin./avatar./ui./task.，经 publishEvent 附上下文 |
+| bus.publish | `{topic,data}` | 仅 plugin./avatar./ui./task.，经 publishEvent 附会话上下文 |
+| bus.subscribe | `{pattern,delivery,priority,ttl_ms,max_queue,include_self}` | 会话级订阅；默认进入 pull 队列，steer 必须显式 high priority |
+| bus.unsubscribe | `{subscription_id}` | 只删除当前 AgentSession 的订阅 |
+| bus.events.pull | `{after_cursor,limit,acknowledge}` | 拉取有界事件队列并返回单调 cursor、pending 与 dropped_events |
+| bus.channels.list | `{}` | 列出本会话订阅和观察到的安全频道，不暴露 runtime/tool 内部频道 |
 | avatar_status | `{}` | Hub.getAvatarHost/listDevices |
 | avatar_transfer | `{to}` | Hub.requestAvatarTransfer(to, {reason:'agent'}) |
 | Hub 暴露的方法 | C5 params_schema | invoke(device_id, method, params, {timeoutMs:8000}) |
@@ -114,7 +118,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | mirrorHistory | true | 直接运行可镜像 FileSessionStore；网关强制 false，保留原 hooks |
 | providers.yaml C4 字段 | Model Catalog | api、reasoning、input、headers、compat、extra_body、timeout_ms、max_retries、temperature |
 | skills.yaml | 现有规则 | workspace/global/extraDirs、entries.enabled、eligibility |
-| tools.yaml policy | 原配置 | 所有工具保留 allow/deny；非空 allowlist 需加入 bus_publish、avatar_status、avatar_transfer 及需要的设备工具名 |
+| tools.yaml policy | 原配置 | 所有工具保留 allow/deny；非空 allowlist 需加入 bus.publish/subscribe/unsubscribe/events.pull/channels.list、avatar_status、avatar_transfer 及需要的设备工具名 |
 | voice-policy.yaml auto_reply.enabled | true | 缺少配置文件时也默认启用策略模式；会话 `/voice off` 可覆盖为关闭 |
 | voice-policy.yaml limits | 0.5 秒 / 12 次每分钟 | TTS 会话冷却与全局分钟上限；内容适用性规则仍优先 |
 | tools.yaml policy.deviceHub.allow | `[]` | 动态 Hub 工具名的 `*` 通配模式；空数组表示不暴露任何动态方法 |
@@ -129,12 +133,13 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - `shell.approve` 仍保留在 legacy 回滚核心的工具注册表中；Pi 核心不会把它发给 provider。legacy 模式尚未获得本节的策略层审批语义。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
 - Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
+- EventBus 订阅最多 32 个、单订阅 TTL 最长 1 小时、会话队列最多 512 条、单事件最大 64 KiB。只接受 plugin/device/avatar/audio/voice/task/ui/client/sys 命名空间；带其他 session_id 的内部事件不会跨会话投递，设备来源事件可进入订阅。订阅随驻留 AgentSession 回收，不作为永久后台任务恢复。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
 - package-lock.json 由统筹合并时更新；更新前不要用旧锁文件执行 npm ci。会话 JSONL 包含对话和工具结果，按现有用户数据目录保护。
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…035，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行与会话审批策略。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…036，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行、会话审批策略与 EventBus 订阅。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

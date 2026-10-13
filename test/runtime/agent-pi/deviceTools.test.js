@@ -9,7 +9,7 @@ test('TC-PI-008 device tools refresh next snapshot and preserve in-flight defini
   hub.listToolMethods = () => methods;
   hub.invoke = async (...args) => args;
   const bridge = new DeviceTools({ deviceHub: hub, policy: {
-    allow: ['bus_publish', 'avatar_status', 'avatar_transfer'],
+    allow: ['avatar_status', 'avatar_transfer'],
     deny: [],
     deviceHub: { allow: ['mi6__device_*'], deny: [] }
   } });
@@ -30,10 +30,10 @@ test('TC-PI-008 dynamic Hub tools require explicit patterns and keep deny preced
     { tool_name: 'tablet__device_vibrate', device_id: 'tablet', method: 'device.vibrate' }
   ];
   const hub = { listToolMethods: () => methods, invoke: async () => 'ok' };
-  const disabled = new DeviceTools({ deviceHub: hub, policy: { allow: ['bus_publish'], deny: [] } }).snapshot({});
-  assert.deepEqual(disabled.map((tool) => tool.originalName).sort(), ['avatar_status', 'avatar_transfer', 'bus_publish']);
+  const disabled = new DeviceTools({ deviceHub: hub, policy: { allow: ['avatar_status'], deny: [] } }).snapshot({});
+  assert.deepEqual(disabled.map((tool) => tool.originalName).sort(), ['avatar_status', 'avatar_transfer']);
   const tools = new DeviceTools({ deviceHub: hub, policy: {
-    allow: ['bus_publish'], deny: ['mi6__device_secret'],
+    allow: ['avatar_status'], deny: ['mi6__device_secret'],
     deviceHub: { allow: ['mi6__device_*'], deny: ['*secret'] }
   } }).snapshot({});
   assert.ok(tools.some((tool) => tool.originalName === 'mi6__device_vibrate'));
@@ -41,25 +41,21 @@ test('TC-PI-008 dynamic Hub tools require explicit patterns and keep deny preced
   assert.ok(!tools.some((tool) => tool.originalName === 'tablet__device_vibrate'));
   await assert.rejects(
     new DeviceTools({ deviceHub: hub, policy: {
-      allow: ['bus_publish'], deny: ['mi6__device_vibrate'], deviceHub: { allow: ['mi6__device_*'] }
+      allow: ['avatar_status'], deny: ['mi6__device_vibrate'], deviceHub: { allow: ['mi6__device_*'] }
     } }).snapshot({}).find((tool) => tool.originalName === 'mi6__device_vibrate').execute('id', {}),
     /denied/
   );
 });
 
-test('TC-PI-009 bus namespace, schema, policy and avatar routing are enforced', async () => {
-  const events = [];
-  const bridge = new DeviceTools({ bus: { publish: (...args) => events.push(args) }, avatar: {
+test('TC-PI-009 avatar schema, policy and routing are enforced', async () => {
+  const bridge = new DeviceTools({ avatar: {
     transfer: async (to) => ({ host: to }), status: async () => ({ host: 'desktop' })
   } });
   const tools = Object.fromEntries(bridge.snapshot({ session_id: 's' }).map((tool) => [tool.name, tool]));
-  await tools.bus_publish.execute('id', { topic: 'plugin.example.tick', data: {} });
-  assert.equal(events.find(([topic]) => topic === 'plugin.example.tick')[1].session_id, 's');
-  await assert.rejects(tools.bus_publish.execute('id', { topic: 'sys.config.changed', data: {} }));
   assert.deepEqual(JSON.parse((await tools.avatar_transfer.execute('id', { to: 'mi6' })).content[0].text), { host: 'mi6' });
-  const denied = new DeviceTools({ policy: { deny: ['bus_publish'] } }).snapshot({})[0];
-  await assert.rejects(denied.execute('id', { topic: 'ui.test', data: {} }), /denied/);
-  assert.throws(() => bridge.snapshot({}, ['bus_publish']), /Duplicate/);
+  const denied = new DeviceTools({ policy: { deny: ['avatar_status'] } }).snapshot({})[0];
+  await assert.rejects(denied.execute('id', {}), /denied/);
+  assert.throws(() => bridge.snapshot({}, ['avatar_status']), /Duplicate/);
 });
 
 test('TC-PI-009 avatar transfer uses the coordinator-defined Hub API', async () => {

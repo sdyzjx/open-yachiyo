@@ -54,7 +54,7 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 `~/yachiyo/config/device-hub.yaml`（遵循 `YACHIYO_HOME`）：`pairing_token` 缺省生成 24 字节随机值并保存为仅用户可读文件；`heartbeat_ms` 默认 15000，最小 100。RPC 默认 8000 ms；单帧上限 1 MiB。TTS 沿用现有 qwen3_tts provider；媒体 TTL 10 分钟，单条媒体上限 20 MiB。
 
-动态设备工具必须在 `config/tools.yaml` 的 `policy.deviceHub.allow` 显式启用。默认模板允许 `*__device_*` 与 `*__plugin_*`，同时把 Hub 桥接工具 `bus_publish`、`avatar_status`、`avatar_transfer` 加入全局 allowlist。运行时先应用 `policy.deviceHub.deny`，再应用 allow；全局 deny、provider deny 与会话权限继续生效。候选方法只来自已经配对并完成 hello 的在线设备，且设备注册时必须声明 `expose_as_tool: true`；锁屏手机的插件方法暂时隐藏。
+动态设备工具必须在 `config/tools.yaml` 的 `policy.deviceHub.allow` 显式启用。默认模板允许 `*__device_*` 与 `*__plugin_*`，同时把 `bus.publish`、`bus.subscribe`、`bus.unsubscribe`、`bus.events.pull`、`bus.channels.list`、`avatar_status`、`avatar_transfer` 加入全局 allowlist。运行时先应用 `policy.deviceHub.deny`，再应用 allow；全局 deny、provider deny 与会话权限继续生效。候选方法只来自已经配对并完成 hello 的在线设备，且设备注册时必须声明 `expose_as_tool: true`；锁屏手机的插件方法暂时隐藏。
 
 ## 限制与已知问题
 

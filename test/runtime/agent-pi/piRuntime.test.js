@@ -345,3 +345,23 @@ test('TC-PI-034 native steering supersedes an unfinished tool turn before its ne
   assert.equal(second.output, 'steered answer');
   assert.equal(f.requests.length, 2);
 });
+
+test('TC-PI-036 high-priority bus events enter the resident AgentSession through steering', async (t) => {
+  const f = await fixture(t, (body) => {
+    const latest = body.messages.at(-1);
+    if (latest.role === 'tool') return { text: 'subscribed' };
+    if (String(latest.content).includes('Topic: device.phone.alert')) return { text: 'event handled' };
+    const subscribe = body.tools.find((tool) => tool.function.description.includes('Subscribe this agent session'));
+    return { tool: subscribe.function.name, args: {
+      pattern: 'device.phone.**', delivery: 'steer', priority: 'high', ttl_ms: 60000
+    } };
+  });
+  const initial = await f.runtime.run({ sessionId: 'bus-steer', input: 'watch phone alerts' });
+  assert.equal(initial.output, 'subscribed');
+  const final = f.deps.bus.waitFor('runtime.final', (payload) => payload.session_id === 'bus-steer'
+    && payload.output === 'event handled', 2000);
+  f.deps.bus.publish('device.phone.alert', { message: 'battery hot', __from_device: 'phone' });
+  assert.equal((await final).state, 'DONE');
+  assert.ok(f.requests.at(-1).messages.some((message) => message.role === 'user'
+    && String(message.content).includes('battery hot')));
+});

@@ -21,7 +21,11 @@ policy:
     - live2d.emote
     - live2d.gesture
     - live2d.react
-    - bus_publish
+    - bus.publish
+    - bus.subscribe
+    - bus.unsubscribe
+    - bus.events.pull
+    - bus.channels.list
     - avatar_status
     - avatar_transfer
     - desktop.perception.capabilities

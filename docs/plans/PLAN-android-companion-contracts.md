@@ -483,7 +483,7 @@ OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的
 - **工具注册**：
   1. `config/tools.yaml` 中的全部工具（含 live2d、voice、memory、persona、shell、fs、desktop perception）通过 `ToolExecutor` 包装为 pi 自定义工具；权限中间件、会话权限级别必须继续生效。
   2. Device Hub 中 `expose_as_tool` 的设备/插件方法：`deviceHub.listToolMethods()` → `[{ tool_name, device_id, method, description, params_schema }]`；调用：`deviceHub.invoke(device_id, method, params, { timeoutMs })` → Promise；变化通知：`deviceHub.on('tools.changed', fn)`。pi 侧在下一次请求前刷新工具集。
-  3. 事件总线工具：`bus_publish {topic, data}`（限 `plugin.` `avatar.` `ui.` `task.` 前缀）。
+  3. 事件总线工具：`bus.publish {topic, data}`（限 `plugin.` `avatar.` `ui.` `task.` 前缀）；会话订阅工具以 C5.1 为准。
   4. Avatar 工具：`avatar_transfer {to}`、`avatar_status`。
 - **提示词迁移**：Persona（`SOUL.md`/`IDENTITY.md`/`USER.md` + persona profile）、`docs/memory_sop.md`、长期记忆 bootstrap、语音自动回复上下文、会话权限说明、技能列表，全部迁入 pi 的 system prompt / context files，内容与旧核心等价（测试比对关键段落）。
 - **技能**：仓库 `skills/` 与 `~/yachiyo/skills` 作为 pi 技能目录；`config/skills.yaml` 的启用/禁用规则继续生效。

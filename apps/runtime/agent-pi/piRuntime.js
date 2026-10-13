@@ -11,6 +11,8 @@ const { AgentSessionRegistry } = require('./agentSessionRegistry');
 const { TurnCoordinator } = require('./turnCoordinator');
 const { ApprovalCoordinator } = require('../approval/approvalCoordinator');
 const { normalizeSessionApprovalMode } = require('../session/sessionPermissions');
+const { SessionEventSubscriptions } = require('./sessionEventSubscriptions');
+const { createBusTools } = require('./busTools');
 
 function imageParts(images) {
   return images.map((image) => {
@@ -46,7 +48,7 @@ async function createPiRuntime(deps) {
     const { catalog, chain, cwd, seedMessages = [], systemPrompt = '' } = initial;
     const models = await createModelRuntime(catalog);
     const opened = await sessions.open({ sessionId, cwd, seedMessages, model: chain[0] });
-    const state = { current: null, coordinator: null, systemPrompt, disposed: false };
+    const state = { current: null, coordinator: null, systemPrompt, disposed: false, lastRuntimeContext: {} };
     const context = () => {
       const current = state.current;
       return {
@@ -57,9 +59,18 @@ async function createPiRuntime(deps) {
     };
     const onlineNames = new Map();
     const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames, approvalCoordinator });
+    let dispatchBusSteer = () => {};
+    const eventSubscriptions = new SessionEventSubscriptions({
+      bus: deps.bus,
+      sessionId,
+      onSteer: (event) => dispatchBusSteer(event)
+    });
+    const busTools = createBusTools({ subscriptions: eventSubscriptions, bus: deps.bus,
+      policy: deps.executor.policy, context, onlineNames });
     const devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
       bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });
-    const tools = [...localTools, ...devices.snapshot(context, localTools.map((tool) => tool.originalName), onlineNames)];
+    const reservedNames = [...localTools, ...busTools].map((tool) => tool.originalName);
+    const tools = [...localTools, ...busTools, ...devices.snapshot(context, reservedNames, onlineNames)];
     const toolNames = new Map();
     for (const tool of tools) {
       if (toolNames.has(tool.name)) throw new Error(`Tool name encoding collision: ${toolNames.get(tool.name)} and ${tool.originalName}`);
@@ -106,6 +117,35 @@ async function createPiRuntime(deps) {
         void state.session.abort();
       }
     });
+    dispatchBusSteer = (event) => {
+      if (state.disposed) return;
+      const input = [
+        'A high-priority subscribed event arrived from the Yachiyo event bus.',
+        `Topic: ${event.topic}`,
+        `Payload: ${JSON.stringify(event.data)}`,
+        'Handle it with the same tools and policy as this session. Do not claim it was a new user message.'
+      ].join('\n');
+      const events = new EventBridge({ bus: deps.bus, sessionId, streaming });
+      events.setToolNameResolver((name) => toolNames.get(name) || name);
+      const alreadyStreaming = state.session.isStreaming;
+      const tracker = state.coordinator.register({
+        input,
+        events,
+        runtimeContext: { ...state.lastRuntimeContext, input_type: 'event' },
+        systemPrompt: state.systemPrompt,
+        startsImmediately: !alreadyStreaming
+      });
+      const prompting = state.session.prompt(input, {
+        ...(alreadyStreaming ? { streamingBehavior: 'steer' } : {}),
+        preflightResult: (disposition) => { tracker.disposition = disposition; }
+      });
+      prompting.catch((error) => state.coordinator.fail(tracker, error));
+      tracker.promise.then((turn) => {
+        events.finish(turn.output, turn.state === 'DONE' ? 'DONE' : turn.state === 'SUPERSEDED' ? 'ABORTED' : 'ERROR');
+      }).catch((error) => {
+        events.finish(String(error?.message || error), 'ERROR');
+      });
+    };
     return {
       sessionId, state, session: state.session, manager: opened.manager, settingsManager: opened.settingsManager,
       models, catalog, devices, tools, aliases, toolNames, allToolNames: [...tools, ...aliases].map((tool) => tool.name),
@@ -117,6 +157,7 @@ async function createPiRuntime(deps) {
         state.unsubscribe?.();
         state.session.dispose();
         devices.dispose();
+        eventSubscriptions.dispose();
       }
     };
   };
@@ -177,6 +218,7 @@ async function createPiRuntime(deps) {
           entry = await registry.get(sessionId, { catalog, chain, cwd, seedMessages });
         }
         events.setToolNameResolver((name) => entry.toolNames.get(name) || name);
+        entry.state.lastRuntimeContext = { ...runtimeContext };
         const { systemPrompt, persona, skills } = await buildPrompt({ ...deps, sessionId, input, tools: entry.tools,
           runtimeContext, seedMessages: entry.systemSeeds, toolErrorMaxRetries });
         unsubscribe = ['voice.playback.electron', 'tool.call.progress', 'approval.requested', 'approval.resolved']

@@ -33,7 +33,9 @@ test('ToolConfigStore loads yaml and validates structure', () => {
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.windows.list'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.perception.capabilities'));
   assert.ok(cfg.tools.some((t) => t.name === 'desktop.capture.window'));
-  assert.equal(cfg.policy.allow.includes('bus_publish'), true);
+  for (const name of ['bus.publish', 'bus.subscribe', 'bus.unsubscribe', 'bus.events.pull', 'bus.channels.list']) {
+    assert.equal(cfg.policy.allow.includes(name), true, name);
+  }
   assert.equal(cfg.policy.allow.includes('avatar_status'), true);
   assert.equal(cfg.policy.allow.includes('avatar_transfer'), true);
   assert.deepEqual(cfg.policy.deviceHub, {
