@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws5, Codex（工作流 T）
 > 更新: 2026-10-13
-> 关联: docs/features/FEAT-android-live2d-stage.md, docs/features/FEAT-android-gesture-layout.md, docs/features/FEAT-android-settings.md, test/android-web/
+> 关联: docs/features/FEAT-android-live2d-stage.md, docs/features/FEAT-android-gesture-layout.md, docs/features/FEAT-android-settings.md, docs/features/FEAT-android-session-approval.md, test/android-web/
 
 手工设备用例的通用准备：`npm run android:sync-assets -- --serve`（Mac 上 `:8790`，手机经局域网访问 `http://<mac-ip>:8790/web/index.html?debug=1`，或用 `adb reverse`）；真机在 org.lineageos.jelly 或 App 内 WebView 中执行，调试用 `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`。
 
@@ -457,3 +457,33 @@
 | 步骤 | 打开聊天栏切换三种模型；分别发送文字与按住说话；检查 Hub 帧 |
 | 期望结果 | 手机只显示已启用模型；主界面常驻显示当前模型及“转写 / 直通 / 实时”徽标且点击可打开聊天；文字携带 `model_ref`；麦克风携带正确 `audio_mode`；`available=false` 的模型显示为不可用且不能选中或启动录音；结构化错误显示可读 `message`；页面没有 provider/key/配置 API |
 | 自动化 | `test/android-web/modelPicker.test.js`；真机语音为 manual-device |
+
+## TC-AWB-045 会话权限状态归一化
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | 无 |
+| 步骤 | 输入合法/非法策略；新增、覆盖、排序、移除待审批请求；检查过期时间 |
+| 期望结果 | 非法策略回退 `manual`；相同 ID 不重复；请求按创建时间排序；过期请求可识别 |
+| 自动化 | `test/android-web/sessionApproval.test.js`（session approval normalizes modes and pending requests） |
+
+## TC-AWB-046 Android 权限面板协议接线
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit |
+| 前置条件 | 无 |
+| 步骤 | 静态检查主页面、控制器与样式中的四个会话 RPC、两个审批事件、脚本加载顺序与锁屏规则 |
+| 期望结果 | 主页面具有三档权限、待审批入口及高斯模糊；锁屏隐藏入口；RPC 与事件均已接线 |
+| 自动化 | `test/android-web/sessionApproval.test.js`（Android main screen wires scoped session policy and approval events） |
+
+## TC-AWB-047 Android 真机会话审批
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | manual-device |
+| 前置条件 | 小米 6 通过 Wi-Fi ADB 连接，网关可访问，手机已配对 |
+| 步骤 | 打开盾牌面板；依次切换每次询问/自动批准/完全访问并重开面板；在每次询问下触发需审批命令并分别允许、拒绝；断开并重连 Hub |
+| 期望结果 | 策略服务端持久化；待处理徽标与列表及时出现和消失；决定只作用于 `device-<id>`；重连后恢复权威状态；界面不遮挡人物脸部且可滚动 |
+| 自动化 | manual；RPC 隔离由 `test/gateway/deviceHub/runtimeBridge.test.js` 覆盖 |

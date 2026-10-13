@@ -7,6 +7,7 @@
   const T = window.YachiyoTransfer;
   const TC = window.YachiyoTransferControl;
   const O = window.YachiyoAvatarOwnerState;
+  const AP = window.YachiyoSessionApproval;
   const qs = new URLSearchParams(location.search);
   const $ = (id) => document.getElementById(id);
   const log = (level, msg) => B.log(level, msg);
@@ -26,7 +27,11 @@
     mic: $('mic-level'), micBtn: $('btn-mic'), chatBtn: $('btn-chat'), chatForm: $('chat-form'), chatText: $('chat-text'),
     chatModel: $('chat-model'), modelModeBadge: $('model-mode-badge'),
     activeModelBadge: $('active-model-badge'), activeModelName: $('active-model-name'), activeModelMode: $('active-model-mode'),
-    settings: $('btn-settings'), sheet: $('sheet'), drawer: $('drawer'), menu: $('menu'), toast: $('toast')
+    settings: $('btn-settings'), sheet: $('sheet'), drawer: $('drawer'), menu: $('menu'), toast: $('toast'),
+    approvalButton: $('approval-control-button'), approvalLabel: $('approval-control-label'),
+    approvalCount: $('approval-control-count'), approvalBackdrop: $('approval-backdrop'),
+    approvalClose: $('approval-close'), approvalDescription: $('approval-mode-description'),
+    approvalList: $('approval-pending-list'), approvalEmpty: $('approval-empty'), approvalStatus: $('approval-list-status')
   };
 
   /* ------------------------------------------------------------------ state */
@@ -34,8 +39,116 @@
     hub: B.hubState(), view: { w: innerWidth, h: innerHeight }, landscape: innerWidth > innerHeight,
     ime: { visible: false, css: 0 }, panelState: 0, drawerOpen: false, sheetOpen: false, editing: false,
     parked: false, exited: false, anim: null, paused: false, firstFrame: true, modelPromise: null, presented: false,
-    transferRequestPending: false, modelCatalog: null, selectedModelRef: ''
+    transferRequestPending: false, modelCatalog: null, selectedModelRef: '', approvalMode: 'manual',
+    approvalPending: [], approvalOpen: false, approvalBusy: false
   };
+
+  function renderApproval() {
+    if (lockscreen || !AP || !el.approvalButton) return;
+    const mode = AP.normalizeMode(S.approvalMode);
+    const meta = AP.MODES[mode];
+    el.approvalButton.dataset.mode = mode;
+    el.approvalButton.disabled = S.hub.state !== 'connected';
+    el.approvalLabel.textContent = meta.shortLabel;
+    el.approvalDescription.textContent = meta.description;
+    for (const button of document.querySelectorAll('[data-approval-mode]')) {
+      const active = button.dataset.approvalMode === mode;
+      button.setAttribute('aria-checked', String(active));
+      button.disabled = S.approvalBusy || S.hub.state !== 'connected';
+    }
+    const now = Date.now();
+    S.approvalPending = S.approvalPending.filter((request) => !AP.isExpired(request, now));
+    el.approvalCount.textContent = String(S.approvalPending.length);
+    el.approvalCount.hidden = S.approvalPending.length === 0;
+    el.approvalEmpty.hidden = S.approvalPending.length > 0;
+    el.approvalList.replaceChildren(...S.approvalPending.map((request) => {
+      const card = document.createElement('article');
+      card.className = 'approval-request';
+      const tool = document.createElement('div');
+      tool.className = 'approval-request-tool';
+      tool.textContent = request.tool_name;
+      const command = document.createElement('div');
+      command.className = 'approval-request-command';
+      command.textContent = request.command || '未提供命令详情';
+      const reason = document.createElement('p');
+      reason.className = 'approval-request-reason';
+      reason.textContent = request.reason ? `原因：${request.reason}` : '此操作需要你的许可';
+      const actions = document.createElement('div');
+      actions.className = 'approval-request-actions';
+      for (const [label, approved, className] of [['拒绝', false, ''], ['允许', true, 'approve']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.className = className;
+        button.disabled = S.approvalBusy;
+        button.onclick = () => decideApproval(request.approval_id, approved);
+        actions.append(button);
+      }
+      card.append(tool, command, reason, actions);
+      return card;
+    }));
+    el.approvalStatus.textContent = S.approvalBusy ? '正在同步…' : `${S.approvalPending.length} 项`;
+  }
+
+  function setApprovalOpen(open) {
+    if (lockscreen || !el.approvalBackdrop) return;
+    S.approvalOpen = Boolean(open);
+    el.approvalBackdrop.hidden = !S.approvalOpen;
+    if (S.approvalOpen) void loadApprovalState();
+  }
+
+  async function loadApprovalState() {
+    if (lockscreen || !AP || S.hub.state !== 'connected' || S.approvalBusy) return;
+    S.approvalBusy = true;
+    renderApproval();
+    try {
+      const [settings, pending] = await Promise.all([
+        B.rpc('session.settings.get', {}, '', 8000),
+        B.rpc('approval.pending.list', {}, '', 8000)
+      ]);
+      S.approvalMode = AP.normalizeMode(settings?.approval_mode);
+      S.approvalPending = (Array.isArray(pending) ? pending : []).reduce(AP.upsertPending, []);
+    } catch (err) {
+      log('warn', `approval state: ${err && err.message}`);
+      if (S.approvalOpen) toast('执行权限同步失败');
+    } finally {
+      S.approvalBusy = false;
+      renderApproval();
+    }
+  }
+
+  async function updateApprovalMode(mode) {
+    const next = AP.normalizeMode(mode);
+    if (S.approvalBusy || S.hub.state !== 'connected' || next === S.approvalMode) return;
+    S.approvalBusy = true;
+    renderApproval();
+    try {
+      const settings = await B.rpc('session.settings.update', { approval_mode: next }, '', 8000);
+      S.approvalMode = AP.normalizeMode(settings?.approval_mode);
+      toast(`执行权限已设为${AP.MODES[S.approvalMode].label}`);
+    } catch (err) {
+      toast(`权限设置失败：${hubErrorMessage(err)}`);
+    } finally {
+      S.approvalBusy = false;
+      renderApproval();
+    }
+  }
+
+  async function decideApproval(approvalId, approved) {
+    if (S.approvalBusy || S.hub.state !== 'connected') return;
+    S.approvalBusy = true;
+    renderApproval();
+    try {
+      await B.rpc('approval.decision', { approval_id: approvalId, approved, scope: 'once' }, '', 8000);
+      S.approvalPending = AP.removePending(S.approvalPending, approvalId);
+      toast(approved ? '已允许执行' : '已拒绝执行');
+    } catch (err) {
+      toast(`处理失败：${hubErrorMessage(err)}`);
+    } finally {
+      S.approvalBusy = false;
+      renderApproval();
+    }
+  }
 
   function selectedModel() {
     return (S.modelCatalog?.models || []).find((model) => model.ref === S.selectedModelRef) || null;
@@ -728,12 +841,17 @@
       S.transferRequestPending = false;
       cancelAnim();
       S.parked = false;
+      S.approvalPending = [];
     }
     if (!isHost()) S.exited = false;
     refreshAway();
     refreshTransferControl();
+    renderApproval();
     kick();
-    if (S.hub.state === 'connected') void loadModelCatalog();
+    if (S.hub.state === 'connected') {
+      void loadModelCatalog();
+      void loadApprovalState();
+    }
   }
 
   /* ------------------------------------------------------------------ mic / chat */
@@ -806,6 +924,14 @@
     renderModelCatalog();
   });
   el.settings.onclick = () => B.call('openSettings');
+  if (el.approvalButton) el.approvalButton.onclick = () => setApprovalOpen(true);
+  if (el.approvalClose) el.approvalClose.onclick = () => setApprovalOpen(false);
+  if (el.approvalBackdrop) el.approvalBackdrop.addEventListener('click', (event) => {
+    if (event.target === el.approvalBackdrop) setApprovalOpen(false);
+  });
+  for (const button of document.querySelectorAll('[data-approval-mode]')) {
+    button.addEventListener('click', () => updateApprovalMode(button.dataset.approvalMode));
+  }
   $('btn-unlock').onclick = () => B.call('dismissKeyguard');
 
   function unlockAudio() { if (voice) voice.unlock(); }
@@ -817,6 +943,7 @@
 
   /* ------------------------------------------------------------------ back key */
   function consumeBack() {
+    if (S.approvalOpen) { setApprovalOpen(false); return true; }
     if (!el.menu.hidden) { closeMenu(); return true; }
     if (S.sheetOpen) { plugins.closeApp(); return true; }
     if (S.editing) { plugins.setEditing(false); return true; }
@@ -896,6 +1023,17 @@
         log('warn', `audio input failed: ${message}`);
         toast(`识别失败：${message}`);
       }
+    });
+    B.subscribe('approval.requested', (d) => {
+      if (!AP) return;
+      S.approvalPending = AP.upsertPending(S.approvalPending, d);
+      renderApproval();
+      toast('有一项操作等待你的许可');
+    });
+    B.subscribe('approval.resolved', (d) => {
+      if (!AP) return;
+      S.approvalPending = AP.removePending(S.approvalPending, d && d.approval_id);
+      renderApproval();
     });
     B.subscribe('avatar.**', (d, ev) => {
       switch (ev.topic) {

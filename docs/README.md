@@ -21,6 +21,7 @@
 - [Android Live2D 舞台（WebView）](features/FEAT-android-live2d-stage.md)
 - [Android 原生壳（Kotlin）](features/FEAT-android-native-shell.md)
 - [Android 局域网服务端自动发现](features/FEAT-android-server-discovery.md)
+- [Android 会话执行权限](features/FEAT-android-session-approval.md)
 - [Android 统一配置界面](features/FEAT-android-settings.md)
 - [Chat 图片流转功能说明（WebUI + Gateway + Desktop）](features/FEAT-desktop-chat-image-flow.md)
 - [桌面端Markdown和Mermaid渲染功能文档](features/FEAT-desktop-markdown-mermaid.md)

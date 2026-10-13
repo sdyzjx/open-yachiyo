@@ -39,6 +39,11 @@
     <button id="btn-settings" class="hud-btn hud-settings" type="button" aria-label="设置">
       <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zm7.4-2.5c.05-.33.1-.66.1-1s-.05-.67-.1-1l2.1-1.65-2-3.46-2.5 1a7.6 7.6 0 0 0-1.7-1L15 4.2h-4l-.3 2.7a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.46L6.6 11c-.05.33-.1.66-.1 1s.05.67.1 1l-2.1 1.65 2 3.46 2.5-1c.5.4 1.1.75 1.7 1l.3 2.7h4l.3-2.7c.6-.25 1.2-.6 1.7-1l2.5 1 2-3.46L19.4 13z" fill="currentColor"/></svg>
     </button>
+    <button id="approval-control-button" class="approval-control-button" type="button" aria-label="执行权限">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.7 4.8 5.8v5.4c0 4.6 2.9 8.8 7.2 10.1 4.3-1.3 7.2-5.5 7.2-10.1V5.8L12 2.7zm0 3.1 4.4 1.9v3.5c0 3.1-1.8 6-4.4 7.1-2.6-1.1-4.4-4-4.4-7.1V7.7L12 5.8z" fill="currentColor"/></svg>
+      <span id="approval-control-label">询问</span>
+      <span id="approval-control-count" class="approval-control-count" hidden>0</span>
+    </button>
     <button id="btn-chat" class="hud-btn hud-chat" type="button" aria-label="输入">
       <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="currentColor"/></svg>
     </button>
@@ -58,6 +63,26 @@
       <input id="chat-text" type="text" enterkeyhint="send" placeholder="对八千代说点什么…">
       <button type="submit" class="btn-primary">发送</button>
     </form>
+  </div>
+
+  <div id="approval-backdrop" class="approval-backdrop" hidden>
+    <section id="approval-panel" class="approval-panel" role="dialog" aria-modal="true" aria-labelledby="approval-title">
+      <header class="approval-panel-head">
+        <div><span class="panel-kicker">AGENT ACCESS</span><h2 id="approval-title">执行权限</h2></div>
+        <button id="approval-close" class="chip" type="button">关闭</button>
+      </header>
+      <div class="approval-panel-body">
+        <div class="approval-modes" role="radiogroup" aria-label="会话执行权限">
+          <button type="button" data-approval-mode="manual" role="radio">每次询问</button>
+          <button type="button" data-approval-mode="auto_approve" role="radio">自动批准</button>
+          <button type="button" data-approval-mode="full_access" role="radio">完全访问</button>
+        </div>
+        <p id="approval-mode-description" class="approval-mode-description"></p>
+        <div class="approval-list-head"><strong>待处理请求</strong><span id="approval-list-status">已同步</span></div>
+        <div id="approval-pending-list" class="approval-pending-list"></div>
+        <p id="approval-empty" class="approval-empty">当前没有等待处理的请求</p>
+      </div>
+    </section>
   </div>
 
   <div id="lock-clock" class="lock-clock"><div id="lock-time"></div><div id="lock-date"></div></div>
@@ -102,6 +127,7 @@
   <script src="js/transferControl.js"></script>
   <script src="js/pluginProtocol.js"></script>
   <script src="js/pluginGrid.js"></script>
+  <script src="js/sessionApproval.js"></script>
   <script src="js/stage.js"></script>
   <script src="js/actions.js"></script>
   <script src="js/lipsync.js"></script>

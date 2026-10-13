@@ -108,6 +108,13 @@ body[data-mode="lockscreen"] .transfer-control { display: none; }
 .hud-settings { top: calc(10px + var(--sat)); right: calc(14px + var(--sar)); width: 42px; height: 42px; will-change: transform;
   transition: background var(--y-dur) var(--y-ease); }
 .hud-settings svg { width: 20px; height: 20px; }
+.approval-control-button { position: absolute; top: calc(62px + var(--sat)); right: calc(14px + var(--sar)); min-width: 84px; height: 38px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: var(--y-radius-pill); background: linear-gradient(145deg, rgba(31,30,61,.86), rgba(10,12,31,.9)); border: 1px solid var(--y-line); box-shadow: var(--y-shadow-soft), inset 0 1px rgba(255,255,255,.06); color: var(--y-ink-dim); font-size: var(--y-fs-xs); }
+.approval-control-button:active { transform: scale(.97); }
+.approval-control-button svg { width: 17px; height: 17px; color: var(--y-gold); }
+.approval-control-button[data-mode="full_access"] svg { color: var(--y-warn); }
+.approval-control-button:disabled { opacity: .5; }
+.approval-control-count { min-width: 17px; height: 17px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: 9px; background: var(--y-bad); color: white; font-size: 10px; font-weight: 700; }
+.approval-control-count[hidden] { display: none; }
 .hud-mic { bottom: calc(22px + var(--sab)); right: calc(22px + var(--sar)); width: 64px; height: 64px; background: var(--y-grad-primary); border-color: var(--y-gold-line); color: var(--y-accent-ink); overflow: visible; box-shadow: var(--y-shadow-soft), var(--y-glow); }
 .hud-mic svg { width: 28px; height: 28px; }
 .hud-mic.rec { transform: scale(1.12); background: linear-gradient(135deg, var(--y-bad), #ff9d5c); }
@@ -140,7 +147,35 @@ body[data-landscape="1"] .hud-chat { bottom: calc(18px + var(--sab)); }
 body[data-landscape="1"] .chat-form { bottom: calc(14px + var(--sab) + var(--ime)); }
 body[data-ime="1"] .chat-form { right: calc(14px + var(--sar)); }
 body[data-mode="lockscreen"] .hud-settings, body[data-mode="lockscreen"] .hud-chat, body[data-mode="lockscreen"] .active-model-badge, body[data-mode="lockscreen"] .chat-form,
+body[data-mode="lockscreen"] .approval-control-button, body[data-mode="lockscreen"] .approval-backdrop,
 body[data-mode="lockscreen"] .panel, body[data-mode="lockscreen"] #sheet, body[data-mode="lockscreen"] #drawer { display: none !important; }
+
+/* ---------- session approval ---------- */
+.approval-backdrop { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: calc(18px + var(--sat)) calc(16px + var(--sar)) calc(18px + var(--sab)) calc(16px + var(--sal)); background: rgba(3,4,16,.46); backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15); }
+.approval-backdrop[hidden] { display: none; }
+.approval-panel { width: min(520px, 100%); max-height: min(680px, 100%); display: flex; flex-direction: column; overflow: hidden; border-radius: 28px; background: linear-gradient(160deg, rgba(35,32,71,.92), rgba(10,12,31,.94) 64%, rgba(30,22,49,.94)); border: 1px solid var(--y-gold-line); box-shadow: 0 30px 90px rgba(2,3,14,.58), inset 0 1px rgba(255,255,255,.08); backdrop-filter: blur(30px) saturate(1.3); -webkit-backdrop-filter: blur(30px) saturate(1.3); animation: pop var(--y-dur) var(--y-ease-out); }
+.approval-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 14px; border-bottom: 1px solid var(--y-line); }
+.approval-panel-head h2 { margin: 0; font-family: Georgia, "Songti SC", serif; font-size: var(--y-fs-xl); font-weight: 500; letter-spacing: .06em; }
+.approval-panel-body { min-height: 0; overflow-y: auto; touch-action: pan-y; padding: 16px 18px 22px; -webkit-overflow-scrolling: touch; }
+.approval-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 5px; border-radius: 17px; background: rgba(4,5,20,.38); border: 1px solid var(--y-line); }
+.approval-modes button { min-height: 40px; padding: 7px 8px; border-radius: 13px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); transition: color var(--y-dur-fast), background var(--y-dur-fast), transform var(--y-dur-fast); }
+.approval-modes button:active { transform: scale(.97); }
+.approval-modes button[aria-checked="true"] { color: var(--y-ink); background: linear-gradient(135deg, rgba(182,161,255,.26), rgba(239,208,157,.12)); box-shadow: inset 0 0 0 1px var(--y-gold-line); }
+.approval-modes button:disabled { opacity: .55; }
+.approval-mode-description { min-height: 38px; margin: 10px 4px 18px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); line-height: 1.55; }
+.approval-list-head { display: flex; align-items: center; justify-content: space-between; margin: 0 3px 9px; font-size: var(--y-fs-s); }
+.approval-list-head span { color: var(--y-ink-faint); font-size: var(--y-fs-xs); }
+.approval-pending-list { display: grid; gap: 9px; }
+.approval-request { padding: 13px; border-radius: 17px; background: rgba(238,230,255,.055); border: 1px solid var(--y-line); box-shadow: var(--y-shadow-soft); }
+.approval-request-tool { color: var(--y-gold); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.approval-request-command { margin: 7px 0 4px; padding: 9px 10px; overflow-wrap: anywhere; border-radius: 10px; background: rgba(2,3,14,.42); color: var(--y-ink); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; -webkit-user-select: text; user-select: text; }
+.approval-request-reason { margin: 0; color: var(--y-ink-dim); font-size: var(--y-fs-xs); }
+.approval-request-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 11px; }
+.approval-request-actions button { min-width: 70px; padding: 8px 13px; border-radius: var(--y-radius-pill); border: 1px solid var(--y-line); background: rgba(238,230,255,.08); font-size: var(--y-fs-xs); }
+.approval-request-actions .approve { color: var(--y-accent-ink); background: var(--y-grad-primary); border-color: var(--y-gold-line); }
+.approval-request-actions button:disabled { opacity: .55; }
+.approval-empty { margin: 22px 0 8px; text-align: center; color: var(--y-ink-faint); font-size: var(--y-fs-xs); }
+body[data-landscape="1"] .approval-panel { width: min(640px, 78vw); max-height: calc(100vh - var(--sat) - var(--sab) - 24px); }
 
 .lock-clock { display: none; position: absolute; z-index: 3; top: calc(48px + var(--sat)); left: 0; right: 0; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,.5); pointer-events: none; }
 body[data-mode="lockscreen"] .lock-clock { display: block; }
