@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const { fixture } = require('./fixture');
 const { createPiRuntime } = require('../../../apps/runtime/agent-pi/piRuntime');
 const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
@@ -107,6 +108,57 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
   assert.deepEqual(events.find((e) => e.event === 'llm.stream.delta').payload, { delta: 'answer 42' });
   const names = f.requests[0].tools.map((tool) => tool.function.name);
   for (const name of ['read', 'bash', 'edit', 'write']) assert.ok(names.includes(name), name);
+});
+
+test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and continuation', async (t) => {
+  const waitFor = async (predicate) => {
+    for (let index = 0; index < 100; index += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('Timed out waiting for realtime provider request');
+  };
+  class FakeWs extends EventEmitter {
+    static instances = [];
+    constructor() { super(); this.sent = []; FakeWs.instances.push(this); }
+    send(raw) { this.sent.push(JSON.parse(raw)); }
+    close() {}
+  }
+  const descriptor = {
+    ref: 'qwen/realtime', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime',
+    api: 'openai-completions', transport: 'realtime', input: ['text', 'audio'], output: ['text', 'audio'],
+    api_key: 'secret', headers: {}, base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    realtime_output: 'native', realtime_voice: 'yachiyo'
+  };
+  const catalog = {
+    models: [descriptor], active: descriptor,
+    resolve: (ref) => ref === descriptor.ref ? descriptor : null,
+    fallbackChain: () => [descriptor]
+  };
+  const f = await fixture(t, () => ({ text: 'unused' }), { modelCatalog: catalog, realtimeWebSocket: FakeWs });
+  const running = f.runtime.run({ sessionId: 'device-phone', input: '算一下', modelRef: descriptor.ref });
+  await Promise.race([
+    waitFor(() => FakeWs.instances[0]),
+    running.then((result) => { throw new Error(`Realtime run ended before transport opened: ${JSON.stringify(result)}`); })
+  ]);
+  const first = FakeWs.instances[0];
+  first.emit('message', JSON.stringify({ type: 'session.created' }));
+  first.emit('message', JSON.stringify({ type: 'session.updated' }));
+  first.emit('message', JSON.stringify({
+    type: 'response.function_call_arguments.done', call_id: 'call-1', name: 'add', arguments: '{"a":20,"b":22}'
+  }));
+  first.emit('message', JSON.stringify({ type: 'response.done' }));
+  await waitFor(() => FakeWs.instances[1]);
+  const second = FakeWs.instances[1];
+  second.emit('message', JSON.stringify({ type: 'session.created' }));
+  second.emit('message', JSON.stringify({ type: 'session.updated' }));
+  assert.ok(second.sent.some((event) => event.item?.type === 'function_call_output' && event.item.output.includes('42')));
+  second.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
+  second.emit('message', JSON.stringify({ type: 'response.done' }));
+  const result = await running;
+  assert.equal(result.state, 'DONE', result.output);
+  assert.equal(result.output, '答案是 42');
+  assert.equal(f.requests.length, 0);
 });
 
 test('TC-PI-016 real session resume, image input and audio transcription', async (t) => {

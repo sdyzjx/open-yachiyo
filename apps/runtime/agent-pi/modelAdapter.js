@@ -1,5 +1,6 @@
 const { loadPi } = require('./loadPi');
-const APIS = new Set(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']);
+const { QWEN_REALTIME_API, createQwenRealtimeStream } = require('./qwenRealtimeAdapter');
+const APIS = new Set(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', QWEN_REALTIME_API]);
 const CHATGPT_UNSUPPORTED_FIELDS = [
   'background', 'conversation', 'max_output_tokens', 'max_tool_calls', 'metadata', 'moderation',
   'multi_agent', 'prompt', 'prompt_cache_retention', 'safety_identifier', 'temperature',
@@ -7,7 +8,9 @@ const CHATGPT_UNSUPPORTED_FIELDS = [
 ];
 
 function toPiModel(descriptor) {
-  if (!descriptor || !APIS.has(descriptor.api)) throw new Error('Unsupported or missing model API');
+  if (!descriptor) throw new Error('Unsupported or missing model API');
+  const api = descriptor.transport === 'realtime' ? QWEN_REALTIME_API : descriptor.api;
+  if (!APIS.has(api)) throw new Error('Unsupported or missing model API');
   const c = descriptor.compat || {};
   const compat = { ...c };
   for (const [source, target] of Object.entries({
@@ -19,14 +22,14 @@ function toPiModel(descriptor) {
   }
   delete compat.reasoning_content_field;
   delete compat.strip_reasoning_in_history;
-  if (descriptor.api === 'openai-completions') {
+  if (api === 'openai-completions') {
     compat.requiresToolResultName ??= true;
     // Older compatible endpoints and the legacy local mock omit finish_reason.
     compat.supportsFinishReason ??= false;
   }
   return {
     id: descriptor.id, name: descriptor.name || descriptor.id, provider: descriptor.provider,
-    api: descriptor.api, baseUrl: descriptor.base_url, reasoning: Boolean(descriptor.reasoning),
+    api, baseUrl: descriptor.base_url, reasoning: Boolean(descriptor.reasoning),
     input: descriptor.input || ['text'], contextWindow: descriptor.context_window || 128000,
     maxTokens: descriptor.max_tokens || 8192, headers: { ...descriptor.headers }, compat,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -162,7 +165,7 @@ function requestOptions(descriptor, options = {}) {
   };
 }
 
-async function createModelRuntime(catalog) {
+async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio } = {}) {
   const { sdk, ai, apis } = await loadPi();
   const runtime = await sdk.ModelRuntime.create({
     credentials: new ai.InMemoryCredentialStore(), modelsStore: new ai.InMemoryModelsStore(),
@@ -175,14 +178,28 @@ async function createModelRuntime(catalog) {
     grouped.set(descriptor.provider, list);
   }
   for (const [provider, descriptors] of grouped) {
-    runtime.registerProvider(provider, {
-      api: descriptors[0].api, baseUrl: descriptors[0].base_url,
-      models: descriptors.map(toPiModel),
-      streamSimple: (model, context, options) => {
-        const descriptor = descriptors.find((item) => item.id === model.id);
-        return apis[model.api].streamSimple(model, context, requestOptions(descriptor, options));
+    const streamSimple = (model, context, options) => {
+      const descriptor = descriptors.find((item) => item.id === model.id);
+      if (model.api === QWEN_REALTIME_API) {
+        return createQwenRealtimeStream({ ai, descriptor, model, context, options, WebSocketImpl, onAudio: onRealtimeAudio });
       }
-    });
+      return apis[model.api].streamSimple(model, context, requestOptions(descriptor, options));
+    };
+    runtime.registerNativeProvider(ai.createProvider({
+      id: provider,
+      name: provider,
+      baseUrl: descriptors[0].base_url,
+      auth: { apiKey: {
+        name: `${provider} API key`,
+        resolve: async ({ credential, signal }) => {
+          signal.throwIfAborted();
+          const apiKey = credential?.key || descriptors[0].api_key;
+          return apiKey ? { auth: { apiKey }, source: 'runtime catalog' } : undefined;
+        }
+      } },
+      models: descriptors.map(toPiModel),
+      api: { stream: streamSimple, streamSimple }
+    }));
     // Runtime overrides are literal values, unlike models.json command interpolation.
     await runtime.setRuntimeApiKey(provider, descriptors[0].api_key || 'yachiyo-local-no-key');
   }

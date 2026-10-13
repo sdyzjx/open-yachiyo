@@ -100,8 +100,9 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
             const processing = { realtime: stream.realtime, stream_id: stream.stream_id, interrupted: false };
             processingRealtime.set(device, processing);
             busy.add(device);
+            let result;
             try {
-              await stream.realtime.finish();
+              result = await stream.realtime.finish();
             } catch (error) {
               if (!processing.interrupted) throw error;
             } finally {
@@ -110,6 +111,18 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
                 busy.delete(device);
               }
             }
+            if (processing.interrupted || stopped || hub.devices.get(device.device_id) !== device) return;
+            const text = typeof result?.text === 'string' ? result.text.trim() : '';
+            if (!text) {
+              transcript(device, stream.stream_id, '', { code: -32602, message: 'Empty transcription' });
+              return;
+            }
+            transcript(device, stream.stream_id, text);
+            await hub.runInput(device, {
+              text,
+              model_ref: stream.model_ref,
+              input_audio: { format: 'pcm_s16le', sample_rate: 16000, transcribed_text: text }
+            });
             return;
           }
           const wav = pcmToWav(Buffer.concat(stream.chunks));

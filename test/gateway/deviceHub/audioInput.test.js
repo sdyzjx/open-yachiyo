@@ -84,21 +84,21 @@ test('TC-VOC-024 Omni direct audio bypasses ASR and keeps the selected model for
   assert.equal(calls[0].model_ref, 'qwen/qwen3.8-omni-flash');
 });
 
-test('TC-VOC-025 Realtime audio streams chunks and does not enqueue a second agent turn', async (t) => {
+test('TC-VOC-038 Realtime audio streams chunks then enqueues its transcript into Pi', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const device = { device_id: 'phone', ws: {} };
   const chunks = [];
   let finished = 0;
-  let runs = 0;
+  const runs = [];
   const hub = Object.assign(new EventEmitter(), {
-    devices: new Map([[device.device_id, device]]), publish() {}, async runInput() { runs += 1; }
+    devices: new Map([[device.device_id, device]]), publish() {}, async runInput(_device, input) { runs.push(input); }
   });
   const audio = attachAudioInput({
     hub, directory, transcribe: async () => ({ text: 'wrong' }),
     omniAudio: { startRealtime: ({ modelRef }) => {
       assert.equal(modelRef, 'qwen/qwen3.8-omni-flash-realtime');
-      return { append: (value) => chunks.push(value), finish: async () => { finished += 1; }, cancel() {} };
+      return { append: (value) => chunks.push(value), finish: async () => { finished += 1; return { text: '实时请求' }; }, cancel() {} };
     } }
   });
   t.after(() => hub.emit('shutdown'));
@@ -110,7 +110,10 @@ test('TC-VOC-025 Realtime audio streams chunks and does not enqueue a second age
   await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'rt', reason: 'released' }));
   assert.deepEqual(chunks, [data]);
   assert.equal(finished, 1);
-  assert.equal(runs, 0);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].text, '实时请求');
+  assert.equal(runs[0].model_ref, 'qwen/qwen3.8-omni-flash-realtime');
+  assert.equal(runs[0].input_audio.transcribed_text, '实时请求');
 });
 
 test('a new recording interrupts a realtime response that is still running tools', async (t) => {

@@ -47,7 +47,20 @@ async function createPiRuntime(deps) {
 
   const createEntry = async (sessionId, initial) => {
     const { catalog, chain, cwd, seedMessages = [], systemPrompt = '' } = initial;
-    const models = await createModelRuntime(catalog);
+    const models = await createModelRuntime(catalog, {
+      WebSocketImpl: deps.realtimeWebSocket,
+      onRealtimeAudio: ({ sessionId: audioSessionId, requestId, topic, data }) => {
+        const target = String(audioSessionId || '').startsWith('device-')
+          ? String(audioSessionId).slice('device-'.length)
+          : undefined;
+        deps.bus?.publish(topic, {
+          ...data,
+          request_id: requestId,
+          session_id: audioSessionId,
+          ...(target ? { __target: target } : {})
+        });
+      }
+    });
     const opened = await sessions.open({ sessionId, cwd, seedMessages, model: chain[0] });
     const state = { current: null, coordinator: null, systemPrompt, disposed: false, lastRuntimeContext: {} };
     const context = () => {

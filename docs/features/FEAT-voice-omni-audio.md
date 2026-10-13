@@ -8,13 +8,13 @@
 
 ## 1. 概述
 
-选择支持音频的模型后，手机麦克风可绕过独立 ASR，把原始音频交给 Qwen3.8 Omni；Realtime 型号可原生调用电脑工具，并把可见文字和 Yachiyo 复刻音色的 24 kHz PCM 分别流回手机。
+选择支持音频的模型后，手机麦克风可绕过独立 ASR，把原始音频交给 Qwen3.8 Omni；Realtime 型号经 Pi 的统一 Agent 循环调用电脑工具，并把可见文字和 Yachiyo 复刻音色的 24 kHz PCM 分别流回手机。
 
 ## 2. 行为说明
 
-模型描述符用 `input/output/transport/audio` 声明能力。手机按所选模型自动选择三种路径：普通文本模型使用已配置 ASR；`audio.mode=direct` 把整段 WAV 作为 `input_audio` 发送并将转录文本交给 Pi；`transport=realtime` 在录音开始时建立 WebSocket并逐块发送 PCM。松手后网关等待输入转写，用它加载人格、技能和最近会话，再创建响应。
+模型描述符用 `input/output/transport/audio` 声明能力。手机按所选模型自动选择三种路径：普通文本模型使用已配置 ASR；`audio.mode=direct` 把整段 WAV 作为 `input_audio` 发送并将转录文本交给 Pi；`transport=realtime` 在录音开始时建立只负责输入转写的 WebSocket 并逐块发送 PCM。松手取得 transcript 后，网关把它作为同一个 `device-<id>` 会话的音频 turn 交给长生命周期 Pi `AgentSession`。
 
-Realtime 会话把本地 `ToolExecutor` 工具注册到 `session.tools`。模型发出 `response.function_call_arguments.done` 后，网关在现有权限和工作区策略下执行工具，发送 `function_call_output`，等同一轮全部工具完成后仅创建一次续答。每轮新建云端 WebSocket 时，网关先把本机保存的最近 20 条 user/assistant 消息分别恢复为 Realtime 原生 `conversation.item.create`，再提交本轮音频或文字；assistant 历史使用 `output_text`，因此追问可以引用先前对话，并区分模型曾声称的结果与实际工具输出。更早的对话由 session memory 摘要与当前输入相关片段补充到 instructions。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，文本进入 `chat.delta/chat.final`，工具状态进入 `tool_call.*`。Realtime 会话排除 `voice.tts_aliyun_vc`，避免原生复刻声音与第二套 TTS 同时播放。
+`qwen-realtime` provider adapter 把完整 Pi transcript、当前工具声明和 system sections 转成 Realtime 原生事件；模型的 function call 转回 Pi 标准 `toolCall`。因此工具并行、审批、steering/follow-up、错误预算、会话 JSONL 和上下文压缩都由 Pi 处理，adapter 不直接调用 `ToolExecutor`。工具结果进入同一个 Pi transcript，下一次 provider 请求再转成 `function_call_output`。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，文本由 Pi 进入 `chat.delta/chat.final`，工具状态进入 `tool_call.*`。启用原生音频时 adapter 隐藏 `voice.tts_aliyun_vc` 并追加禁止二次 TTS 的 provider 指令，避免同时播放两套声音。
 
 录音采用「最新输入优先」：首个 Realtime 录音已 commit 但工具或续答尚未结束时，新的 `audio.input.start` 会取消旧 Realtime 连接并立即开始新 stream。该打断不显示“Audio stream already active”或“Realtime audio cancelled”错误，且旧 stream 的异步收尾不能清掉新 stream。
 
@@ -33,11 +33,12 @@ sequenceDiagram
   A->>G: audio.input.end
   G->>Q: commit
   Q-->>G: input transcript
-  G->>Q: persona/skills/history + response.create
+  G->>G: transcript -> persistent Pi AgentSession
+  G->>Q: Pi transcript/tools + response.create
   opt computer action
     Q-->>G: function_call
-    G->>G: ToolExecutor permission check + execute
-    G->>Q: function_call_output + response.create
+    G->>G: Pi approval + ToolExecutor
+    G->>Q: next Pi request with function_call_output
   end
   par independent output
     Q-->>G: text delta
@@ -50,7 +51,7 @@ sequenceDiagram
 
 ## 3. 接口与协议
 
-`audio.input.start` 新增可选 `model_ref` 与 `audio_mode=transcribe|direct|realtime`。电脑端通过 `model.catalog.get` 向手机只返回已启用模型的安全描述符，不返回 key、headers 或 extra_body；每个模型可带 `available` 与不含凭据的 `reason`。Realtime 使用 Model Studio 工作区专属 `/api-ws/v1/realtime?model=...`，16 kHz mono s16le 输入、24 kHz mono s16le 输出。工具名按 Realtime 限制编码，结果以 JSON 字符串放入 `conversation.item.create.item.output`，`call_id` 与模型请求保持一致。
+`audio.input.start` 新增可选 `model_ref` 与 `audio_mode=transcribe|direct|realtime`。电脑端通过 `model.catalog.get` 向手机只返回已启用模型的安全描述符，不返回 key、headers 或 extra_body；每个模型可带 `available` 与不含凭据的 `reason`。Realtime 使用 Model Studio 工作区专属 `/api-ws/v1/realtime?model=...`，16 kHz mono s16le 输入、24 kHz mono s16le 输出。输入传输连接不含工具，也不创建模型回答；模型连接由 Pi provider adapter 管理。工具名沿用 Pi 的安全编码，`call_id` 在 Pi tool call 与下一次 `function_call_output` 间保持一致。
 
 ## 4. 配置项
 
@@ -61,10 +62,10 @@ Realtime 原生音频的 `realtime_voice` 预设默认是官方音色 `Tina`，�
 ## 5. 限制与已知问题
 
 - 普通 Omni 音频先由同一模型提取用户原话，再进入 Pi 工具循环；Pi 当前消息类型不直接承载 audio part。
-- Realtime 语音和桌面键盘会话复用 Pi 所在运行时的 ToolExecutor、人格、技能和会话存储，但模型循环由 Qwen Realtime 的 Function Calling 驱动；其工具规划行为可能与 Pi 不同。
+- Realtime provider 当前每次 Pi 模型请求建立一个云端 WebSocket；本机 Pi `AgentSession` 长期驻留，云端连接尚未跨 tool round 复用。
 - 手机近场录音会受扬声器、耳机和环境噪声影响；链路成功不等于转写内容准确，声学识别需要用真人近讲和安静环境单独验收。
 - API Key 必须是允许自定义应用调用的 Model Studio API 凭据，不能使用限制在编程工具内的 Token Plan 专属 Key。
 
 ## 6. 测试用例
 
-TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030，见 `docs/testing/TC-voice-provider-config.md`；TC-AND-053，见 `docs/testing/TC-android-web.md`。
+TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030、TC-VOC-038，见 `docs/testing/TC-voice-provider-config.md`；TC-PI-038…040 见 `docs/testing/TC-runtime-pi-agent-core.md`；TC-AND-053 见 `docs/testing/TC-android-web.md`。

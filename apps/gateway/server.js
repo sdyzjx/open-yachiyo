@@ -327,31 +327,9 @@ const piRunner = createGatewayRunner({
     maxParallelTools: parsePositiveIntEnv('RUNTIME_MAX_PARALLEL_TOOLS', 3)
   })
 });
-const omniTextRuntime = require('./deviceHub/omniAudio').createOmniAudioService({
-  hub: { publish() {} }, llmManager, executor, bus, sessionStore,
-  resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
-  resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input })
-});
-const runner = {
-  ...piRunner,
-  async run(args) {
-    const selected = llmManager.getCatalog().resolve(args.modelRef || args.model_ref || args.runtimeContext?.model_ref);
-    if (selected?.transport !== 'realtime') return piRunner.run(args);
-    if (Array.isArray(args.inputImages) && args.inputImages.length) {
-      throw new Error('Realtime text sessions do not accept image attachments in this client');
-    }
-    return omniTextRuntime.generateText({
-      text: args.input,
-      modelRef: selected.ref,
-      sessionId: args.sessionId,
-      onEvent: args.onEvent,
-      onDelta: (delta, traceId) => args.onEvent?.({
-        event: 'llm.stream.delta', session_id: args.sessionId, trace_id: traceId,
-        step_index: 0, seq: 0, payload: { delta }
-      })
-    });
-  }
-};
+// Every model transport, including Qwen Realtime, enters the same Pi runner.
+// The provider adapter handles protocol translation; Pi owns the session and tools.
+const runner = piRunner;
 
 const dispatcher = new ToolCallDispatcher({
   bus,
