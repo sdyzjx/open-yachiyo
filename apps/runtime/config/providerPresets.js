@@ -64,8 +64,15 @@ const PRESETS = [
         realtime_voice: 'Tina',
         audio: { mode: 'realtime', input_format: 'pcm_s16le', input_sample_rate: 16000, output_format: 'pcm_s16le', output_sample_rate: 24000 }
       },
+      // Lineup verified against DashScope compatible-mode GET /models on 2026-10-13;
+      // anything else can be added from the provider's discovered model list.
+      { id: 'qwen3.7-max', name: 'Qwen 3.7 Max', max_tokens: 8192, input: ['text'] },
+      { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus', max_tokens: 8192, input: ['text', 'image'] },
+      { id: 'qwen3.7-flash', name: 'Qwen 3.7 Flash', max_tokens: 8192, input: ['text', 'image'] },
+      { id: 'qwen3.6-plus', name: 'Qwen 3.6 Plus', max_tokens: 8192, input: ['text', 'image'] },
+      { id: 'qwen3.6-flash', name: 'Qwen 3.6 Flash', max_tokens: 8192, input: ['text', 'image'] },
       { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', context_window: 131072, max_tokens: 8192, input: ['text', 'image'] },
-      { id: 'qwen-max', name: 'Qwen Max', context_window: 32768, max_tokens: 8192, input: ['text'] }
+      { id: 'qwen3.5-flash', name: 'Qwen 3.5 Flash', max_tokens: 8192, input: ['text', 'image'] }
     ],
     compat: { supports_developer_role: false, max_tokens_field: 'max_tokens' }
   },

@@ -24,7 +24,7 @@
 
 - `providerPresets.js`：`listPresets()`、`getPreset(id)`；预设 id：openai、deepseek、qwen、moonshot、zhipu、siliconflow、openrouter、ollama、anthropic、gemini、custom。provider 写 `preset: <id>` 即继承 type/base_url/api_key_env/models/compat。
 - `modelCatalog.loadModelCatalog({store})`：返回 `models/enabled/active/resolve/forRole/fallbackChain/tts/asr`（契约 C4.2）。描述符的 `headers/compat/extra_body/temperature` 为 provider 与模型级字段合并（模型级优先）；`api_key` 由 `api_key` 或 `api_key_env` 解析。
-- 描述符同时公开安全能力元数据 `input[]`、`output[]`、`transport=request|realtime` 与 `audio`。Qwen 预设包含 `qwen3.8-omni-flash` 和 `qwen3.8-omni-flash-realtime`。
+- 描述符同时公开安全能力元数据 `input[]`、`output[]`、`transport=request|realtime` 与 `audio`。Qwen 预设包含 `qwen3.8-omni-flash`、`qwen3.8-omni-flash-realtime`，以及 Qwen 3.7/3.6/3.5 的 Max/Plus/Flash 当前聊天型号；用户仍可从 Provider 发现结果添加未内置的型号。
 
 ### 3.2 运行时（legacy 循环）
 
@@ -73,4 +73,4 @@
 
 ## 6. 测试用例
 
-TC-LLM-001 ~ TC-LLM-028、TC-LLM-040 ~ TC-LLM-044，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-018，见 `docs/testing/TC-gateway-config-webui.md`。
+TC-LLM-001 ~ TC-LLM-028、TC-LLM-040 ~ TC-LLM-045，见 `docs/testing/TC-llm-model-config-v2.md`；访问控制、脱敏及配置 WebUI TC-CFG-001 ~ TC-CFG-018，见 `docs/testing/TC-gateway-config-webui.md`。

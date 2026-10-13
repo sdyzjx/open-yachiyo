@@ -41,3 +41,4 @@
 | TC-LLM-042 | 模型能力与音频路由配置校验 | unit | 带 input/output/transport/audio 的模型配置 | 调用 `validateConfig` | 合法 Realtime Omni 通过；未知能力、缺少 audio 输入、Realtime mode 与 transport 不匹配均被拒绝 | `test/runtime/config/providerConfigSchemaV2.test.js` |
 | TC-LLM-043 | 旧发现记录迁移 Omni 权威能力 | unit | 自定义 Provider 中已保存 text/request 形式的已知 Omni 型号 | 调用 `normalizeProviderConfig` | 按内置型号资料恢复 input/output、Realtime transport 与 audio mode | `test/runtime/config/providerConfigSchemaV2.test.js` |
 | TC-LLM-044 | Realtime 键盘聊天调用电脑工具 | integration | 假 Realtime WebSocket、电脑工具、桌面会话 | 发送文字；注入 Function Call；返回最终文字 | Pi 注册安全工具名、按会话审批策略执行并在下一 provider 请求回放 function_call_output；工具事件与最终文字正常返回 | `test/runtime/agent-pi/piRuntime.test.js` 的 TC-PI-040 |
+| TC-LLM-045 | Qwen 当前预设型号目录 | unit | 内置 Qwen 预设 | 读取预设模型 ID | 同时包含 Omni 3.8 Realtime/Direct 与 Qwen 3.7/3.6/3.5 聊天型号；Catalog 测试不再把可扩充的预设数量写死 | `test/runtime/config/providerPresets.test.js`, `test/runtime/config/modelCatalog.test.js` |

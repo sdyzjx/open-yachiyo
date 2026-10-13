@@ -21,6 +21,15 @@ test('deepseek preset descriptor fields and presets are copies', () => {
   assert.equal(getPreset('nope'), null);
 });
 
+test('TC-LLM-045 Qwen preset keeps current chat and Omni model families', () => {
+  const ids = getPreset('qwen').models.map((model) => model.id);
+  for (const id of [
+    'qwen3.8-omni-flash', 'qwen3.8-omni-flash-realtime',
+    'qwen3.7-max', 'qwen3.7-plus', 'qwen3.7-flash',
+    'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash'
+  ]) assert.ok(ids.includes(id), id);
+});
+
 test('every non-custom preset yields a valid provider with a key', () => {
   for (const p of listPresets().filter((x) => x.id !== 'custom')) {
     validateConfig({ active_model: `${p.id}/${p.models[0].id}`, providers: { [p.id]: { preset: p.id, api_key: 'k' } } });
