@@ -2,8 +2,14 @@
 (function (global) {
   'use strict';
 
+  function resolvePullRelease({ edge, viewportHeight, direction }) {
+    const midpoint = Math.max(1, Number(viewportHeight) || 1) / 2;
+    if (direction === 'down') return Number(edge) >= midpoint ? 'full' : 'peek';
+    return Number(edge) <= midpoint ? 'closed' : 'peek';
+  }
+
   function create({ bridge, backdrop, panel, list, messages, status, closeButton, newButton, composer, input, onSessionChanged, onSend }) {
-    const state = { open: false, mode: 'closed', busy: false, currentId: '', sessions: [], refreshTimer: 0, closeTimer: 0, orientationTimer: 0 };
+    const state = { open: false, mode: 'closed', busy: false, currentId: '', sessions: [], refreshTimer: 0, closeTimer: 0, orientationTimer: 0, settleTimer: 0, drag: null, suppressBackdropClick: false };
     panel.dataset.landscape = global.innerWidth > global.innerHeight ? '1' : '0';
 
     function dateLabel(value) {
@@ -121,8 +127,12 @@
     function setMode(mode) {
       const next = ['peek', 'full'].includes(mode) ? mode : 'closed';
       const wasOpen = state.open;
+      clearTimeout(state.settleTimer);
+      state.drag = null;
       state.mode = next;
       state.open = next !== 'closed';
+      panel.classList.remove('dragging', 'settling');
+      panel.style.removeProperty('--history-drag-height');
       clearTimeout(state.closeTimer);
       if (state.open) backdrop.hidden = false;
       backdrop.dataset.state = next;
@@ -135,6 +145,82 @@
         panel.classList.remove('open');
         state.closeTimer = setTimeout(() => { if (!state.open) backdrop.hidden = true; }, 380);
       }
+    }
+
+    function viewportHeight() {
+      return Math.max(1, Number(global.innerHeight) || backdrop.clientHeight || panel.parentElement?.clientHeight || 1);
+    }
+
+    function modeEdge(mode = state.mode) {
+      const height = viewportHeight();
+      if (mode === 'full') return height;
+      if (mode === 'peek') return panel.dataset.landscape === '1' ? Math.min(height * .82, 500) : Math.min(height * .5, 520);
+      return 0;
+    }
+
+    function beginPull({ startY, followPointer = false } = {}) {
+      if (state.drag) return false;
+      const y = Number(startY);
+      if (!Number.isFinite(y)) return false;
+      clearTimeout(state.closeTimer);
+      clearTimeout(state.settleTimer);
+      const startMode = state.mode;
+      state.drag = { startY: y, startEdge: followPointer ? y : modeEdge(), edge: followPointer ? y : modeEdge(), direction: null, moved: false, startMode };
+      return true;
+    }
+
+    function updatePull(clientY) {
+      const drag = state.drag;
+      const y = Number(clientY);
+      if (!drag || !Number.isFinite(y)) return false;
+      const dy = y - drag.startY;
+      if (!drag.moved && Math.abs(dy) < 8) return false;
+      drag.moved = true;
+      drag.direction = dy >= 0 ? 'down' : 'up';
+      drag.edge = Math.max(0, Math.min(viewportHeight(), drag.startEdge + dy));
+      state.open = true;
+      backdrop.hidden = false;
+      backdrop.dataset.state = 'drag';
+      panel.dataset.state = 'drag';
+      backdrop.classList.add('open', 'dragging');
+      panel.classList.add('open', 'dragging');
+      panel.style.setProperty('--history-drag-height', `${drag.edge}px`);
+      return true;
+    }
+
+    function settlePull(targetMode) {
+      const next = ['peek', 'full'].includes(targetMode) ? targetMode : 'closed';
+      const targetEdge = modeEdge(next);
+      state.mode = next;
+      state.open = next !== 'closed';
+      backdrop.dataset.state = next;
+      panel.dataset.state = next;
+      backdrop.classList.remove('dragging');
+      panel.classList.remove('dragging');
+      panel.classList.add('settling', 'open');
+      panel.style.setProperty('--history-drag-height', `${targetEdge}px`);
+      clearTimeout(state.settleTimer);
+      state.settleTimer = setTimeout(() => {
+        panel.classList.remove('settling');
+        panel.style.removeProperty('--history-drag-height');
+        if (!state.open) {
+          panel.classList.remove('open');
+          backdrop.classList.remove('open');
+          backdrop.hidden = true;
+        }
+      }, 360);
+    }
+
+    function endPull({ cancelled = false } = {}) {
+      const drag = state.drag;
+      state.drag = null;
+      if (!drag?.moved) return false;
+      const next = cancelled
+        ? drag.startMode
+        : resolvePullRelease({ edge: drag.edge, viewportHeight: viewportHeight(), direction: drag.direction });
+      settlePull(next);
+      if (drag.startMode === 'closed' && next !== 'closed') void refresh();
+      return true;
     }
 
     function expand() {
@@ -176,6 +262,10 @@
     closeButton.addEventListener('click', retreat);
     newButton.addEventListener('click', () => { void createSession(); });
     backdrop.addEventListener('click', (event) => {
+      if (state.suppressBackdropClick) {
+        state.suppressBackdropClick = false;
+        return;
+      }
       if (event.target === backdrop && state.mode === 'peek') setMode('closed');
     });
     composer.addEventListener('submit', (event) => {
@@ -195,27 +285,49 @@
       }
     });
 
-    let pull = null;
-    panel.addEventListener('pointerdown', (event) => {
+    let pointerId = null;
+    function startInternalPull(event) {
       if (event.target.closest?.('button,input,textarea,.session-history-list,.session-history-messages,.session-history-composer')) return;
-      pull = { id: event.pointerId, y: event.clientY, done: false };
+      pointerId = event.pointerId;
+      beginPull({ startY: event.clientY });
+      try { event.currentTarget.setPointerCapture(pointerId); } catch {}
+    }
+    function moveInternalPull(event) {
+      if (pointerId !== event.pointerId) return;
+      updatePull(event.clientY);
+    }
+    function finishInternalPull(event, cancelled = false) {
+      if (pointerId !== event.pointerId) return;
+      pointerId = null;
+      endPull({ cancelled });
+    }
+    panel.addEventListener('pointerdown', startInternalPull, { passive: true });
+    panel.addEventListener('pointermove', moveInternalPull, { passive: true });
+    panel.addEventListener('pointerup', (event) => finishInternalPull(event), { passive: true });
+    panel.addEventListener('pointercancel', (event) => finishInternalPull(event, true), { passive: true });
+
+    backdrop.addEventListener('pointerdown', (event) => {
+      if (event.target !== backdrop || state.mode !== 'peek') return;
+      pointerId = event.pointerId;
+      beginPull({ startY: event.clientY, followPointer: true });
+      try { backdrop.setPointerCapture(pointerId); } catch {}
     }, { passive: true });
-    panel.addEventListener('pointermove', (event) => {
-      if (!pull || pull.id !== event.pointerId || pull.done) return;
-      const dy = event.clientY - pull.y;
-      if (dy > 36) { pull.done = true; expand(); }
-      else if (dy < -36) { pull.done = true; retreat(); }
+    backdrop.addEventListener('pointermove', moveInternalPull, { passive: true });
+    backdrop.addEventListener('pointerup', (event) => {
+      if (pointerId !== event.pointerId) return;
+      const dragged = endPull();
+      pointerId = null;
+      state.suppressBackdropClick = dragged;
     }, { passive: true });
-    const endPull = (event) => { if (!pull || pull.id === event.pointerId) pull = null; };
-    panel.addEventListener('pointerup', endPull, { passive: true });
-    panel.addEventListener('pointercancel', endPull, { passive: true });
+    backdrop.addEventListener('pointercancel', (event) => finishInternalPull(event, true), { passive: true });
 
     return {
       open: expand, expand, retreat, close: () => setMode('closed'), refresh, scheduleRefresh, onOrientationChange,
+      beginPull, updatePull, endPull,
       accepts: (sessionId) => !sessionId || !state.currentId || sessionId === state.currentId,
       get isOpen() { return state.open; }, get mode() { return state.mode; }, get currentSessionId() { return state.currentId; }
     };
   }
 
-  global.YachiyoSessionHistory = { create };
+  global.YachiyoSessionHistory = { create, resolvePullRelease };
 })(window);

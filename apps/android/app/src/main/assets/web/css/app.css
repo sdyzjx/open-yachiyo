@@ -186,8 +186,10 @@ body[data-landscape="1"] .approval-panel { width: min(640px, 78vw); max-height: 
 /* ---------- chat session history: pull down from the top ---------- */
 .session-history-backdrop { position: absolute; inset: 0; z-index: 13; overflow: hidden; background: rgba(3,4,16,.44); backdrop-filter: blur(13px) saturate(1.15); -webkit-backdrop-filter: blur(13px) saturate(1.15); }
 .session-history-backdrop[hidden] { display: none; }
-.session-history-panel { position: absolute; top: 0; left: 0; right: 0; height: min(48vh, 520px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--y-gold-line); border-top: 0; border-radius: 0 0 30px 30px; background: linear-gradient(155deg, rgba(35,32,71,.97), rgba(10,12,31,.98) 65%, rgba(30,22,49,.97)); box-shadow: 0 28px 84px rgba(2,3,14,.62), inset 0 1px rgba(255,255,255,.08); transform: translate3d(0,-104%,0); transition: transform .36s var(--y-ease), height .34s var(--y-ease), border-radius .34s var(--y-ease); }
+.session-history-panel { position: absolute; top: 0; left: 0; right: 0; height: var(--history-drag-height, min(50vh, 520px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--y-gold-line); border-top: 0; border-radius: 0 0 30px 30px; background: linear-gradient(155deg, rgba(35,32,71,.97), rgba(10,12,31,.98) 65%, rgba(30,22,49,.97)); box-shadow: 0 28px 84px rgba(2,3,14,.62), inset 0 1px rgba(255,255,255,.08); transform: translate3d(0,-104%,0); transition: transform .36s var(--y-ease), height .34s var(--y-ease), border-radius .34s var(--y-ease); }
 .session-history-panel.open { transform: translate3d(0,0,0); }
+.session-history-panel.dragging { transform: translate3d(0,0,0); transition: none; }
+.session-history-panel.settling { transform: translate3d(0,0,0); }
 .session-history-panel[data-state="full"] { height: 100%; border-radius: 0; }
 .session-history-handle { width: 42px; height: 4px; flex: none; margin: calc(8px + var(--sat)) auto 3px; border-radius: 3px; background: rgba(255,255,255,.27); }
 .session-history-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px 12px; border-bottom: 1px solid var(--y-line); }
@@ -223,12 +225,14 @@ body[data-landscape="1"] .approval-panel { width: min(640px, 78vw); max-height: 
 .session-history-message th, .session-history-message td { padding: .4em .55em; border: 1px solid var(--y-line); text-align: left; }
 .session-history-message th { color: var(--y-accent-ink); background: rgba(182,161,255,.12); }
 .session-history-status { flex: none; margin: 0; padding: 5px 14px; border-top: 1px solid var(--y-line); color: var(--y-ink-faint); font-size: 10px; text-align: center; }
-.session-history-composer { display: flex; flex: none; align-items: flex-end; gap: 8px; padding: 8px 12px calc(8px + var(--sab)); border-top: 1px solid var(--y-line); background: rgba(8,9,27,.76); }
+.session-history-composer { display: flex; flex: none; align-items: flex-end; gap: 8px; padding: 8px 12px calc(24px + var(--sab)); border-top: 1px solid var(--y-line); background: rgba(8,9,27,.76); }
 .session-history-composer textarea { min-width: 0; min-height: 38px; max-height: 112px; flex: 1; resize: none; padding: 9px 12px; border: 1px solid var(--y-line); border-radius: 16px; outline: none; background: rgba(238,230,255,.07); color: var(--y-ink); font: inherit; line-height: 1.35; touch-action: pan-y; }
 .session-history-composer textarea:focus { border-color: var(--y-accent); box-shadow: 0 0 0 2px rgba(182,161,255,.12); }
 .session-history-composer button { min-width: 66px; height: 38px; }
 .session-history-empty { margin: auto; padding: 18px; color: var(--y-ink-faint); font-size: var(--y-fs-xs); text-align: center; }
-.session-history-panel[data-landscape="1"] { height: min(82vh, 500px); }
+.session-history-bottom-grip { position: absolute; z-index: 3; right: 0; bottom: 0; left: 0; height: calc(22px + var(--sab)); touch-action: none; }
+.session-history-bottom-grip::after { content: ""; position: absolute; left: 50%; bottom: calc(6px + var(--sab)); width: 44px; height: 4px; border-radius: 3px; background: rgba(255,255,255,.27); transform: translateX(-50%); }
+.session-history-panel[data-landscape="1"] { height: var(--history-drag-height, min(82vh, 500px)); }
 .session-history-panel[data-landscape="1"][data-state="full"] { height: 100%; }
 .session-history-panel[data-landscape="1"] .session-history-handle { margin-top: calc(4px + var(--sat)); }
 .session-history-panel[data-landscape="1"] .session-history-head { padding-top: 2px; padding-bottom: 7px; }

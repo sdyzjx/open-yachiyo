@@ -589,11 +589,16 @@
     const r = tracker.move(e.clientX, e.clientY, e.timeStamp);
     if (!r) return;
     if (Math.hypot(r.dx, r.dy) > 10) { press.moved = true; clearTimeout(longTimer); }
-    if (!lockscreen && press.fromHistoryZone && r.axis === 'y' && r.dy > 36 && sessionHistory && !sessionHistory.isOpen) {
-      tracker.up();
-      press = null;
-      dragging = null;
-      sessionHistory.open();
+    if (dragging === 'history') {
+      sessionHistory?.updatePull(e.clientY);
+      return;
+    }
+    if (!lockscreen && press.fromHistoryZone && r.axis === 'y' && r.dy > 0 && sessionHistory && !sessionHistory.isOpen) {
+      if (dragging !== 'history') {
+        dragging = 'history';
+        sessionHistory.beginPull({ startY: press.y, followPointer: true });
+      }
+      sessionHistory.updatePull(e.clientY);
       return;
     }
     if (!dragging && r.axis && !press.axis) {
@@ -619,7 +624,10 @@
     const r = tracker.up();
     const p = press;
     press = null;
-    if (dragging === 'panel') {
+    if (dragging === 'history') {
+      sessionHistory?.endPull();
+      dragging = null;
+    } else if (dragging === 'panel') {
       const target = L.resolvePanelSnap({ progress: panel.value, velocity: r.vx / geom.panelW, from: S.panelState });
       S.panelState = target;
       panel.to(target, r.vx / geom.panelW);
@@ -640,6 +648,7 @@
   function onCancel() {
     clearTimeout(longTimer);
     tracker.up();
+    if (dragging === 'history') { sessionHistory?.endPull({ cancelled: true }); }
     if (dragging === 'panel') { panel.to(S.panelState); }
     if (dragging === 'drawer') { drawer.to(S.drawerOpen ? 1 : 0); }
     dragging = null;

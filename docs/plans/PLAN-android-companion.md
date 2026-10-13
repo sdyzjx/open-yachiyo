@@ -253,4 +253,5 @@ flowchart TD
 - Pi 提示词明确以用户交互为最高优先级：长任务先回应，适合语音时先发送语音，同时通过独立消息链路说明正在做什么和最终结果；工具状态不会冒充聊天回复。
 - 自动验证：`npm run test:ci` 885/885，`npm run docs:lint` 通过，Android `:app:testDebugUnitTest :app:assembleDebug` 成功。小米 6 经 Wi-Fi ADB 验证两段展开、全屏无底缝、宽松上滑收回、预览外部点击关闭、Markdown、会话内发送、横屏左侧会话栏、旋转后重排、独立工具卡和 10 秒气泡消失；临时旋转设置与设备锁均已恢复。
 - 关联文档：`docs/features/FEAT-runtime-chat-sessions.md`、`docs/features/FEAT-android-live2d-stage.md`、`docs/features/FEAT-desktop-shell-and-chat.md`；用例 TC-HUB-033/034、TC-AWB-052～056、TC-DSK-029、TC-PI-048。
-- 交付提交：见本节所在功能提交；提交完成后以追加记录固化哈希。
+- 交付提交：`b65d676`（跨端长期会话、Android 历史面板、Desktop 会话侧栏、独立工具状态与交互反馈策略）。
+- 用户追加要求把历史面板改为连续跟手抽屉：顶部下拉与底部上推都实时驱动面板底边，视口中线作为 `closed ↔ peek ↔ full` 的统一吸附阈值；预览外部点击关闭与滚动区域手势隔离继续保留。首版因输入区整体拦截手势，遗漏了全屏时从物理屏幕最底边起手；修正后在输入框下方加入全宽抓取区。小米 6 实测下拉在中线前释放吸附半屏、越过中线吸附全屏；全屏从最底边上推在中线后释放回半屏、越过中线则完全关闭，慢速拖拽期间面板高度连续变化。该调整在 `b65d676` 的稳定检查点上独立提交。
