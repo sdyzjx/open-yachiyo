@@ -172,15 +172,48 @@ function runProcess({ command, bin, argv, cwd, timeoutMs, context }) {
   }
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(bin, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (context.signal?.aborted) {
+      reject(new ToolingError(ErrorCode.ABORTED, 'command aborted'));
+      return;
+    }
+    const usesProcessGroup = process.platform !== 'win32';
+    const proc = spawn(bin, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: usesProcessGroup });
     const startedAt = Date.now();
     let timedOut = false;
     let stdout = '';
     let stderr = '';
+    let aborted = false;
+    let settled = false;
+    let forceKill = null;
+    const terminate = (signal) => {
+      try {
+        if (usesProcessGroup && proc.pid) process.kill(-proc.pid, signal);
+        else proc.kill(signal);
+      } catch {
+        try { proc.kill(signal); } catch { /* Process already exited. */ }
+      }
+    };
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (forceKill) clearTimeout(forceKill);
+      context.signal?.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const onAbort = () => {
+      aborted = true;
+      terminate('SIGTERM');
+      forceKill = setTimeout(() => terminate('SIGKILL'), 250);
+      forceKill.unref?.();
+    };
     const timeout = setTimeout(() => {
       timedOut = true;
-      proc.kill('SIGTERM');
+      terminate('SIGTERM');
+      forceKill = setTimeout(() => terminate('SIGKILL'), 250);
+      forceKill.unref?.();
     }, resolvedTimeoutMs);
+    context.signal?.addEventListener('abort', onAbort, { once: true });
 
     proc.stdout.on('data', (chunk) => {
       const text = String(chunk || '');
@@ -205,12 +238,11 @@ function runProcess({ command, bin, argv, cwd, timeoutMs, context }) {
     });
 
     proc.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(new ToolingError(ErrorCode.RUNTIME_ERROR, error.message || String(error)));
+      finish(() => reject(new ToolingError(aborted ? ErrorCode.ABORTED : ErrorCode.RUNTIME_ERROR,
+        aborted ? 'command aborted' : error.message || String(error))));
     });
 
     proc.on('close', (code, signal) => {
-      clearTimeout(timeout);
       publishDebug('shell.exec.exit', {
         command,
         bin,
@@ -220,18 +252,22 @@ function runProcess({ command, bin, argv, cwd, timeoutMs, context }) {
         timed_out: timedOut
       });
 
+      if (aborted) {
+        finish(() => reject(new ToolingError(ErrorCode.ABORTED, 'command aborted')));
+        return;
+      }
       if (timedOut) {
-        reject(new ToolingError(ErrorCode.TIMEOUT, `command timeout after ${resolvedTimeoutMs}ms`));
+        finish(() => reject(new ToolingError(ErrorCode.TIMEOUT, `command timeout after ${resolvedTimeoutMs}ms`)));
         return;
       }
 
       const maxChars = Number(context.maxOutputChars || 8000);
       const combined = `${stdout || ''}${stderr ? `\n[stderr]\n${stderr}` : ''}`.slice(0, maxChars);
       if (Number(code) !== 0) {
-        reject(new ToolingError(ErrorCode.RUNTIME_ERROR, combined || `command failed with exit code ${code}`));
+        finish(() => reject(new ToolingError(ErrorCode.RUNTIME_ERROR, combined || `command failed with exit code ${code}`)));
         return;
       }
-      resolve(combined || '(no output)');
+      finish(() => resolve(combined || '(no output)'));
     });
   });
 }

@@ -23,6 +23,25 @@ function buildMeta(context = {}) {
   };
 }
 
+function awaitWithAbort(value, signal) {
+  if (!signal) return Promise.resolve(value);
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new ToolingError(ErrorCode.ABORTED, 'tool execution aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(value).then(
+      (result) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(result);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
 class ToolExecutor {
   constructor(registryOrToolRegistry, opts = {}) {
     if (isRegistryObject(registryOrToolRegistry)) {
@@ -56,7 +75,7 @@ class ToolExecutor {
       enforcePolicy,
       async (ctx) => {
         const meta = ctx.meta || {};
-        ctx.result = await ctx.tool.run(ctx.request.args || {}, {
+        const running = ctx.tool.run(ctx.request.args || {}, {
           workspaceRoot: ctx.workspaceRoot,
           security: this.execConfig.security,
           safeBins: this.execConfig.safeBins,
@@ -71,8 +90,10 @@ class ToolExecutor {
           approval_mode: meta.approval_mode || null,
           workspace_root: meta.workspace_root || null,
           publishEvent: ctx.publishEvent || null,
-          bus: ctx.bus || null
+          bus: ctx.bus || null,
+          signal: ctx.signal || null
         });
+        ctx.result = await awaitWithAbort(running, ctx.signal);
       }
     ]);
   }
@@ -91,6 +112,7 @@ class ToolExecutor {
       workspaceRoot: context.workspaceRoot || process.cwd(),
       publishEvent: context.publishEvent || null,
       bus: context.bus || null,
+      signal: context.signal || null,
       registry: this.registry,
       policy: this.policy,
       result: null,
@@ -146,4 +168,4 @@ class ToolExecutor {
   }
 }
 
-module.exports = { ToolExecutor };
+module.exports = { ToolExecutor, awaitWithAbort };

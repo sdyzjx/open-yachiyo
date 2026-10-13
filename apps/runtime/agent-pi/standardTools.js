@@ -90,6 +90,7 @@ function createStandardTools({ sdk, cwd, executor, approvalCoordinator, bus, con
       } }, {
         ...current(),
         bus,
+        signal: options.signal,
         workspaceRoot: current().workspace_root || cwd
       });
       let result = await run();

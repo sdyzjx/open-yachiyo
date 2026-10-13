@@ -404,6 +404,8 @@ test('TC-PI-034 native steering supersedes an unfinished tool turn before its ne
       ? 'steered answer' : 'old answer' }, { executor });
   const firstRun = f.runtime.run({ sessionId: 'native-steer', input: 'first task' });
   await started;
+  const entry = f.runtime.sessionRegistry.peek('native-steer');
+  Object.defineProperty(entry.session, 'isStreaming', { configurable: true, get: () => false });
   const secondRun = f.runtime.run({ sessionId: 'native-steer', input: 'second voice', deliveryMode: 'steer' });
   releaseTool();
   const [first, second] = await Promise.all([firstRun, secondRun]);

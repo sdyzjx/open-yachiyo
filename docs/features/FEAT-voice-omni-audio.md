@@ -16,7 +16,7 @@
 
 `qwen-realtime` provider adapter 把 Pi transcript、当前工具声明和 system sections 转成 Realtime 原生事件；模型的 function call 转回 Pi 标准 `toolCall`。因此工具并行、审批、steering/follow-up、错误预算、会话 JSONL 和上下文压缩都由 Pi 处理，adapter 不直接调用 `ToolExecutor`。模型请求工具后，adapter 暂存当前 WebSocket；Pi 执行工具，并在同一条云端连接上追加匹配 `call_id` 的 `function_call_output` 后触发续答。这样 Qwen 仍持有服务端 function call，不会因跨连接续接而拒绝工具结果。连接结束后的旧工具调用与结果仍从 Pi transcript 恢复，但会转成带标签的文字历史，避免把只在旧连接有效的 `call_id` 重放到新连接。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，文本由 Pi 进入 `chat.delta/chat.final`，工具状态进入 `tool_call.*`。启用原生音频时 adapter 隐藏 `voice.tts_aliyun_vc` 并追加禁止二次 TTS 的 provider 指令，避免同时播放两套声音。
 
-录音采用「最新输入优先」：录音结束后采集层立即把 WAV 移交给 RuntimeRpcWorker，不等待云端转写。新的录音可以马上开始；如果同一 Pi 会话仍在工具或续答中，新音频按 Pi 原生 steering 进入已有 `AgentSession`，不会由采集层维护另一套“正在回答”状态。
+录音采用「最新输入优先」：录音结束后采集层立即把 WAV 移交给 RuntimeRpcWorker，不等待云端转写。新的录音可以马上开始；如果同一 Pi 会话仍在生成、等待审批、执行工具或续答，worker 调用 Pi 原生 `abort()`，把 run 的 `AbortSignal` 传到工具桥，等待旧请求以 `ABORTED` 收口后再把新音频送入原有 `AgentSession`。尚未进入 Pi 的旧请求也会被新语音淘汰。普通文字纠正仍可显式使用 Pi `steer`，在当前工具完成后改方向。
 
 手机会保留网关返回的结构化音频错误并显示其中的 `message`（如 `ASR HTTP 401/403/400`），同时写入不含凭据的 Web 日志，避免把错误对象渲染成无法诊断的 `[object Object]`。Realtime 配置错误使用 `-32602` 并保留可操作的原因；网关模型目录把缺少工作空间地址的型号标为 `available=false`，手机与桌面聊天会显示但禁用该型号，并自动选中下一个可用模型。
 
@@ -67,4 +67,4 @@ Realtime 原生音频的 `realtime_voice` 预设默认是官方音色 `Tina`，�
 
 ## 6. 测试用例
 
-TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030、TC-VOC-038，见 `docs/testing/TC-voice-provider-config.md`；TC-PI-038…042 见 `docs/testing/TC-runtime-pi-agent-core.md`；TC-AND-053 见 `docs/testing/TC-android-web.md`。
+TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030、TC-VOC-038，见 `docs/testing/TC-voice-provider-config.md`；TC-PI-038…043 见 `docs/testing/TC-runtime-pi-agent-core.md`；TC-AND-053 见 `docs/testing/TC-android-web.md`。

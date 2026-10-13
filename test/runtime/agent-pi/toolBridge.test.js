@@ -38,6 +38,41 @@ test('TC-PI-006 permission rejection becomes a pi tool error without executing',
   await assert.rejects(tool.execute('call', {}, controller.signal), /abort/i);
 });
 
+test('TC-PI-043 Pi abort signal reaches a running executor tool', async () => {
+  let receivedSignal;
+  let started;
+  const didStart = new Promise((resolve) => { started = resolve; });
+  const executor = new ToolExecutor({ hold: { run: async (_args, context) => {
+    receivedSignal = context.signal;
+    started();
+    await new Promise((resolve) => context.signal.addEventListener('abort', resolve, { once: true }));
+    context.signal.throwIfAborted();
+    return 'late';
+  } } });
+  const [tool] = bridgeTools({ executor });
+  const controller = new AbortController();
+  const running = tool.execute('call', {}, controller.signal);
+  await didStart;
+  controller.abort();
+  await assert.rejects(running, /abort/i);
+  assert.equal(receivedSignal, controller.signal);
+});
+
+test('TC-PI-043 abort releases Pi even when a tool adapter cannot cancel its side effect', async () => {
+  let started;
+  const didStart = new Promise((resolve) => { started = resolve; });
+  const executor = new ToolExecutor({ hold: { run: () => {
+    started();
+    return new Promise(() => {});
+  } } });
+  const [tool] = bridgeTools({ executor });
+  const controller = new AbortController();
+  const running = tool.execute('call', {}, controller.signal);
+  await didStart;
+  controller.abort();
+  await assert.rejects(running, /ABORTED.*tool execution aborted/);
+});
+
 test('TC-PI-007 desktop capture result includes an actual image block', async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-capture-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));

@@ -66,6 +66,7 @@ function bridgeTools({ executor, bus, context = {}, onlineNames = new Map(), app
         const meta = { ...current, call_id: callId };
         const execute = () => executor.execute({ name: definition.name, args }, {
           ...meta, bus, workspaceRoot: current.workspace_root || process.cwd(),
+          signal,
           publishEvent: (topic, payload = {}) => bus?.publish(topic, {
             ...payload, trace_id: current.trace_id, session_id: current.session_id,
             step_index: current.step_index, call_id: callId, tool_name: definition.name

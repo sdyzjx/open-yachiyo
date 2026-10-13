@@ -10,6 +10,7 @@ const { ToolConfigStore } = require('../../apps/runtime/tooling/toolConfigStore'
 const { ToolRegistry } = require('../../apps/runtime/tooling/toolRegistry');
 const { ToolExecutor } = require('../../apps/runtime/executor/toolExecutor');
 const { __resetShellApprovalStoreForTests } = require('../../apps/runtime/tooling/shellApprovalStore');
+const shellAdapter = require('../../apps/runtime/tooling/adapters/shell');
 
 function buildExecutor() {
   const store = new ToolConfigStore({ configPath: path.resolve(process.cwd(), 'config/tools.yaml') });
@@ -91,6 +92,20 @@ test('ToolExecutor rejects invalid args by schema', async () => {
   const result = await executor.execute({ name: 'add', args: { a: 'x', b: 1 } });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'VALIDATION_ERROR');
+});
+
+test('TC-PI-043 shell process terminates when the Pi run is aborted', async () => {
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const running = shellAdapter['shell.exec']({ command: 'sleep 5', timeoutSec: 10 }, {
+    workspaceRoot: process.cwd(),
+    permission_level: 'high',
+    approval_mode: 'full_access',
+    signal: controller.signal
+  });
+  setTimeout(() => controller.abort(), 30);
+  await assert.rejects(running, (error) => error?.code === 'ABORTED');
+  assert.ok(Date.now() - startedAt < 1000);
 });
 
 test('ToolExecutor desktop perception tools return JSON string payloads', async () => {

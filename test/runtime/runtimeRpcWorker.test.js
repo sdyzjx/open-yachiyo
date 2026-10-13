@@ -364,15 +364,22 @@ test('a newer voice request interrupts the active turn for the same session', as
   worker.stop();
 });
 
-test('TC-PI-034 native queueing dispatches concurrent envelopes as steer/followUp without aborting', async () => {
+test('TC-PI-043 a newer voice aborts native Pi work and waits before re-entering the session', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();
   const seen = [];
+  let firstStarted;
+  const started = new Promise((resolve) => { firstStarted = resolve; });
   const runner = {
     supportsNativeQueueing: true,
     async run({ input, deliveryMode, signal }) {
       seen.push({ input, deliveryMode, signal });
-      await new Promise((resolve) => setTimeout(resolve, input === 'first' ? 70 : 5));
+      if (input === 'first') {
+        firstStarted();
+        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
       return { output: `ok:${input}`, traceId: `trace:${input}`, state: 'DONE' };
     }
   };
@@ -383,6 +390,7 @@ test('TC-PI-034 native queueing dispatches concurrent envelopes as steer/followU
   await queue.submit({ jsonrpc: '2.0', id: 'native-first', method: 'runtime.run', params: {
     session_id: 'native-session', input: 'first'
   } }, { send: (value) => responses.push(value) });
+  await started;
   await queue.submit({ jsonrpc: '2.0', id: 'native-second', method: 'runtime.run', params: {
     session_id: 'native-session', input: 'second', input_audio: audio
   } }, { send: (value) => responses.push(value) });
@@ -391,9 +399,53 @@ test('TC-PI-034 native queueing dispatches concurrent envelopes as steer/followU
     { input: 'first', deliveryMode: 'followUp' },
     { input: 'second', deliveryMode: 'steer' }
   ]);
-  assert.equal(seen.every(({ signal }) => !signal.aborted), true);
+  assert.equal(seen[0].signal.aborted, true);
+  assert.equal(responses.find((item) => item.id === 'native-first').result.state, 'ABORTED');
+  assert.equal(responses.find((item) => item.id === 'native-first').result.metrics.abort_code, 'SUPERSEDED_BY_VOICE');
+  assert.equal(responses.find((item) => item.id === 'native-second').result.state, 'DONE');
   assert.deepEqual(responses.map((item) => item.id).sort(), ['native-first', 'native-second']);
   assert.equal(worker.activeRuns.size, 0);
+  worker.stop();
+});
+
+test('TC-PI-043 a voice supersedes an older request before that request enters Pi', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  const seen = [];
+  let releasePreparation;
+  let preparationStarted;
+  const preparing = new Promise((resolve) => { preparationStarted = resolve; });
+  const preparationGate = new Promise((resolve) => { releasePreparation = resolve; });
+  const runner = {
+    supportsNativeQueueing: true,
+    async run({ input }) {
+      seen.push(input);
+      return { output: `ok:${input}`, traceId: `trace:${input}`, state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+  const responses = [];
+  await queue.submit({ jsonrpc: '2.0', id: 'preparing-first', method: 'runtime.run', params: {
+    session_id: 'preparing-session', input: 'old request'
+  } }, {
+    send: (value) => responses.push(value),
+    buildRunContext: async () => {
+      preparationStarted();
+      await preparationGate;
+      return {};
+    }
+  });
+  await preparing;
+  await queue.submit({ jsonrpc: '2.0', id: 'preparing-voice', method: 'runtime.run', params: {
+    session_id: 'preparing-session', input: 'new voice',
+    input_audio: { audio_ref: '/tmp/voice.wav', format: 'wav', transcribed_text: 'new voice' }
+  } }, { send: (value) => responses.push(value) });
+  releasePreparation();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(seen, ['new voice']);
+  assert.equal(responses.find((item) => item.id === 'preparing-first').result.state, 'ABORTED');
+  assert.equal(responses.find((item) => item.id === 'preparing-voice').result.state, 'DONE');
   worker.stop();
 });
 

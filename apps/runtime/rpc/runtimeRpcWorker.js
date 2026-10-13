@@ -99,21 +99,34 @@ class RuntimeRpcWorker {
     this.activeRun = null;
     this.activeRuns = new Map();
     this.inFlight = new Set();
+    this.submissionSequence = 0;
+    this.latestVoiceBySession = new Map();
     this.voiceRunTimeoutMs = voiceRunTimeoutMs;
     this.runTimeoutMs = runTimeoutMs;
     this.unsubscribeSubmit = this.queue.onSubmit?.((envelope) => this.interruptForNewVoice(envelope)) || (() => {});
   }
 
   interruptForNewVoice(envelope) {
-    if (this.runner.supportsNativeQueueing) return false;
+    envelope.workerSequence = ++this.submissionSequence;
     const request = envelope?.request;
     const params = request?.params || {};
     const sessionId = typeof params.session_id === 'string' ? params.session_id : '';
     if (request?.method !== 'runtime.run' || !params.input_audio || !sessionId) return false;
-    const active = this.activeRun;
-    if (!active || active.sessionId !== sessionId || active.controller.signal.aborted) return false;
-    active.controller.abort({ code: 'SUPERSEDED_BY_VOICE', message: '已停止上一条任务，正在处理新的语音。' });
-    return true;
+    this.latestVoiceBySession.delete(sessionId);
+    this.latestVoiceBySession.set(sessionId, envelope.workerSequence);
+    if (this.latestVoiceBySession.size > 2048) {
+      this.latestVoiceBySession.delete(this.latestVoiceBySession.keys().next().value);
+    }
+    const activeRecords = this.runner.supportsNativeQueueing
+      ? [...this.activeRuns.values()].filter((active) => active.sessionId === sessionId)
+      : [this.activeRun].filter((active) => active?.sessionId === sessionId);
+    let interrupted = false;
+    for (const active of activeRecords) {
+      if (active.controller.signal.aborted) continue;
+      active.controller.abort({ code: 'SUPERSEDED_BY_VOICE', message: '已停止上一条任务，正在处理新的语音。' });
+      interrupted = true;
+    }
+    return interrupted;
   }
 
   start() {
@@ -209,6 +222,15 @@ class RuntimeRpcWorker {
     const sessionId = typeof params.session_id === 'string' && params.session_id
       ? params.session_id
       : `rpc-${uuidv4()}`;
+
+    // Pi can queue steering natively, but a new spoken request means "stop and
+    // listen now". Wait for the aborted run to settle before entering the same
+    // AgentSession again so prompt ownership and output streams cannot overlap.
+    if (inputAudio && this.runner.supportsNativeQueueing) {
+      const interrupted = [...this.activeRuns.values()]
+        .filter((active) => active.sessionId === sessionId && active.settled);
+      if (interrupted.length > 0) await Promise.allSettled(interrupted.map((active) => active.settled));
+    }
 
     let slashCommandResult = null;
     try {
@@ -421,18 +443,24 @@ class RuntimeRpcWorker {
       requested_model_ref: modelRef
     });
     const controller = new AbortController();
+    const latestVoiceSequence = this.latestVoiceBySession.get(sessionId) || 0;
+    if (Number(envelope.workerSequence || 0) < latestVoiceSequence) {
+      controller.abort({ code: 'SUPERSEDED_BY_VOICE', message: '已停止上一条任务，正在处理新的语音。' });
+    }
     const timeoutMs = inputAudio ? this.voiceRunTimeoutMs : this.runTimeoutMs;
     const timer = setTimeout(() => controller.abort({
       code: 'RUN_TIMEOUT',
       message: inputAudio ? '语音任务执行超时，已停止。请重试或换一种说法。' : '任务执行超时，已停止。'
     }), timeoutMs);
     const activeKey = Symbol(String(request?.id ?? 'runtime.run'));
-    const activeRecord = { sessionId, requestId: request?.id ?? null, controller };
+    let settleActive;
+    const settled = new Promise((resolve) => { settleActive = resolve; });
+    const activeRecord = { sessionId, requestId: request?.id ?? null, controller, settled };
     if (this.runner.supportsNativeQueueing) this.activeRuns.set(activeKey, activeRecord);
     else this.activeRun = activeRecord;
     let result;
     try {
-      result = await this.runner.run({
+      if (!controller.signal.aborted) result = await this.runner.run({
         sessionId,
         input,
         inputImages,
@@ -469,6 +497,7 @@ class RuntimeRpcWorker {
       result = null;
     } finally {
       clearTimeout(timer);
+      settleActive();
       if (this.runner.supportsNativeQueueing) this.activeRuns.delete(activeKey);
       else if (this.activeRun?.controller === controller) this.activeRun = null;
     }

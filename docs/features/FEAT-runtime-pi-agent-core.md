@@ -35,7 +35,7 @@ sequenceDiagram
 
 每次 run 重新读取 Model Catalog、skills.yaml 和设备方法；同一 session 由长生命周期 AgentSession 管理，session_id 的 SHA-256 对应固定 pi JSONL。恢复由 SessionManager 完成，旧 UI 历史只在首次建立 pi 会话时导入。系统 memory SOP/bootstrap seeds 随 pi 会话保留，后续不会重复导入 user/assistant seeds。
 
-模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。RuntimeRpcWorker 会并发把同一会话的新输入交给长生命周期 AgentSession：语音和显式用户纠正使用 Pi 原生 `steer`，普通文字使用 `followUp`。steer 在当前 assistant turn 的工具结束后、下一次模型调用前插入；被接续的旧 RPC 以 `ABORTED` 收口，新输入拥有独立 trace、事件和最终结果。音频 turn 默认最长 90 s，其他 turn 默认最长 180 s。
+模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。RuntimeRpcWorker 会并发把同一会话的新输入交给长生命周期 AgentSession：显式用户纠正使用 Pi 原生 `steer`，普通文字使用 `followUp`。steer 在当前 assistant turn 的工具结束后、下一次模型调用前插入。新的手机语音采用“最新输入优先”：worker 通过 Pi 当前 run 的 `AbortSignal` 取消旧模型、审批等待和支持取消的工具，等待旧 run 以 `ABORTED` 完整收口，再把新语音送入同一个 `AgentSession`；尚在上下文准备阶段的旧请求也会被跳过。每个输入拥有独立 trace、事件和最终结果。音频 turn 默认最长 90 s，其他 turn 默认最长 180 s。
 
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 Pi 解析并通过标准 Skills 区段展示。项目工作目录中的 `AGENTS.override.md`、`AGENTS.md` 或 `CLAUDE.md` 按 Pi 原生祖先目录规则加载一次；Yachiyo prompt、项目 context 与 Skills 各自占独立区段，不重复拼接。
 
@@ -55,7 +55,7 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 同一 `sessionId` 由 `AgentSessionRegistry` 复用一个长生命周期 Pi `AgentSession`。默认最多驻留 32 个会话，空闲 30 分钟后回收内存对象；Pi JSONL 会话不删除，后续请求从原 `SessionManager` 恢复。每次运行的 `plan` 与 `metrics` 同时记录 `requested_model_ref` 和 `resolved_model_ref`，用于区分界面选择、会话覆盖、全局默认和 fallback 的实际结果。
 
-RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入默认 `steer`，文字输入默认 `followUp`。每条排队输入由 `TurnCoordinator` 在 Pi user message 边界激活，工具上下文、流式 delta、tool_call 事件和 final 不跨请求串线；队列最后一条输入等待 `agent_settled` 后返回。
+RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入标记为 `steer`，文字输入默认 `followUp`。同一会话的新音频会先执行即时取消与会话串行重入；其他 steer/followUp 继续使用 Pi 原生队列。每条排队输入由 `TurnCoordinator` 在 Pi user message 边界激活，工具上下文、流式 delta、tool_call 事件和 final 不跨请求串线；队列最后一条输入等待 `agent_settled` 后返回。忙碌判断同时检查 Pi `agent.signal`、Session streaming 状态和 TurnCoordinator，工具阶段不会再误调用第二次 `prompt()`。
 
 事件保留 `{trace_id,session_id,task_id:null,step_index,seq,event,source:'runtime',latency_budget_ms:1200,payload}`：
 
@@ -137,7 +137,7 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - AgentSession 忙碌时不能切换模型；带不同 `model_ref` 的排队输入会返回明确错误，客户端应在当前 turn settled 后重试选择。
 - `shell.approve` 仍保留在 legacy 回滚核心的工具注册表中；Pi 核心不会把它发给 provider。legacy 模式尚未获得本节的策略层审批语义。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
-- Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
+- Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用，并会终止 `shell.exec` 子进程；其他工具只有在 adapter 遵守传入的 `AbortSignal` 时才能立即停止，已经提交到外部设备的副作用不能撤销。
 - EventBus 订阅最多 32 个、单订阅 TTL 最长 1 小时、会话队列最多 512 条、单事件最大 64 KiB。只接受 plugin/device/avatar/audio/voice/task/ui/client/sys 命名空间；带其他 session_id 的内部事件不会跨会话投递，设备来源事件可进入订阅。订阅随驻留 AgentSession 回收，不作为永久后台任务恢复。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
@@ -147,6 +147,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…041，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行、会话审批策略、EventBus 订阅与 Qwen Realtime provider。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…043，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、EventBus 订阅与 Qwen Realtime provider。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

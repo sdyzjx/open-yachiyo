@@ -156,18 +156,21 @@ async function createPiRuntime(deps) {
       ].join('\n');
       const events = new EventBridge({ bus: deps.bus, sessionId, streaming });
       events.setToolNameResolver((name) => toolNames.get(name) || name);
-      const alreadyStreaming = state.session.isStreaming;
+      const alreadyRunning = Boolean(state.session.agent.signal || state.session.isStreaming
+        || state.coordinator.current());
       const tracker = state.coordinator.register({
         input,
         events,
         runtimeContext: { ...state.lastRuntimeContext, input_type: 'event' },
         systemPrompt: state.systemPrompt,
-        startsImmediately: !alreadyStreaming
+        startsImmediately: !alreadyRunning
       });
-      const prompting = state.session.prompt(input, {
-        ...(alreadyStreaming ? { streamingBehavior: 'steer' } : {}),
-        preflightResult: (disposition) => { tracker.disposition = disposition; }
-      });
+      const prompting = alreadyRunning
+        ? state.session.steer(input)
+        : state.session.prompt(input, {
+          preflightResult: (disposition) => { tracker.disposition = disposition; }
+        });
+      if (alreadyRunning) tracker.disposition = 'queued';
       prompting.catch((error) => state.coordinator.fail(tracker, error));
       tracker.promise.then((turn) => {
         events.finish(turn.output, turn.state === 'DONE' ? 'DONE' : turn.state === 'SUPERSEDED' ? 'ABORTED' : 'ERROR');
@@ -280,18 +283,19 @@ async function createPiRuntime(deps) {
           let model = entry.models.getModel(descriptor.provider, descriptor.id);
           model = modelWithImages(model, entry.tools, images);
           const startLeaf = entry.manager.getLeafId();
-          const alreadyStreaming = entry.session.isStreaming;
-          if (alreadyStreaming && !sameModel(entry.session.model, model)) {
+          const alreadyRunning = Boolean(entry.session.agent.signal || entry.session.isStreaming
+            || entry.state.coordinator.current());
+          if (alreadyRunning && !sameModel(entry.session.model, model)) {
             throw new Error('Cannot change the session model while another turn is running; retry after it settles');
           }
-          if (!alreadyStreaming) {
+          if (!alreadyRunning) {
             entry.state.systemPrompt = systemPrompt;
             entry.session.setActiveToolsByName(entry.allToolNames);
             await entry.session.reload();
             if (!sameModel(entry.session.model, model)) await entry.session.setModel(model, { persist: false });
           }
           const tracker = entry.state.coordinator.register({
-            input, events, runtimeContext, systemPrompt, startsImmediately: !alreadyStreaming
+            input, events, runtimeContext, systemPrompt, startsImmediately: !alreadyRunning
           });
           try {
             args.signal?.throwIfAborted();
@@ -309,7 +313,7 @@ async function createPiRuntime(deps) {
                 timestamp: Date.now(),
                 yachiyoInputAudio: { ...inputAudio }
               };
-              if (alreadyStreaming) {
+              if (alreadyRunning) {
                 if (behavior === 'followUp') entry.session.agent.followUp(message);
                 else entry.session.agent.steer(message);
                 tracker.disposition = 'queued';
@@ -319,11 +323,17 @@ async function createPiRuntime(deps) {
                 prompting = entry.session.agent.prompt(message);
               }
             } else {
-              prompting = entry.session.prompt(input, {
-                images,
-                ...(alreadyStreaming ? { streamingBehavior: behavior } : {}),
-                preflightResult: (disposition) => { tracker.disposition = disposition; }
-              });
+              if (alreadyRunning) {
+                prompting = behavior === 'followUp'
+                  ? entry.session.followUp(input, images)
+                  : entry.session.steer(input, images);
+                tracker.disposition = 'queued';
+              } else {
+                prompting = entry.session.prompt(input, {
+                  images,
+                  preflightResult: (disposition) => { tracker.disposition = disposition; }
+                });
+              }
             }
             prompting.catch((error) => entry.state.coordinator.fail(tracker, error));
             const turn = await tracker.promise;
@@ -342,7 +352,7 @@ async function createPiRuntime(deps) {
           } catch (error) {
             await entry.session.waitForIdle();
             if (directRealtimeAudio || descriptor.chatgpt_plan || index + 1 >= chain.length || events.hasOutput || events.hasTools
-              || alreadyStreaming || args.signal?.aborted || !isRetryableModelError(error)) throw error;
+              || alreadyRunning || args.signal?.aborted || !isRetryableModelError(error)) throw error;
             if (startLeaf) entry.manager.branch(startLeaf); else entry.manager.resetLeaf();
             entry.session.refreshContext();
             events.emit('llm.fallback', { from: descriptor.ref, to: chain[index + 1].ref });
