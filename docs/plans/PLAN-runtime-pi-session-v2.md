@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: done
 > 负责人: Codex /root
-> 更新: 2026-10-13
+> 更新: 2026-10-14
 > 关联: docs/plans/PLAN-android-companion-contracts.md、apps/runtime/agent-pi/、apps/gateway/deviceHub/
 
 ## 目标
@@ -89,5 +89,6 @@ flowchart LR
 - Realtime Pi transport 与音频直通：`0e39882`、`e1ccfd7`。
 - Device Hub 会话控制与双端 UI：`941253f`、`3f02429`、`f96e4c5`。
 - 自动化与真机证据：`docs/experiments/EXP-20261013-pi-session-v2-acceptance.md`。
-- 2026-10-13 真机回归修复：长生命周期会话第二轮曾重放全部历史 PCM，导致 Realtime 上游在 `response.done` 前断开。现在只发送最新未消费音频；历史语音按文本回放，工具续轮不重复上传 PCM，关闭错误同时记录 WebSocket code/reason。云连接仍按 Pi provider 请求重建，后续可继续优化为单 turn 连接复用以降低延迟。
+- 2026-10-13 真机回归修复：长生命周期会话第二轮曾重放全部历史 PCM，导致 Realtime 上游在 `response.done` 前断开。现在只发送最新未消费音频；历史语音按文本回放，工具续轮不重复上传 PCM，关闭错误同时记录 WebSocket code/reason。
+- 2026-10-14 首包优化：同一 Pi `AgentSession` 的 Qwen Realtime WebSocket 在 30 分钟空闲窗口内跨工具续轮和连续用户轮复用；新轮只追加增量上下文与最新音频。运行指标新增 `first_audio_ms`。手机输入仍为松手后提交完整 WAV，按录音 chunk 边说边上传列为下一阶段。
 - 2026-10-13 运行中打断修复：工具阶段曾因只检查 `AgentSession.isStreaming` 而误判空闲，第二段 Realtime 语音再次调用 `prompt()`，报 `Agent is already processing a prompt`。现统一检查 Pi active run signal、session 与 TurnCoordinator；新语音使用 Pi 原生 abort/AbortSignal 取消同会话旧 run，等待收口后重入，signal 贯穿 ToolExecutor 并可终止 shell 子进程，准备阶段竞态也执行 latest-wins。覆盖 TC-PI-043。

@@ -71,10 +71,20 @@ async function createPiRuntime(deps) {
 
   const createEntry = async (sessionId, initial) => {
     const { catalog, chain, cwd, seedMessages = [], systemPrompt = '' } = initial;
+    let state = null;
     const models = await createModelRuntime(catalog, {
       sessionId,
       WebSocketImpl: deps.realtimeWebSocket,
       onRealtimeAudio: ({ sessionId: audioSessionId, requestId, topic, data }) => {
+        if (topic === 'voice.stream.start') {
+          const activeEvents = state?.coordinator?.current()?.events;
+          activeEvents?.mark('first_audio_ms');
+          activeEvents?.emit('voice.stream.start', {
+            request_id: requestId,
+            sample_rate: data?.sample_rate || null,
+            format: data?.format || null
+          });
+        }
         const target = String(audioSessionId || '').startsWith('device-')
           ? String(audioSessionId).slice('device-'.length).split('--', 1)[0]
           : undefined;
@@ -99,7 +109,7 @@ async function createPiRuntime(deps) {
       }
     });
     const opened = await sessions.open({ sessionId, cwd, seedMessages, model: chain[0] });
-    const state = { current: null, coordinator: null, systemPrompt, disposed: false, lastRuntimeContext: {} };
+    state = { current: null, coordinator: null, systemPrompt, disposed: false, lastRuntimeContext: {} };
     const context = () => {
       const current = state.current;
       return {
@@ -332,7 +342,10 @@ async function createPiRuntime(deps) {
             entry.state.systemPrompt = systemPrompt;
             entry.session.setActiveToolsByName(entry.allToolNames);
             await entry.session.reload();
-            if (!sameModel(entry.session.model, model)) await entry.session.setModel(model, { persist: false });
+            if (!sameModel(entry.session.model, model)) {
+              entry.models.closeRealtimeConnections?.();
+              await entry.session.setModel(model, { persist: false });
+            }
           }
           const tracker = entry.state.coordinator.register({
             input, events, runtimeContext, systemPrompt, startsImmediately: !alreadyRunning

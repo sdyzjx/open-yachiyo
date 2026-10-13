@@ -201,10 +201,12 @@ test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a P
   assert.equal(first.sent.filter((event) => event.type === 'input_audio_buffer.append').length, 1);
   assert.equal(first.sent.filter((event) => event.type === 'response.create').length, 2);
   first.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
+  first.emit('message', JSON.stringify({ type: 'response.audio.delta', delta: 'AQI=' }));
   first.emit('message', JSON.stringify({ type: 'response.done' }));
   const result = await running;
   assert.equal(result.state, 'DONE', result.output);
   assert.equal(result.output, '答案是 42');
+  assert.equal(typeof result.metrics.first_audio_ms, 'number');
   assert.equal(f.requests.length, 0);
 });
 

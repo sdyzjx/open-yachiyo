@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { loadPi } = require('../../../apps/runtime/agent-pi/loadPi');
 const {
-  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, createQwenRealtimeStream, replayContext, audioAppendEvents
+  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, REALTIME_CONNECTION_IDLE_MS,
+  createQwenRealtimeStream, replayContext, audioAppendEvents
 } = require('../../../apps/runtime/agent-pi/qwenRealtimeAdapter');
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -184,4 +185,70 @@ test('TC-PI-045 ui.chat.post continuation closes silently with text-only modalit
   ws.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '内部收口' }));
   ws.emit('message', JSON.stringify({ type: 'response.done' }));
   await drainSecond;
+});
+
+test('TC-PI-049 realtime provider keeps one cloud session across consecutive user turns', async () => {
+  class FakeWs extends EventEmitter {
+    static instances = [];
+    constructor() {
+      super();
+      this.sent = [];
+      this.readyState = 1;
+      this.closed = 0;
+      FakeWs.instances.push(this);
+    }
+    send(raw) { this.sent.push(JSON.parse(raw)); }
+    close() { this.closed += 1; }
+  }
+  const { ai } = await loadPi();
+  const connectionPool = new Map();
+  const model = {
+    id: 'qwen3.8-omni-flash-realtime', name: 'Realtime', provider: 'qwen', api: QWEN_REALTIME_API,
+    input: ['text', 'audio'], reasoning: false, contextWindow: 65536, maxTokens: 8192, cost: usage.cost
+  };
+  const descriptor = {
+    ...model, ref: 'qwen/realtime', base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    api_key: 'secret', headers: {}, realtime_output: 'native', realtime_voice: 'yachiyo'
+  };
+  const firstMessages = [
+    { role: 'system', content: 'Answer briefly', toolsAdded: [{ name: 'clock', description: 'time', parameters: { type: 'object' } }] },
+    { role: 'user', content: '第一轮' }
+  ];
+  const first = createQwenRealtimeStream({ ai, descriptor, model, context: { messages: firstMessages },
+    options: { sessionId: 'device-phone' }, WebSocketImpl: FakeWs, connectionPool });
+  const drainFirst = (async () => { for await (const event of first) void event; })();
+  const ws = FakeWs.instances[0];
+  ws.emit('message', JSON.stringify({ type: 'session.created' }));
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  ws.emit('message', JSON.stringify({ type: 'response.audio_transcript.delta', delta: '第一答' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done' }));
+  await drainFirst;
+  assert.equal(connectionPool.size, 1);
+  assert.equal(ws.closed, 0);
+
+  const secondMessages = [
+    ...firstMessages,
+    { role: 'assistant', content: [{ type: 'text', text: '第一答' }] },
+    { role: 'system', content: '', toolsRemoved: [{ name: 'clock' }] },
+    { role: 'system', content: '', toolsAdded: [{ name: 'clock', description: 'time', parameters: { type: 'object' } }] },
+    { role: 'user', content: '第二轮' }
+  ];
+  const second = createQwenRealtimeStream({ ai, descriptor, model, context: { messages: secondMessages },
+    options: { sessionId: 'device-phone' }, WebSocketImpl: FakeWs, connectionPool });
+  const drainSecond = (async () => { for await (const event of second) void event; })();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(FakeWs.instances.length, 1);
+  assert.equal(ws.sent.at(-1).type, 'session.update');
+  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
+  const secondUser = ws.sent.filter((event) => event.item?.role === 'user').at(-1);
+  assert.equal(secondUser.item.content[0].text, '第二轮');
+  assert.equal(ws.sent.filter((event) => event.type === 'response.create').length, 2);
+  ws.emit('message', JSON.stringify({ type: 'response.audio_transcript.delta', delta: '第二答' }));
+  ws.emit('message', JSON.stringify({ type: 'response.done' }));
+  await drainSecond;
+  assert.equal(connectionPool.size, 1);
+  assert.equal(ws.closed, 0);
+  assert.equal(REALTIME_CONNECTION_IDLE_MS, 30 * 60 * 1000);
+  connectionPool.get('device-phone:qwen/realtime').cleanup();
+  ws.close();
 });

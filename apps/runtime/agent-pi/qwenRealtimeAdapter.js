@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const QWEN_REALTIME_API = 'qwen-realtime';
 const UI_CHAT_TOOL = /^ui(?:__|\.)chat(?:__|\.)post$/;
 const AUDIO_APPEND_BYTES = 32_000;
+const REALTIME_CONNECTION_IDLE_MS = 30 * 60 * 1000;
 
 function realtimeUrl(descriptor) {
   let base;
@@ -77,9 +78,21 @@ function wavPcm(audioRef) {
   return data.toString('base64');
 }
 
-function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => false } = {}) {
-  let instructions = '';
-  const tools = new Map();
+function replayContext(messages, {
+  loadAudio = wavPcm,
+  audioAlreadySent = () => false,
+  initialInstructions = '',
+  initialTools = []
+} = {}) {
+  let instructions = String(initialInstructions || '');
+  const tools = new Map((initialTools || []).map((tool) => {
+    const definition = tool?.function || tool || {};
+    return [definition.name, {
+      name: definition.name,
+      description: definition.description || definition.name,
+      parameters: definition.parameters || {}
+    }];
+  }).filter(([name]) => typeof name === 'string' && name));
   const events = [];
   const audioInputs = [];
   const audioMarkers = [];
@@ -204,21 +217,33 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     if (continuation) {
       const pending = new Set(continuation.pendingCallIds || []);
       const messages = (context.messages || []).slice(continuation.nextMessageIndex);
-      const results = messages.filter((message) => message.role === 'toolResult' && pending.has(message.toolCallId));
-      const returned = new Set(results.map((message) => message.toolCallId));
-      const missing = [...pending].filter((callId) => !returned.has(callId));
-      if (missing.length) throw new Error(`Realtime tool continuation is missing results for: ${missing.join(', ')}`);
-      prepared = {
-        instructions: '', tools: [], audioInputs: [], audioMarkers: [],
-        uiDeliveryCompleted: results.some((message) => {
-          const name = String(message.toolName || continuation.pendingCallNames?.[message.toolCallId] || '');
-          return UI_CHAT_TOOL.test(name);
-        }),
-        events: results.map((message) => ({
-          type: 'conversation.item.create',
-          item: { type: 'function_call_output', call_id: message.toolCallId, output: textOf(message.content) }
-        }))
-      };
+      if (pending.size) {
+        const results = messages.filter((message) => message.role === 'toolResult' && pending.has(message.toolCallId));
+        const returned = new Set(results.map((message) => message.toolCallId));
+        const missing = [...pending].filter((callId) => !returned.has(callId));
+        if (missing.length) throw new Error(`Realtime tool continuation is missing results for: ${missing.join(', ')}`);
+        prepared = {
+          instructions: continuation.instructions || '',
+          tools: continuation.tools || [],
+          audioInputs: [],
+          audioMarkers: [],
+          uiDeliveryCompleted: results.some((message) => {
+            const name = String(message.toolName || continuation.pendingCallNames?.[message.toolCallId] || '');
+            return UI_CHAT_TOOL.test(name);
+          }),
+          events: results.map((message) => ({
+            type: 'conversation.item.create',
+            item: { type: 'function_call_output', call_id: message.toolCallId, output: textOf(message.content) }
+          }))
+        };
+      } else {
+        prepared = replayContext(messages, {
+          loadAudio,
+          audioAlreadySent,
+          initialInstructions: continuation.instructions,
+          initialTools: continuation.tools
+        });
+      }
     } else {
       prepared = replayContext(context.messages, { loadAudio, audioAlreadySent });
     }
@@ -318,6 +343,26 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
   const responseModalities = () => descriptor.realtime_output === 'native' && !prepared.uiDeliveryCompleted
     ? ['text', 'audio']
     : ['text'];
+  const sendSessionUpdate = () => ws.send(JSON.stringify({
+    type: 'session.update',
+    session: {
+      modalities: descriptor.realtime_output === 'native' ? ['text', 'audio'] : ['text'],
+      instructions: prepared.instructions,
+      tools: prepared.tools,
+      tool_choice: prepared.tools.length ? 'auto' : 'none',
+      turn_detection: null,
+      input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
+      audio: {
+        input: {
+          format: { type: 'pcm', sample_rate: 16000, sample_format: 's16le', channels: 1,
+            packing: 'interleaved', channel_layout: 'mono' }
+        },
+        ...(descriptor.realtime_output === 'native'
+          ? { output: { voice: descriptor.realtime_voice || 'Tina', format: { type: 'pcm', sample_rate: 24000 } } }
+          : {})
+      }
+    }
+  }));
   const sendResponseCreate = () => ws.send(JSON.stringify({
     type: 'response.create',
     response: { modalities: responseModalities() }
@@ -327,26 +372,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     let event;
     try { event = JSON.parse(raw.toString()); } catch { return; }
     if (event.type === 'session.created') {
-      ws.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          modalities: descriptor.realtime_output === 'native' ? ['text', 'audio'] : ['text'],
-          instructions: prepared.instructions,
-          tools: prepared.tools,
-          tool_choice: prepared.tools.length ? 'auto' : 'none',
-          turn_detection: null,
-          input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-          audio: {
-            input: {
-              format: { type: 'pcm', sample_rate: 16000, sample_format: 's16le', channels: 1,
-                packing: 'interleaved', channel_layout: 'mono' }
-            },
-            ...(descriptor.realtime_output === 'native'
-              ? { output: { voice: descriptor.realtime_voice || 'Tina', format: { type: 'pcm', sample_rate: 24000 } } }
-              : {})
-          },
-        }
-      }));
+      sendSessionUpdate();
       return;
     }
     if (event.type === 'session.updated') {
@@ -404,7 +430,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
       const hasTools = partial.content.some((item) => item.type === 'toolCall');
       partial.stopReason = hasTools ? 'toolUse' : 'stop';
       stream.push({ type: 'done', reason: partial.stopReason, message: partial });
-      if (hasTools && connectionPool) {
+      if (connectionPool) {
         const entry = {
           ws,
           nextMessageIndex: (context.messages || []).length + 1,
@@ -412,6 +438,8 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
           pendingCallNames: Object.fromEntries(partial.content
             .filter((item) => item.type === 'toolCall')
             .map((item) => [item.id, item.name])),
+          instructions: prepared.instructions,
+          tools: prepared.tools,
           cleanup: null,
           timer: null
         };
@@ -431,7 +459,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
         entry.timer = setTimeout(() => {
           drop();
           try { ws.close(); } catch { /* already closed */ }
-        }, 55_000);
+        }, REALTIME_CONNECTION_IDLE_MS);
         entry.timer.unref?.();
         connectionPool.set(connectionKey, entry);
       } else {
@@ -457,8 +485,12 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
         return;
       }
       try {
-        for (const item of prepared.events) ws.send(JSON.stringify(item));
-        sendResponseCreate();
+        if ((continuation.pendingCallIds || []).length) {
+          for (const item of prepared.events) ws.send(JSON.stringify(item));
+          sendResponseCreate();
+        } else {
+          sendSessionUpdate();
+        }
       } catch (error) {
         fail(error);
       }
@@ -468,6 +500,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
 }
 
 module.exports = {
-  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, createQwenRealtimeStream, realtimeUrl, replayContext, wavPcm,
+  QWEN_REALTIME_API, AUDIO_APPEND_BYTES, REALTIME_CONNECTION_IDLE_MS,
+  createQwenRealtimeStream, realtimeUrl, replayContext, wavPcm,
   audioAppendEvents
 };

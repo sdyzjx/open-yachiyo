@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: Codex (gpt-6-astra)
-> 更新: 2026-10-13
+> 更新: 2026-10-14
 > 关联: ../plans/PLAN-android-ws1-pi-core.md, ../plans/PLAN-android-companion-contracts.md §C4/§C5, ../testing/TC-runtime-pi-agent-core.md, ../../apps/runtime/agent-pi/
 
 ## 1. 概述
@@ -150,7 +150,7 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - EventBus 订阅最多 32 个、单订阅 TTL 最长 1 小时、会话队列最多 512 条、单事件最大 64 KiB。只接受 plugin/device/avatar/audio/voice/task/ui/client/sys 命名空间；带其他 session_id 的内部事件不会跨会话投递，设备来源事件可进入订阅。订阅随驻留 AgentSession 回收，不作为永久后台任务恢复。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
-- Qwen Realtime 的本机 AgentSession 长期驻留且原始音频直接进入模型；provider adapter 每次模型请求仍会重新建立云端 WebSocket，但只在当前语音首次请求上传 PCM，工具续轮和后续用户轮不会重放历史二进制音频。
+- Qwen Realtime 的本机 AgentSession 长期驻留且原始音频直接进入模型；provider adapter 在同一个长期 Pi 会话中保活并复用云端 WebSocket，工具续轮和连续用户轮只追加增量消息与最新 PCM，不重放历史二进制音频。连接空闲 30 分钟、云端断开、模型切换或 Pi 会话回收后才重建，并用 Pi transcript 恢复上下文。
 - 行动承诺纠偏通过中英文短承诺模式识别触发，并且每个用户 run 最多执行一次；无法识别的其他语言或非常规措辞仍主要依赖 system prompt 约束。
 - 外部 Pi extensions、MCP、prompt templates 与 themes 仍关闭；Agent 循环、标准 Skills/context、会话和四个标准文件/shell 工具已启用。远程设备与应用能力继续通过 Yachiyo 工具目录接入，避免扩展绕过审批层。
 - package-lock.json 由统筹合并时更新；更新前不要用旧锁文件执行 npm ci。会话 JSONL 包含对话和工具结果，按现有用户数据目录保护。

@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: Codex
-> 更新: 2026-10-13
+> 更新: 2026-10-14
 > 关联: apps/gateway/deviceHub/omniAudio.js, apps/gateway/deviceHub/audioInput.js, docs/plans/PLAN-android-companion-contracts.md §C1.7/§C4, docs/testing/TC-voice-provider-config.md
 
 ## 1. 概述
@@ -14,7 +14,7 @@
 
 模型描述符用 `input/output/transport/audio` 声明能力。手机按所选模型自动选择三种路径：普通文本模型使用已配置 ASR；`audio.mode=direct` 把整段 WAV 交给普通 Omni 提取用户原话后进入 Pi；`transport=realtime` 则把录音保存为 16 kHz PCM WAV，并把音频引用直接挂在同一个 `device-<id>` Pi 用户 turn 上。Pi 的 `qwen-realtime` provider 提取原始 PCM，以每块最多 32000 bytes 的 `input_audio_buffer.append` 发送，最后执行一次 `input_audio_buffer.commit`，因此不存在独立 Realtime ASR 请求，也不会用一次转写请求再触发第二次回答请求；长录音也不会形成超过 256 KiB 的单个 WebSocket JSON 帧。
 
-`qwen-realtime` provider adapter 把 Pi transcript、当前工具声明和 system sections 转成 Realtime 原生事件；模型的 function call 转回 Pi 标准 `toolCall`。因此工具并行、审批、steering/follow-up、错误预算、会话 JSONL 和上下文压缩都由 Pi 处理，adapter 不直接调用 `ToolExecutor`。模型请求工具后，adapter 暂存当前 WebSocket；Pi 执行工具，并在同一条云端连接上追加匹配 `call_id` 的 `function_call_output` 后触发续答。这样 Qwen 仍持有服务端 function call，不会因跨连接续接而拒绝工具结果。连接结束后的旧工具调用与结果仍从 Pi transcript 恢复，但会转成带标签的文字历史，避免把只在旧连接有效的 `call_id` 重放到新连接。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，显式文字由 `ui.chat.post` 进入两端消息框，未调用该工具时 final 由 `chat.final` 回退显示，工具状态进入 `tool_call.*`。启用原生音频时 adapter 隐藏 `voice.tts_aliyun_vc` 并追加禁止二次 TTS 的 provider 指令，避免同时播放两套声音。模型自行决定是否说话；调用 `ui.chat.post` 后的工具续轮只请求文字，内部确认不播放也不重复显示。
+`qwen-realtime` provider adapter 把 Pi transcript、当前工具声明和 system sections 转成 Realtime 原生事件；模型的 function call 转回 Pi 标准 `toolCall`。因此工具并行、审批、steering/follow-up、错误预算、会话 JSONL 和上下文压缩都由 Pi 处理，adapter 不直接调用 `ToolExecutor`。同一个 Pi `AgentSession` 会在 30 分钟空闲窗口内复用同一条 Qwen Realtime WebSocket；首次请求建立并配置云端 session，后续用户轮只追加自上次回答以来的新消息、工具声明变更与最新音频。模型请求工具时也沿用该连接，在 Pi 执行后追加匹配 `call_id` 的 `function_call_output`。云端断开、切换模型或本地 AgentSession 回收后才重建连接并从 Pi transcript 恢复上下文；旧工具调用与结果会转成带标签的文字历史，避免向新连接重放已失效的 `call_id`。原生音频、可见文本和工具事件互不替代：音频进入 `voice.stream.start/chunk/end`，显式文字由 `ui.chat.post` 进入两端消息框，未调用该工具时 final 由 `chat.final` 回退显示，工具状态进入 `tool_call.*`。启用原生音频时 adapter 隐藏 `voice.tts_aliyun_vc` 并追加禁止二次 TTS 的 provider 指令，避免同时播放两套声音。模型自行决定是否说话；调用 `ui.chat.post` 后的工具续轮只请求文字，内部确认不播放也不重复显示。运行指标同时记录文字首包 `first_token_ms` 与模型原生音频首包 `first_audio_ms`。
 
 录音采用「最新输入优先」：录音结束后采集层立即把 WAV 移交给 RuntimeRpcWorker，不等待云端转写。新的录音可以马上开始；如果同一 Pi 会话仍在生成、等待审批、执行工具或续答，worker 调用 Pi 原生 `abort()`，把 run 的 `AbortSignal` 传到工具桥，等待旧请求以 `ABORTED` 收口后再把新音频送入原有 `AgentSession`。尚未进入 Pi 的旧请求也会被新语音淘汰。普通文字纠正仍可显式使用 Pi `steer`，在当前工具完成后改方向。
 
@@ -32,7 +32,8 @@ sequenceDiagram
   end
   A->>G: audio.input.end
   G->>G: WAV -> persistent Pi AgentSession
-  G->>Q: Pi context/tools + input_audio_buffer.append ×N
+  G->>Q: 首轮 session.update；后续复用云端 session
+  G->>Q: 增量 Pi context/tools + input_audio_buffer.append ×N
   G->>Q: input_audio_buffer.commit + response.create
   Q-->>G: input transcript event
   opt computer action
@@ -62,10 +63,11 @@ Realtime 原生音频的 `realtime_voice` 预设默认是官方音色 `Tina`，�
 ## 5. 限制与已知问题
 
 - 普通 Omni 音频先由同一模型提取用户原话，再进入 Pi 工具循环；Pi 当前消息类型不直接承载 audio part。
-- Realtime 工具续答连接最多等待 55 秒；若人工审批超过云端会话的空闲窗口，本轮会以连接失效错误结束，用户可重新发起请求。
+- 当前手机仍在本地收齐一轮 PCM、生成 WAV 后才把音频追加到已保活的云端 session；已经消除了重复握手和全量历史重放，但还不是按录音 chunk 边说边上传。下一阶段需要把 Device Hub 音频流与 Pi provider 的输入缓冲连接起来，同时维持 Pi 为唯一 Agent 循环。
+- 本地 Realtime 连接空闲 30 分钟后释放；阿里云当前文档给出的单 session 最长持续时间为 120 分钟。云端提前断开时下一轮自动重建并从 Pi 历史恢复。
 - 手机近场录音会受扬声器、耳机和环境噪声影响；链路成功不等于转写内容准确，声学识别需要用真人近讲和安静环境单独验收。
 - API Key 必须是允许自定义应用调用的 Model Studio API 凭据，不能使用限制在编程工具内的 Token Plan 专属 Key。
 
 ## 6. 测试用例
 
-TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030、TC-VOC-038，见 `docs/testing/TC-voice-provider-config.md`；TC-PI-038…047 见 `docs/testing/TC-runtime-pi-agent-core.md`；TC-AND-053 见 `docs/testing/TC-android-web.md`。
+TC-VOC-024、TC-VOC-025、TC-VOC-026、TC-VOC-027、TC-VOC-028、TC-VOC-029、TC-VOC-030、TC-VOC-038，见 `docs/testing/TC-voice-provider-config.md`；TC-PI-038…049 见 `docs/testing/TC-runtime-pi-agent-core.md`；TC-AND-053 见 `docs/testing/TC-android-web.md`。

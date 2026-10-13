@@ -23,7 +23,7 @@ class EventBridge {
     this.resolvedModelRef = resolvedModelRef;
     this.uiHidden = uiHidden;
     this.uiDelivered = false;
-    this.metrics = { run_started_ms: Date.now(), first_token_ms: null, first_tool_stable_ms: null,
+    this.metrics = { run_started_ms: Date.now(), first_token_ms: null, first_audio_ms: null, first_tool_stable_ms: null,
       first_tool_result_ms: null, final_ms: null, out_of_order_events: 0, tool_dedup_hit: 0, tool_parse_error: 0 };
   }
 

@@ -3,7 +3,7 @@
 > 类型: testcase
 > 状态: active
 > 负责人: Codex (gpt-6-astra)
-> 更新: 2026-10-13
+> 更新: 2026-10-14
 > 关联: ../features/FEAT-runtime-pi-agent-core.md, ../../test/runtime/agent-pi/
 
 所有用例离线执行，mock 服务仅监听 127.0.0.1；运行 `npm run test:ci`。
@@ -58,3 +58,4 @@
 | TC-PI-046 | 工具空承诺自动纠偏 | integration | Pi 会话工具可用；模型首轮只返回“我这就查看”或“我这就帮您看看”且无 tool call | 运行普通模型与 Realtime 共用的完成路径；检查“看看/找一下/查一下”等口语变体；观察内部 follow-up 和第二轮工具事件 | system prompt 禁止空承诺；运行时最多追加一次内部纠偏；同一 AgentSession 实际执行工具并用结果完成；普通能力建议及已经调用工具的回合不重复纠偏 | `test/runtime/agent-pi/piRuntime.test.js`, `test/runtime/agent-pi/promptBuilder.test.js` |
 | TC-PI-047 | Realtime 长音频分帧上传 | unit + integration | 超过 256 KiB 的 16 kHz PCM；Qwen Realtime Manual 模式 | 构建 provider 输入并检查每个 WebSocket 客户端事件；执行一次音频工具续轮 | PCM 按不超过 32000 bytes 分成多个 `input_audio_buffer.append`；每个 JSON 帧低于 64 KiB；仅一次 commit/response.create；工具续轮不重传音频 | `test/runtime/agent-pi/qwenRealtimeAdapter.test.js`, `test/runtime/agent-pi/piRuntime.test.js` |
 | TC-PI-048 | 用户交互优先反馈 | unit | Pi prompt 启用显式 UI 与可用语音 | 构建系统提示并检查工具前后反馈约束 | 长任务先回应用户；适合语音时首动作说话；工具完成后说明实际结果；文字、音频、工具保持独立 | `test/runtime/agent-pi/promptBuilder.test.js` / TC-PI-048 |
+| TC-PI-049 | Realtime 跨用户轮复用云端 session | integration | 同一 Pi 会话、假 Qwen Realtime WebSocket、连续两轮用户输入 | 第一轮完成后发送第二轮；检查连接数、session.update、增量 conversation item 与音频指标 | 只创建一条 WebSocket；第二轮不重放第一轮历史，只追加新用户输入；30 分钟空闲计时生效；`first_audio_ms` 被记录 | `test/runtime/agent-pi/qwenRealtimeAdapter.test.js`, `test/runtime/agent-pi/piRuntime.test.js` |

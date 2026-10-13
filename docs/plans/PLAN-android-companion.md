@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: active
 > 负责人: codex-coordinator
-> 更新: 2026-10-13
+> 更新: 2026-10-14
 > 关联: PLAN-android-companion-contracts.md, EXP-20261012-android-live2d-webview-feasibility.md, 各 PLAN-android-ws*.md
 
 ## 当前集成状态（2026-10-13）
@@ -255,3 +255,10 @@ flowchart TD
 - 关联文档：`docs/features/FEAT-runtime-chat-sessions.md`、`docs/features/FEAT-android-live2d-stage.md`、`docs/features/FEAT-desktop-shell-and-chat.md`；用例 TC-HUB-033/034、TC-AWB-052～056、TC-DSK-029、TC-PI-048。
 - 交付提交：`b65d676`（跨端长期会话、Android 历史面板、Desktop 会话侧栏、独立工具状态与交互反馈策略）。
 - 用户追加要求把历史面板改为连续跟手抽屉：顶部下拉与底部上推都实时驱动面板底边，视口中线作为 `closed ↔ peek ↔ full` 的统一吸附阈值；预览外部点击关闭与滚动区域手势隔离继续保留。首版因输入区整体拦截手势，遗漏了全屏时从物理屏幕最底边起手；修正后在输入框下方加入全宽抓取区。小米 6 实测下拉在中线前释放吸附半屏、越过中线吸附全屏；全屏从最底边上推在中线后释放回半屏、越过中线则完全关闭，慢速拖拽期间面板高度连续变化。交付提交：`866a25d`。
+
+### Realtime 首包延迟优化（2026-10-14）
+
+- 真实会话指标显示 Qwen3.8 Omni Realtime 最近两次无工具语音回复的文字首包为 4.22 秒与 4.18 秒。回复已经使用模型原生 `response.audio.delta`，没有经过第二次 TTS；固定延迟主要来自每轮重新建立工作空间 WebSocket、`session.update` 和完整上下文/工具重放。
+- 同一 Pi `AgentSession` 现在在 30 分钟空闲窗口内复用同一条 Qwen Realtime 云连接。工具续轮与连续用户轮只追加增量消息、工具变更和最新音频；云端断开、模型切换或本地会话回收后再从 Pi transcript 恢复。
+- 指标新增 `first_audio_ms`，区分文字 transcript 首包和真实 PCM 首包。当前手机仍在松手后才把完整 WAV 交给 provider；边录边发送 PCM 是下一阶段，不能把本轮连接复用误报为完整全双工。
+- 自动化新增 TC-PI-049，专项 Qwen Realtime/Pi 测试 26/26 通过；全量与真机数据在提交前继续补齐。
