@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { fixture } = require('./fixture');
-const { createPiRuntime } = require('../../../apps/runtime/agent-pi/piRuntime');
+const { createPiRuntime, needsActionRecovery } = require('../../../apps/runtime/agent-pi/piRuntime');
 const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
 const { ToolExecutor } = require('../../../apps/runtime/executor/toolExecutor');
 const { pcmToWav } = require('../../../apps/gateway/deviceHub/audioInput');
@@ -114,7 +114,7 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
 
 test('TC-PI-046 a tool-free action promise gets one internal Pi recovery turn', async (t) => {
   const f = await fixture(t, (body, requestNumber) => {
-    if (requestNumber === 1) return { text: '主人，我这就帮您查看电脑网卡的当前状态。' };
+    if (requestNumber === 1) return { text: '主人，我这就帮您看看桌面上的文件。' };
     if (body.messages.at(-1).role === 'tool') return { text: '网卡状态正常，地址是 192.168.20.212。' };
     return { tool: 'add', args: { a: 20, b: 22 } };
   });
@@ -129,6 +129,16 @@ test('TC-PI-046 a tool-free action promise gets one internal Pi recovery turn', 
   assert.match(f.requests[1].messages.at(-1).content, /runtime policy correction/);
   assert.ok(events.some((event) => event.event === 'agent.action.recovery'));
   assert.equal(events.filter((event) => event.event === 'tool_call.completed').length, 1);
+});
+
+test('TC-PI-046 action recovery recognizes colloquial promises without matching ordinary offers', () => {
+  for (const output of [
+    '主人，我这就帮您看看桌面上的文件。',
+    '我马上找一下相关资料。',
+    '这边现在就查一下运行日志。'
+  ]) assert.equal(needsActionRecovery({ output, hasTools: false }), true, output);
+  assert.equal(needsActionRecovery({ output: '我可以帮您看看桌面上的文件。', hasTools: false }), false);
+  assert.equal(needsActionRecovery({ output: '我这就帮您看看桌面上的文件。', hasTools: true }), false);
 });
 
 test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a Pi tool continuation', async (t) => {

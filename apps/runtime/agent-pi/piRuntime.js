@@ -38,7 +38,7 @@ function modelWithImages(model, tools, images) {
 }
 
 const ACTION_COMMITMENT_PATTERNS = [
-  /(?:我|这边).{0,10}(?:这就|马上|现在就|立即|来|帮(?:你|您)?)(?:去)?(?:查看|查询|检查|执行|运行|打开|关闭|设置|调用|搜索|获取|处理|绘制|生成|修改|发送|播放|切换)/,
+  /(?:我|这边).{0,16}(?:这就|马上|现在就|立即|来(?:帮(?:你|您)?)?|去(?:帮(?:你|您)?)?).{0,12}(?:看(?:看|一下)?|查(?:看|询|一下)?|检查|执行|运行|打开|关闭|设置|调用|搜(?:索|一下)?|找(?:找|一下)?|获取|处理|绘制|生成|修改|发送|播放|切换)/,
   /(?:I(?:'ll| will)|let me|I am going to).{0,60}(?:check|look up|inspect|run|execute|open|close|set|search|fetch|create|send|play|switch)/i
 ];
 

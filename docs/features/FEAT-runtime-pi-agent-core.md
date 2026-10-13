@@ -37,7 +37,7 @@ sequenceDiagram
 
 模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。RuntimeRpcWorker 会并发把同一会话的新输入交给长生命周期 AgentSession：显式用户纠正使用 Pi 原生 `steer`，普通文字使用 `followUp`。steer 在当前 assistant turn 的工具结束后、下一次模型调用前插入。新的手机语音采用“最新输入优先”：worker 通过 Pi 当前 run 的 `AbortSignal` 取消旧模型、审批等待和支持取消的工具，等待旧 run 以 `ABORTED` 完整收口，再把新语音送入同一个 `AgentSession`；尚在上下文准备阶段的旧请求也会被跳过。每个输入拥有独立 trace、事件和最终结果。音频 turn 默认最长 90 s，其他 turn 默认最长 180 s。
 
-模型若没有发出任何 tool call，却以“我这就查看/执行/打开……”一类外部行动承诺结束，运行时不会把该轮直接视为已完成。Pi 在同一个长期 `AgentSession` 中追加一次内部纠偏 follow-up，要求实际调用可用工具、观察结果后再回答；若能力目录中没有相应工具，则必须直接说明限制。纠偏最多一次，避免错误模型形成无限自激循环。正常问候、解释、建议和已经产生工具调用的回合不进入该分支。
+模型若没有发出任何 tool call，却以“我这就查看/看看/找一下/执行/打开……”一类外部行动承诺结束，运行时不会把该轮直接视为已完成。检测器兼容中文口语中的叠词和“一下”变体。Pi 在同一个长期 `AgentSession` 中追加一次内部纠偏 follow-up，要求实际调用可用工具、观察结果后再回答；若能力目录中没有相应工具，则必须直接说明限制。纠偏最多一次，避免错误模型形成无限自激循环。正常问候、能力建议和已经产生工具调用的回合不进入该分支。
 
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 Pi 解析并通过标准 Skills 区段展示。项目工作目录中的 `AGENTS.override.md`、`AGENTS.md` 或 `CLAUDE.md` 按 Pi 原生祖先目录规则加载一次；Yachiyo prompt、项目 context 与 Skills 各自占独立区段，不重复拼接。
 
