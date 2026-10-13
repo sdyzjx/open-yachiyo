@@ -22,6 +22,8 @@ Android 只使用 Device Hub 返回的权威 `avatar_host` 决定人物是否显
 
 welcome、重复的 `hub.state`、lifecycle resume 和 reconnect 只刷新连接与 owner 显示，不触发 enter/exit。迁移动画仍只由 `avatar.transfer.enter/exit` 驱动。移交失败时，权威 owner 若仍为本机，Android 会清理残留 parked/exited 状态、强制恢复画布可见性并重播入场，避免出现“状态显示在手机但人物消失”。
 
+Android 主界面每次恢复前台都会先把 Device Hub 模式切回 `normal`，再重放原生 HubClient 保存的最新 `avatar_host`。锁屏页面即使仍以 paused 状态留在另一任务中，也不能继续屏蔽主界面的 owner 事件；已销毁 WebView 不再接收延迟事件。
+
 ### 桌面客户端
 
 Electron 主进程从本机 pairing 接口取得 token，远程网关可通过 `DEVICE_HUB_TOKEN` 提供；以 `desktop-<hostname>` 连接，1～30 秒指数退避重连。welcome 恢复 host；连接丢失时隐藏人物并停止语音。准备/退出/进入通过现有 RPC IPC 送到渲染器，渲染器完成动画后回执。取消/断线会使正在等待的动画失效，旧动画不能再次隐藏恢复后的 host。语音在播放前和 AudioContext 恢复后再次校验归属。
@@ -44,4 +46,4 @@ RPC `avatar.transfer {to}`、`avatar.status {}`；HTTP `POST /api/device/avatar/
 
 ## 测试用例
 
-[TC-device-hub-avatar-transfer.md](../testing/TC-device-hub-avatar-transfer.md)：TC-AVT-001～012，Android owner/失败恢复回归自动化位于 `test/android-web/avatarOwnerState.test.js` 与 `test/android-web/transferControl.test.js`。
+[TC-device-hub-avatar-transfer.md](../testing/TC-device-hub-avatar-transfer.md)：TC-AVT-001～012；Android owner/失败恢复回归自动化位于 `test/android-web/avatarOwnerState.test.js` 与 `test/android-web/transferControl.test.js`，Activity 生命周期回归见 [TC-AND-054](../testing/TC-android-native.md#tc-and-054-前台宿主恢复-hub-模式与-owner-快照)。

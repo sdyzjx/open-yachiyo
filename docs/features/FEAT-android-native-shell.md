@@ -38,7 +38,7 @@ flowchart LR
 - **进程与连接**：`HubClient` 由 `CompanionApp` 持有（进程级单例），`HubService`（前台服务，类型 `connectedDevice|mediaPlayback`，录音时升级为含 `microphone`）仅负责保活、常驻通知与锁屏预启动；Activity 不重建连接（设计偏离施工文档的"Activity 绑定服务"，因多个 Activity 共用连接，进程单例更简单可靠）。
 - **连接状态机**：`disconnected → connecting → connected`；关闭码 1008 → `unauthorized`（不重试）；其他断线按 1s,2s,4s…30s 指数退避重连；握手成功重置退避、重放订阅与 `rpc.register`。心跳：按 `welcome.heartbeat_ms` 发 `ping`，2 个周期无任何入帧则主动断开并重连。
 - **WebView 宿主**：硬件加速层、`mediaPlaybackRequiresUserGesture=false`、禁用 file/content 访问、只允许 `appassets.androidplatform.net` 内导航；debug 构建开启 WebView 远程调试；渲染进程崩溃自动 `recreate()`。入口：存在 `assets/web/index.html` 则加载它，否则加载内置 `assets/fallback/index.html`（桥接测试页）；URL 追加 `?mode=normal|lockscreen`。
-- **Bridge 事件排队**：`onPageStarted` 起事件入队（上限 500，溢出丢最旧），`onPageFinished` 后按序冲刷；发送脚本在 `window.__yachiyoNative.dispatch` 尚未定义时写入 `window.__yachiyoQueue`，供前端加载后排空。
+- **Bridge 事件排队**：`onPageStarted` 起事件入队（上限 500，溢出丢最旧），`onPageFinished` 后按序冲刷；发送脚本在 `window.__yachiyoNative.dispatch` 尚未定义时写入 `window.__yachiyoQueue`，供前端加载后排空。Activity 销毁时 dispatcher 永久关闭并清空排队消息，已投递到主线程的脚本也会检查宿主与 WebView 是否仍有效。
 - **返回键**：原生发 `back` 事件，Web 在 300 ms 内调 `consumeBack()` 则视为已处理；否则默认行为（普通模式 `moveTaskToBack`，设置页 `finish`，作为默认桌面时忽略，锁屏模式请求解锁）。
 - **麦克风**：见 §3.4。
 - **插件**：见 §3.5。
@@ -51,6 +51,8 @@ flowchart LR
 `hubRpc` 的结果 `result` 为任意 JSON，经 `hub.rpc.result {call_id, result|error}` 返回。
 
 进程内可能同时存在 Main、Settings、Lockscreen 三个 WebView。入站事件与未被原生处理的 RPC 只投递给 `HubClient.currentMode` 对应的渲染宿主：设置页不接收动作 RPC，普通主页面与锁屏页面不会同时应答或播放。监听者以布尔值声明是否接管 RPC，首个接管者后停止分发；无人接管统一回 `-32601`。
+
+每个人物渲染 Activity 在 `onResume` 时把自己的 `mode` 设为当前 Hub 模式，并立即向该 WebView 重放进程内最新 `hub.state`。这覆盖锁屏 Activity 留在独立任务且只进入 paused、没有执行 `onDestroy` 的 ROM 行为；回到 Main 后 owner、设备列表和迁移按钮会按权威快照恢复。
 
 ### 3.2 JS Bridge（契约 C2.0 / C2.1 / C2.2）
 
@@ -134,4 +136,4 @@ SharedPreferences `yachiyo`，键 `config`（JSON，缺省值与契约 C2.3 一�
 
 ## 6. 测试用例
 
-JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`bridge/HubSurfacePolicyTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md`（TC-AND-001～043、050～052）与 `TC-android-server-discovery.md`（TC-AND-044～049）。
+JVM 单元测试位于 `apps/android/app/src/test/java/com/yachiyo/companion/**`：`config/ConfigStoreTest`、`hub/EnvelopeTest`、`hub/HubClientTest`（MockWebServer 假网关）、`bridge/WebDispatcherTest`、`bridge/HubSurfacePolicyTest`、`device/DeviceMethodSpecsTest`、`audio/AudioPipelineTest`、`plugins/PluginTest`、`web/PathSafetyTest`、`launcher/PackageNamesTest`。完整清单与真机手工用例见 `docs/testing/TC-android-native.md`（TC-AND-001～043、050～054）与 `TC-android-server-discovery.md`（TC-AND-044～049）。

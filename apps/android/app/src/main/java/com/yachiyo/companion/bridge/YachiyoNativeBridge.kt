@@ -40,8 +40,15 @@ class YachiyoNativeBridge(
     private val activeHubSurface get() = HubSurfacePolicy.acceptsPayload(isSettings, mode, hub.currentMode)
     private val pluginsBlocked get() = hub.currentMode == "lockscreen"
     private val ownedRegistrations = linkedSetOf<String>()
+    @Volatile private var detached = false
 
-    val dispatcher = WebDispatcher({ script -> main.post { webView.evaluateJavascript(script, null) } })
+    val dispatcher = WebDispatcher({ script ->
+        main.post {
+            if (!detached && !host.isDestroyed) {
+                webView.evaluateJavascript(script, null)
+            }
+        }
+    })
     private val serverDiscovery = ServerDiscovery(host.applicationContext, emit = { type, data ->
         dispatcher.post(type, data)
     })
@@ -78,12 +85,15 @@ class YachiyoNativeBridge(
     }
 
     fun attach() {
+        detached = false
         app.plugins.addListener(pluginsListener)
         hub.addListener(hubListener)
         app.config.addListener(configListener)
     }
 
     fun detach() {
+        detached = true
+        dispatcher.dispose()
         serverDiscovery.stop(ServerDiscovery.REASON_LIFECYCLE)
         if (ownedRegistrations.isNotEmpty()) hub.unregister(ownedRegistrations.toList())
         ownedRegistrations.clear()
@@ -94,6 +104,9 @@ class YachiyoNativeBridge(
     }
 
     fun onPageFinished() = dispatcher.markReady()
+
+    /** Reconciles a resumed surface with the latest process-wide Hub snapshot. */
+    fun emitHubState() = dispatcher.post("hub.state", hub.snapshotJson())
 
     fun emitLifecycle(state: String) =
         dispatcher.post("lifecycle", JSONObject().put("state", state).put("mode", mode))

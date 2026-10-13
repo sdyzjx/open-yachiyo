@@ -39,14 +39,15 @@ sequenceDiagram
   else 返回键 / dismissKeyguard()
     LA->>S: requestDismissKeyguard (需 PIN 时弹出解锁)
   end
-  LA->>GW: pub sys.device.mode {mode:"normal"}（onDestroy）
+  S->>Main: 恢复普通主界面
+  Main->>GW: pub sys.device.mode {mode:"normal"}（onResume）
 ```
 
 - Activity：`singleInstance`、`taskAffinity=""`、`excludeFromRecents`、`showWhenLocked`、`turnScreenOn`、保持屏幕常亮标志；`HubClient.currentMode` 同步进入重连时的 `hello.mode`。
 - 解锁/返回会请求系统关闭 keyguard 并结束人物覆盖页；ROM 不回调时 750 ms 后只关闭覆盖页，系统认证界面仍保留，不绕过设备解锁。
 - 屏幕开/关与解锁通过 `lifecycle {state: screen_off|screen_on}` 通知 Web（所有 Activity 动态注册广播）。
 - **插件隔离**：资源层 `/plugins/*` 返回 403；Bridge 层：`hubSubscribe/hubPublish/hubRpc/hubRegister` 过滤或拒绝 `plugin.*`，入站 `plugin.*` 事件不转发给 Web、入站 `plugin.*` RPC 回 `-32006`；`listPlugins()=[]`、`pluginStorage*` 无效、`pickPluginPackage`/`uninstallPlugin`/`setPluginEnabled` 拒绝、`plugin.install` 推送回 `plugin.install_failed`；`openSettings`/`launchApp`/`listLaunchableApps` 禁用。网关侧同样会对 `mode=lockscreen` 设备返回 `-32006`（契约 C1.4）。
-- **单一活动宿主**：进入锁屏前先把 `HubClient.currentMode` 切为 `lockscreen`，普通 Main WebView 随即停止接收入站事件/RPC；锁屏销毁并移除监听后再切回 `normal`。因此同一条动作或语音只进入一个页面，后台插件也不能借普通页面 Bridge 访问 Hub。
+- **单一活动宿主**：进入锁屏时把 `HubClient.currentMode` 切为 `lockscreen`，普通 Main WebView 随即停止接收入站事件/RPC；任何人物 Activity 恢复前台时都会用自身 mode 抢回 Hub 路由并重放最新状态。这样即使 ROM 只暂停而不销毁锁屏 Activity，回到 Main 也会恢复 `normal`，同一条动作或语音只进入一个页面。
 - 麦克风/音频/avatar 功能正常。
 
 ## 3. 接口与协议
@@ -70,4 +71,4 @@ Bridge：`openHomeSettings()`、`listLaunchableApps()`、`launchApp(pkg)`、`set
 
 ## 6. 测试用例
 
-TC-AND-029（设为默认桌面）、TC-AND-030（应用列表与图标）、TC-AND-031（锁屏显示）、TC-AND-032（锁屏插件隔离）、TC-AND-034（解锁与返回）、TC-AND-050/051（多宿主路由），单元：TC-AND-035（包名/图标路径校验）。见 `docs/testing/TC-android-native.md`。
+TC-AND-029（设为默认桌面）、TC-AND-030（应用列表与图标）、TC-AND-031（锁屏显示）、TC-AND-032（锁屏插件隔离）、TC-AND-034（解锁与返回）、TC-AND-050/051（多宿主路由）、TC-AND-054（前台宿主恢复与状态重放），单元：TC-AND-035（包名/图标路径校验）。见 `docs/testing/TC-android-native.md`。

@@ -561,3 +561,15 @@
 | 步骤 | 开启锁屏并息屏；网关发 voice.play、live2d RPC、调用插件工具；再解锁重复 |
 | 期望结果 | 锁屏时只有 Lockscreen 播放/应答，插件工具不可用；解锁后只有 Main 播放/应答且插件重新可用 |
 | 自动化 | manual；2026-10-13 锁屏时 `hub.rpc.request` 计数 Lockscreen=1、Main=0，`state.get` 成功且插件 RPC 返回 -32006；voice.play 单播仍待音频专项复测 |
+
+### TC-AND-054 前台宿主恢复 Hub 模式与 owner 快照
+
+| 字段 | 内容 |
+|---|---|
+| ID | TC-AND-054 |
+| 标题 | 锁屏 Activity 暂停未销毁时，Main 恢复正确 owner 与迁移控件 |
+| 类型 | unit + manual-device |
+| 前置条件 | Main 与 Lockscreen 位于不同任务；网关与桌面在线；权威 avatar host 为 desktop |
+| 步骤 | 让 Lockscreen 进入 paused 但保留实例，恢复 Main；观察设备 mode、手机 owner 文案与人物显隐；销毁设置/锁屏 WebView 后继续发送 Hub 事件 |
+| 期望结果 | Main `onResume` 发布 mode=normal 并收到最新 hub.state；手机显示“当前在电脑”且人物隐藏；已销毁 WebView 不执行脚本、不出现 destroyed WebView 错误 |
+| 自动化 | `WebDispatcherTest.kt` — `disposeDropsQueuedAndFutureEvents`；2026-10-13 小米 6：Lockscreen paused/Main resumed 时网关 mode=normal，desktop owner 时人物隐藏，电脑→手机→电脑两次 HTTP 200，关闭 Settings 后无 destroyed WebView 日志 |

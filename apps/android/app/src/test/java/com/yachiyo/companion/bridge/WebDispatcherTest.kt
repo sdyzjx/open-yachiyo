@@ -40,4 +40,14 @@ class WebDispatcherTest {
         assertFalse(s.contains(" "))
         assertTrue(s.contains("\\u2028"))
     }
+
+    @Test fun disposeDropsQueuedAndFutureEvents() {
+        val out = ArrayList<String>()
+        val d = WebDispatcher({ out.add(it) })
+        d.post("queued", JSONObject())
+        d.dispose()
+        d.markReady()
+        d.post("late", JSONObject())
+        assertTrue(out.isEmpty())
+    }
 }

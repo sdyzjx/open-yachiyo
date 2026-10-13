@@ -229,3 +229,4 @@ flowchart TD
 - 实际日志定位手机“说话后不回应”：上一条 Apple Music 语音任务连续重试工具并进入第 8 轮模型决策，单 worker 一直被占用。现同 session 新语音会 abort 旧 Pi turn，音频 turn 90 s 硬超时；Realtime 模式下新录音也会取消仍在工具回合的旧连接。新增 TC-PI-029、TC-VOC-029。
 - 手机任务卡把同一任务内名称与状态相同的重复步骤合并计数，连续工具重试显示为 `shell.exec ×N`，避免一次失败链刷出多行相同错误；新增 TC-AWB-044。
 - 定位 Realtime “不记得刚做过的事”：本机会话已有 91 条消息，但每轮新 WebSocket 仅把最近 10 条拼入 instructions，模型在实际追问中否认了前序操作。现将最近 20 条按 user=`input_text`、assistant=`output_text` 恢复为原生 conversation items，并在当前输入前发送；更早历史刷新为 session memory 摘要/相关片段。新增 TC-VOC-030。
+- 手机迁移失败排障确认 Android 生命周期竞态：小米 6 的 Main 已前台，但 LockscreenActivity 在独立任务中仅 paused 未销毁，共享 Hub 仍保持 `lockscreen`，导致 Main 丢弃 `avatar.host.changed`，页面错误显示“当前在手机”。修复为前台 Web 宿主在 `onResume` 重申 mode 并重放权威 Hub 快照，同时销毁 Bridge 时停用 dispatcher。真机保留 paused Lockscreen 后 mode 恢复 normal；手机显示与网关 owner 一致；电脑→手机→电脑往返均 HTTP 200；设置页销毁后未再出现 destroyed WebView，覆盖 TC-AND-054。

@@ -164,6 +164,11 @@ abstract class WebHostActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // LockscreenActivity can remain paused in a separate task after MainActivity becomes the
+        // foreground surface. Always let the resumed renderer own Hub delivery, then replay the
+        // authoritative snapshot so events filtered while it was paused cannot leave stale UI.
+        CompanionApp.instance.hub.setMode(mode)
+        bridge.emitHubState()
         bridge.emitLifecycle("resume")
     }
 

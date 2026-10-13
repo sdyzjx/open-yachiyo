@@ -9,11 +9,13 @@ import org.json.JSONObject
 class WebDispatcher(private val evaluate: (String) -> Unit, private val maxQueue: Int = 500) {
     private val queue = ArrayDeque<String>()
     private var ready = false
+    private var disposed = false
 
     fun post(type: String, data: Any) {
         val json = JSONObject().put("type", type).put("data", data).toString()
         val script: String?
         synchronized(this) {
+            if (disposed) return
             if (!ready) {
                 if (queue.size >= maxQueue) queue.removeFirst()
                 queue.addLast(json)
@@ -27,6 +29,7 @@ class WebDispatcher(private val evaluate: (String) -> Unit, private val maxQueue
     fun markReady() {
         val scripts: List<String>
         synchronized(this) {
+            if (disposed) return
             ready = true
             scripts = queue.map(::buildScript)
             queue.clear()
@@ -34,7 +37,14 @@ class WebDispatcher(private val evaluate: (String) -> Unit, private val maxQueue
         scripts.forEach(evaluate)
     }
 
-    fun markNotReady() = synchronized(this) { ready = false }
+    fun markNotReady() = synchronized(this) { if (!disposed) ready = false }
+
+    /** Permanently stops delivery when the owning WebView is destroyed. */
+    fun dispose() = synchronized(this) {
+        disposed = true
+        ready = false
+        queue.clear()
+    }
 
     companion object {
         /**
