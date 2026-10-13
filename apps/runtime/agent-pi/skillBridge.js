@@ -3,7 +3,7 @@ const { loadSkills } = require('../skills/skillLoader');
 const { filterEligibleSkills } = require('../skills/skillEligibility');
 const { SkillConfigStore } = require('../skills/skillConfigStore');
 
-async function createResourceLoader({ cwd = process.cwd(), agentDir, settingsManager, systemPrompt, skillConfigStore,
+async function createResourceLoader({ cwd = process.cwd(), agentDir, settingsManager, systemPrompt, getSystemPrompt, skillConfigStore,
   extensionFactories = [] }) {
   const { sdk } = await loadPi();
   const store = skillConfigStore || new SkillConfigStore();
@@ -12,7 +12,7 @@ async function createResourceLoader({ cwd = process.cwd(), agentDir, settingsMan
     cwd, agentDir, settingsManager,
     noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     extensionFactories,
-    systemPromptOverride: () => [systemPrompt, sdk.formatSkillsForPrompt(skillResources.skills, 'indirect')].filter(Boolean).join('\n\n'),
+    systemPromptOverride: () => [getSystemPrompt?.() ?? systemPrompt, sdk.formatSkillsForPrompt(skillResources.skills, 'indirect')].filter(Boolean).join('\n\n'),
     appendSystemPromptOverride: () => [],
     agentsFilesOverride: () => ({ agentsFiles: [] }),
     skillsOverride: () => {

@@ -357,6 +357,13 @@ class RuntimeRpcWorker {
       // Context hooks should not break runtime execution.
     }
 
+    // Resolve the requested/session model before persistence hooks so every
+    // input record can be attributed to the model selection that reached the runner.
+    const modelRef = typeof params.model_ref === 'string' && params.model_ref.trim()
+      ? params.model_ref.trim()
+      : (runtimeContext?.model_ref || null);
+    if (modelRef) runtimeContext = { ...runtimeContext, model_ref: modelRef };
+
     try {
       await context.onRunStart?.({
         request,
@@ -376,17 +383,12 @@ class RuntimeRpcWorker {
       session_id: sessionId
     });
 
-    // Per-run model override (contract C4.4); falls back to the session-level model_ref.
-    const modelRef = typeof params.model_ref === 'string' && params.model_ref.trim()
-      ? params.model_ref.trim()
-      : (runtimeContext?.model_ref || null);
-    if (modelRef) runtimeContext = { ...runtimeContext, model_ref: modelRef };
-
     publishChainEvent(this.bus, 'worker.runner.start', {
       request_id: request?.id ?? null,
       session_id: sessionId,
       input_chars: input.length,
-      input_images: inputImages.length
+      input_images: inputImages.length,
+      requested_model_ref: modelRef
     });
     const controller = new AbortController();
     const timeoutMs = inputAudio ? this.voiceRunTimeoutMs : this.runTimeoutMs;

@@ -5,7 +5,8 @@ function contentText(content) {
 }
 
 class EventBridge {
-  constructor({ bus, sessionId, onEvent, streaming = true, resolveToolName = (name) => name }) {
+  constructor({ bus, sessionId, onEvent, streaming = true, resolveToolName = (name) => name,
+    requestedModelRef = null, resolvedModelRef = null }) {
     this.bus = bus;
     this.sessionId = sessionId;
     this.traceId = randomUUID();
@@ -18,6 +19,8 @@ class EventBridge {
     this.hasTools = false;
     this.toolFailures = new Map();
     this.resolveToolName = resolveToolName;
+    this.requestedModelRef = requestedModelRef;
+    this.resolvedModelRef = resolvedModelRef;
     this.metrics = { run_started_ms: Date.now(), first_token_ms: null, first_tool_stable_ms: null,
       first_tool_result_ms: null, final_ms: null, out_of_order_events: 0, tool_dedup_hit: 0, tool_parse_error: 0 };
   }
@@ -93,7 +96,8 @@ class EventBridge {
 
   finish(output, state = 'DONE') {
     this.mark('final_ms');
-    const result = { output, state, traceId: this.traceId, metrics: { ...this.metrics } };
+    const result = { output, state, traceId: this.traceId, metrics: { ...this.metrics,
+      requested_model_ref: this.requestedModelRef, resolved_model_ref: this.resolvedModelRef } };
     this.emit('done', { output, state, metrics: result.metrics });
     this.bus?.publish('runtime.final', { session_id: this.sessionId, trace_id: this.traceId, output, state, metrics: result.metrics });
     return result;

@@ -14,6 +14,12 @@ function createGatewayRunner({ core = process.env.AGENT_CORE || 'pi', legacyFact
         throw error;
       });
       return (await runtime).run(args);
+    },
+    async dispose() {
+      if (!runtime) return;
+      const active = await runtime;
+      runtime = null;
+      await active.dispose?.();
     }
   };
 }

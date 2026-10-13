@@ -240,3 +240,23 @@ test('TC-PI-025 provider-safe tool names execute and emit their original names w
   }
   assert.deepEqual(events.find((event) => event.event === 'llm.final' && event.payload.decision.type === 'tool').payload.decision.tools[0].name, dotted);
 });
+
+test('TC-PI-029 runtime reuses one AgentSession and records effective model refs', async (t) => {
+  const f = await fixture(t, (body) => ({ text: `reply:${body.messages.at(-1).content}` }));
+  const firstEvents = [];
+  const first = await f.runtime.run({ sessionId: 'persistent', input: 'first', modelRef: 'mock/model',
+    onEvent: (event) => firstEvents.push(event) });
+  const resident = f.runtime.sessionRegistry.peek('persistent');
+  const second = await f.runtime.run({ sessionId: 'persistent', input: 'second', modelRef: 'mock/model' });
+  assert.equal(f.runtime.sessionRegistry.peek('persistent'), resident);
+  assert.equal(first.metrics.requested_model_ref, 'mock/model');
+  assert.equal(first.metrics.resolved_model_ref, 'mock/model');
+  assert.equal(second.metrics.resolved_model_ref, 'mock/model');
+  const plan = firstEvents.find((event) => event.event === 'plan');
+  assert.equal(plan.payload.requested_model_ref, 'mock/model');
+  assert.equal(plan.payload.resolved_model_ref, 'mock/model');
+  assert.equal(plan.payload.runtime_flags.persistent_session, true);
+  assert.ok(f.requests[1].messages.some((message) => message.role === 'user' && message.content === 'first'));
+  await f.runtime.dispose();
+  assert.equal(f.runtime.sessionRegistry.size, 0);
+});

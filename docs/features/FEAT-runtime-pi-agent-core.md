@@ -51,6 +51,8 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 `run({ sessionId, input, inputImages, inputAudio, seedMessages, runtimeContext, permissionLevel, model_ref, modelRef, signal, onEvent })` 返回 `{ output, traceId, state, metrics }`。模型覆盖优先级：model_ref → modelRef → runtimeContext.model_ref → session settings.model_ref → catalog.active。
 
+同一 `sessionId` 由 `AgentSessionRegistry` 复用一个长生命周期 Pi `AgentSession`。默认最多驻留 32 个会话，空闲 30 分钟后回收内存对象；Pi JSONL 会话不删除，后续请求从原 `SessionManager` 恢复。每次运行的 `plan` 与 `metrics` 同时记录 `requested_model_ref` 和 `resolved_model_ref`，用于区分界面选择、会话覆盖、全局默认和 fallback 的实际结果。
+
 事件保留 `{trace_id,session_id,task_id:null,step_index,seq,event,source:'runtime',latency_budget_ms:1200,payload}`：
 
 | 事件 | 主要 payload |
@@ -89,6 +91,8 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | RUNTIME_TOOL_ERROR_MAX_RETRIES / toolErrorMaxRetries | 5 | 正整数，工具失败预算 |
 | RUNTIME_VOICE_RUN_TIMEOUT_MS | 90000 | 手机音频 turn 的总执行时限；新语音仍会提前打断同 session 旧 turn |
 | RUNTIME_RUN_TIMEOUT_MS | 180000 | 非音频 turn 的总执行时限 |
+| RUNTIME_SESSION_IDLE_TTL_MS | 1800000 | 长生命周期 AgentSession 的空闲内存驻留时间；回收不删除 Pi JSONL |
+| RUNTIME_MAX_RESIDENT_SESSIONS | 32 | 同时驻留内存的 AgentSession 上限；只回收非 busy 的最久未使用会话 |
 | RUNTIME_STREAMING_ENABLED | true | false 时保留 llm.final，由 worker 按原协议发送 final preview |
 | compaction.enabled | true | 工厂布尔参数，交给 pi 自动压缩 |
 | compaction.reserveTokens | 16384 | 工厂非负整数 |
@@ -102,7 +106,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | tools.yaml policy.deviceHub.allow | `[]` | 动态 Hub 工具名的 `*` 通配模式；空数组表示不暴露任何动态方法 |
 | tools.yaml policy.deviceHub.deny | `[]` | 动态 Hub 工具名的 `*` 通配拒绝模式，优先于 deviceHub.allow |
 
-ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0。ModelRuntime 凭证和目录缓存使用内存，不读取 ~/.pi 用户凭证，不联网刷新模型目录。关闭外部 pi 扩展、模板和开发仓库上下文的自动加载。
+ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0。ModelRuntime 凭证和目录缓存使用内存，不读取 ~/.pi 用户凭证，不联网刷新模型目录。当前阶段仍关闭外部 pi 扩展、模板和开发仓库上下文的自动加载；恢复标准资源发现由 `PLAN-runtime-pi-session-v2.md` 的 P2 单独施工和验收。
 
 ## 5. 限制与已知问题
 

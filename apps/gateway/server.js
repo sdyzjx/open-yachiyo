@@ -305,6 +305,8 @@ const piRunner = createGatewayRunner({
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
   maxStep: parsePositiveIntEnv('RUNTIME_MAX_STEP', 128),
   toolErrorMaxRetries: parsePositiveIntEnv('RUNTIME_TOOL_ERROR_MAX_RETRIES', 5),
+  sessionIdleTtlMs: parsePositiveIntEnv('RUNTIME_SESSION_IDLE_TTL_MS', 30 * 60 * 1000),
+  maxResidentSessions: parsePositiveIntEnv('RUNTIME_MAX_RESIDENT_SESSIONS', 32),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input }),
   legacyFactory: () => new ToolLoopRunner({
     bus,
@@ -1146,6 +1148,7 @@ function shutdownGateway() {
   shutdownPromise = (async () => {
     await discovery.stop();
     worker.stop();
+    await runner.dispose?.();
     dispatcher.stop();
     skillRuntimeManager.stop();
     debugEventStream.dispose();
@@ -1552,6 +1555,7 @@ async function enqueueRpc(ws, rpcPayload, mode) {
           mode,
           permission_level: runtimeContext?.permission_level || normalizeSessionPermissionLevel(requestedPermissionLevel),
           workspace_root: runtimeContext?.workspace_root || null,
+          requested_model_ref: runtimeContext?.model_ref || null,
           input_images: persistedInputImages.map((image) => ({
             client_id: image.client_id || '',
             name: image.name,
@@ -1576,9 +1580,12 @@ async function enqueueRpc(ws, rpcPayload, mode) {
       if (!sessionId) return;
       await sessionStore.appendEvent(sessionId, event);
     },
-    onRunFinal: async ({ session_id: sessionId, trace_id: traceId, output, state, runtime_context: runtimeContext }) => {
+    onRunFinal: async ({ session_id: sessionId, trace_id: traceId, output, state, metrics, runtime_context: runtimeContext }) => {
       const settings = await sessionStore.getSessionSettings(sessionId);
       const permissionLevel = normalizeSessionPermissionLevel(settings?.permission_level);
+      const requestedModelRef = metrics?.requested_model_ref || runtimeContext?.model_ref || null;
+      const resolvedModelRef = metrics?.resolved_model_ref || null;
+      if (requestedModelRef) await sessionStore.updateSessionSettings(sessionId, { model_ref: requestedModelRef });
 
       await sessionStore.appendMessage(sessionId, {
         role: 'assistant',
@@ -1589,7 +1596,9 @@ async function enqueueRpc(ws, rpcPayload, mode) {
           state,
           mode,
           permission_level: permissionLevel,
-          workspace_root: runtimeContext?.workspace_root || settings?.workspace?.root_dir || null
+          workspace_root: runtimeContext?.workspace_root || settings?.workspace?.root_dir || null,
+          requested_model_ref: requestedModelRef,
+          resolved_model_ref: resolvedModelRef
         }
       });
       await sessionStore.appendRun(sessionId, {
@@ -1602,7 +1611,9 @@ async function enqueueRpc(ws, rpcPayload, mode) {
         permission_level: permissionLevel,
         workspace_root: runtimeContext?.workspace_root || settings?.workspace?.root_dir || null,
         metadata: {
-          input_images_count: inputImages.length
+          input_images_count: inputImages.length,
+          requested_model_ref: requestedModelRef,
+          resolved_model_ref: resolvedModelRef
         }
       });
     },
