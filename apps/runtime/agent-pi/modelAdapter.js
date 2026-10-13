@@ -167,6 +167,14 @@ function requestOptions(descriptor, options = {}) {
 
 async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onRealtimeTranscript, sessionId } = {}) {
   const { sdk, ai, apis } = await loadPi();
+  const completedRealtimeAudio = new Set();
+  const audioKey = (audio = {}) => String(audio.stream_id || audio.audio_ref || '');
+  const markAudioSent = (audio) => {
+    const key = audioKey(audio);
+    if (!key) return;
+    completedRealtimeAudio.add(key);
+    while (completedRealtimeAudio.size > 128) completedRealtimeAudio.delete(completedRealtimeAudio.values().next().value);
+  };
   const runtime = await sdk.ModelRuntime.create({
     credentials: new ai.InMemoryCredentialStore(), modelsStore: new ai.InMemoryModelsStore(),
     modelsPath: null, refreshOnCreate: false, allowModelNetwork: false
@@ -184,7 +192,9 @@ async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onR
         return createQwenRealtimeStream({
           ai, descriptor, model, context, options: { ...options, sessionId: sessionId || options.sessionId }, WebSocketImpl,
           onAudio: onRealtimeAudio,
-          onInputTranscript: onRealtimeTranscript
+          onInputTranscript: onRealtimeTranscript,
+          audioAlreadySent: (audio) => completedRealtimeAudio.has(audioKey(audio)),
+          markAudioSent
         });
       }
       return apis[model.api].streamSimple(model, context, requestOptions(descriptor, options));

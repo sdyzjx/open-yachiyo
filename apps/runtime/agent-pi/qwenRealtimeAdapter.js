@@ -75,11 +75,20 @@ function wavPcm(audioRef) {
   return data.toString('base64');
 }
 
-function replayContext(messages, { loadAudio = wavPcm } = {}) {
+function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => false } = {}) {
   let instructions = '';
   const tools = new Map();
   const events = [];
-  for (const message of messages || []) {
+  const audioMarkers = [];
+  const sourceMessages = messages || [];
+  let latestAudioIndex = -1;
+  for (let index = sourceMessages.length - 1; index >= 0; index -= 1) {
+    if (sourceMessages[index]?.role === 'user' && sourceMessages[index]?.yachiyoInputAudio?.audio_ref) {
+      latestAudioIndex = index;
+      break;
+    }
+  }
+  for (const [index, message] of sourceMessages.entries()) {
     if (message.role === 'system') {
       const sections = Object.values(message.sections || {}).filter(Boolean).join('\n\n');
       instructions = [instructions, textOf(message.content), sections].filter(Boolean).join('\n\n');
@@ -88,17 +97,20 @@ function replayContext(messages, { loadAudio = wavPcm } = {}) {
       continue;
     }
     if (message.role === 'user') {
-      if (message.yachiyoInputAudio?.audio_ref) {
+      const audio = message.yachiyoInputAudio;
+      if (audio?.audio_ref && index === latestAudioIndex && !audioAlreadySent(audio)) {
         events.push({
           type: 'conversation.item.create',
           item: {
             type: 'message', role: 'user',
-            content: [{ type: 'input_audio', audio: loadAudio(message.yachiyoInputAudio.audio_ref) }]
+            content: [{ type: 'input_audio', audio: loadAudio(audio.audio_ref) }]
           }
         });
+        audioMarkers.push(audio);
         continue;
       }
-      const text = textOf(message.content);
+      let text = String(audio?.transcribed_text || textOf(message.content) || '').trim();
+      if (audio?.audio_ref && (!text || text === '[实时语音输入]')) text = '[历史语音消息]';
       if (text) events.push({
         type: 'conversation.item.create',
         item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] }
@@ -133,7 +145,8 @@ function replayContext(messages, { loadAudio = wavPcm } = {}) {
       type: 'function',
       function: { name: tool.name, description: tool.description || tool.name, parameters: tool.parameters || {} }
     })),
-    events
+    events,
+    audioMarkers
   };
 }
 
@@ -151,12 +164,12 @@ function applyUsage(partial, usage = {}) {
 }
 
 function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}, WebSocketImpl = WebSocket,
-  onAudio = null, onInputTranscript = null, loadAudio }) {
+  onAudio = null, onInputTranscript = null, loadAudio, audioAlreadySent, markAudioSent }) {
   const stream = ai.createAssistantMessageEventStream();
   const partial = createPartial(model);
   let prepared;
   try {
-    prepared = replayContext(context.messages, { loadAudio });
+    prepared = replayContext(context.messages, { loadAudio, audioAlreadySent });
   } catch (error) {
     const failed = ai.createAssistantMessageEventStream();
     const message = createPartial(model);
@@ -300,6 +313,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
     if (event.type === 'response.done') {
       terminal = true;
+      for (const marker of prepared.audioMarkers) markAudioSent?.(marker);
       finishText();
       finishAudio();
       applyUsage(partial, event.response?.usage);
@@ -311,7 +325,11 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
   });
   ws.on('error', fail);
-  ws.on('close', () => { if (!terminal) fail(new Error('Realtime Omni connection closed before response.done')); });
+  ws.on('close', (code, reason) => {
+    if (terminal) return;
+    const detail = String(reason || '').trim();
+    fail(new Error(`Realtime Omni connection closed before response.done (code=${code}${detail ? `, reason=${detail}` : ''})`));
+  });
   return stream;
 }
 

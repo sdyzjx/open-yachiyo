@@ -169,6 +169,7 @@ test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and c
   second.emit('message', JSON.stringify({ type: 'session.created' }));
   second.emit('message', JSON.stringify({ type: 'session.updated' }));
   assert.ok(second.sent.some((event) => event.item?.type === 'function_call_output' && event.item.output.includes('42')));
+  assert.equal(second.sent.some((event) => event.item?.content?.[0]?.type === 'input_audio'), false);
   second.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
   second.emit('message', JSON.stringify({ type: 'response.done' }));
   const result = await running;

@@ -36,6 +36,35 @@ test('TC-PI-041 realtime context sends original audio instead of its placeholder
   assert.equal(JSON.stringify(replay.events).includes('实时语音输入'), false);
 });
 
+test('TC-PI-041 realtime context sends only the newest unconsumed audio and replays older voice turns as text', () => {
+  const messages = [
+    {
+      role: 'user', content: [{ type: 'text', text: '[实时语音输入]' }],
+      yachiyoInputAudio: { audio_ref: '/private/old.wav', stream_id: 'voice-old', transcribed_text: '旧问题' }
+    },
+    { role: 'assistant', content: [{ type: 'text', text: '旧回答' }] },
+    {
+      role: 'user', content: [{ type: 'text', text: '[实时语音输入]' }],
+      yachiyoInputAudio: { audio_ref: '/private/new.wav', stream_id: 'voice-new' }
+    }
+  ];
+  const replay = replayContext(messages, { loadAudio: (ref) => ref.endsWith('new.wav') ? 'TkVX' : 'T0xE' });
+  assert.deepEqual(replay.events.map((event) => event.item.content?.[0]), [
+    { type: 'input_text', text: '旧问题' },
+    { type: 'output_text', text: '旧回答' },
+    { type: 'input_audio', audio: 'TkVX' }
+  ]);
+  assert.deepEqual(replay.audioMarkers.map((audio) => audio.stream_id), ['voice-new']);
+
+  const continued = replayContext(messages, {
+    loadAudio: () => { throw new Error('consumed audio must not be loaded again'); },
+    audioAlreadySent: (audio) => audio.stream_id === 'voice-new'
+  });
+  assert.equal(continued.events.at(-1).item.content[0].type, 'input_text');
+  assert.equal(continued.events.at(-1).item.content[0].text, '[历史语音消息]');
+  assert.deepEqual(continued.audioMarkers, []);
+});
+
 test('TC-PI-039 realtime provider emits standard Pi text/tool events and keeps audio side-channel independent', async () => {
   class FakeWs extends EventEmitter {
     constructor() { super(); this.sent = []; FakeWs.instance = this; }

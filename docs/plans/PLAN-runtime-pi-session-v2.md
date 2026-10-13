@@ -89,4 +89,4 @@ flowchart LR
 - Realtime Pi transport 与音频直通：`0e39882`、`e1ccfd7`。
 - Device Hub 会话控制与双端 UI：`941253f`、`3f02429`、`f96e4c5`。
 - 自动化与真机证据：`docs/experiments/EXP-20261013-pi-session-v2-acceptance.md`。
-- 已知后续优化：Qwen Realtime 上游 WebSocket 目前按 Pi provider 请求建立；工具续轮会重建云连接并重放当前音频上下文。该行为不影响本地 `AgentSession`、历史或工具统一性，但可继续优化为单 turn 云连接复用以降低延迟与重复音频成本。
+- 2026-10-13 真机回归修复：长生命周期会话第二轮曾重放全部历史 PCM，导致 Realtime 上游在 `response.done` 前断开。现在只发送最新未消费音频；历史语音按文本回放，工具续轮不重复上传 PCM，关闭错误同时记录 WebSocket code/reason。云连接仍按 Pi provider 请求重建，后续可继续优化为单 turn 连接复用以降低延迟。
