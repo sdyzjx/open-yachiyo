@@ -1,7 +1,7 @@
 # Pi 长生命周期会话与统一工具平面施工计划
 
 > 类型: plan
-> 状态: active
+> 状态: done
 > 负责人: Codex /root
 > 更新: 2026-10-13
 > 关联: docs/plans/PLAN-android-companion-contracts.md、apps/runtime/agent-pi/、apps/gateway/deviceHub/
@@ -81,4 +81,12 @@ flowchart LR
 - [x] P2 工具与权限（副作用感知并行、ApprovalCoordinator、标准 Skills/context 及受控 read/bash/edit/write 已完成；外部 extensions/MCP 保持禁用以守住策略边界）。
 - [x] P3 Device Hub 与事件总线（动态 RPC、Avatar、会话级 publish/subscribe/unsubscribe/pull/channels 与 high-priority steering 已接入）。
 - [x] P4 Qwen Realtime Pi transport（原始音频直接挂入 Pi user turn；`qwen-realtime` adapter 转换 input_audio/transcript/toolCall，并以 side channel 发布原生输出 PCM；无独立 Realtime ASR 循环）。
-- [ ] P5 双端 UI、自动化与真机验收。
+- [x] P5 双端 UI、自动化与真机验收（Android 与 Desktop 均可修改当前会话策略并处理待审批；Node 848/848、Android 单测/Debug APK、Wi-Fi ADB 小米 6 三档策略实机回读通过）。
+
+## 交付记录
+
+- 会话核心与工具平面：`26f81a2`、`fe51461`、`5259ff7`、`96fb0be`、`8ad1a0f`、`4dd3340`。
+- Realtime Pi transport 与音频直通：`0e39882`、`e1ccfd7`。
+- Device Hub 会话控制与双端 UI：`941253f`、`3f02429`、`f96e4c5`。
+- 自动化与真机证据：`docs/experiments/EXP-20261013-pi-session-v2-acceptance.md`。
+- 已知后续优化：Qwen Realtime 上游 WebSocket 目前按 Pi provider 请求建立；工具续轮会重建云连接并重放当前音频上下文。该行为不影响本地 `AgentSession`、历史或工具统一性，但可继续优化为单 turn 云连接复用以降低延迟与重复音频成本。

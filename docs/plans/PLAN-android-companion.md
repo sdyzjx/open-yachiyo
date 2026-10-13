@@ -212,7 +212,7 @@ flowchart TD
 
 - 用户最新要求覆盖「手机不显示模型」的旧决定：Provider、API Key、启用列表和默认模型仍只在电脑配置页管理；手机只读取电脑端已启用模型的安全目录，并可为当前文字或语音请求选择模型。
 - Desktop Chat 与 Android Chat 均把 `model_ref` 随本次输入发送，不再因聊天切换而修改全局 `active_model`。手机目录通过 Device Hub RPC `model.catalog.get` 提供，明确排除 URL、环境变量名、headers、extra_body 与凭据。
-- Qwen 预设新增 `qwen3.8-omni-flash`（整段 WAV 音频直通）和 `qwen3.8-omni-flash-realtime`（16 kHz PCM 输入、24 kHz PCM 输出）。普通 Omni 先提取原话再进入 Pi 工具循环；Realtime 文字与音频直接流回手机，当前不桥接 Pi 工具调用。
+- Qwen 预设新增 `qwen3.8-omni-flash`（整段 WAV 音频直通）和 `qwen3.8-omni-flash-realtime`（16 kHz PCM 输入、24 kHz PCM 输出）。两种音频输入均进入当前长生命周期 Pi `AgentSession`；Realtime adapter 把 function call 交给 Pi 工具桥，并把原生文字与音频作为独立 side channel 返回手机。
 - 模型配置 schema 新增能力校验，拒绝未知 input/output/transport、缺失 audio 输入以及 Realtime mode/transport 不匹配。自动化覆盖 TC-LLM-040 ~ 042、TC-VOC-024/025、TC-AND-053、TC-DESKTOP-005。
 - 启动新网关读取既有验收配置时发现，历史「发现模型」条目会把已知 Omni 型号保留为 text/request；新增规范化迁移，以内置型号资料恢复其权威音频能力，覆盖 TC-LLM-043。
 - 运行态验收：停止旧主线网关后从 `agent/v2-config-webui` 在 3002 启动新网关；健康检查、配置页六列编辑器和真实 Device Hub `model.catalog.get` 通过。小米 6 经 Wi-Fi ADB 安装 Debug APK，WebView 显示 10 个已启用模型，Realtime/Direct Omni 分别标注“实时语音/音频直通”；切换 Realtime 后状态徽标变为“实时”，随后恢复默认模型并释放设备锁。未向模型上游发送请求。
@@ -220,7 +220,7 @@ flowchart TD
 - 本机阿里云 CLI 的 Model Studio 扩展已查询北京地域默认工作空间与目标模型推理权限；工作空间专属 Realtime 地址已写入隔离验收配置和 `~/yachiyo/config/providers.yaml`，原配置备份为 `providers.yaml.before-omni-realtime`，全程未记录密钥。真实云端文本握手、16 kHz PCM 输入、转写、文字回复与 24 kHz PCM 输出均通过。
 - 小米 6 实际长按录音完成手机麦克风 → 网关 → Qwen Realtime → 手机流式播放。测试音源受环境低频声干扰而得到英文机械声描述，结论为链路通过、声学内容识别待真人近讲复验。Realtime 原生音色原先硬编码为 `Tina`，已改成统一默认 `Cherry` 并允许模型级覆盖。
 - Pi 语音策略提高音频输入、短对话、问候与确认的语音优先级；需要语音时 TTS 是本轮首个动作。真实 `/ws` 策略模式调用顺序已验证为 `voice.tts_aliyun_vc` → `live2d.expression.set`，并修复缺失 `voice-policy.yaml` 时自动语音被静默关闭的问题。
-- Realtime 原生 Agent 已取代临时“转写后再进入 Pi”的双模型链路：会话注册 ToolExecutor 工具并处理 Function Calling，复用人格、技能、历史、权限和工作区设置；`voice.tts_aliyun_vc` 在此通路中被排除，工具事件、界面文本和原生音频分别输出。
+- Realtime 已取代临时“转写后再进入 Pi”的双模型链路：原始音频挂入 Pi user turn，Qwen Realtime 只作为 Pi model adapter；Function Calling 经 Pi 工具桥执行并复用同一个会话的人格、Skills、历史、权限和工作区。正常 Realtime 原生语音不激活独立 TTS，工具事件、界面文本和原生音频分别输出。
 - 使用 18 秒标准参考音频为 `qwen3.8-omni-flash-realtime` 创建 Yachiyo 复刻音色，并写入隔离与用户 Provider 配置。真实云端请求成功调用 `system.get_time`，工具结果续答为中文，收到 311040 bytes 24 kHz PCM；随后重启网关与手机 App，真机显示角色、Realtime 徽标及“电脑在线”。设备锁和临时 ADB forward 已释放。
 - 修复手机聊天框重复/交错：旧画布全局只保存一个 assistant 流，多个 Realtime trace 重叠或相同 final 重送时会互相终止并重复建卡。现按 `trace_id` 独立维护流式气泡，对完成 trace 做有界幂等记录；同时移除 Realtime 桌面文字路径与网关会话钩子的重复持久化。TC-AWB-041、Node 811/811、Android 单测与 Debug 构建通过；小米 6 注入交错 trace 和重复 final 后 DOM/截图仅保留“甲一”“乙二”两张气泡。
 - 修复手机聊天气泡不会自动消失：原实现复用单个全局淡出计时器，新回答的首个增量会取消上一条回答的计时且不再恢复。现将计时器绑定到每张气泡，新旧 trace 的展示周期互不干扰；新增 TC-AWB-042 覆盖“旧回答等待淡出时开始新回答”的回归场景。

@@ -158,7 +158,7 @@ pub audio.input.chunk {stream_id, seq, data_b64}          // 每块 100 ms（320
 pub audio.input.end   {stream_id, reason:"released"|"vad"|"cancel"}
 ```
 
-`transcribe` 时网关拼接 WAV 并调用 ASR；`direct` 时 WAV 作为 `input_audio` 送给所选 Omni 模型，得到的用户文本继续进入 Pi；`realtime` 时从 start 起把 PCM 逐块送入工作区专属 Realtime WebSocket，并把返回的 `chat.*` 与 `voice.stream.*` 定向发回设备。后两种模式必须携带支持对应能力的 `model_ref`。`reason:"cancel"` 不触发识别或响应。
+`transcribe` 时网关拼接 WAV 并调用 ASR，把文本作为同一 Pi turn 的输入；`direct` 时 WAV 作为 `input_audio` 进入所选 request provider 的 Pi turn；`realtime` 时网关同样先完成有界 PCM/WAV 收集，再把原始音频作为 Pi user message 的扩展内容交给 Qwen Realtime model adapter。adapter 负责 `input_audio`、转写、function call、`function_call_output` 续轮和原生音频 side channel，所有工具均由该 `session_id` 的同一个长生命周期 `AgentSession` 管理。后两种模式必须携带支持对应能力的 `model_ref`，不得在 Device Hub 另建模型循环。`reason:"cancel"` 不触发识别或响应。
 
 ### C1.8 HTTP 辅助接口（网关）
 
