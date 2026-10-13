@@ -127,7 +127,13 @@ function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => 
         if (call?.type !== 'toolCall') continue;
         events.push({
           type: 'conversation.item.create',
-          item: { type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.arguments || {}) }
+          item: {
+            type: 'message', role: 'assistant',
+            content: [{
+              type: 'output_text',
+              text: `[历史工具调用] ${call.name}: ${JSON.stringify(call.arguments || {}).slice(0, 2000)}`
+            }]
+          }
         });
       }
       continue;
@@ -135,7 +141,13 @@ function replayContext(messages, { loadAudio = wavPcm, audioAlreadySent = () => 
     if (message.role === 'toolResult') {
       events.push({
         type: 'conversation.item.create',
-        item: { type: 'function_call_output', call_id: message.toolCallId, output: textOf(message.content) }
+        item: {
+          type: 'message', role: 'user',
+          content: [{
+            type: 'input_text',
+            text: `[历史工具结果 ${message.toolName || 'unknown'}] ${textOf(message.content).slice(0, 4000)}`
+          }]
+        }
       });
     }
   }
@@ -164,13 +176,39 @@ function applyUsage(partial, usage = {}) {
 }
 
 function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}, WebSocketImpl = WebSocket,
-  onAudio = null, onInputTranscript = null, loadAudio, audioAlreadySent, markAudioSent }) {
+  onAudio = null, onInputTranscript = null, loadAudio, audioAlreadySent, markAudioSent,
+  connectionPool = null }) {
   const stream = ai.createAssistantMessageEventStream();
   const partial = createPartial(model);
+  const connectionKey = `${options.sessionId || 'default'}:${descriptor.ref || `${descriptor.provider}/${descriptor.id}`}`;
+  const continuation = connectionPool?.get(connectionKey) || null;
+  if (continuation) {
+    continuation.cleanup?.();
+    connectionPool.delete(connectionKey);
+  }
   let prepared;
   try {
-    prepared = replayContext(context.messages, { loadAudio, audioAlreadySent });
+    if (continuation) {
+      const pending = new Set(continuation.pendingCallIds || []);
+      const messages = (context.messages || []).slice(continuation.nextMessageIndex);
+      const results = messages.filter((message) => message.role === 'toolResult' && pending.has(message.toolCallId));
+      const returned = new Set(results.map((message) => message.toolCallId));
+      const missing = [...pending].filter((callId) => !returned.has(callId));
+      if (missing.length) throw new Error(`Realtime tool continuation is missing results for: ${missing.join(', ')}`);
+      prepared = {
+        instructions: '', tools: [], audioMarkers: [],
+        events: results.map((message) => ({
+          type: 'conversation.item.create',
+          item: { type: 'function_call_output', call_id: message.toolCallId, output: textOf(message.content) }
+        }))
+      };
+    } else {
+      prepared = replayContext(context.messages, { loadAudio, audioAlreadySent });
+    }
   } catch (error) {
+    if (continuation?.ws) {
+      try { continuation.ws.close(); } catch { /* already closed */ }
+    }
     const failed = ai.createAssistantMessageEventStream();
     const message = createPartial(model);
     message.stopReason = 'error';
@@ -189,7 +227,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     ].filter(Boolean).join('\n\n');
   }
   const requestId = `qwen-rt-${randomUUID()}`;
-  let ws;
+  let ws = continuation?.ws;
   let textStarted = false;
   let visibleChannel = null;
   let terminal = false;
@@ -217,9 +255,27 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
       data: error ? { message: error.message } : {}
     });
   };
+  let handleMessage;
+  let handleError;
+  let handleClose;
+  const detach = () => {
+    if (!ws) return;
+    ws.off?.('message', handleMessage);
+    ws.off?.('error', handleError);
+    ws.off?.('close', handleClose);
+    options.signal?.removeEventListener('abort', abort);
+  };
+  const discardPooledConnection = () => {
+    const pooled = connectionPool?.get(connectionKey);
+    if (pooled?.ws !== ws) return;
+    pooled.cleanup?.();
+    connectionPool.delete(connectionKey);
+  };
   const fail = (error) => {
     if (terminal) return;
     terminal = true;
+    detach();
+    discardPooledConnection();
     partial.stopReason = options.signal?.aborted ? 'aborted' : 'error';
     partial.errorMessage = String(error?.message || error);
     finishAudio(error instanceof Error ? error : new Error(partial.errorMessage));
@@ -229,18 +285,24 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
   };
 
   stream.push({ type: 'start', partial });
-  try {
-    ws = new WebSocketImpl(realtimeUrl(descriptor), {
-      headers: { Authorization: `Bearer ${options.apiKey || descriptor.api_key}`, ...descriptor.headers, ...options.headers }
-    });
-  } catch (error) {
-    queueMicrotask(() => fail(error));
-    return stream;
+  if (!ws) {
+    try {
+      ws = new WebSocketImpl(realtimeUrl(descriptor), {
+        headers: { Authorization: `Bearer ${options.apiKey || descriptor.api_key}`, ...descriptor.headers, ...options.headers }
+      });
+    } catch (error) {
+      queueMicrotask(() => fail(error));
+      return stream;
+    }
   }
 
   const abort = () => fail(options.signal?.reason || new Error('Realtime request aborted'));
   options.signal?.addEventListener('abort', abort, { once: true });
-  ws.on('message', (raw) => {
+  const sendResponseCreate = () => ws.send(JSON.stringify({
+    type: 'response.create',
+    response: { modalities: descriptor.realtime_output === 'native' ? ['text', 'audio'] : ['text'] }
+  }));
+  handleMessage = (raw) => {
     if (terminal) return;
     let event;
     try { event = JSON.parse(raw.toString()); } catch { return; }
@@ -269,7 +331,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
     if (event.type === 'session.updated') {
       for (const item of prepared.events) ws.send(JSON.stringify(item));
-      ws.send(JSON.stringify({ type: 'response.create' }));
+      sendResponseCreate();
       return;
     }
     if (event.type === 'response.text.delta') {
@@ -313,6 +375,7 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
     if (event.type === 'response.done') {
       terminal = true;
+      detach();
       for (const marker of prepared.audioMarkers) markAudioSent?.(marker);
       finishText();
       finishAudio();
@@ -320,16 +383,63 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
       const hasTools = partial.content.some((item) => item.type === 'toolCall');
       partial.stopReason = hasTools ? 'toolUse' : 'stop';
       stream.push({ type: 'done', reason: partial.stopReason, message: partial });
-      try { ws.close(); } catch { /* already closed */ }
+      if (hasTools && connectionPool) {
+        const entry = {
+          ws,
+          nextMessageIndex: (context.messages || []).length + 1,
+          pendingCallIds: partial.content.filter((item) => item.type === 'toolCall').map((item) => item.id),
+          cleanup: null,
+          timer: null
+        };
+        const drop = () => {
+          if (connectionPool.get(connectionKey) === entry) connectionPool.delete(connectionKey);
+          entry.cleanup?.();
+        };
+        const idleError = () => drop();
+        const idleClose = () => drop();
+        entry.cleanup = () => {
+          clearTimeout(entry.timer);
+          ws.off?.('error', idleError);
+          ws.off?.('close', idleClose);
+        };
+        ws.once?.('error', idleError);
+        ws.once?.('close', idleClose);
+        entry.timer = setTimeout(() => {
+          drop();
+          try { ws.close(); } catch { /* already closed */ }
+        }, 55_000);
+        entry.timer.unref?.();
+        connectionPool.set(connectionKey, entry);
+      } else {
+        try { ws.close(); } catch { /* already closed */ }
+      }
       stream.end();
     }
-  });
-  ws.on('error', fail);
-  ws.on('close', (code, reason) => {
+  };
+  handleError = fail;
+  handleClose = (code, reason) => {
     if (terminal) return;
     const detail = String(reason || '').trim();
     fail(new Error(`Realtime Omni connection closed before response.done (code=${code}${detail ? `, reason=${detail}` : ''})`));
-  });
+  };
+  ws.on('message', handleMessage);
+  ws.on('error', handleError);
+  ws.on('close', handleClose);
+  if (continuation) {
+    queueMicrotask(() => {
+      if (terminal) return;
+      if (ws.readyState !== undefined && ws.readyState !== 1) {
+        fail(new Error('Realtime tool continuation connection is no longer open'));
+        return;
+      }
+      try {
+        for (const item of prepared.events) ws.send(JSON.stringify(item));
+        sendResponseCreate();
+      } catch (error) {
+        fail(error);
+      }
+    });
+  }
   return stream;
 }
 

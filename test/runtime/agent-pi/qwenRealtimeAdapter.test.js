@@ -8,7 +8,7 @@ const {
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
-test('TC-PI-038 realtime context replays Pi messages and active tool declarations', () => {
+test('TC-PI-038 TC-PI-042 realtime context preserves old tool history without replaying connection-scoped call ids', () => {
   const replay = replayContext([
     { role: 'system', content: 'You are Yachiyo', toolsAdded: [{ name: 'device__move', description: 'move', parameters: { type: 'object' } }] },
     { role: 'user', content: '去手机', timestamp: 1 },
@@ -19,7 +19,10 @@ test('TC-PI-038 realtime context replays Pi messages and active tool declaration
   ]);
   assert.equal(replay.instructions, 'You are Yachiyo');
   assert.deepEqual(replay.tools.map((tool) => tool.function.name), ['device__move']);
-  assert.deepEqual(replay.events.map((event) => event.item.type), ['message', 'function_call', 'function_call_output']);
+  assert.deepEqual(replay.events.map((event) => event.item.type), ['message', 'message', 'message']);
+  assert.match(replay.events[1].item.content[0].text, /历史工具调用.*device__move/);
+  assert.match(replay.events[2].item.content[0].text, /历史工具结果 device__move.*ok/);
+  assert.equal(JSON.stringify(replay.events).includes('function_call_output'), false);
 });
 
 test('TC-PI-041 realtime context sends original audio instead of its placeholder text', () => {

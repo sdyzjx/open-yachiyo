@@ -185,6 +185,7 @@ async function createPiRuntime(deps) {
         state.disposed = true;
         state.unsubscribe?.();
         state.session.dispose();
+        models.closeRealtimeConnections?.();
         devices.dispose();
         eventSubscriptions.dispose();
       }

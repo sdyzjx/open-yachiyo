@@ -41,10 +41,14 @@
 - 真实事件同时包含 `tool.call/tool_call.started/tool.result/tool_call.completed`、`chat.delta/chat.final` 和 `voice.stream.start/chunk/end`；注册表明确排除了 `voice.tts_aliyun_vc`，没有第二个声音来源。
 - Pi 策略模式的首个稳定工具调用和首个实际工具调用均为 `voice.tts_aliyun_vc`，随后才调用 `live2d.expression.set`；手机播放中文“主人，实时语音已经准备好了～”。
 - 重启最新网关和 Android App 后，真机横屏显示角色、Realtime 模型徽标与“电脑在线”；设备互斥锁及临时 WebView ADB forward 均已释放。
+- 复现真实 Pi 工具链时，旧实现首轮工具 `workspace.write_file` 成功，下一模型请求却返回 `Unknown function call id`，证明 Realtime `call_id` 不能跨新 WebSocket 续接；同一失败记录在后续新连接中原样回放也会再次触发相同错误。
+- 修复后，trace `68c6373d-e76b-4cae-87cf-881c1429866f` 在一条 Realtime 连接内完成 `live2d.react` 工具往返，再进入 `shell.exec` 的策略审批。拒绝该命令后模型正常生成中文最终文本；网关发出 `voice.stream.start/chunk/end`，小米 6 回报 `voice.playback.ended`，状态为 `DONE`。本轮约 79 秒首字延迟主要来自手工审批等待，不是模型或音频传输耗时。
 
 ## 结论与决策
 
 工作空间专属地址解决了 Realtime 握手失败，云端双工与 Android 真机路径均可用。Realtime 由同一个 Qwen 会话完成转写、工具规划、工具结果续答、可见文字和 Yachiyo 复刻语音；不再把转写交给第二个 Pi 回合。网关仍复用现有 ToolExecutor 的权限、审计、人格、技能与会话上下文。普通 Pi 会话继续按自己的策略使用独立 TTS，两条路径不会在同一 Realtime 回合叠加。
+
+Realtime Function Calling 的服务端状态属于当前 WebSocket：即时工具续答必须保留该连接并只追加对应 `function_call_output`。持久 Pi transcript 仍保存完整工具记录，但新 Realtime 连接只接收其文字摘要，避免重放过期 `call_id`。手工审批期间不会有最终语音；手机需要把待审批状态明显展示给用户，或由用户把该会话切换为自动批准/完全访问。
 
 ## 后续动作
 

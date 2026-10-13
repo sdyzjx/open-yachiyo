@@ -111,7 +111,7 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
   for (const name of ['read', 'bash', 'edit', 'write']) assert.ok(names.includes(name), name);
 });
 
-test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and continuation', async (t) => {
+test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a Pi tool continuation', async (t) => {
   const waitFor = async (predicate) => {
     for (let index = 0; index < 100; index += 1) {
       if (predicate()) return;
@@ -164,14 +164,13 @@ test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and c
     type: 'response.function_call_arguments.done', call_id: 'call-1', name: 'add', arguments: '{"a":20,"b":22}'
   }));
   first.emit('message', JSON.stringify({ type: 'response.done' }));
-  await waitFor(() => FakeWs.instances[1]);
-  const second = FakeWs.instances[1];
-  second.emit('message', JSON.stringify({ type: 'session.created' }));
-  second.emit('message', JSON.stringify({ type: 'session.updated' }));
-  assert.ok(second.sent.some((event) => event.item?.type === 'function_call_output' && event.item.output.includes('42')));
-  assert.equal(second.sent.some((event) => event.item?.content?.[0]?.type === 'input_audio'), false);
-  second.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
-  second.emit('message', JSON.stringify({ type: 'response.done' }));
+  await waitFor(() => first.sent.some((event) => event.item?.type === 'function_call_output'));
+  assert.equal(FakeWs.instances.length, 1);
+  assert.ok(first.sent.some((event) => event.item?.type === 'function_call_output' && event.item.output.includes('42')));
+  assert.equal(first.sent.filter((event) => event.item?.content?.[0]?.type === 'input_audio').length, 1);
+  assert.equal(first.sent.filter((event) => event.type === 'response.create').length, 2);
+  first.emit('message', JSON.stringify({ type: 'response.text.delta', delta: '答案是 42' }));
+  first.emit('message', JSON.stringify({ type: 'response.done' }));
   const result = await running;
   assert.equal(result.state, 'DONE', result.output);
   assert.equal(result.output, '答案是 42');

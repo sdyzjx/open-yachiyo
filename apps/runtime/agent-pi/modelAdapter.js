@@ -168,6 +168,7 @@ function requestOptions(descriptor, options = {}) {
 async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onRealtimeTranscript, sessionId } = {}) {
   const { sdk, ai, apis } = await loadPi();
   const completedRealtimeAudio = new Set();
+  const realtimeConnections = new Map();
   const audioKey = (audio = {}) => String(audio.stream_id || audio.audio_ref || '');
   const markAudioSent = (audio) => {
     const key = audioKey(audio);
@@ -194,7 +195,8 @@ async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onR
           onAudio: onRealtimeAudio,
           onInputTranscript: onRealtimeTranscript,
           audioAlreadySent: (audio) => completedRealtimeAudio.has(audioKey(audio)),
-          markAudioSent
+          markAudioSent,
+          connectionPool: realtimeConnections
         });
       }
       return apis[model.api].streamSimple(model, context, requestOptions(descriptor, options));
@@ -217,6 +219,13 @@ async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onR
     // Runtime overrides are literal values, unlike models.json command interpolation.
     await runtime.setRuntimeApiKey(provider, descriptors[0].api_key || 'yachiyo-local-no-key');
   }
+  runtime.closeRealtimeConnections = () => {
+    for (const connection of realtimeConnections.values()) {
+      connection.cleanup?.();
+      try { connection.ws?.close(); } catch { /* already closed */ }
+    }
+    realtimeConnections.clear();
+  };
   return runtime;
 }
 
