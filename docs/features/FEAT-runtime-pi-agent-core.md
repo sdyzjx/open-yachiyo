@@ -77,7 +77,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 工具批次使用 Pi 原生并行调度。`side_effect_level` 为 `none` 或 `read` 且 `requires_lock=false` 的工具可以同批并发；写操作、未知副作用和显式锁会把整批降为串行。动态 Device Hub 方法默认按写操作处理，只有设备声明安全调度元数据后才能并行。TTS、Live2D 与屏幕捕获保留现有锁，因此不会产生重叠播放、动作状态竞争或并发截图。
 
-工具审批位于 `ApprovalCoordinator`，不进入模型上下文。`shell.approve` 从 Pi 可见工具目录中移除；`shell.exec` 返回 `APPROVAL_REQUIRED` 后，桥接层按当前会话策略等待用户、自动签发一次性许可，或在 full access 下直接执行，再把唯一一次最终工具结果交回 Pi。`manual` 的待审批项通过 HTTP 与 Device Hub 的 `approval.requested`/`approval.decision` 交互；审批 ID 必须同时匹配当前 session，手机只能决定自己的 `device-<device_id>` 会话。
+标准命令与文件权限由驻留在 AgentSession 内的 `yachiyo-pi-policy` extension 通过 Pi `tool_call` 钩子执行。extension 在 Pi 原生工具启动前检查危险命令、会话权限与工作区边界；`manual` 模式通过 `ApprovalCoordinator` 把决定请求投影到 HTTP 与 Device Hub 的 `approval.requested`/`approval.decision` 界面，批准后仍由同一个 Pi tool call 继续执行。`auto_approve` 自动放行普通命令，`full_access` 同时解除工作区边界，硬危险命令在三种模式下均阻断。审批 ID 必须同时匹配当前 session，手机只能决定自己的 `device-<device_id>` 会话。模型看不到审批 token，也不负责重试。
 
 三种审批模式与普通 `permission_level` 分离。`manual` 保留逐次确认；`auto_approve` 只自动确认 shell operator，仍受原权限级别、工作区、工具 allow/deny 与设备 ACL 约束；`full_access` 同时采用 high 权限、允许文件及 shell 路径离开会话工作区，并跳过 operator 逐次确认。三种模式都保留参数 schema、工具全局 deny、设备归属/协议 ACL 以及 sudo、根目录递归删除、关机/重启等硬阻断。
 
@@ -94,7 +94,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 设备工具集在请求边界取快照；tools.changed 标记下一快照刷新，不改变已经执行中的定义。动态方法必须来自 Hub 的已配对且 `expose_as_tool:true` 列表，并匹配 `policy.deviceHub.allow` 且不匹配 `policy.deviceHub.deny`；匹配后仅将实际方法名加入本次 executor 精确 allow。全局 deny、provider deny 和会话权限仍优先。可注入 avatar 控制器用于测试。
 
-Pi 标准 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 以原生 schema、输出截断、diff 和提示词贡献注册。`grep`、`find`、`ls` 使用 Pi 的专用只读实现并遵守会话文件边界，避免模型为了目录探索反复拼接 shell 命令；它们与 `read` 可并行。write/edit 默认不能越界，bash 通过 `shell.exec` 和 `ApprovalCoordinator`，因此不会绕过 allow/deny、危险命令阻断或审批策略。bash/edit/write 串行。Pi 会话不再向模型重复声明 `shell.exec` 与 `workspace.write_file`，但两者继续作为标准 bash/write 的策略后端。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
+Pi 标准 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 使用 Pi 1.1.0 原生本地实现、schema、流式输出、进程树取消、输出截断与完整输出临时文件。`grep`、`find`、`ls` 使用专用只读接口，避免模型为了目录探索反复拼接 shell 命令；它们与 `read` 可并行，bash/edit/write 串行。Yachiyo 不再代理标准文件或 shell 执行；原 `shell.exec` 与 `workspace.write_file` 仅保留给 legacy core 和兼容配置，不进入 Pi 模型目录，也不是 Pi 标准工具后端。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
 
 Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 采集入口只负责把 PCM 封装为受限 WAV，不注册工具、不创建回答。原始音频引用作为 Pi user message 的扩展字段进入同一个 `device-<id>` 会话，再由 provider 映射为 `input_audio`；转写事件只用于 UI 展示，不再触发第二次模型请求。每次请求只把最新且尚未完成消费的语音消息作为二进制 `input_audio` 发送；旧语音轮以转写文本或历史语音占位回放，工具续轮也不会重复上传同一段 PCM，避免长生命周期会话在第二轮被 Realtime 服务端断开。
 
@@ -123,7 +123,7 @@ Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi t
 | providers.yaml C4 字段 | Model Catalog | api、reasoning、input、headers、compat、extra_body、timeout_ms、max_retries、temperature |
 | skills.yaml | 现有规则 | workspace/global/extraDirs、entries.enabled、eligibility |
 | tools.yaml policy | 原配置 | 所有工具保留 allow/deny；非空 allowlist 需加入 bus.publish/subscribe/unsubscribe/events.pull/channels.list、avatar_status、avatar_transfer 及需要的设备工具名 |
-| Pi 标准工具 | read / bash / edit / write / grep / find / ls | 原生定义 + Yachiyo 受控边界与 operations；`shell.exec`、`workspace.write_file` 仅作策略后端，不重复暴露给模型 |
+| Pi 标准工具 | read / bash / edit / write / grep / find / ls | Pi 原生本地实现；`yachiyo-pi-policy` extension 在 `tool_call` 前处理审批、危险命令与工作区边界；Yachiyo 只投影 UI/事件 |
 | voice-policy.yaml auto_reply.enabled | true | 缺少配置文件时也默认启用策略模式；会话 `/voice off` 可覆盖为关闭 |
 | voice-policy.yaml limits | 0.5 秒 / 12 次每分钟 | TTS 会话冷却与全局分钟上限；内容适用性规则仍优先 |
 | tools.yaml policy.deviceHub.allow | `[]` | 动态 Hub 工具名的 `*` 通配模式；空数组表示不暴露任何动态方法 |
@@ -136,8 +136,9 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - RuntimeRpcWorker 原生透传单次 `model_ref`，会话 settings 提供持久覆盖；gatewayAssembly 的旧兼容入口仅保留为无操作导出，待网关装配移除调用后删除。
 - AgentSession 忙碌时不能切换模型；带不同 `model_ref` 的排队输入会返回明确错误，客户端应在当前 turn settled 后重试选择。
 - `shell.approve` 仍保留在 legacy 回滚核心的工具注册表中；Pi 核心不会把它发给 provider。legacy 模式尚未获得本节的策略层审批语义。
+- `yachiyo-pi-policy` 对 Pi 原生 `read/edit/write/grep/find/ls` 的路径参数实施执行前工作区边界；对 Bash 则检查可识别的命令与路径表达式。Pi Bash 仍继承网关进程的宿主 OS 权限，这不是内核级沙箱；任意解释器或原生程序可能产生静态解析无法证明的文件访问。需要不可绕过的严格目录隔离时，应再为 Pi Bash 接入 Gondolin、容器或独立低权限系统用户。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
-- Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用，并会终止 `shell.exec` 子进程；其他工具只有在 adapter 遵守传入的 `AbortSignal` 时才能立即停止，已经提交到外部设备的副作用不能撤销。
+- Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用，并由 Pi 原生 bash 终止整个子进程树；其他工具只有在 adapter 遵守传入的 `AbortSignal` 时才能立即停止，已经提交到外部设备的副作用不能撤销。
 - EventBus 订阅最多 32 个、单订阅 TTL 最长 1 小时、会话队列最多 512 条、单事件最大 64 KiB。只接受 plugin/device/avatar/audio/voice/task/ui/client/sys 命名空间；带其他 session_id 的内部事件不会跨会话投递，设备来源事件可进入订阅。订阅随驻留 AgentSession 回收，不作为永久后台任务恢复。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
@@ -147,6 +148,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…043，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、EventBus 订阅与 Qwen Realtime provider。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…044，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、Pi 原生工具策略 extension、EventBus 订阅与 Qwen Realtime provider。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

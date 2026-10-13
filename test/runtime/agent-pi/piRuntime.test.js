@@ -220,6 +220,25 @@ test('TC-PI-018 tool denial is visible to pi and does not bypass permissions', a
   assert.match(f.requests[1].messages.at(-1).content, /not allowed/);
 });
 
+test('TC-PI-044 Pi extension blocks a dangerous native bash call before execution', async (t) => {
+  const f = await fixture(t, (body) => body.messages.at(-1).role === 'tool'
+    ? { text: 'policy acknowledged' }
+    : { tool: 'bash', args: { command: 'sudo whoami' } });
+  const events = [];
+  const result = await f.runtime.run({
+    sessionId: 'pi-policy',
+    input: 'run dangerous command',
+    permissionLevel: 'high',
+    approvalMode: 'full_access',
+    onEvent: (event) => events.push(event)
+  });
+  assert.equal(result.state, 'DONE', result.output);
+  const failed = events.find((event) => event.event === 'tool_call.failed');
+  assert.ok(failed, JSON.stringify(events));
+  assert.match(failed.payload.result, /blocked by Pi command policy/);
+  assert.match(f.requests[1].messages.at(-1).content, /blocked by Pi command policy/);
+});
+
 test('TC-PI-019 never fall back after tools or on authentication failures', async (t) => {
   const afterTools = await fixture(t, (body) => body.messages.at(-1).role === 'tool' ? { status: 503 } : { tool: 'add', args: { a: 1, b: 1 } });
   const result = await afterTools.runtime.run({ sessionId: 's', input: 'tool then fail' });

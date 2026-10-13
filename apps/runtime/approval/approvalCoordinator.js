@@ -1,12 +1,37 @@
 const { ErrorCode } = require('../tooling/errors');
 const { grantShellApproval } = require('../tooling/shellApprovalStore');
 const { normalizeSessionApprovalMode } = require('../session/sessionPermissions');
+const crypto = require('node:crypto');
 
 class ApprovalCoordinator {
   constructor({ bus, timeoutMs = 120000 } = {}) {
     this.bus = bus;
     this.timeoutMs = timeoutMs;
     this.pending = new Map();
+  }
+
+  async requestFrontendDecision({ sessionId = '__global__', signal, toolName, command = '',
+    reason = 'manual_approval_required' }) {
+    const approvalId = `pi_${crypto.randomBytes(9).toString('hex')}`;
+    const decision = await this.waitForDecision({
+      approval_id: approvalId,
+      session_id: String(sessionId || '__global__'),
+      tool_name: toolName,
+      command: String(command || ''),
+      reason,
+      created_at_ms: Date.now(),
+      expires_at_ms: Date.now() + this.timeoutMs
+    }, signal);
+    const resolvedReason = decision.timeout ? 'timeout' : decision.aborted ? 'aborted'
+      : decision.approved ? 'approved' : 'denied';
+    this.bus?.publish('approval.resolved', {
+      session_id: String(sessionId || '__global__'),
+      approval_id: approvalId,
+      approved: decision.approved === true,
+      reason: resolvedReason,
+      scope: decision.scope || 'once'
+    });
+    return { ...decision, approval_id: approvalId, reason: resolvedReason };
   }
 
   list({ sessionId } = {}) {

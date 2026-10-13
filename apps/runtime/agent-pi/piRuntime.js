@@ -14,6 +14,7 @@ const { normalizeSessionApprovalMode } = require('../session/sessionPermissions'
 const { SessionEventSubscriptions } = require('./sessionEventSubscriptions');
 const { createBusTools } = require('./busTools');
 const { createStandardTools } = require('./standardTools');
+const { createPiPolicyExtension } = require('./piPolicyExtension');
 
 function imageParts(images) {
   return images.map((image) => {
@@ -95,8 +96,7 @@ async function createPiRuntime(deps) {
       // policy-controlled backends without presenting duplicate choices to the model.
       excludeNames: ['shell.exec', 'workspace.write_file']
     });
-    const standardTools = createStandardTools({ sdk, cwd, executor: deps.executor, approvalCoordinator,
-      bus: deps.bus, context });
+    const standardTools = createStandardTools({ sdk, cwd, context });
     let dispatchBusSteer = () => {};
     const eventSubscriptions = new SessionEventSubscriptions({
       bus: deps.bus,
@@ -120,9 +120,11 @@ async function createPiRuntime(deps) {
       name: tool.originalName,
       prepareLoadout: () => ({ hiddenDeclarations: [tool.originalName] })
     }));
+    const policyExtension = createPiPolicyExtension({ cwd, context, approvalCoordinator });
     const loader = await createResourceLoader({ cwd, agentDir: path.join(sessions.rootDir, '.agent'),
       settingsManager: opened.settingsManager, getSystemPrompt: () => state.systemPrompt,
-      skillConfigStore: deps.skillConfigStore });
+      skillConfigStore: deps.skillConfigStore,
+      extensionFactories: [{ name: 'yachiyo-pi-policy', factory: policyExtension, hidden: true }] });
     const model = models.getModel(chain[0].provider, chain[0].id);
     ({ session: state.session } = await sdk.createAgentSession({ cwd, agentDir: path.join(sessions.rootDir, '.agent'),
       modelRuntime: models, model, thinkingLevel: model.reasoning ? 'medium' : 'off', resourceLoader: loader,

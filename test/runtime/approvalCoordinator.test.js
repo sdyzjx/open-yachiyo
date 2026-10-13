@@ -40,3 +40,24 @@ test('TC-PI-035 manual approval waits for matching session decision and supports
   assert.equal(denied.code, 'PERMISSION_DENIED');
   assert.equal(coordinator.list().length, 0);
 });
+
+test('TC-PI-044 Pi-native command approval uses the existing frontend decision channel', async () => {
+  const events = [];
+  const coordinator = new ApprovalCoordinator({
+    timeoutMs: 1000,
+    bus: { publish: (topic, data) => events.push({ topic, data }) }
+  });
+  const pending = coordinator.requestFrontendDecision({
+    sessionId: 'pi-manual',
+    toolName: 'bash',
+    command: 'echo hello'
+  });
+  const [request] = coordinator.list({ sessionId: 'pi-manual' });
+  assert.equal(request.tool_name, 'bash');
+  assert.equal(coordinator.decide({ approvalId: request.approval_id, sessionId: 'pi-manual', approved: true,
+    scope: 'always' }), true);
+  assert.equal((await pending).approved, true);
+  assert.ok(events.some((event) => event.topic === 'approval.requested'));
+  assert.ok(events.some((event) => event.topic === 'approval.resolved' && event.data.approved));
+  assert.equal(coordinator.list().length, 0);
+});
