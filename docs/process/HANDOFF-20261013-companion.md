@@ -132,4 +132,6 @@
 
 旧 `chatgpt-plan`、迁移 UI、Android UI、Desktop shell 与 Device Hub 集成工作树的有效功能均已被当前集成线包含或替代，因此只保留本地分支引用。`ws1-pi-core` 与 `ws3-device-hub` 未提交的契约文本与当前 `docs/plans/PLAN-android-companion-contracts.md` 已有内容一致，清理 worktree 时丢弃这两份重复修改。
 
-收口前的最终验证为 Node `885/885`、`npm run docs:lint`、Android `:app:testDebugUnitTest` 与 `:app:assembleDebug` 全部通过；最新 APK 已在小米 6 上完成 Wi-Fi ADB 手势回归，设备锁与修改过的系统设置均已释放和恢复。远端分支哈希与 worktree 清理结果在本节后续提交中补记。
+收口前的最终验证为 Node `885/885`、`npm run docs:lint`、Android `:app:testDebugUnitTest` 与 `:app:assembleDebug` 全部通过；最新 APK 已在小米 6 上完成 Wi-Fi ADB 手势回归，设备锁与修改过的系统设置均已释放和恢复。
+
+远端核验结果：性能实验归档为 `d476836`，配置方案归档为 `5db6a91`，稳定集成线首次推送为 `68c0e5f`，并在追加本收口确认后再次推送。九个旧 worktree 检出已全部移除，`git worktree list` 只保留主仓库；所有 `agent/*` 本地分支引用仍保留，未删除历史提交。
