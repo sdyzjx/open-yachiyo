@@ -4,7 +4,7 @@
 > 状态: done
 > 负责人: Codex
 > 更新: 2026-10-13
-> 关联: docs/features/FEAT-voice-omni-audio.md, docs/testing/TC-voice-provider-config.md, apps/gateway/deviceHub/omniAudio.js
+> 关联: docs/features/FEAT-voice-omni-audio.md, docs/testing/TC-voice-provider-config.md, apps/runtime/agent-pi/qwenRealtimeAdapter.js
 
 ## 背景与假设
 
@@ -27,6 +27,8 @@
 6. 经普通 `/ws` Pi 会话发送短确认问题，检查 TTS 与 Live2D 工具的实际顺序。
 7. 用 18 秒、24 kHz mono 的项目标准参考音频调用 `qwen-voice-enrollment`，目标模型固定为 `qwen3.8-omni-flash-realtime`，把返回音色写入模型 `realtime_voice`。
 8. 在 Realtime `session.update` 注册测试时间工具，发送“请调用时间工具”的 16 kHz PCM；接收 Function Call、执行工具、回送 `function_call_output`，检查续答文本和原生音频字节数。
+9. 复放真实触发 `1009 Max frame length of 262144` 的 212844 bytes 手机录音，对比整段 `input_audio` 与 32000 bytes 分块 `input_audio_buffer.append` 两种上传路径。
+10. 在隔离的 `full_access` Pi 会话中要求 Realtime 型号执行 `uname -n`，检查 Pi 原生 `bash`、Live2D 续轮、最终结果和模型归因指标。
 
 ## 数据与观察
 
@@ -43,12 +45,16 @@
 - 重启最新网关和 Android App 后，真机横屏显示角色、Realtime 模型徽标与“电脑在线”；设备互斥锁及临时 WebView ADB forward 均已释放。
 - 复现真实 Pi 工具链时，旧实现首轮工具 `workspace.write_file` 成功，下一模型请求却返回 `Unknown function call id`，证明 Realtime `call_id` 不能跨新 WebSocket 续接；同一失败记录在后续新连接中原样回放也会再次触发相同错误。
 - 修复后，trace `68c6373d-e76b-4cae-87cf-881c1429866f` 在一条 Realtime 连接内完成 `live2d.react` 工具往返，再进入 `shell.exec` 的策略审批。拒绝该命令后模型正常生成中文最终文本；网关发出 `voice.stream.start/chunk/end`，小米 6 回报 `voice.playback.ended`，状态为 `DONE`。本轮约 79 秒首字延迟主要来自手工审批等待，不是模型或音频传输耗时。
+- 旧实现把 212844 bytes PCM 编成约 284 KiB Base64 并放进一个 JSON 帧，上游以 1009 关闭。改为最多 32000 bytes/块后，同一录音在 trace `4db587e3-747a-415b-92a3-69df11b4d989` 完成 `bash → ui.chat.post → live2d.emote`，7.68 秒 `DONE`，`tool_parse_error=0`，没有 1009 或重传历史音频。
+- 独立文字验收 trace `4c530ca1-df88-4ded-9f13-3fafed3d7b82` 由 Qwen3.8 Omni Realtime 调用 Pi 原生 `bash` 执行 `uname -n`，再执行 Live2D 并返回实际主机名；首个工具稳定 2.12 秒、结果 2.14 秒、整轮 4.37 秒。运行指标的 requested/resolved model_ref 均为 `qwen35_plus/qwen3.8-omni-flash-realtime`。
 
 ## 结论与决策
 
 工作空间专属地址解决了 Realtime 握手失败，云端双工与 Android 真机路径均可用。Realtime 由同一个 Qwen 会话完成转写、工具规划、工具结果续答、可见文字和 Yachiyo 复刻语音；不再把转写交给第二个 Pi 回合。网关仍复用现有 ToolExecutor 的权限、审计、人格、技能与会话上下文。普通 Pi 会话继续按自己的策略使用独立 TTS，两条路径不会在同一 Realtime 回合叠加。
 
 Realtime Function Calling 的服务端状态属于当前 WebSocket：即时工具续答必须保留该连接并只追加对应 `function_call_output`。持久 Pi transcript 仍保存完整工具记录，但新 Realtime 连接只接收其文字摘要，避免重放过期 `call_id`。手工审批期间不会有最终语音；手机需要把待审批状态明显展示给用户，或由用户把该会话切换为自动批准/完全访问。
+
+Realtime 音频输入必须使用服务端缓冲区协议分块发送，不能把整段 PCM 放进单个 conversation item。当前 32000 bytes 分块显著低于服务端 256 KiB 帧上限，并与 Manual 模式的 `append → commit → response.create` 时序一致。
 
 ## 后续动作
 

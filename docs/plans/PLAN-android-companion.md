@@ -240,3 +240,4 @@ flowchart TD
 - `agent/pi-runtime-v2` 的 37 个提交已快进合并到 `feature/android-companion`，临时 worktree 与分支已删除；原主工作区未提交的 Qwen 3.7/3.6/3.5 预设更新在合并冲突中保留，并与 Qwen 3.8 Omni 条目合并，专项用例改为检查型号集合而非写死目录数量，覆盖 TC-LLM-045。
 - Worktree 收口审计用 `git cherry` 区分未交付提交与补丁等价副本；清理 11 个已合并或补丁等价且工作树干净的旧 checkout。仍保留的 9 个 worktree 均含主分支尚无的独立提交，或存在未提交改动，避免为追求目录整洁而丢失工作。
 - 真实 Qwen3.8 Omni Realtime 日志确认两种新故障：模型对“查看电脑网卡”只返回行动承诺，没有产生 function call；随后较长录音把整段 Base64 PCM 放进单个 conversation item，触发上游 `1009 Max frame length of 262144`。主线新增一次 Pi 内部行动纠偏续轮，并按官方 Realtime Manual 协议改为 `input_audio_buffer.append ×N → commit → response.create`，自动化覆盖 TC-PI-046/047。
+- 修复提交 `04d7fb4` 后 Node 873/873、docs lint 通过。真实 Qwen3.8 Omni Realtime 在隔离 full_access 会话调用 Pi 原生 `bash` 查询主机名，4.37 秒完成；复放原先触发 1009 的 212844 bytes 手机录音后，7.68 秒完成 `bash → ui.chat.post → live2d.emote`，没有连接断开或工具解析错误。3002 网关已重启到该提交，手机和 Desktop 均重新上线，Avatar owner 保持手机，设备锁为空闲。
