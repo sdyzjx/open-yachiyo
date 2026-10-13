@@ -22,6 +22,20 @@ test('TC-PI-038 realtime context replays Pi messages and active tool declaration
   assert.deepEqual(replay.events.map((event) => event.item.type), ['message', 'function_call', 'function_call_output']);
 });
 
+test('TC-PI-041 realtime context sends original audio instead of its placeholder text', () => {
+  const replay = replayContext([{
+    role: 'user',
+    content: [{ type: 'text', text: '[实时语音输入]' }],
+    timestamp: 1,
+    yachiyoInputAudio: { audio_ref: '/private/audio.wav', format: 'wav', stream_id: 'voice-1' }
+  }], { loadAudio: (audioRef) => {
+    assert.equal(audioRef, '/private/audio.wav');
+    return 'AQI=';
+  } });
+  assert.deepEqual(replay.events[0].item.content, [{ type: 'input_audio', audio: 'AQI=' }]);
+  assert.equal(JSON.stringify(replay.events).includes('实时语音输入'), false);
+});
+
 test('TC-PI-039 realtime provider emits standard Pi text/tool events and keeps audio side-channel independent', async () => {
   class FakeWs extends EventEmitter {
     constructor() { super(); this.sent = []; FakeWs.instance = this; }

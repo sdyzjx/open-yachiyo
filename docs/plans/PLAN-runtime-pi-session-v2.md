@@ -80,5 +80,5 @@ flowchart LR
 - [x] P1 长生命周期 AgentSession（registry、模型归因与持久历史已完成；steering/follow-up 与 TurnCoordinator 已启用）。
 - [x] P2 工具与权限（副作用感知并行、ApprovalCoordinator、标准 Skills/context 及受控 read/bash/edit/write 已完成；外部 extensions/MCP 保持禁用以守住策略边界）。
 - [x] P3 Device Hub 与事件总线（动态 RPC、Avatar、会话级 publish/subscribe/unsubscribe/pull/channels 与 high-priority steering 已接入）。
-- [x] P4 Qwen Realtime Pi transport（音频入口仅转写；`qwen-realtime` adapter 转换 Pi transcript/toolCall，并以 side channel 发布原生 PCM）。
+- [x] P4 Qwen Realtime Pi transport（原始音频直接挂入 Pi user turn；`qwen-realtime` adapter 转换 input_audio/transcript/toolCall，并以 side channel 发布原生输出 PCM；无独立 Realtime ASR 循环）。
 - [ ] P5 双端 UI、自动化与真机验收。

@@ -1,5 +1,5 @@
 const { loadModelCatalog } = require('../../runtime/config/modelCatalog');
-const { realtimeUrl } = require('./omniAudio');
+const { realtimeUrl } = require('../../runtime/agent-pi/qwenRealtimeAdapter');
 
 function modelAvailability(model) {
   if (model.chatgpt_plan) return { available: true, reason: null };

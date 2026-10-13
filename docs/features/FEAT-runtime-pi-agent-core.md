@@ -96,7 +96,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 Pi 标准 `read`、`bash`、`edit`、`write` 以原生 schema、输出截断、diff 和提示词贡献注册，但底层操作由 Yachiyo 提供：read 根据会话权限检查工作区，write/edit 默认不能越界，bash 通过 `shell.exec` 和 `ApprovalCoordinator`，因此不会绕过 allow/deny、危险命令阻断或审批策略。read 可并行，bash/edit/write 串行。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
 
-Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 音频入口只负责转写 PCM，不注册工具、不创建回答，转写文本以音频 turn 进入同一个 `device-<id>` 会话。
+Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 采集入口只负责把 PCM 封装为受限 WAV，不注册工具、不创建回答。原始音频引用作为 Pi user message 的扩展字段进入同一个 `device-<id>` 会话，再由 provider 映射为 `input_audio`；转写事件只用于 UI 展示，不再触发第二次模型请求。
 
 ## 4. 配置项
 
@@ -141,12 +141,12 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 - EventBus 订阅最多 32 个、单订阅 TTL 最长 1 小时、会话队列最多 512 条、单事件最大 64 KiB。只接受 plugin/device/avatar/audio/voice/task/ui/client/sys 命名空间；带其他 session_id 的内部事件不会跨会话投递，设备来源事件可进入订阅。订阅随驻留 AgentSession 回收，不作为永久后台任务恢复。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
-- Qwen Realtime 的本机 AgentSession 长期驻留，但当前 provider adapter 每次模型请求重新建立云端 WebSocket，尚未复用跨工具轮的云端连接。
+- Qwen Realtime 的本机 AgentSession 长期驻留且原始音频直接进入模型，但当前 provider adapter 每次模型请求重新建立云端 WebSocket，尚未复用跨工具轮的云端连接。
 - 外部 Pi extensions、MCP、prompt templates 与 themes 仍关闭；Agent 循环、标准 Skills/context、会话和四个标准文件/shell 工具已启用。远程设备与应用能力继续通过 Yachiyo 工具目录接入，避免扩展绕过审批层。
 - package-lock.json 由统筹合并时更新；更新前不要用旧锁文件执行 npm ci。会话 JSONL 包含对话和工具结果，按现有用户数据目录保护。
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…040，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行、会话审批策略、EventBus 订阅与 Qwen Realtime provider。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…041，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行、会话审批策略、EventBus 订阅与 Qwen Realtime provider。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

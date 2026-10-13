@@ -1284,6 +1284,7 @@ function normalizeInputAudio(rawInputAudio) {
     ? rawInputAudio.confidence
     : null;
   const segments = Array.isArray(rawInputAudio.segments) ? rawInputAudio.segments : [];
+  const streamId = typeof rawInputAudio.stream_id === 'string' ? rawInputAudio.stream_id.trim() : '';
 
   if (!audioRef || !format) {
     return { ok: false, error: 'params.input_audio.audio_ref and params.input_audio.format are required' };
@@ -1306,7 +1307,8 @@ function normalizeInputAudio(rawInputAudio) {
       hints,
       transcribed_text: transcribedText,
       confidence,
-      segments
+      segments,
+      ...(streamId ? { stream_id: streamId } : {})
     }
   };
 }
@@ -1413,7 +1415,7 @@ async function enqueueRpc(ws, rpcPayload, mode) {
         }
       };
     },
-    buildRunContext: async ({ session_id: sessionId }) => {
+    buildRunContext: async ({ request, session_id: sessionId, input_audio: inputAudio }) => {
       const existingSettings = await sessionStore.getSessionSettings(sessionId);
       const approvalMode = normalizeSessionApprovalMode(existingSettings?.approval_mode);
       const permissionLevel = approvalMode === 'full_access' ? 'high' : normalizeSessionPermissionLevel(
@@ -1430,6 +1432,13 @@ async function enqueueRpc(ws, rpcPayload, mode) {
           : (voicePolicy?.auto_reply?.enabled === true);
       const workspace = await workspaceManager.getWorkspaceInfo(sessionId);
       const normalizedWorkspace = normalizeWorkspaceSettings(workspace);
+      const requestedModelRef = typeof request?.params?.model_ref === 'string' && request.params.model_ref.trim()
+        ? request.params.model_ref.trim()
+        : existingSettings?.model_ref;
+      const runtimeCatalog = await loadRuntimeModelCatalog({ modelRef: requestedModelRef });
+      const selectedModel = requestedModelRef ? runtimeCatalog.resolve(requestedModelRef) : runtimeCatalog.active;
+      const directAudioToModel = Boolean(inputAudio && selectedModel?.transport === 'realtime'
+        && selectedModel.input?.includes('audio'));
 
       await sessionStore.updateSessionSettings(sessionId, {
         permission_level: permissionLevel,
@@ -1445,7 +1454,8 @@ async function enqueueRpc(ws, rpcPayload, mode) {
         workspace_root: normalizedWorkspace.root_dir,
         voice_auto_reply_enabled: voiceAutoReplyEnabled,
         voice_auto_reply_mode: voiceAutoReplyMode,
-        model_ref: existingSettings?.model_ref || null
+        model_ref: existingSettings?.model_ref || null,
+        direct_audio_to_model: directAudioToModel
       };
     },
     transcribeAudio: async ({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext }) => {

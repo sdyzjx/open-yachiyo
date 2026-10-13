@@ -33,6 +33,7 @@ function normalizeInputAudio(value) {
   const transcribedText = typeof value.transcribed_text === 'string' ? value.transcribed_text.trim() : '';
   const confidence = typeof value.confidence === 'number' && Number.isFinite(value.confidence) ? value.confidence : null;
   const segments = Array.isArray(value.segments) ? value.segments : [];
+  const streamId = typeof value.stream_id === 'string' ? value.stream_id.trim() : '';
 
   if (!audioRef || !format) return null;
   if (!['wav', 'mp3', 'ogg', 'webm', 'm4a'].includes(format)) return null;
@@ -45,7 +46,8 @@ function normalizeInputAudio(value) {
     hints,
     transcribed_text: transcribedText,
     confidence,
-    segments
+    segments,
+    ...(streamId ? { stream_id: streamId } : {})
   };
 }
 
@@ -316,7 +318,8 @@ class RuntimeRpcWorker {
       return;
     }
 
-    if (!input.trim() && inputAudio && typeof context.transcribeAudio === 'function') {
+    if (!input.trim() && inputAudio && runtimeContext.direct_audio_to_model !== true
+      && typeof context.transcribeAudio === 'function') {
       publishChainEvent(this.bus, 'worker.asr.start', {
         request_id: request?.id ?? null,
         session_id: sessionId,
@@ -356,7 +359,7 @@ class RuntimeRpcWorker {
       }
     }
 
-    if (!input.trim() && inputImages.length === 0) {
+    if (!input.trim() && inputImages.length === 0 && runtimeContext.direct_audio_to_model !== true) {
       publishChainEvent(this.bus, 'worker.envelope.rejected', {
         request_id: request?.id ?? null,
         reason: 'empty_input_after_processing',

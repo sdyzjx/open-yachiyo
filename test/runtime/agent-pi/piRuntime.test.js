@@ -9,6 +9,7 @@ const { fixture } = require('./fixture');
 const { createPiRuntime } = require('../../../apps/runtime/agent-pi/piRuntime');
 const { RuntimeEventBus } = require('../../../apps/runtime/bus/eventBus');
 const { ToolExecutor } = require('../../../apps/runtime/executor/toolExecutor');
+const { pcmToWav } = require('../../../apps/gateway/deviceHub/audioInput');
 
 async function responsesFixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-responses-'));
@@ -136,7 +137,15 @@ test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and c
     fallbackChain: () => [descriptor]
   };
   const f = await fixture(t, () => ({ text: 'unused' }), { modelCatalog: catalog, realtimeWebSocket: FakeWs });
-  const running = f.runtime.run({ sessionId: 'device-phone', input: '算一下', modelRef: descriptor.ref });
+  const audioRef = path.join(f.root, 'voice.wav');
+  await fs.writeFile(audioRef, pcmToWav(Buffer.alloc(3200, 2)));
+  const running = f.runtime.run({
+    sessionId: 'device-phone',
+    input: '',
+    inputAudio: { audio_ref: audioRef, format: 'wav', stream_id: 'voice-1' },
+    runtimeContext: { direct_audio_to_model: true },
+    modelRef: descriptor.ref
+  });
   await Promise.race([
     waitFor(() => FakeWs.instances[0]),
     running.then((result) => { throw new Error(`Realtime run ended before transport opened: ${JSON.stringify(result)}`); })
@@ -144,6 +153,13 @@ test('TC-PI-040 Qwen Realtime uses the resident Pi loop for tool execution and c
   const first = FakeWs.instances[0];
   first.emit('message', JSON.stringify({ type: 'session.created' }));
   first.emit('message', JSON.stringify({ type: 'session.updated' }));
+  const directAudio = first.sent.find((event) => event.item?.content?.[0]?.type === 'input_audio');
+  assert.ok(directAudio, JSON.stringify(first.sent));
+  assert.equal(Buffer.from(directAudio.item.content[0].audio, 'base64').length, 3200);
+  assert.equal(first.sent.some((event) => JSON.stringify(event).includes('实时语音输入')), false);
+  first.emit('message', JSON.stringify({
+    type: 'conversation.item.input_audio_transcription.completed', transcript: '算一下', item_id: 'voice-1'
+  }));
   first.emit('message', JSON.stringify({
     type: 'response.function_call_arguments.done', call_id: 'call-1', name: 'add', arguments: '{"a":20,"b":22}'
   }));

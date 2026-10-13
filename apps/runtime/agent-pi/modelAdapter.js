@@ -165,7 +165,7 @@ function requestOptions(descriptor, options = {}) {
   };
 }
 
-async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio } = {}) {
+async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio, onRealtimeTranscript, sessionId } = {}) {
   const { sdk, ai, apis } = await loadPi();
   const runtime = await sdk.ModelRuntime.create({
     credentials: new ai.InMemoryCredentialStore(), modelsStore: new ai.InMemoryModelsStore(),
@@ -181,7 +181,11 @@ async function createModelRuntime(catalog, { WebSocketImpl, onRealtimeAudio } = 
     const streamSimple = (model, context, options) => {
       const descriptor = descriptors.find((item) => item.id === model.id);
       if (model.api === QWEN_REALTIME_API) {
-        return createQwenRealtimeStream({ ai, descriptor, model, context, options, WebSocketImpl, onAudio: onRealtimeAudio });
+        return createQwenRealtimeStream({
+          ai, descriptor, model, context, options: { ...options, sessionId: sessionId || options.sessionId }, WebSocketImpl,
+          onAudio: onRealtimeAudio,
+          onInputTranscript: onRealtimeTranscript
+        });
       }
       return apis[model.api].streamSimple(model, context, requestOptions(descriptor, options));
     };

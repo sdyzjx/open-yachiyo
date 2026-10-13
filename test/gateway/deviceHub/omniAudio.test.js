@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { EventEmitter } = require('node:events');
-const { createOmniAudioService, realtimeUrl } = require('../../../apps/gateway/deviceHub/omniAudio');
+const { createOmniAudioService } = require('../../../apps/gateway/deviceHub/omniAudio');
+const { realtimeUrl } = require('../../../apps/runtime/agent-pi/qwenRealtimeAdapter');
 
 function manager(descriptor) {
   return { getCatalog: () => ({ resolve: (ref) => ref === descriptor.ref ? descriptor : null }) };
@@ -36,29 +36,13 @@ test('TC-VOC-025 realtime URL uses workspace endpoint and rejects public DashSco
   );
 });
 
-test('TC-VOC-038 realtime audio transport only returns transcript and never creates a model response', async () => {
-  class FakeWs extends EventEmitter {
-    constructor() { super(); this.sent = []; FakeWs.instance = this; }
-    send(raw) { this.sent.push(JSON.parse(raw)); }
-    close() {}
-  }
+test('TC-VOC-038 gateway Omni service has no second realtime model loop', () => {
   const descriptor = {
     ref: 'qwen/rt', provider: 'qwen', id: 'qwen3.8-omni-flash-realtime', input: ['text', 'audio'],
     transport: 'realtime', api_key: 'secret', headers: {},
     base_url: 'https://wsid.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
   };
-  const service = createOmniAudioService({ llmManager: manager(descriptor), WebSocketImpl: FakeWs, timeoutMs: 1000 });
-  const capture = service.startRealtime({ modelRef: descriptor.ref });
-  const ws = FakeWs.instance;
-  ws.emit('message', JSON.stringify({ type: 'session.created' }));
-  ws.emit('message', JSON.stringify({ type: 'session.updated' }));
-  capture.append('AQI=');
-  const finishing = capture.finish();
-  ws.emit('message', JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', transcript: '打开电脑设置' }));
-  assert.deepEqual(await finishing, { text: '打开电脑设置', route: 'pi' });
-  assert.deepEqual(ws.sent.map((event) => event.type), [
-    'session.update', 'input_audio_buffer.append', 'input_audio_buffer.commit'
-  ]);
-  assert.equal(ws.sent.some((event) => event.type === 'response.create'), false);
-  assert.equal(ws.sent[0].session.tools, undefined);
+  const service = createOmniAudioService({ llmManager: manager(descriptor) });
+  assert.equal(service.startRealtime, undefined);
+  assert.equal(typeof service.transcribe, 'function');
 });

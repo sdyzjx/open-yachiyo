@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const fs = require('node:fs');
 const WebSocket = require('ws');
 
 const QWEN_REALTIME_API = 'qwen-realtime';
@@ -41,7 +42,40 @@ function textOf(content) {
   return (content || []).filter((part) => part?.type === 'text').map((part) => part.text || '').join('');
 }
 
-function replayContext(messages) {
+function wavPcm(audioRef) {
+  const buffer = fs.readFileSync(audioRef);
+  if (buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF'
+    || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('Realtime audio input must be a PCM WAV file');
+  }
+  let offset = 12;
+  let format = null;
+  let data = null;
+  while (offset + 8 <= buffer.length) {
+    const name = buffer.toString('ascii', offset, offset + 4);
+    const size = buffer.readUInt32LE(offset + 4);
+    const start = offset + 8;
+    const end = start + size;
+    if (end > buffer.length) throw new Error('Realtime WAV chunk is truncated');
+    if (name === 'fmt ' && size >= 16) {
+      format = {
+        encoding: buffer.readUInt16LE(start),
+        channels: buffer.readUInt16LE(start + 2),
+        sampleRate: buffer.readUInt32LE(start + 4),
+        bits: buffer.readUInt16LE(start + 14)
+      };
+    }
+    if (name === 'data') data = buffer.subarray(start, end);
+    offset = end + (size % 2);
+  }
+  if (!format || format.encoding !== 1 || format.channels !== 1 || format.sampleRate !== 16000
+    || format.bits !== 16 || !data?.length) {
+    throw new Error('Realtime audio input must be 16 kHz mono PCM s16le');
+  }
+  return data.toString('base64');
+}
+
+function replayContext(messages, { loadAudio = wavPcm } = {}) {
   let instructions = '';
   const tools = new Map();
   const events = [];
@@ -54,6 +88,16 @@ function replayContext(messages) {
       continue;
     }
     if (message.role === 'user') {
+      if (message.yachiyoInputAudio?.audio_ref) {
+        events.push({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message', role: 'user',
+            content: [{ type: 'input_audio', audio: loadAudio(message.yachiyoInputAudio.audio_ref) }]
+          }
+        });
+        continue;
+      }
       const text = textOf(message.content);
       if (text) events.push({
         type: 'conversation.item.create',
@@ -106,10 +150,24 @@ function applyUsage(partial, usage = {}) {
   partial.usage = { ...emptyUsage(), input, output, totalTokens: Number(usage.total_tokens) || input + output };
 }
 
-function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}, WebSocketImpl = WebSocket, onAudio = null }) {
+function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}, WebSocketImpl = WebSocket,
+  onAudio = null, onInputTranscript = null, loadAudio }) {
   const stream = ai.createAssistantMessageEventStream();
   const partial = createPartial(model);
-  const prepared = replayContext(context.messages);
+  let prepared;
+  try {
+    prepared = replayContext(context.messages, { loadAudio });
+  } catch (error) {
+    const failed = ai.createAssistantMessageEventStream();
+    const message = createPartial(model);
+    message.stopReason = 'error';
+    message.errorMessage = error.message;
+    queueMicrotask(() => {
+      failed.push({ type: 'error', reason: 'error', error: message });
+      failed.end();
+    });
+    return failed;
+  }
   if (descriptor.realtime_output === 'native') {
     prepared.tools = prepared.tools.filter((tool) => !/^voice(?:__|\.)tts_aliyun_vc$/.test(tool.function.name));
     prepared.instructions = [
@@ -182,9 +240,16 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
           tools: prepared.tools,
           tool_choice: prepared.tools.length ? 'auto' : 'none',
           turn_detection: null,
-          ...(descriptor.realtime_output === 'native' ? {
-            audio: { output: { voice: descriptor.realtime_voice || 'Tina', format: { type: 'pcm', sample_rate: 24000 } } }
-          } : {})
+          input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
+          audio: {
+            input: {
+              format: { type: 'pcm', sample_rate: 16000, sample_format: 's16le', channels: 1,
+                packing: 'interleaved', channel_layout: 'mono' }
+            },
+            ...(descriptor.realtime_output === 'native'
+              ? { output: { voice: descriptor.realtime_voice || 'Tina', format: { type: 'pcm', sample_rate: 24000 } } }
+              : {})
+          },
         }
       }));
       return;
@@ -200,6 +265,15 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
     }
     if (event.type === 'response.audio_transcript.delta') {
       pushText('audio_transcript', String(event.delta || ''));
+      return;
+    }
+    if (event.type === 'conversation.item.input_audio_transcription.completed') {
+      const text = String(event.transcript || event.text || '').trim();
+      if (text && onInputTranscript) onInputTranscript({
+        sessionId: options.sessionId,
+        streamId: [...(context.messages || [])].reverse().find((message) => message.yachiyoInputAudio)?.yachiyoInputAudio?.stream_id,
+        text
+      });
       return;
     }
     if (event.type === 'response.audio.delta' && event.delta && onAudio) {
@@ -241,4 +315,4 @@ function createQwenRealtimeStream({ ai, descriptor, model, context, options = {}
   return stream;
 }
 
-module.exports = { QWEN_REALTIME_API, createQwenRealtimeStream, realtimeUrl, replayContext };
+module.exports = { QWEN_REALTIME_API, createQwenRealtimeStream, realtimeUrl, replayContext, wavPcm };

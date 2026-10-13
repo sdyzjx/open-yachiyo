@@ -587,3 +587,34 @@ test('RuntimeRpcWorker preserves pre-transcribed audio metadata with non-empty i
   assert.deepEqual(seen.runtimeContext.input_audio.segments, [{ start: 0, end: 1, text: 'already transcribed' }]);
   worker.stop();
 });
+
+test('RuntimeRpcWorker sends realtime audio to Pi without invoking the ASR hook', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  let seen = null;
+  let transcribeCalls = 0;
+  const runner = {
+    async run({ input, runtimeContext }) {
+      seen = { input, runtimeContext };
+      return { output: 'ok', traceId: 't-audio-native', state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+  await queue.submit({
+    jsonrpc: '2.0', id: 'audio-native', method: 'runtime.run', params: {
+      session_id: 'device-phone', input: '',
+      input_audio: { audio_ref: '/tmp/native.wav', format: 'wav', stream_id: 'voice-1' }
+    }
+  }, {
+    send: () => {},
+    buildRunContext: async () => ({ direct_audio_to_model: true }),
+    transcribeAudio: async () => { transcribeCalls += 1; return { text: 'wrong' }; }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(transcribeCalls, 0);
+  assert.equal(seen.input, '');
+  assert.equal(seen.runtimeContext.input_audio.audio_ref, '/tmp/native.wav');
+  assert.equal(seen.runtimeContext.input_audio.stream_id, 'voice-1');
+  worker.stop();
+});

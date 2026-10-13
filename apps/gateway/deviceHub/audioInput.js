@@ -17,7 +17,6 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
   fs.mkdirSync(directory, { recursive: true });
   const streams = new Map();
   const busy = new Set();
-  const processingRealtime = new Map();
   const rejected = new Map();
   let stopped = false;
   const rememberRejected = (device, streamId) => {
@@ -51,26 +50,15 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
       if (topic === 'audio.input.start') {
         forgetRejected(device, data.stream_id);
         if (streams.has(device)) throw fault(-32600, 'Audio stream already active');
-        const previousRealtime = processingRealtime.get(device);
-        if (busy.has(device) && !previousRealtime) throw fault(-32600, 'Audio stream already active');
-        if (previousRealtime) {
-          previousRealtime.interrupted = true;
-          processingRealtime.delete(device);
-          busy.delete(device);
-          previousRealtime.realtime.cancel();
-        }
+        if (busy.has(device)) throw fault(-32600, 'Audio stream already active');
         if (data.format !== 'pcm_s16le' || data.sample_rate !== 16000 || data.channels !== 1 || !['push_to_talk', 'continuous'].includes(data.mode) || !['auto', 'zh', 'en'].includes(data.lang || 'auto')) throw fault(-32602, 'Expected 16 kHz mono PCM s16le');
         if (!['transcribe', 'direct', 'realtime'].includes(data.audio_mode || 'transcribe')) throw fault(-32602, 'Invalid audio_mode');
         if ((data.audio_mode === 'direct' || data.audio_mode === 'realtime') && (typeof data.model_ref !== 'string' || !data.model_ref)) throw fault(-32602, 'model_ref required for audio pass-through');
         const stream = { ...data, audio_mode: data.audio_mode || 'transcribe', chunks: [], bytes: 0, nextSeq: 0 };
-        if (stream.audio_mode !== 'transcribe' && !omniAudio) throw fault(-32601, 'Omni audio unavailable');
-        if (stream.audio_mode === 'realtime') {
-          stream.realtime = omniAudio.startRealtime({ device, streamId: stream.stream_id, modelRef: stream.model_ref });
-        }
+        if (stream.audio_mode === 'direct' && !omniAudio) throw fault(-32601, 'Omni audio unavailable');
         stream.timer = setTimeout(() => {
           const expired = clear(device, data.stream_id);
           if (expired) {
-            expired.realtime?.cancel();
             transcript(device, data.stream_id, '', { code: -32003, message: 'Audio stream timeout' });
           }
         }, streamTimeoutMs);
@@ -87,41 +75,26 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
           const chunk = Buffer.from(data.data_b64, 'base64');
           if (!chunk.length || chunk.length % 2 || stream.bytes + chunk.length > maxBytes) throw fault(-32602, 'Audio size invalid or recording limit exceeded');
           stream.chunks.push(chunk); stream.bytes += chunk.length; stream.nextSeq++;
-          stream.realtime?.append(data.data_b64);
         } else if (topic === 'audio.input.end') {
           if (!['released', 'vad', 'cancel'].includes(data.reason)) throw fault(-32602, 'Invalid end reason');
           clear(device, data.stream_id);
           if (data.reason === 'cancel') {
-            stream.realtime?.cancel();
             return;
           }
           if (!stream.bytes) throw fault(-32602, 'Empty recording');
           if (stream.audio_mode === 'realtime') {
-            const processing = { realtime: stream.realtime, stream_id: stream.stream_id, interrupted: false };
-            processingRealtime.set(device, processing);
-            busy.add(device);
-            let result;
-            try {
-              result = await stream.realtime.finish();
-            } catch (error) {
-              if (!processing.interrupted) throw error;
-            } finally {
-              if (processingRealtime.get(device) === processing) {
-                processingRealtime.delete(device);
-                busy.delete(device);
-              }
-            }
-            if (processing.interrupted || stopped || hub.devices.get(device.device_id) !== device) return;
-            const text = typeof result?.text === 'string' ? result.text.trim() : '';
-            if (!text) {
-              transcript(device, stream.stream_id, '', { code: -32602, message: 'Empty transcription' });
-              return;
-            }
-            transcript(device, stream.stream_id, text);
+            const wav = pcmToWav(Buffer.concat(stream.chunks));
+            const file = path.join(directory, `${stream.stream_id}.wav`);
+            fs.writeFileSync(file, wav, { flag: 'wx', mode: 0o600 });
             await hub.runInput(device, {
-              text,
+              text: '',
               model_ref: stream.model_ref,
-              input_audio: { format: 'pcm_s16le', sample_rate: 16000, transcribed_text: text }
+              input_audio: {
+                audio_ref: file,
+                format: 'wav',
+                lang: stream.lang || 'auto',
+                stream_id: stream.stream_id
+              }
             });
             return;
           }
@@ -151,25 +124,17 @@ function attachAudioInput({ hub, directory, transcribe = createAsrService(), omn
         if (streams.get(device)?.stream_id !== data.stream_id) rememberRejected(device, data.stream_id);
       } else {
         const stream = clear(device, data.stream_id);
-        stream?.realtime?.cancel();
       }
       if (!stopped) transcript(device, data.stream_id, '', { code: typeof err.code === 'number' ? err.code : -32600, message: typeof err.code === 'number' ? err.message : 'Audio processing failed' });
     }
   };
   const listener = (event) => { void handle(event); };
   const stopDevice = (device) => {
-    clearCurrent(device)?.realtime?.cancel();
-    const processing = processingRealtime.get(device);
-    if (processing) {
-      processing.interrupted = true;
-      processing.realtime.cancel();
-      processingRealtime.delete(device);
-      busy.delete(device);
-    }
+    clearCurrent(device);
   };
   const offline = (device) => { stopDevice(device); forgetRejected(device); };
   hub.on('publication', listener); hub.on('offline', offline);
-  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of new Set([...streams.keys(), ...processingRealtime.keys()])) stopDevice(device); rejected.clear(); });
-  return { handle, streams, processingRealtime };
+  hub.once('shutdown', () => { stopped = true; hub.off('publication', listener); hub.off('offline', offline); for (const device of streams.keys()) stopDevice(device); rejected.clear(); });
+  return { handle, streams };
 }
 module.exports = { pcmToWav, attachAudioInput };

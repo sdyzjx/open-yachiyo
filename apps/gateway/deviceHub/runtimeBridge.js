@@ -77,9 +77,9 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
     }
   };
   hub.runInput = async (device, { text, input_audio, model_ref } = {}) => {
-    if (typeof text !== 'string' || !text.trim()) throw fault(-32602, 'Non-empty text required');
+    if ((typeof text !== 'string' || !text.trim()) && !input_audio) throw fault(-32602, 'Text or input_audio required');
     if (!enqueueRun) throw fault(-32601, 'Runtime unavailable');
-    const request = { jsonrpc: '2.0', id: randomUUID(), method: 'runtime.run', params: { session_id: `device-${device.device_id}`, input: text, ...(input_audio ? { input_audio } : {}), ...(typeof model_ref === 'string' && model_ref.trim() ? { model_ref: model_ref.trim() } : {}) } };
+    const request = { jsonrpc: '2.0', id: randomUUID(), method: 'runtime.run', params: { session_id: `device-${device.device_id}`, input: typeof text === 'string' ? text : '', ...(input_audio ? { input_audio } : {}), ...(typeof model_ref === 'string' && model_ref.trim() ? { model_ref: model_ref.trim() } : {}) } };
     // Reuse gateway persistence, permission and queue hooks via a WS-compatible sink.
     const sink = { readyState: 1, send(raw) {
       const msg = JSON.parse(raw);

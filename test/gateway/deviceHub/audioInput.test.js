@@ -84,22 +84,16 @@ test('TC-VOC-024 Omni direct audio bypasses ASR and keeps the selected model for
   assert.equal(calls[0].model_ref, 'qwen/qwen3.8-omni-flash');
 });
 
-test('TC-VOC-038 Realtime audio streams chunks then enqueues its transcript into Pi', async (t) => {
+test('TC-VOC-038 Realtime audio enters Pi once as the original WAV without a separate ASR call', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const device = { device_id: 'phone', ws: {} };
-  const chunks = [];
-  let finished = 0;
   const runs = [];
   const hub = Object.assign(new EventEmitter(), {
     devices: new Map([[device.device_id, device]]), publish() {}, async runInput(_device, input) { runs.push(input); }
   });
   const audio = attachAudioInput({
-    hub, directory, transcribe: async () => ({ text: 'wrong' }),
-    omniAudio: { startRealtime: ({ modelRef }) => {
-      assert.equal(modelRef, 'qwen/qwen3.8-omni-flash-realtime');
-      return { append: (value) => chunks.push(value), finish: async () => { finished += 1; return { text: '实时请求' }; }, cancel() {} };
-    } }
+    hub, directory, transcribe: async () => { throw new Error('ASR must not run'); }
   });
   t.after(() => hub.emit('shutdown'));
   const data = Buffer.alloc(3200, 2).toString('base64');
@@ -108,41 +102,25 @@ test('TC-VOC-038 Realtime audio streams chunks then enqueues its transcript into
   }));
   await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'rt', seq: 0, data_b64: data }));
   await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'rt', reason: 'released' }));
-  assert.deepEqual(chunks, [data]);
-  assert.equal(finished, 1);
   assert.equal(runs.length, 1);
-  assert.equal(runs[0].text, '实时请求');
+  assert.equal(runs[0].text, '');
   assert.equal(runs[0].model_ref, 'qwen/qwen3.8-omni-flash-realtime');
-  assert.equal(runs[0].input_audio.transcribed_text, '实时请求');
+  assert.equal(runs[0].input_audio.format, 'wav');
+  assert.equal(runs[0].input_audio.stream_id, 'rt');
+  assert.equal(fs.readFileSync(runs[0].input_audio.audio_ref).toString('ascii', 0, 4), 'RIFF');
 });
 
-test('a new recording interrupts a realtime response that is still running tools', async (t) => {
+test('a new recording can start after realtime audio has been handed to Pi', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-interrupt-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const device = { device_id: 'phone', ws: {} };
-  const published = [];
-  const pending = [];
+  const runs = [];
   const hub = Object.assign(new EventEmitter(), {
     devices: new Map([[device.device_id, device]]),
-    publish(topic, data) { published.push({ topic, data }); },
-    async runInput() {}
+    publish() {},
+    async runInput(_device, input) { runs.push(input); }
   });
-  const audio = attachAudioInput({
-    hub, directory,
-    omniAudio: { startRealtime() {
-      let resolveDone;
-      let rejectDone;
-      const done = new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject; });
-      done.catch(() => {});
-      const state = { cancelled: 0, resolveDone };
-      pending.push(state);
-      return {
-        append() {},
-        finish: () => done,
-        cancel() { state.cancelled += 1; rejectDone(new Error('cancelled by newer voice')); }
-      };
-    } }
-  });
+  const audio = attachAudioInput({ hub, directory });
   t.after(() => hub.emit('shutdown'));
   const pcm = Buffer.alloc(3200, 2).toString('base64');
 
@@ -150,35 +128,30 @@ test('a new recording interrupts a realtime response that is still running tools
     ...startData('old-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
   }));
   await audio.handle(audioEvent('audio.input.chunk', device, { stream_id: 'old-rt', seq: 0, data_b64: pcm }));
-  const oldEnd = audio.handle(audioEvent('audio.input.end', device, { stream_id: 'old-rt', reason: 'released' }));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(audio.processingRealtime.get(device)?.stream_id, 'old-rt');
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'old-rt', reason: 'released' }));
 
   await audio.handle(audioEvent('audio.input.start', device, {
     ...startData('new-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
   }));
-  await oldEnd;
-  assert.equal(pending[0].cancelled, 1);
   assert.equal(audio.streams.get(device)?.stream_id, 'new-rt');
-  assert.equal(published.some(({ data }) => data.error?.message === 'Audio stream already active'), false);
-  assert.equal(published.some(({ data }) => data.error?.message === 'cancelled by newer voice'), false);
+  assert.equal(runs.length, 1);
 
   await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'new-rt', reason: 'cancel' }));
 });
 
-test('TC-VOC-026 Realtime start preserves an actionable configuration error', async (t) => {
+test('Realtime capture never opens the removed transcription-only socket', async (t) => {
   const directory = fs.mkdtempSync(path.join(__dirname, '.audio-realtime-config-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const device = { device_id: 'phone', ws: {} };
-  const published = [];
+  const runs = [];
   const hub = Object.assign(new EventEmitter(), {
     devices: new Map([[device.device_id, device]]),
-    publish(topic, data) { published.push({ topic, data }); },
-    async runInput() {}
+    publish() {},
+    async runInput(_device, input) { runs.push(input); }
   });
   const audio = attachAudioInput({
     hub, directory,
-    omniAudio: { startRealtime() { const error = new Error('Realtime Omni requires a workspace-specific Model Studio URL (*.maas.aliyuncs.com)'); error.code = -32602; throw error; } }
+    omniAudio: { startRealtime() { throw new Error('must not be called'); } }
   });
   t.after(() => hub.emit('shutdown'));
 
@@ -186,9 +159,11 @@ test('TC-VOC-026 Realtime start preserves an actionable configuration error', as
     ...startData('bad-rt'), audio_mode: 'realtime', model_ref: 'qwen/realtime'
   }));
 
-  assert.equal(published.length, 1);
-  assert.equal(published[0].data.error.code, -32602);
-  assert.match(published[0].data.error.message, /workspace-specific/);
+  await audio.handle(audioEvent('audio.input.chunk', device, {
+    stream_id: 'bad-rt', seq: 0, data_b64: Buffer.alloc(4).toString('base64')
+  }));
+  await audio.handle(audioEvent('audio.input.end', device, { stream_id: 'bad-rt', reason: 'released' }));
+  assert.equal(runs.length, 1);
 });
 
 function deferred() {

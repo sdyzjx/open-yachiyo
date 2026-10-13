@@ -1,6 +1,3 @@
-const WebSocket = require('ws');
-const { realtimeUrl } = require('../../runtime/agent-pi/qwenRealtimeAdapter');
-
 function contentText(payload) {
   const content = payload?.choices?.[0]?.message?.content;
   if (typeof content === 'string') return content.trim();
@@ -18,7 +15,6 @@ function configurationError(message) {
 function createOmniAudioService({
   llmManager,
   fetchImpl = (...args) => fetch(...args),
-  WebSocketImpl = WebSocket,
   timeoutMs = 120000
 }) {
   const resolve = (modelRef, mode) => {
@@ -59,76 +55,7 @@ function createOmniAudioService({
     }
   }
 
-  function startRealtime({ modelRef }) {
-    const descriptor = resolve(modelRef, 'realtime');
-    const pending = [];
-    let ready = false;
-    let transcript = '';
-    let settled = false;
-    let timer;
-    let resolveDone;
-    let rejectDone;
-    const done = new Promise((resolvePromise, rejectPromise) => {
-      resolveDone = resolvePromise;
-      rejectDone = rejectPromise;
-    });
-    done.catch(() => {});
-    const ws = new WebSocketImpl(realtimeUrl(descriptor), {
-      headers: { Authorization: `Bearer ${descriptor.api_key}`, ...descriptor.headers }
-    });
-    const sendNow = (event) => ws.send(JSON.stringify(event));
-    const send = (event) => { if (ready) sendNow(event); else pending.push(event); };
-    const finish = (error = null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try { ws.close(); } catch { /* already closed */ }
-      if (error) rejectDone(error);
-      else resolveDone({ text: transcript.trim(), route: 'pi' });
-    };
-
-    timer = setTimeout(() => finish(new Error('Realtime transcription timed out')), timeoutMs);
-    ws.on('message', (raw) => {
-      if (settled) return;
-      let event;
-      try { event = JSON.parse(raw.toString()); } catch { return; }
-      if (event.type === 'session.created') {
-        sendNow({
-          type: 'session.update',
-          session: {
-            modalities: ['text'],
-            instructions: 'Transcribe the user audio exactly. Do not answer the request.',
-            turn_detection: null,
-            input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-            audio: {
-              input: {
-                format: { type: 'pcm', sample_rate: 16000, sample_format: 's16le', channels: 1, packing: 'interleaved', channel_layout: 'mono' }
-              }
-            }
-          }
-        });
-      } else if (event.type === 'session.updated') {
-        ready = true;
-        for (const item of pending.splice(0)) sendNow(item);
-      } else if (event.type === 'conversation.item.input_audio_transcription.completed') {
-        transcript = String(event.transcript || event.text || '').trim();
-        if (!transcript) finish(configurationError('Realtime Omni returned an empty transcription'));
-        else finish();
-      } else if (event.type === 'error') {
-        finish(new Error(event.error?.message || 'Realtime transcription failed'));
-      }
-    });
-    ws.on('error', (error) => finish(error));
-    ws.on('close', () => { if (!settled) finish(new Error('Realtime transcription connection closed early')); });
-
-    return {
-      append(dataB64) { send({ type: 'input_audio_buffer.append', audio: dataB64 }); },
-      finish() { send({ type: 'input_audio_buffer.commit' }); return done; },
-      cancel() { finish(new Error('Realtime audio cancelled')); }
-    };
-  }
-
-  return { resolve, transcribe, startRealtime };
+  return { resolve, transcribe };
 }
 
-module.exports = { configurationError, contentText, createOmniAudioService, realtimeUrl };
+module.exports = { configurationError, contentText, createOmniAudioService };

@@ -32,7 +32,7 @@ function sameModel(left, right) {
 
 function modelWithImages(model, tools, images) {
   if (!images.length && !tools.some((tool) => String(tool.originalName || tool.name).startsWith('desktop.capture.'))) return model;
-  return { ...model, input: ['text', 'image'] };
+  return { ...model, input: [...new Set([...(model.input || ['text']), 'image'])] };
 }
 
 async function createPiRuntime(deps) {
@@ -48,6 +48,7 @@ async function createPiRuntime(deps) {
   const createEntry = async (sessionId, initial) => {
     const { catalog, chain, cwd, seedMessages = [], systemPrompt = '' } = initial;
     const models = await createModelRuntime(catalog, {
+      sessionId,
       WebSocketImpl: deps.realtimeWebSocket,
       onRealtimeAudio: ({ sessionId: audioSessionId, requestId, topic, data }) => {
         const target = String(audioSessionId || '').startsWith('device-')
@@ -56,6 +57,18 @@ async function createPiRuntime(deps) {
         deps.bus?.publish(topic, {
           ...data,
           request_id: requestId,
+          session_id: audioSessionId,
+          ...(target ? { __target: target } : {})
+        });
+      },
+      onRealtimeTranscript: ({ sessionId: audioSessionId, streamId, text }) => {
+        const target = String(audioSessionId || '').startsWith('device-')
+          ? String(audioSessionId).slice('device-'.length)
+          : undefined;
+        deps.bus?.publish('audio.input.transcript', {
+          stream_id: streamId || null,
+          text,
+          final: true,
           session_id: audioSessionId,
           ...(target ? { __target: target } : {})
         });
@@ -209,14 +222,6 @@ async function createPiRuntime(deps) {
       try {
         const inputAudio = args.inputAudio || runtimeContext.input_audio;
         runtimeContext.input_type = inputAudio ? 'audio' : 'text';
-        if (!input.trim() && inputAudio) {
-          const transcription = inputAudio.transcribed_text
-            ? { text: inputAudio.transcribed_text }
-            : await deps.transcribeAudio?.({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext });
-          input = transcription?.text || '';
-        }
-        const images = imageParts(args.inputImages || []);
-        if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
         const settings = await deps.sessionStore?.getSessionSettings(sessionId);
         runtimeContext.approval_mode = normalizeSessionApprovalMode(
           args.approvalMode || runtimeContext.approval_mode || settings?.approval_mode
@@ -225,6 +230,17 @@ async function createPiRuntime(deps) {
         const requestedModelRef = args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref || null;
         catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog({ modelRef: requestedModelRef }) : deps.modelCatalog;
         const chain = selectModels(catalog, requestedModelRef);
+        const directRealtimeAudio = Boolean(inputAudio && chain[0].transport === 'realtime'
+          && chain[0].input?.includes('audio'));
+        if (!input.trim() && inputAudio && !directRealtimeAudio) {
+          const transcription = inputAudio.transcribed_text
+            ? { text: inputAudio.transcribed_text }
+            : await deps.transcribeAudio?.({ session_id: sessionId, input_audio: inputAudio, runtime_context: runtimeContext });
+          input = transcription?.text || '';
+        }
+        if (directRealtimeAudio && !input.trim()) input = '[实时语音输入]';
+        const images = imageParts(args.inputImages || []);
+        if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
         const resolvedModelRef = chain[0].ref;
         events = new EventBridge({ bus: deps.bus, sessionId, onEvent, streaming, requestedModelRef, resolvedModelRef });
         const cwd = runtimeContext.workspace_root || deps.cwd || process.cwd();
@@ -284,11 +300,30 @@ async function createPiRuntime(deps) {
             };
             args.signal?.addEventListener('abort', abort, { once: true });
             const behavior = args.deliveryMode || (inputAudio ? 'steer' : 'followUp');
-            const prompting = entry.session.prompt(input, {
-              images,
-              ...(alreadyStreaming ? { streamingBehavior: behavior } : {}),
-              preflightResult: (disposition) => { tracker.disposition = disposition; }
-            });
+            let prompting;
+            if (directRealtimeAudio) {
+              const message = {
+                role: 'user',
+                content: [{ type: 'text', text: input }],
+                timestamp: Date.now(),
+                yachiyoInputAudio: { ...inputAudio }
+              };
+              if (alreadyStreaming) {
+                if (behavior === 'followUp') entry.session.agent.followUp(message);
+                else entry.session.agent.steer(message);
+                tracker.disposition = 'queued';
+                prompting = Promise.resolve();
+              } else {
+                tracker.disposition = 'started';
+                prompting = entry.session.agent.prompt(message);
+              }
+            } else {
+              prompting = entry.session.prompt(input, {
+                images,
+                ...(alreadyStreaming ? { streamingBehavior: behavior } : {}),
+                preflightResult: (disposition) => { tracker.disposition = disposition; }
+              });
+            }
             prompting.catch((error) => entry.state.coordinator.fail(tracker, error));
             const turn = await tracker.promise;
             if (entry.state.coordinator.size === 0) await entry.session.waitForIdle();
@@ -305,7 +340,7 @@ async function createPiRuntime(deps) {
             break;
           } catch (error) {
             await entry.session.waitForIdle();
-            if (descriptor.chatgpt_plan || index + 1 >= chain.length || events.hasOutput || events.hasTools
+            if (directRealtimeAudio || descriptor.chatgpt_plan || index + 1 >= chain.length || events.hasOutput || events.hasTools
               || alreadyStreaming || args.signal?.aborted || !isRetryableModelError(error)) throw error;
             if (startLeaf) entry.manager.branch(startLeaf); else entry.manager.resetLeaf();
             entry.session.refreshContext();
