@@ -51,6 +51,13 @@ function attachDeviceHub({ server, app, wss, config, ...options }) {
   const hub = setDeviceHub(new DeviceHub(settings));
   require('./avatarHost').attachAvatarHost({ hub, statePath: settings.home ? require('node:path').join(settings.home, 'data/device-hub/state.json') : null, ...options.avatar });
   if (options.llmManager) require('./modelControl').attachModelControl({ hub, llmManager: options.llmManager });
+  if (options.sessionStore && options.approvalCoordinator) {
+    require('./sessionControl').attachSessionControl({
+      hub,
+      sessionStore: options.sessionStore,
+      approvalCoordinator: options.approvalCoordinator
+    });
+  }
   const upgrade = (req, socket, head) => {
     let pathname;
     try { pathname = new URL(req.url, 'http://localhost').pathname; } catch { socket.destroy(); return; }

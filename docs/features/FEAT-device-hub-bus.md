@@ -32,6 +32,8 @@ Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源�
 
 `chat.input` 固定使用 `device-<device_id>` 会话，通过现有网关入队入口执行，复用权限、历史记录与 workspace；设备提交的其他 session_id 不覆盖设备会话。TC-HUB-005 对应 `test/gateway/deviceHub/runtimeBridge.test.js`。
 
+会话控制使用四个网关本地 RPC：`session.settings.get`、`session.settings.update`、`approval.pending.list`、`approval.decision`。更新接口只接受三种 `approval_mode`，审批决定要求布尔 `approved` 与可选 `scope=once|always`。所有方法从已完成 hello 的设备身份计算 `device-<device_id>`，客户端不能读写或决定其他设备会话；非法模式、缺少参数及跨会话 approval_id 返回 `-32602`。
+
 ### 手机语音中继
 
 手机为 host 时，网关消费 `voice.requested`，复用 `QwenTtsClient.synthesizeNonStreaming`，将音频保存到 `data/device-media/`，定向发送含带 token 下载 URL 的 `voice.play`。`GET /api/device/media/:id` 提供音频，10 分钟后返回 404 并清理文件。request_id 去重；合成期间 host 切换时丢弃旧结果。播放回执桥接回 bus。桌面 host 不由网关再次合成；实时 `voice.stream.*` 已由普通桥接转发。
@@ -62,4 +64,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-001～026；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-001～032；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。

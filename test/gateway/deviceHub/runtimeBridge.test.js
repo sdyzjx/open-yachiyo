@@ -106,3 +106,56 @@ test('Runtime bridge forwards approval requests and scopes phone decisions to it
     scope: 'once'
   });
 });
+
+test('Device session control RPC isolates settings and approvals by authenticated device', async (t) => {
+  const bus = new RuntimeEventBus();
+  const settings = new Map();
+  const decisions = [];
+  const pending = [
+    { approval_id: 'apr-phone', session_id: 'device-phone', command: 'pwd' },
+    { approval_id: 'apr-other', session_id: 'device-other', command: 'whoami' }
+  ];
+  const sessionStore = {
+    async getSessionSettings(sessionId) { return settings.get(sessionId) || null; },
+    async updateSessionSettings(sessionId, patch) {
+      const value = { permission_level: 'high', approval_mode: 'manual', ...(settings.get(sessionId) || {}), ...patch };
+      settings.set(sessionId, value);
+      return value;
+    }
+  };
+  const approvalCoordinator = {
+    list({ sessionId }) { return pending.filter((entry) => entry.session_id === sessionId); },
+    decide(decision) {
+      decisions.push(decision);
+      return decision.approvalId === 'apr-phone' && decision.sessionId === 'device-phone';
+    }
+  };
+  const f = await fixture(t, { bus, sessionStore, approvalCoordinator });
+  const phone = await f.client('phone');
+  let rpcIndex = 0;
+  const rpc = async (method, params = {}) => {
+    const id = `rpc-${++rpcIndex}`;
+    phone.send('rpc.req', { method, params }, { id });
+    const response = await phone.next((message) => message.type === 'rpc.res' && message.id === id);
+    if (response.data.error) throw Object.assign(new Error(response.data.error.message), response.data.error);
+    return response.data.result;
+  };
+
+  assert.equal((await rpc('session.settings.get')).approval_mode, 'manual');
+  assert.equal((await rpc('session.settings.update', { approval_mode: 'auto_approve' })).approval_mode, 'auto_approve');
+  assert.equal(settings.get('device-phone').approval_mode, 'auto_approve');
+  assert.equal(settings.has('device-other'), false);
+  await assert.rejects(rpc('session.settings.update', { approval_mode: 'unsafe' }), /manual\|auto_approve\|full_access/);
+
+  const visible = await rpc('approval.pending.list');
+  assert.deepEqual(visible.map((entry) => entry.approval_id), ['apr-phone']);
+  await assert.rejects(rpc('approval.decision', { approval_id: 'apr-other', approved: true }), /not found/);
+  const decided = await rpc('approval.decision', { approval_id: 'apr-phone', approved: true, scope: 'always' });
+  assert.deepEqual(decided, { approval_id: 'apr-phone', approved: true, scope: 'always' });
+  assert.deepEqual(decisions.at(-1), {
+    approvalId: 'apr-phone',
+    sessionId: 'device-phone',
+    approved: true,
+    scope: 'always'
+  });
+});

@@ -51,7 +51,7 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 `run({ sessionId, input, inputImages, inputAudio, seedMessages, runtimeContext, permissionLevel, model_ref, modelRef, deliveryMode, signal, onEvent })` 返回 `{ output, traceId, state, metrics }`。模型覆盖优先级：model_ref → modelRef → runtimeContext.model_ref → session settings.model_ref → catalog.active。
 
-会话设置 `approval_mode` 可取 `manual|auto_approve|full_access`。本机界面使用 `PUT /api/sessions/:sessionId/settings` 更新；`GET /api/approvals?session_id=...` 列出待处理项，`POST /api/approvals/:approvalId/decision` 以 `{session_id,approved,scope:'once'|'always'}` 决定。手机订阅 `approval.**`，并发布 `approval.decision`；服务端忽略客户端提交的 session_id，固定使用已认证设备对应的会话。
+会话设置 `approval_mode` 可取 `manual|auto_approve|full_access`。本机界面使用 `PUT /api/sessions/:sessionId/settings` 更新；`GET /api/approvals?session_id=...` 列出待处理项，`POST /api/approvals/:approvalId/decision` 以 `{session_id,approved,scope:'once'|'always'}` 决定。手机订阅 `approval.**`，并调用 `session.settings.get/update`、`approval.pending.list/decision` Device Hub RPC；服务端不接受手机提供 session_id，固定使用已认证设备对应的会话。
 
 同一 `sessionId` 由 `AgentSessionRegistry` 复用一个长生命周期 Pi `AgentSession`。默认最多驻留 32 个会话，空闲 30 分钟后回收内存对象；Pi JSONL 会话不删除，后续请求从原 `SessionManager` 恢复。每次运行的 `plan` 与 `metrics` 同时记录 `requested_model_ref` 和 `resolved_model_ref`，用于区分界面选择、会话覆盖、全局默认和 fallback 的实际结果。
 
