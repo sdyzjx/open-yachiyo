@@ -31,13 +31,18 @@ function assertFileAccess(target, current, cwd, { write = false } = {}) {
   }
 }
 
-function wrapDefinition(definition, context) {
+function wrapDefinition(definition, context, cwd) {
   const execute = definition.execute.bind(definition);
+  const readOnly = new Set(['read', 'grep', 'find', 'ls']);
   return {
     ...definition,
-    executionMode: definition.name === 'read' ? 'parallel' : 'sequential',
+    executionMode: readOnly.has(definition.name) ? 'parallel' : 'sequential',
     async execute(callId, args, signal, onUpdate, toolContext) {
       try {
+        if (readOnly.has(definition.name)) {
+          const base = toolContext?.cwd || cwd;
+          assertFileAccess(path.resolve(base, args?.path || '.'), context(), cwd);
+        }
         return await execute(callId, args, signal, onUpdate, toolContext);
       } catch (error) {
         context().reportToolError?.(callId, {
@@ -115,9 +120,12 @@ function createStandardTools({ sdk, cwd, executor, approvalCoordinator, bus, con
     sdk.createReadToolDefinition(cwd, { operations: readOps }),
     sdk.createBashToolDefinition(cwd, { operations: bashOps, exposeSessionEnvironment: false }),
     sdk.createEditToolDefinition(cwd, { operations: editOps }),
-    sdk.createWriteToolDefinition(cwd, { operations: writeOps })
+    sdk.createWriteToolDefinition(cwd, { operations: writeOps }),
+    sdk.createGrepToolDefinition(cwd),
+    sdk.createFindToolDefinition(cwd),
+    sdk.createLsToolDefinition(cwd)
   ];
-  return definitions.map((definition) => wrapDefinition(definition, current));
+  return definitions.map((definition) => wrapDefinition(definition, current, cwd));
 }
 
 module.exports = { createStandardTools, assertFileAccess, within, imageMimeType };

@@ -17,7 +17,7 @@ function executor() {
   return new ToolExecutor(new ToolRegistry({ config }), { policy: config.policy, exec: config.exec });
 }
 
-test('TC-PI-037 standard Pi file and bash tools preserve session policy and approval', async (t) => {
+test('TC-PI-037 standard Pi file, search and bash tools preserve session policy and approval', async (t) => {
   __resetShellApprovalStoreForTests();
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-standard-workspace-'));
   const external = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-standard-external-'));
@@ -37,13 +37,21 @@ test('TC-PI-037 standard Pi file and bash tools preserve session policy and appr
     approvalCoordinator: new ApprovalCoordinator(),
     context: () => runtimeContext
   }).map((tool) => [tool.name, tool]));
-  assert.deepEqual(Object.keys(tools), ['read', 'bash', 'edit', 'write']);
+  assert.deepEqual(Object.keys(tools), ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']);
 
   await tools.write.execute('write', { path: 'note.txt', content: 'before' }, undefined, undefined, { cwd: workspace });
+  await fs.mkdir(path.join(workspace, 'nested'));
+  await fs.writeFile(path.join(workspace, 'nested', 'match.txt'), 'search needle', 'utf8');
   const read = await tools.read.execute('read', { path: 'note.txt' }, undefined, undefined, {
     cwd: workspace, model: { input: ['text'] }
   });
   assert.match(read.content[0].text, /before/);
+  const listed = await tools.ls.execute('ls', { path: '.' }, undefined, undefined, { cwd: workspace });
+  assert.match(listed.content[0].text, /note\.txt/);
+  const found = await tools.find.execute('find', { pattern: '**\/match.txt' }, undefined, undefined, { cwd: workspace });
+  assert.match(found.content[0].text, /nested\/match\.txt/);
+  const searched = await tools.grep.execute('grep', { pattern: 'needle', path: '.' }, undefined, undefined, { cwd: workspace });
+  assert.match(searched.content[0].text, /nested\/match\.txt.*needle/);
   await tools.edit.execute('edit', { path: 'note.txt', edits: [{ oldText: 'before', newText: 'after' }] },
     undefined, undefined, { cwd: workspace });
   assert.equal(await fs.readFile(path.join(workspace, 'note.txt'), 'utf8'), 'after');
@@ -52,6 +60,9 @@ test('TC-PI-037 standard Pi file and bash tools preserve session policy and appr
   await fs.writeFile(outside, 'outside', 'utf8');
   await assert.rejects(tools.read.execute('outside-read', { path: outside }, undefined, undefined, {
     cwd: workspace, model: { input: ['text'] }
+  }), /escapes workspace/);
+  await assert.rejects(tools.grep.execute('outside-grep', { pattern: 'outside', path: external }, undefined, undefined, {
+    cwd: workspace
   }), /escapes workspace/);
   await assert.rejects(tools.write.execute('outside-write', { path: outside, content: 'blocked' },
     undefined, undefined, { cwd: workspace }), /escapes workspace/);

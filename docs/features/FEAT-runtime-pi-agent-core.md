@@ -94,7 +94,7 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 
 设备工具集在请求边界取快照；tools.changed 标记下一快照刷新，不改变已经执行中的定义。动态方法必须来自 Hub 的已配对且 `expose_as_tool:true` 列表，并匹配 `policy.deviceHub.allow` 且不匹配 `policy.deviceHub.deny`；匹配后仅将实际方法名加入本次 executor 精确 allow。全局 deny、provider deny 和会话权限仍优先。可注入 avatar 控制器用于测试。
 
-Pi 标准 `read`、`bash`、`edit`、`write` 以原生 schema、输出截断、diff 和提示词贡献注册，但底层操作由 Yachiyo 提供：read 根据会话权限检查工作区，write/edit 默认不能越界，bash 通过 `shell.exec` 和 `ApprovalCoordinator`，因此不会绕过 allow/deny、危险命令阻断或审批策略。read 可并行，bash/edit/write 串行。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
+Pi 标准 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 以原生 schema、输出截断、diff 和提示词贡献注册。`grep`、`find`、`ls` 使用 Pi 的专用只读实现并遵守会话文件边界，避免模型为了目录探索反复拼接 shell 命令；它们与 `read` 可并行。write/edit 默认不能越界，bash 通过 `shell.exec` 和 `ApprovalCoordinator`，因此不会绕过 allow/deny、危险命令阻断或审批策略。bash/edit/write 串行。Pi 会话不再向模型重复声明 `shell.exec` 与 `workspace.write_file`，但两者继续作为标准 bash/write 的策略后端。Apple Music 没有任何专用工具名，只通过 `apple-events-music` Skill 指示 Pi 使用标准 read/bash 执行脚本。
 
 Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi transcript、tools 与 provider 事件，并将 24 kHz PCM 作为独立 side channel 发布；function call 必须先转成 Pi `toolCall`，再经过同一 ToolCatalog、ApprovalCoordinator 和 AgentSession 执行。Realtime 采集入口只负责把 PCM 封装为受限 WAV，不注册工具、不创建回答。原始音频引用作为 Pi user message 的扩展字段进入同一个 `device-<id>` 会话，再由 provider 映射为 `input_audio`；转写事件只用于 UI 展示，不再触发第二次模型请求。每次请求只把最新且尚未完成消费的语音消息作为二进制 `input_audio` 发送；旧语音轮以转写文本或历史语音占位回放，工具续轮也不会重复上传同一段 PCM，避免长生命周期会话在第二轮被 Realtime 服务端断开。
 
@@ -123,7 +123,7 @@ Qwen Realtime 作为 `qwen-realtime` Pi provider 注册。adapter 只转换 Pi t
 | providers.yaml C4 字段 | Model Catalog | api、reasoning、input、headers、compat、extra_body、timeout_ms、max_retries、temperature |
 | skills.yaml | 现有规则 | workspace/global/extraDirs、entries.enabled、eligibility |
 | tools.yaml policy | 原配置 | 所有工具保留 allow/deny；非空 allowlist 需加入 bus.publish/subscribe/unsubscribe/events.pull/channels.list、avatar_status、avatar_transfer 及需要的设备工具名 |
-| Pi 标准工具 | read / bash / edit / write | 原生定义 + Yachiyo 受控 operations；不能由 tools.yaml 的同名 adapter 替换 |
+| Pi 标准工具 | read / bash / edit / write / grep / find / ls | 原生定义 + Yachiyo 受控边界与 operations；`shell.exec`、`workspace.write_file` 仅作策略后端，不重复暴露给模型 |
 | voice-policy.yaml auto_reply.enabled | true | 缺少配置文件时也默认启用策略模式；会话 `/voice off` 可覆盖为关闭 |
 | voice-policy.yaml limits | 0.5 秒 / 12 次每分钟 | TTS 会话冷却与全局分钟上限；内容适用性规则仍优先 |
 | tools.yaml policy.deviceHub.allow | `[]` | 动态 Hub 工具名的 `*` 通配模式；空数组表示不暴露任何动态方法 |

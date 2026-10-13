@@ -108,7 +108,7 @@ test('TC-PI-015 real pi loop executes tools and maps legacy events', async (t) =
   });
   assert.deepEqual(events.find((e) => e.event === 'llm.stream.delta').payload, { delta: 'answer 42' });
   const names = f.requests[0].tools.map((tool) => tool.function.name);
-  for (const name of ['read', 'bash', 'edit', 'write']) assert.ok(names.includes(name), name);
+  for (const name of ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']) assert.ok(names.includes(name), name);
 });
 
 test('TC-PI-040 TC-PI-042 Qwen Realtime keeps one provider connection across a Pi tool continuation', async (t) => {
@@ -437,7 +437,12 @@ test('TC-PI-036 high-priority bus events enter the resident AgentSession through
 });
 
 test('TC-PI-037 Pi assembles AGENTS context and Skills once while Apple Music remains a skill', async (t) => {
-  const f = await fixture(t, () => ({ text: 'resources loaded' }));
+  const f = await fixture(t, () => ({ text: 'resources loaded' }), {
+    executor: new ToolExecutor({
+      'shell.exec': { run: () => 'backend only' },
+      'workspace.write_file': { run: () => 'backend only' }
+    })
+  });
   await fs.writeFile(path.join(f.root, 'AGENTS.md'), '# Test context\nFollow resident session rules.');
   const skillDir = path.join(f.root, 'skills', 'apple-events-music');
   await fs.mkdir(skillDir, { recursive: true });
@@ -461,5 +466,7 @@ test('TC-PI-037 Pi assembles AGENTS context and Skills once while Apple Music re
   assert.equal((system.match(/Control Apple Music through a script\./g) || []).length, 1);
   const names = f.requests[0].tools.map((tool) => tool.function.name);
   assert.equal(names.some((name) => /apple.*music/i.test(name)), false);
-  assert.ok(names.includes('bash'));
+  for (const name of ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']) assert.ok(names.includes(name), name);
+  assert.equal(names.includes('shell__exec'), false);
+  assert.equal(names.includes('workspace__write_file'), false);
 });

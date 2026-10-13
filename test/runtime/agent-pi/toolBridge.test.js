@@ -94,6 +94,16 @@ test('TC-PI-026 model-visible tools exclude the approval capability', async () =
   assert.equal(tools.some((tool) => tool.originalName === 'shell.approve'), false);
 });
 
+test('TC-PI-037 bridge can keep policy backends out of the model tool catalog', () => {
+  const executor = new ToolExecutor({
+    'shell.exec': { run: () => 'ok' },
+    'workspace.write_file': { run: () => 'ok' },
+    memory_search: { run: () => 'ok' }
+  });
+  const tools = bridgeTools({ executor, excludeNames: ['shell.exec', 'workspace.write_file'] });
+  assert.deepEqual(tools.map((tool) => tool.originalName), ['memory_search']);
+});
+
 test('TC-PI-027 other tool failures keep their code and details in the error text', async () => {
   const { ToolingError, ErrorCode } = require('../../../apps/runtime/tooling/errors');
   const executor = new ToolExecutor({ broken: { run: () => { throw new ToolingError(ErrorCode.RUNTIME_ERROR, 'boom', { hint: 'x' }); } } });

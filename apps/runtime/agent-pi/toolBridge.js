@@ -45,9 +45,11 @@ function toolExecutionMode(definition = {}) {
   return sideEffectLevel === 'none' || sideEffectLevel === 'read' ? 'parallel' : 'sequential';
 }
 
-function bridgeTools({ executor, bus, context = {}, onlineNames = new Map(), approvalCoordinator = null }) {
+function bridgeTools({ executor, bus, context = {}, onlineNames = new Map(), approvalCoordinator = null,
+  excludeNames = [] }) {
   const originalNames = new Set();
-  return executor.listTools().filter((definition) => definition.name !== 'shell.approve').map((definition) => {
+  const excluded = new Set(['shell.approve', ...excludeNames]);
+  return executor.listTools().filter((definition) => !excluded.has(definition.name)).map((definition) => {
     if (originalNames.has(definition.name)) throw new Error(`Duplicate tool name: ${definition.name}`);
     originalNames.add(definition.name);
     const name = allocateToolName(definition.name, onlineNames);

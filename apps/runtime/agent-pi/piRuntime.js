@@ -85,7 +85,16 @@ async function createPiRuntime(deps) {
       };
     };
     const onlineNames = new Map();
-    const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames, approvalCoordinator });
+    const localTools = bridgeTools({
+      executor: deps.executor,
+      bus: deps.bus,
+      context,
+      onlineNames,
+      approvalCoordinator,
+      // Pi's native definitions are clearer and richer. Keep these adapters as
+      // policy-controlled backends without presenting duplicate choices to the model.
+      excludeNames: ['shell.exec', 'workspace.write_file']
+    });
     const standardTools = createStandardTools({ sdk, cwd, executor: deps.executor, approvalCoordinator,
       bus: deps.bus, context });
     let dispatchBusSteer = () => {};
