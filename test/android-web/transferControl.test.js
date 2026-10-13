@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  applyDevicePresenceEvent,
   createAndroidTransferController,
   createTransferEventGuard,
   resolveAndroidTransferControl
@@ -30,6 +31,21 @@ test('persistent transfer control reflects connection, owner, pending and deskto
   assert.equal(resolveAndroidTransferControl({
     hub: { state: 'connected', avatar_host: phone, devices: [desktop] }, deviceId: phone, pending: true
   }).label, '迁移中…');
+});
+
+test('device presence events immediately refresh desktop availability', () => {
+  const initial = { state: 'connected', avatar_host: phone, devices: [{ device_id: phone, device_type: 'android' }] };
+  const online = applyDevicePresenceEvent(initial, 'sys.device.online', desktop);
+  assert.equal(resolveAndroidTransferControl({ hub: online, deviceId: phone }).disabled, false);
+  assert.equal(resolveAndroidTransferControl({ hub: online, deviceId: phone }).reason, '当前在手机 · 电脑在线');
+
+  const duplicate = applyDevicePresenceEvent(online, 'sys.device.online', { ...desktop, name: 'Mac' });
+  assert.equal(duplicate.devices.filter((device) => device.device_id === desktop.device_id).length, 1);
+  assert.equal(duplicate.devices.find((device) => device.device_id === desktop.device_id).name, 'Mac');
+
+  const offline = applyDevicePresenceEvent(duplicate, 'sys.device.offline', desktop);
+  assert.equal(resolveAndroidTransferControl({ hub: offline, deviceId: phone }).disabled, true);
+  assert.equal(resolveAndroidTransferControl({ hub: offline, deviceId: phone }).reason, '当前在手机 · 电脑离线');
 });
 
 test('controller blocks duplicate clicks and always clears request pending', async () => {

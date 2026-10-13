@@ -487,3 +487,13 @@
 | 步骤 | 打开盾牌面板；依次切换每次询问/自动批准/完全访问并重开面板；在每次询问下触发需审批命令并分别允许、拒绝；断开并重连 Hub |
 | 期望结果 | 策略服务端持久化；待处理徽标与列表及时出现和消失；决定只作用于 `device-<id>`；重连后恢复权威状态；界面不遮挡人物脸部且可滚动 |
 | 自动化 | manual；RPC 隔离由 `test/gateway/deviceHub/runtimeBridge.test.js` 覆盖 |
+
+## TC-AWB-048 桌面设备动态上线刷新迁移按钮
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 手机已连接 Device Hub，角色当前在手机，桌面端尚未启动 |
+| 步骤 | 确认手机显示「电脑离线」；启动桌面 Electron；接收 `sys.device.online`；点击「叫回电脑」 |
+| 期望结果 | 手机无需重连即显示「电脑在线」，按钮立即启用；重复上线不产生重复设备；离线后按钮重新禁用；点击后完成手机到桌面的迁移 |
+| 自动化 | `test/android-web/transferControl.test.js`（device presence events immediately refresh desktop availability）+ manual-device |

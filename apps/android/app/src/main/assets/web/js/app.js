@@ -1047,7 +1047,9 @@
         default:
       }
     });
-    B.subscribe('sys.device.*', () => {});
+    B.subscribe('sys.device.*', (d, ev) => {
+      onHubState(TC.applyDevicePresenceEvent(S.hub, ev.topic, d));
+    });
 
     if (!lockscreen) {
       plugins = window.YachiyoPluginHost.create({

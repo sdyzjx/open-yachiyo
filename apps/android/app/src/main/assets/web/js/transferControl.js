@@ -5,6 +5,14 @@
     return Array.isArray(devices) ? devices.filter((device) => device && typeof device.device_id === 'string') : [];
   }
 
+  function applyDevicePresenceEvent(hub = {}, topic = '', device = {}) {
+    const deviceId = typeof device.device_id === 'string' ? device.device_id : '';
+    if (!deviceId || (topic !== 'sys.device.online' && topic !== 'sys.device.offline')) return hub;
+    const devices = normalizeDevices(hub.devices).filter((item) => item.device_id !== deviceId);
+    if (topic === 'sys.device.online') devices.push(device);
+    return { ...hub, devices };
+  }
+
   function resolveAndroidTransferControl({ hub = {}, deviceId = '', pending = false } = {}) {
     const state = String(hub.state || 'disconnected');
     const host = String(hub.avatar_host || '');
@@ -89,7 +97,7 @@
     return { begin, isCurrent, clear, get activeId() { return activeId; } };
   }
 
-  const api = { createAndroidTransferController, createTransferEventGuard, resolveAndroidTransferControl };
+  const api = { applyDevicePresenceEvent, createAndroidTransferController, createTransferEventGuard, resolveAndroidTransferControl };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YachiyoTransferControl = api;
 })(typeof window === 'undefined' ? globalThis : window);

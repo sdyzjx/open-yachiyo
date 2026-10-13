@@ -4,7 +4,7 @@
 > 状态: active
 > 负责人: sonnet-ws5, Codex（工作流 A / T）
 > 更新: 2026-10-13
-> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-044
+> 关联: docs/plans/PLAN-android-ws5-web-ui.md, docs/experiments/EXP-20261012-android-live2d-webview-feasibility.md, docs/experiments/EXP-20261013-android-mouth-neutral.md, docs/experiments/EXP-20261013-live2d-body-twitch.md, scripts/android-sync-assets.js, apps/android/app/src/main/assets/web/, test/android-web/, TC-AWB-001..TC-AWB-048
 
 ## 1. 概述
 
@@ -74,6 +74,8 @@ sequenceDiagram
 | `avatar.host.changed` | 更新 host；非 host 隐藏人物、不播 TTS |
 
 顶部 HUD 常驻迁移控件：本机持有角色时显示「叫回电脑」，非本机持有时显示「让她过来」；辅助文字同时显示 owner 和电脑在线状态。断线、owner 未知、电脑离线或迁移中时按钮禁用，不会重复发起 RPC。非 host 时仍保留居中提示卡与「叫她过来」快捷按钮。
+
+设备上线/离线事件会立即合并到页面的 Hub 快照并重算迁移控件。桌面端在手机连接之后启动时，手机无需重连即可从「电脑离线」切换为「电脑在线」并启用「叫回电脑」；同一设备重复上线会覆盖旧条目，不会产生重复设备。
 
 每次迁移以 `transfer_id` 和本地 generation 共同校验异步 `prepare/exit/enter`。`failed/cancel`会使旧 continuation 失效并解决被取消的动画 Promise，因此 cancel 之后不会误发 `avatar.transfer.entered`；`failed/completed/cancel/断线` 都会清理对应 pending。人物只在 owner 明确为本机时渲染；断线时保留最后一个权威 owner，不会自动把本机当成 host。动画时间线是纯函数（`js/transfer.js`），有单测。
 
