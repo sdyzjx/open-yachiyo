@@ -47,9 +47,9 @@ class DeviceTools {
       this.dirty = false;
     }
     const definitions = new Map();
-    const add = (name, description, input_schema, run) => {
+    const add = (name, description, input_schema, scheduling, run) => {
       if (definitions.has(name) || reservedNames.includes(name)) throw new Error(`Duplicate tool name: ${name}`);
-      definitions.set(name, { name, description, input_schema, run: async (...args) => {
+      definitions.set(name, { name, description, input_schema, ...scheduling, run: async (...args) => {
         try { return await run(...args); } catch (error) {
           if (error.code !== undefined) throw new ToolingError(error.code, error.message, error.data || error.details);
           throw error;
@@ -59,16 +59,17 @@ class DeviceTools {
     add('bus_publish', 'Publish a plugin, avatar, ui or task event', {
       type: 'object', properties: { topic: { type: 'string', pattern: '^(plugin|avatar|ui|task)\\..+' }, data: { type: 'object' } },
       required: ['topic', 'data'], additionalProperties: false
-    }, (args, ctx) => {
+    }, { side_effect_level: 'write', requires_lock: false }, (args, ctx) => {
       ctx.publishEvent(args.topic, args.data);
       return JSON.stringify({ published: true, topic: args.topic });
     });
-    add('avatar_status', 'Get current avatar host and devices', EMPTY_SCHEMA, async () => JSON.stringify(
+    add('avatar_status', 'Get current avatar host and devices', EMPTY_SCHEMA,
+      { side_effect_level: 'read', requires_lock: false }, async () => JSON.stringify(
       this.avatar?.status ? await this.avatar.status() : { host: this.hub?.getAvatarHost?.() || 'desktop', devices: this.hub?.listDevices?.() || [] }
     ));
     add('avatar_transfer', 'Transfer avatar to desktop or an online device', {
       type: 'object', properties: { to: { type: 'string', minLength: 1 } }, required: ['to'], additionalProperties: false
-    }, async ({ to }) => {
+    }, { side_effect_level: 'write', requires_lock: true }, async ({ to }) => {
       const transfer = this.avatar?.transfer
         || (this.hub?.requestAvatarTransfer ? (target) => this.hub.requestAvatarTransfer(target, { reason: 'agent' }) : null);
       if (!transfer) {
@@ -79,7 +80,10 @@ class DeviceTools {
       return JSON.stringify(await transfer(to));
     });
     for (const method of this.methods) {
-      add(method.tool_name, method.description || method.method, method.params_schema || EMPTY_SCHEMA, async (params) => {
+      add(method.tool_name, method.description || method.method, method.params_schema || EMPTY_SCHEMA, {
+        side_effect_level: method.side_effect_level || null,
+        requires_lock: method.requires_lock !== false
+      }, async (params) => {
         const result = await this.hub.invoke(method.device_id, method.method, params, { timeoutMs: this.timeoutMs });
         return typeof result === 'string' ? result : JSON.stringify(result);
       });

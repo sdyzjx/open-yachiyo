@@ -33,7 +33,7 @@ sequenceDiagram
   W->>W: 原 hooks 写 UI 历史
 ```
 
-每次 run 重新读取 Model Catalog、skills.yaml 和设备方法；同一 session 串行，session_id 的 SHA-256 对应固定 pi JSONL。恢复由 SessionManager 完成，旧 UI 历史只在首次建立 pi 会话时导入。系统 memory SOP/bootstrap seeds 随 pi 会话保留，后续不会重复导入 user/assistant seeds。
+每次 run 重新读取 Model Catalog、skills.yaml 和设备方法；同一 session 由长生命周期 AgentSession 管理，session_id 的 SHA-256 对应固定 pi JSONL。恢复由 SessionManager 完成，旧 UI 历史只在首次建立 pi 会话时导入。系统 memory SOP/bootstrap seeds 随 pi 会话保留，后续不会重复导入 user/assistant seeds。
 
 模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。同一手机会话提交新语音时，RuntimeRpcWorker 通过 `AbortSignal` 停止仍在执行的旧 turn，使新语音不需等待旧工具链；音频 turn 默认最长 90 s，其他 turn 默认最长 180 s，超时以 `ABORTED` final 收尾并释放 worker。
 
@@ -71,6 +71,8 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 worker 继续将事件映射到 WS runtime.start/message.delta/tool_call.event/runtime.final。pi 工具直接调用 executor，不发布 dispatcher 的 tool.call.requested 命令，避免重复执行。
 
+工具批次使用 Pi 原生并行调度。`side_effect_level` 为 `none` 或 `read` 且 `requires_lock=false` 的工具可以同批并发；写操作、未知副作用和显式锁会把整批降为串行。动态 Device Hub 方法默认按写操作处理，只有设备声明安全调度元数据后才能并行。TTS、Live2D 与屏幕捕获保留现有锁，因此不会产生重叠播放、动作状态竞争或并发截图。
+
 | 新工具 | 参数 | 路由 |
 |---|---|---|
 | bus_publish | `{topic,data}` | 仅 plugin./avatar./ui./task.，经 publishEvent 附上下文 |
@@ -93,6 +95,8 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | RUNTIME_RUN_TIMEOUT_MS | 180000 | 非音频 turn 的总执行时限 |
 | RUNTIME_SESSION_IDLE_TTL_MS | 1800000 | 长生命周期 AgentSession 的空闲内存驻留时间；回收不删除 Pi JSONL |
 | RUNTIME_MAX_RESIDENT_SESSIONS | 32 | 同时驻留内存的 AgentSession 上限；只回收非 busy 的最久未使用会话 |
+| tools[].side_effect_level | 未知 | `none` / `read` 可参与 Pi 并行；`write` 与未知值串行 |
+| tools[].requires_lock | false | true 时强制所在工具批次串行 |
 | RUNTIME_STREAMING_ENABLED | true | false 时保留 llm.final，由 worker 按原协议发送 final preview |
 | compaction.enabled | true | 工厂布尔参数，交给 pi 自动压缩 |
 | compaction.reserveTokens | 16384 | 工厂非负整数 |
@@ -112,13 +116,13 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 - RuntimeRpcWorker 原生透传单次 `model_ref`，会话 settings 提供持久覆盖；gatewayAssembly 的旧兼容入口仅保留为无操作导出，待网关装配移除调用后删除。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
-- pi 侧工具串行执行，关闭旧核心 early dispatch/parallel 开关。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
+- Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
 - 图片 provider 必须实际支持视觉。真实云 provider 兼容性及 Android 设备未在 WS1 联网/真机验证；测试全部使用本地 mock。
 - package-lock.json 由统筹合并时更新；更新前不要用旧锁文件执行 npm ci。会话 JSONL 包含对话和工具结果，按现有用户数据目录保护。
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…029，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级及语音最新输入打断。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…033，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话及副作用感知并行。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

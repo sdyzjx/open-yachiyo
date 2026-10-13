@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { ToolExecutor } = require('../../../apps/runtime/executor/toolExecutor');
-const { bridgeTools } = require('../../../apps/runtime/agent-pi/toolBridge');
+const { bridgeTools, toolExecutionMode } = require('../../../apps/runtime/agent-pi/toolBridge');
 
 test('TC-PI-005 bridge preserves schema, permission, trace, workspace and publishEvent', async () => {
   let received;
@@ -71,4 +71,19 @@ test('TC-PI-027 other tool failures keep their code and details in the error tex
   const executor = new ToolExecutor({ broken: { run: () => { throw new ToolingError(ErrorCode.RUNTIME_ERROR, 'boom', { hint: 'x' }); } } });
   const [tool] = bridgeTools({ executor });
   await assert.rejects(tool.execute('c', {}), (err) => /boom/.test(err.message) && /"hint":"x"/.test(err.message));
+});
+
+test('TC-PI-033 tool scheduling parallelizes safe reads and serializes writes or locks', () => {
+  assert.equal(toolExecutionMode({ side_effect_level: 'none' }), 'parallel');
+  assert.equal(toolExecutionMode({ side_effect_level: 'read' }), 'parallel');
+  assert.equal(toolExecutionMode({ side_effect_level: 'read', requires_lock: true }), 'sequential');
+  assert.equal(toolExecutionMode({ side_effect_level: 'write' }), 'sequential');
+  assert.equal(toolExecutionMode({}), 'sequential');
+  const executor = new ToolExecutor({
+    inspect_a: { side_effect_level: 'read', run: () => 'a' },
+    mutate_b: { side_effect_level: 'write', run: () => 'b' }
+  });
+  const tools = bridgeTools({ executor });
+  assert.equal(tools.find((tool) => tool.name === 'inspect_a').executionMode, 'parallel');
+  assert.equal(tools.find((tool) => tool.name === 'mutate_b').executionMode, 'sequential');
 });

@@ -6,7 +6,7 @@ function createGatewayRunner({ core = process.env.AGENT_CORE || 'pi', legacyFact
   let runtime;
   return {
     runtimeStreamingEnabled: deps.runtimeStreamingEnabled !== false,
-    toolAsyncMode: 'serial', toolEarlyDispatch: false, maxParallelTools: 1,
+    toolAsyncMode: 'parallel', toolEarlyDispatch: false, maxParallelTools: null,
     toolErrorMaxRetries: deps.toolErrorMaxRetries || 5,
     async run(args) {
       runtime ||= createPiRuntime({ ...deps, mirrorHistory: false }).catch((error) => {

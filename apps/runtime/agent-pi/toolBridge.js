@@ -44,6 +44,12 @@ function textResult(value, details = {}) {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) ?? '' }], details };
 }
 
+function toolExecutionMode(definition = {}) {
+  const sideEffectLevel = String(definition.side_effect_level || '').trim().toLowerCase();
+  if (definition.requires_lock) return 'sequential';
+  return sideEffectLevel === 'none' || sideEffectLevel === 'read' ? 'parallel' : 'sequential';
+}
+
 function bridgeTools({ executor, bus, context = {}, onlineNames = new Map() }) {
   const originalNames = new Set();
   return executor.listTools().map((definition) => {
@@ -56,8 +62,9 @@ function bridgeTools({ executor, bus, context = {}, onlineNames = new Map() }) {
       label: definition.name,
       description: definition.description || definition.name,
       parameters: definition.input_schema || { type: 'object', properties: {} },
-      // Existing tools share workspace and voice/avatar state.
-      executionMode: 'sequential',
+      // Pi batches parallel tools concurrently. Unknown/write tools remain conservative;
+      // an explicit lock always serializes the full provider-requested batch.
+      executionMode: toolExecutionMode(definition),
       async execute(callId, args, signal) {
         signal?.throwIfAborted();
         const current = typeof context === 'function' ? context() : context;
@@ -107,4 +114,4 @@ function bridgeTools({ executor, bus, context = {}, onlineNames = new Map() }) {
   });
 }
 
-module.exports = { bridgeTools, textResult, encodeToolName, allocateToolName, ONLINE_TOOL_NAME };
+module.exports = { bridgeTools, textResult, toolExecutionMode, encodeToolName, allocateToolName, ONLINE_TOOL_NAME };

@@ -118,9 +118,9 @@ async function createPiRuntime(deps) {
 
   const runtime = {
     runtimeStreamingEnabled: streaming,
-    toolAsyncMode: 'serial',
+    toolAsyncMode: 'parallel',
     toolEarlyDispatch: false,
-    maxParallelTools: 1,
+    maxParallelTools: null,
     toolErrorMaxRetries,
     sessionRegistry: registry,
     async dispose() { await registry.disposeAll?.(); },
@@ -175,8 +175,8 @@ async function createPiRuntime(deps) {
           requested_model_ref: requestedModelRef, resolved_model_ref: resolvedModelRef,
           persona_mode: persona?.mode || null, skills_selected: skills?.selected?.length || entry.session.resourceLoader.getSkills().skills.length,
           skills_clipped_by: skills?.clippedBy || null,
-          runtime_flags: { streaming_enabled: streaming, tool_async_mode: 'serial', tool_early_dispatch: false,
-            max_parallel_tools: 1, tool_error_max_retries: toolErrorMaxRetries, persistent_session: true } });
+          runtime_flags: { streaming_enabled: streaming, tool_async_mode: 'parallel', tool_early_dispatch: false,
+            max_parallel_tools: null, tool_error_max_retries: toolErrorMaxRetries, persistent_session: true } });
         events.emit('llm.prompt.assembled', { message_count: 1, messages: [{ role: 'system', content: systemPrompt }],
           requested_model_ref: requestedModelRef, resolved_model_ref: resolvedModelRef });
         for (let index = 0; index < chain.length; index += 1) {

@@ -241,7 +241,7 @@ test('TC-PI-025 provider-safe tool names execute and emit their original names w
   assert.deepEqual(events.find((event) => event.event === 'llm.final' && event.payload.decision.type === 'tool').payload.decision.tools[0].name, dotted);
 });
 
-test('TC-PI-029 runtime reuses one AgentSession and records effective model refs', async (t) => {
+test('TC-PI-032 runtime reuses one AgentSession and records effective model refs', async (t) => {
   const f = await fixture(t, (body) => ({ text: `reply:${body.messages.at(-1).content}` }));
   const firstEvents = [];
   const first = await f.runtime.run({ sessionId: 'persistent', input: 'first', modelRef: 'mock/model',
@@ -259,4 +259,35 @@ test('TC-PI-029 runtime reuses one AgentSession and records effective model refs
   assert.ok(f.requests[1].messages.some((message) => message.role === 'user' && message.content === 'first'));
   await f.runtime.dispose();
   assert.equal(f.runtime.sessionRegistry.size, 0);
+});
+
+test('TC-PI-033 real pi loop executes independent read tools in parallel', async (t) => {
+  const starts = {};
+  const ends = {};
+  const executor = new ToolExecutor({
+    inspect_a: { side_effect_level: 'read', run: async () => {
+      starts.a = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      ends.a = Date.now();
+      return 'A';
+    } },
+    inspect_b: { side_effect_level: 'none', run: async () => {
+      starts.b = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      ends.b = Date.now();
+      return 'B';
+    } }
+  });
+  const f = await fixture(t, (body) => body.messages.at(-1).role === 'tool'
+    ? { text: 'parallel complete' }
+    : { tools: [{ name: 'inspect_a' }, { name: 'inspect_b' }] }, { executor });
+  const events = [];
+  const result = await f.runtime.run({ sessionId: 'parallel-tools', input: 'inspect', onEvent: (event) => events.push(event) });
+  assert.equal(result.state, 'DONE', result.output);
+  assert.equal(result.output, 'parallel complete');
+  assert.equal(Math.abs(starts.a - starts.b) < 50, true, JSON.stringify({ starts, ends }));
+  assert.equal(events.filter((event) => event.event === 'tool_call.completed').length, 2);
+  const plan = events.find((event) => event.event === 'plan');
+  assert.equal(plan.payload.runtime_flags.tool_async_mode, 'parallel');
+  assert.equal(plan.payload.runtime_flags.max_parallel_tools, null);
 });

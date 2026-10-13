@@ -77,7 +77,7 @@ flowchart LR
 
 - [x] 2026-10-13：确定基线 `70212ff`，创建 `agent/pi-runtime-v2` 独立 worktree。
 - [x] 2026-10-13：冻结 C5.1 架构边界和施工阶段。
-- [ ] P1 长生命周期 AgentSession。
+- [x] P1 长生命周期 AgentSession（registry、模型归因与持久历史已完成；steering/follow-up 在 P2 输入调度提交中启用）。
 - [ ] P2 工具与权限。
 - [ ] P3 Device Hub 与事件总线。
 - [ ] P4 Qwen Realtime Pi transport。
