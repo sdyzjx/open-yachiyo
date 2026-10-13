@@ -53,3 +53,26 @@ test('TC-DSK-019 message rows provide avatar, alignment, hover time, and compact
   assert.match(script, /createMessageFrame\('assistant', Date\.now\(\)\)/);
   assert.match(script, /avatar\.textContent = '八'/);
 });
+
+test('TC-DSK-026 desktop chat exposes session approval policy and pending decisions', () => {
+  assert.match(html, /id="session-control-toggle"/);
+  assert.match(html, /data-session-mode="manual"/);
+  assert.match(html, /data-session-mode="auto_approve"/);
+  assert.match(html, /data-session-mode="full_access"/);
+  assert.match(html, /backdrop-filter: blur\(28px\)/);
+  assert.match(script, /sessionControlRequest\(\{ action: 'get' \}\)/);
+  assert.match(script, /action: 'set_approval_mode'/);
+  assert.match(script, /action: 'decide_approval'/);
+  assert.match(script, /command\.textContent = request\.command/);
+});
+
+test('TC-DSK-027 desktop main process limits session controls to chat window IPC', () => {
+  const suite = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/desktopSuite.js'), 'utf8');
+  const preload = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/preload.js'), 'utf8');
+  assert.match(suite, /event\?\.sender !== chatWindow\.webContents/);
+  assert.match(suite, /action === 'get'/);
+  assert.match(suite, /action === 'set_approval_mode'/);
+  assert.match(suite, /action === 'decide_approval'/);
+  assert.match(suite, /throw new Error\('unsupported session control action'\)/);
+  assert.match(preload, /sessionControlRequest\(payload = \{\}\)/);
+});

@@ -245,6 +245,36 @@ test('GatewayRuntimeClient createAndUseNewSession switches session id and boots 
   assert.equal(body.settings.permission_level, 'low');
 });
 
+test('GatewayRuntimeClient scopes approval controls to its active session', async () => {
+  const calls = [];
+  const client = new GatewayRuntimeClient({
+    gatewayUrl: 'http://127.0.0.1:3000',
+    sessionId: 'desktop-session-a',
+    fetchImpl: async (url, options = {}) => {
+      const body = options.body ? JSON.parse(options.body) : null;
+      calls.push({ url: String(url), method: options.method || 'GET', body });
+      if (String(url).includes('/api/approvals?')) {
+        return { ok: true, status: 200, async json() { return { ok: true, data: [{ approval_id: 'apr-1' }] }; } };
+      }
+      if (String(url).includes('/api/approvals/apr-1/decision')) {
+        return { ok: true, status: 200, async json() { return { ok: true, data: { approved: body.approved } }; } };
+      }
+      return { ok: true, status: 200, async json() { return { ok: true, data: { approval_mode: body?.settings?.approval_mode || 'manual' } }; } };
+    }
+  });
+
+  assert.equal((await client.getSessionSettings()).approval_mode, 'manual');
+  assert.equal((await client.updateApprovalMode('auto_approve')).approval_mode, 'auto_approve');
+  assert.deepEqual(await client.listPendingApprovals(), [{ approval_id: 'apr-1' }]);
+  assert.equal((await client.decideApproval({ approvalId: 'apr-1', approved: true })).approved, true);
+  assert.throws(() => client.updateApprovalMode('unsafe'), /manual\|auto_approve\|full_access/);
+  assert.throws(() => client.decideApproval({ approvalId: '', approved: true }), /required/);
+
+  assert.ok(calls.every((call) => call.url.includes('desktop-session-a') || call.body?.session_id === 'desktop-session-a'));
+  assert.equal(calls.find((call) => call.method === 'PUT').body.settings.approval_mode, 'auto_approve');
+  assert.equal(calls.find((call) => call.method === 'POST').body.scope, 'once');
+});
+
 test('GatewayRuntimeClient setSessionId rejects empty value', () => {
   const client = new GatewayRuntimeClient({
     gatewayUrl: 'http://127.0.0.1:3000',

@@ -29,6 +29,9 @@
       .toolbar-select:focus { border-color: var(--y-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--y-accent) 18%, transparent); }
       .toolbar-select:disabled { opacity: .45; }
       .toolbar-icon { width: 32px; height: 32px; flex: 0 0 32px; padding: 0; font-size: var(--y-fs-m); }
+      #session-control-toggle { position: relative; }
+      #session-approval-count { position: absolute; top: -5px; right: -5px; display: grid; min-width: 16px; height: 16px; place-items: center; padding: 0 4px; border: 1px solid var(--y-bg); border-radius: 9px; background: var(--y-bad); color: #fff; font-size: 9px; font-weight: 700; }
+      #session-approval-count[hidden] { display: none; }
       #transfer-wrap { display: flex; min-width: 0; align-items: center; gap: 8px; }
       #transfer-select { width: 88px; }
       #transfer-select[hidden] { display: none; }
@@ -70,6 +73,27 @@
       .chat-upload-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--y-line); border-radius: var(--y-radius-s); background: var(--y-bg-2); }
       .chat-upload-thumb { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; } .chat-upload-meta { min-width: 0; flex: 1; } .chat-upload-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .chat-upload-size { color: var(--y-ink-dim); font-size: var(--y-fs-xs); }
       .chat-upload-remove { border: 0; background: transparent; color: var(--y-ink-dim); cursor: pointer; }
+      #session-control-panel { position: absolute; z-index: 5; top: 116px; right: 12px; width: min(390px, calc(100% - 24px)); max-height: calc(100% - 132px); padding: 16px; overflow: auto; border: 1px solid var(--y-gold-line); border-radius: 22px; background: linear-gradient(155deg, rgba(35,32,71,.91), rgba(10,12,31,.94) 66%, rgba(30,22,49,.92)); box-shadow: 0 24px 70px rgba(2,3,14,.55), inset 0 1px rgba(255,255,255,.08); backdrop-filter: blur(28px) saturate(1.3); -webkit-backdrop-filter: blur(28px) saturate(1.3); -webkit-app-region: no-drag; }
+      #session-control-panel[hidden] { display: none; }
+      .session-control-head, .session-pending-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .session-control-head h2 { margin: 0; color: var(--y-gold); font-size: var(--y-fs-m); font-weight: 650; letter-spacing: .05em; }
+      .session-control-head span, .session-pending-head span { color: var(--y-ink-dim); font-size: var(--y-fs-xs); }
+      .session-mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 14px; padding: 5px; border: 1px solid var(--y-line); border-radius: 15px; background: rgba(3,4,16,.35); }
+      .session-mode-grid button { min-width: 0; min-height: 38px; padding: 6px; border: 0; border-radius: 11px; background: transparent; color: var(--y-ink-dim); cursor: pointer; font-size: var(--y-fs-xs); }
+      .session-mode-grid button[aria-checked="true"] { background: linear-gradient(135deg, rgba(182,161,255,.25), rgba(239,208,157,.12)); color: var(--y-ink); box-shadow: inset 0 0 0 1px var(--y-gold-line); }
+      .session-mode-grid button:disabled { opacity: .5; cursor: default; }
+      #session-mode-description { min-height: 36px; margin: 9px 3px 16px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); line-height: 1.5; }
+      .session-pending-head { margin: 0 2px 8px; }
+      #session-pending-list { display: grid; gap: 8px; }
+      .session-approval-card { padding: 11px; border: 1px solid var(--y-line); border-radius: 14px; background: rgba(238,230,255,.055); }
+      .session-approval-tool { color: var(--y-gold); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
+      .session-approval-command { margin: 6px 0; padding: 8px 9px; overflow-wrap: anywhere; border-radius: 9px; background: rgba(2,3,14,.42); font: 11px/1.45 var(--y-font-mono); user-select: text; }
+      .session-approval-reason { color: var(--y-ink-dim); font-size: var(--y-fs-xs); }
+      .session-approval-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 9px; }
+      .session-approval-actions button { min-width: 62px; padding: 7px 10px; border: 1px solid var(--y-line); border-radius: var(--y-radius-pill); background: var(--y-surface-hover); color: var(--y-ink); cursor: pointer; font-size: var(--y-fs-xs); }
+      .session-approval-actions .approve { border-color: var(--y-gold-line); background: var(--y-grad-primary); color: var(--y-accent-ink); }
+      #session-approval-empty { margin: 18px 0 4px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); text-align: center; }
+      #session-approval-empty[hidden] { display: none; }
       @keyframes message-in { from { opacity: 0; transform: translateY(8px); } }
       @keyframes blink { 50% { opacity: .2; } }
       @media (max-width: 380px) { #chat-panel-header { padding-right: 10px; padding-left: 10px; } .chat-title-row { padding-left: 70px; } .chat-toolbar, .toolbar-actions, #transfer-wrap { gap: 8px; } .model-control { flex-basis: 110px; } .y-btn { padding-right: 9px; padding-left: 9px; } #transfer-button { padding-right: 8px; padding-left: 8px; } #chat-panel-messages { padding: 12px; } #chat-panel-composer { padding-right: 10px; padding-left: 10px; } }
@@ -88,9 +112,17 @@
         <div class="chat-title-row"><div class="chat-brand"><span class="chat-avatar" aria-hidden="true">八</span><span class="chat-brand-copy"><span id="chat-panel-header-title">八千代</span><span class="chat-presence"><span class="chat-presence-dot"></span><span id="presence-label">在电脑上</span></span></span></div></div>
         <div class="chat-toolbar">
           <div class="model-control"><select id="model-active" class="toolbar-select" aria-label="对话模型" title="选择对话模型"><option>正在读取模型…</option></select></div>
-          <div class="toolbar-actions"><div id="transfer-wrap"><select id="transfer-select" class="toolbar-select" aria-label="选择手机" hidden></select><button id="transfer-button" class="y-btn" type="button">送到手机</button><span id="transfer-status" class="visually-hidden" role="status" aria-live="polite"></span></div><button id="new-chat" class="y-btn toolbar-icon" type="button" title="新对话" aria-label="新对话">＋</button><button id="open-webui" class="y-btn toolbar-icon" type="button" title="设置" aria-label="设置">⚙</button></div>
+          <div class="toolbar-actions"><button id="session-control-toggle" class="y-btn toolbar-icon" type="button" title="执行权限" aria-label="执行权限" aria-expanded="false">♢<span id="session-approval-count" hidden>0</span></button><div id="transfer-wrap"><select id="transfer-select" class="toolbar-select" aria-label="选择手机" hidden></select><button id="transfer-button" class="y-btn" type="button">送到手机</button><span id="transfer-status" class="visually-hidden" role="status" aria-live="polite"></span></div><button id="new-chat" class="y-btn toolbar-icon" type="button" title="新对话" aria-label="新对话">＋</button><button id="open-webui" class="y-btn toolbar-icon" type="button" title="设置" aria-label="设置">⚙</button></div>
         </div>
       </header>
+      <aside id="session-control-panel" aria-label="执行权限" hidden>
+        <div class="session-control-head"><h2>执行权限</h2><span id="session-control-session">尚未同步</span></div>
+        <div class="session-mode-grid" role="radiogroup" aria-label="会话执行权限"><button type="button" data-session-mode="manual" role="radio">每次询问</button><button type="button" data-session-mode="auto_approve" role="radio">自动批准</button><button type="button" data-session-mode="full_access" role="radio">完全访问</button></div>
+        <p id="session-mode-description"></p>
+        <div class="session-pending-head"><strong>待处理请求</strong><span id="session-control-status">正在同步…</span></div>
+        <div id="session-pending-list"></div>
+        <p id="session-approval-empty">当前没有等待处理的请求</p>
+      </aside>
       <section id="chat-panel-messages" class="y-scroll" aria-live="polite"></section>
       <footer id="chat-panel-composer">
         <div id="chat-upload-preview" class="y-scroll"></div>

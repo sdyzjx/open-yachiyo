@@ -186,6 +186,58 @@ class GatewayRuntimeClient {
     }
   }
 
+  async requestSessionApi(pathname, { method = 'GET', body } = {}) {
+    if (typeof this.fetchImpl !== 'function') {
+      throw new Error('fetch is unavailable for gateway session controls');
+    }
+    const response = await this.fetchImpl(new URL(pathname, this.gatewayUrl), {
+      method,
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) })
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(String(payload?.error || `gateway request failed with status ${response.status}`));
+    }
+    return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+  }
+
+  getSessionSettings() {
+    return this.requestSessionApi(`/api/sessions/${encodeURIComponent(this.sessionId)}/settings`);
+  }
+
+  updateApprovalMode(approvalMode) {
+    const normalized = String(approvalMode || '').trim().toLowerCase();
+    if (!['manual', 'auto_approve', 'full_access'].includes(normalized)) {
+      throw new Error('approvalMode must be manual|auto_approve|full_access');
+    }
+    return this.requestSessionApi(`/api/sessions/${encodeURIComponent(this.sessionId)}/settings`, {
+      method: 'PUT',
+      body: { settings: { approval_mode: normalized } }
+    });
+  }
+
+  listPendingApprovals() {
+    const query = new URLSearchParams({ session_id: this.sessionId });
+    return this.requestSessionApi(`/api/approvals?${query.toString()}`);
+  }
+
+  decideApproval({ approvalId, approved, scope = 'once' } = {}) {
+    const normalizedId = String(approvalId || '').trim();
+    if (!normalizedId || typeof approved !== 'boolean') {
+      throw new Error('approvalId and boolean approved are required');
+    }
+    return this.requestSessionApi(`/api/approvals/${encodeURIComponent(normalizedId)}/decision`, {
+      method: 'POST',
+      body: {
+        session_id: this.sessionId,
+        approved,
+        scope: scope === 'always' ? 'always' : 'once'
+      }
+    });
+  }
+
   async runInput({ input, permissionLevel, inputImages, modelRef } = {}) {
     const content = String(input || '').trim();
     const normalizedInputImages = normalizeInputImages(inputImages);

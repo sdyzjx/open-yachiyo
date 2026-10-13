@@ -36,7 +36,7 @@
 | TC-DSK-018 | 输入框自增高与发送状态 | unit / e2e | 空输入及 1～7 行输入 | 输入多行文字并观察附件、输入框、发送按钮 | 占位文案精简；输入框最多增长 6 行；两侧按钮垂直居中；空/有内容按钮状态清晰 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-018；CDP 截图 |
 | TC-DSK-019 | 消息气泡身份与最小窗口布局 | unit / e2e | 同时存在八千代/用户消息；窗口 360×480 | hover 消息并缩放到最小尺寸 | 八千代头像金色描边、用户右对齐、气泡 ≤78%、时间戳按需显示；全部控件无溢出或换行 | `test/desktop-live2d/chatWindowMarkup.test.js` / TC-DSK-019；CDP 截图 |
 
-## Hub 客户端状态（020–029）
+## Hub 与会话控制（020–029）
 
 | ID | 标题 | 类型 | 前置条件 | 步骤 | 期望结果 | 自动化 |
 |---|---|---|---|---|---|---|
@@ -46,3 +46,5 @@
 | TC-DSK-023 | enter 期间收到 cancel 不再发布 entered | unit | 渲染器 enter 动画挂起 | 投递 enter，随后 cancel，再让动画完成 | 不发布 `avatar.transfer.entered`；pending 为空 | 同文件 / TC-DSK-023 |
 | TC-DSK-024 | 正常 enter 回执；看门狗清理丢失的终态事件 | unit | 看门狗 30 ms | 投递 enter；投递 prepare 后不再有终态事件 | 回执恰好一次；超时后 pending 自动清空 | 同文件 / TC-DSK-024 |
 | TC-DSK-025 | 断线状态可见 | unit | 已 welcome | 模拟断线 | `isHost` 为 false，状态回调携带 `connected=false` | 同文件 / TC-DSK-025 |
+| TC-DSK-026 | Desktop Chat 会话权限面板 | unit / e2e | 网关已创建 Desktop 会话，存在可选审批请求 | 打开盾牌面板，切换三档策略并允许/拒绝请求 | 高斯模糊面板显示当前会话和待处理数量；命令用纯文本渲染；决定后移除；`/new` 后同步新会话 | `test/desktop-live2d/chatWindowMarkup.test.js`, `test/desktop-live2d/gatewayRuntimeClient.test.js` / TC-DSK-026；CDP 截图 |
+| TC-DSK-027 | Desktop 审批 IPC 会话隔离 | unit | 构造 Chat 与非 Chat sender | 通过 IPC 调用 get/update/decide，并尝试未知 action 与非法模式 | 仅 Chat sender 可用；动作白名单生效；HTTP 请求的 session 只取运行时客户端当前会话；非法输入拒绝 | `test/desktop-live2d/chatWindowMarkup.test.js`, `test/desktop-live2d/gatewayRuntimeClient.test.js` / TC-DSK-027 |

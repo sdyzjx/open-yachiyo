@@ -24,6 +24,14 @@
   const modelDiscoverElement = document.getElementById('model-discover');
   const modelStatusElement = document.getElementById('model-picker-status');
   const modelDiscoveryResultsElement = document.getElementById('model-discovery-results');
+  const sessionControlToggleElement = document.getElementById('session-control-toggle');
+  const sessionControlPanelElement = document.getElementById('session-control-panel');
+  const sessionControlSessionElement = document.getElementById('session-control-session');
+  const sessionControlStatusElement = document.getElementById('session-control-status');
+  const sessionModeDescriptionElement = document.getElementById('session-mode-description');
+  const sessionPendingListElement = document.getElementById('session-pending-list');
+  const sessionApprovalEmptyElement = document.getElementById('session-approval-empty');
+  const sessionApprovalCountElement = document.getElementById('session-approval-count');
   const MAX_UPLOAD_IMAGES = 4;
   const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
   const MAX_COMPOSER_HEIGHT = 142;
@@ -37,6 +45,7 @@
     models: null,
     modelsLoading: false,
     selectedModelRef: '',
+    sessionControl: { sessionId: '', mode: 'manual', pending: [], busy: false, available: false, error: '' },
     followOutput: true,
     shell: { connected: false, phones: [], send: { canSend: false, reason: '网关未连接' } },
     selectedTransferTarget: '',
@@ -54,6 +63,146 @@
   };
   let chatInputComposing = false;
   const allowedRoles = new Set(['user', 'assistant', 'system', 'tool']);
+  const approvalModes = Object.freeze({
+    manual: { label: '每次询问', description: '高风险命令执行前，由你逐次允许或拒绝。' },
+    auto_approve: { label: '自动批准', description: '自动批准需要确认的命令，同时保留工具安全边界。' },
+    full_access: { label: '完全访问', description: '允许 Agent 在当前会话中使用完整电脑能力。' }
+  });
+
+  function normalizeApprovalMode(value) {
+    const mode = String(value || '').trim().toLowerCase();
+    return approvalModes[mode] ? mode : 'manual';
+  }
+
+  function normalizePendingApprovals(values) {
+    if (!Array.isArray(values)) return [];
+    const byId = new Map();
+    for (const value of values) {
+      const approvalId = String(value?.approval_id || '').trim();
+      if (!approvalId) continue;
+      byId.set(approvalId, {
+        approval_id: approvalId,
+        tool_name: String(value?.tool_name || 'shell.exec'),
+        command: String(value?.command || ''),
+        reason: String(value?.reason || ''),
+        created_at_ms: Number(value?.created_at_ms) || 0,
+        expires_at_ms: Number(value?.expires_at_ms) || 0
+      });
+    }
+    return [...byId.values()]
+      .filter((item) => !item.expires_at_ms || item.expires_at_ms > Date.now())
+      .sort((a, b) => a.created_at_ms - b.created_at_ms);
+  }
+
+  function renderSessionControl() {
+    const control = state.sessionControl;
+    const mode = normalizeApprovalMode(control.mode);
+    if (sessionControlToggleElement) {
+      sessionControlToggleElement.disabled = !control.available;
+      sessionControlToggleElement.title = control.available ? `执行权限：${approvalModes[mode].label}` : '执行权限暂不可用';
+    }
+    if (sessionControlSessionElement) sessionControlSessionElement.textContent = control.sessionId || '尚未同步';
+    if (sessionControlStatusElement) sessionControlStatusElement.textContent = control.busy ? '正在同步…' : (control.error || `${control.pending.length} 项`);
+    if (sessionModeDescriptionElement) sessionModeDescriptionElement.textContent = approvalModes[mode].description;
+    if (sessionApprovalCountElement) {
+      sessionApprovalCountElement.textContent = String(control.pending.length);
+      sessionApprovalCountElement.hidden = control.pending.length === 0;
+    }
+    for (const button of document.querySelectorAll('[data-session-mode]')) {
+      button.setAttribute('aria-checked', String(button.dataset.sessionMode === mode));
+      button.disabled = control.busy || !control.available;
+    }
+    if (!sessionPendingListElement || !sessionApprovalEmptyElement) return;
+    sessionApprovalEmptyElement.hidden = control.pending.length > 0;
+    sessionPendingListElement.replaceChildren(...control.pending.map((request) => {
+      const card = document.createElement('article');
+      card.className = 'session-approval-card';
+      const tool = document.createElement('div');
+      tool.className = 'session-approval-tool';
+      tool.textContent = request.tool_name;
+      const command = document.createElement('div');
+      command.className = 'session-approval-command';
+      command.textContent = request.command || '未提供命令详情';
+      const reason = document.createElement('div');
+      reason.className = 'session-approval-reason';
+      reason.textContent = request.reason ? `原因：${request.reason}` : '此操作需要你的许可';
+      const actions = document.createElement('div');
+      actions.className = 'session-approval-actions';
+      for (const [label, approved, className] of [['拒绝', false, ''], ['允许', true, 'approve']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.className = className;
+        button.disabled = control.busy;
+        button.addEventListener('click', () => { void decideSessionApproval(request.approval_id, approved); });
+        actions.append(button);
+      }
+      card.append(tool, command, reason, actions);
+      return card;
+    }));
+  }
+
+  async function refreshSessionControl({ quiet = false } = {}) {
+    if (state.sessionControl.busy || typeof bridge?.sessionControlRequest !== 'function') return;
+    state.sessionControl.busy = true;
+    state.sessionControl.error = '';
+    renderSessionControl();
+    try {
+      const snapshot = await bridge.sessionControlRequest({ action: 'get' });
+      state.sessionControl.sessionId = String(snapshot?.session_id || '');
+      state.sessionControl.mode = normalizeApprovalMode(snapshot?.settings?.approval_mode);
+      state.sessionControl.pending = normalizePendingApprovals(snapshot?.pending);
+      state.sessionControl.available = true;
+    } catch (err) {
+      state.sessionControl.available = false;
+      state.sessionControl.error = quiet ? '' : `同步失败：${err?.message || err}`;
+    } finally {
+      state.sessionControl.busy = false;
+      renderSessionControl();
+    }
+  }
+
+  async function updateSessionApprovalMode(mode) {
+    const normalized = normalizeApprovalMode(mode);
+    if (state.sessionControl.busy || !state.sessionControl.available || normalized === state.sessionControl.mode) return;
+    state.sessionControl.busy = true;
+    state.sessionControl.error = '';
+    renderSessionControl();
+    try {
+      const result = await bridge.sessionControlRequest({ action: 'set_approval_mode', approval_mode: normalized });
+      state.sessionControl.sessionId = String(result?.session_id || state.sessionControl.sessionId);
+      state.sessionControl.mode = normalizeApprovalMode(result?.settings?.approval_mode);
+      state.sessionControl.available = true;
+    } catch (err) {
+      state.sessionControl.error = `设置失败：${err?.message || err}`;
+    } finally {
+      state.sessionControl.busy = false;
+      renderSessionControl();
+    }
+  }
+
+  async function decideSessionApproval(approvalId, approved) {
+    if (state.sessionControl.busy || !state.sessionControl.available) return;
+    state.sessionControl.busy = true;
+    state.sessionControl.error = '';
+    renderSessionControl();
+    try {
+      await bridge.sessionControlRequest({ action: 'decide_approval', approval_id: approvalId, approved, scope: 'once' });
+      state.sessionControl.pending = state.sessionControl.pending.filter((item) => item.approval_id !== approvalId);
+    } catch (err) {
+      state.sessionControl.error = `处理失败：${err?.message || err}`;
+    } finally {
+      state.sessionControl.busy = false;
+      renderSessionControl();
+    }
+  }
+
+  function setSessionControlOpen(open) {
+    if (!sessionControlPanelElement) return;
+    sessionControlPanelElement.hidden = !open;
+    sessionControlToggleElement?.setAttribute('aria-expanded', String(open));
+    if (open) void refreshSessionControl();
+  }
 
   function setModelStatus(message, error = false) {
     if (!modelStatusElement) return;
@@ -1047,6 +1196,12 @@
   modelPickerCloseElement?.addEventListener('click', () => setModelPickerOpen(false));
   modelSaveElement?.addEventListener('click', selectChatModel);
   modelDiscoverElement?.addEventListener('click', () => { void discoverProviderModels(); });
+  sessionControlToggleElement?.addEventListener('click', () => {
+    setSessionControlOpen(sessionControlPanelElement?.hidden !== false);
+  });
+  for (const button of document.querySelectorAll('[data-session-mode]')) {
+    button.addEventListener('click', () => { void updateSessionApprovalMode(button.dataset.sessionMode); });
+  }
   syncCompactLayout();
   if (typeof ResizeObserver === 'function' && chatPanelElement) {
     const observer = new ResizeObserver(() => {
@@ -1074,4 +1229,7 @@
     if (transferStatusElement) transferStatusElement.textContent = `状态读取失败：${err?.message || err}`;
   });
   void loadModelConfig({ quiet: true });
+  renderSessionControl();
+  void refreshSessionControl({ quiet: true });
+  setInterval(() => { void refreshSessionControl({ quiet: true }); }, 5000);
 })();

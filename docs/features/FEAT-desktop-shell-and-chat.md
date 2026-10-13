@@ -37,6 +37,7 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 - 「新对话」调用现有 `/new` 会话切换，「设置」打开设置窗。输入框支持多行，Enter 发送、Shift+Enter 换行，可选择或粘贴最多 4 张图片。
 - 输入框占位文案为「对八千代说点什么…」，随内容自动增长至 6 行；空内容时发送按钮保持清晰的禁用态，有内容时使用主题主按钮渐变。
 - 消息区渲染 Markdown、Mermaid 和图片缩略图；八千代消息左侧带金色描边小头像，用户消息右对齐，气泡最大宽度 78%，时间戳在 hover/focus 时显示；在底部时跟随流式输出，用户上滑阅读后停止强制滚动。
+- 盾牌入口打开当前 Desktop Pi 会话的玻璃态权限面板，可切换「每次询问 / 自动批准 / 完全访问」，并允许或拒绝等待中的命令。面板每 5 秒按当前运行时 `session_id` 同步，因此 `/new` 后自动切换到新会话。
 
 ### 设置与气泡
 
@@ -49,15 +50,17 @@ macOS 菜单栏图标、Dock、角色窗口、标准聊天窗与设置窗口构�
 - 窗口状态位于 `~/yachiyo/data/desktop-live2d/`，可用 `DESKTOP_LIVE2D_WINDOW_STATE_PATH` 和 `DESKTOP_CHAT_WINDOW_STATE_PATH` 改写路径。
 - 渲染进程的模型 IPC 精确 allowlist 为 `GET /api/config/models` 和 `PUT /api/config/models/selection {active_model}`；主进程对响应做字段投影，不返回 API Key、headers、extra body 或 Base URL。
 - `live2d:shell-state:{request,sync}` 只向 Chat 窗口返回菜单同源状态；`live2d:avatar-transfer:request` 只接受当前在线 Android `device_id`，错误文本经脱敏。
+- `live2d:session-control:request` 只接受 Chat 窗口发送的 `get`、`set_approval_mode`、`decide_approval` 三种动作。主进程从 `GatewayRuntimeClient.getSessionId()` 注入会话范围，渲染进程不能指定其他会话。
 
 ## 配置项
 
-`transferWatchdogMs` 默认 25000，仅测试注入。聊天窗状态路径可由 `DESKTOP_CHAT_WINDOW_STATE_PATH` 覆盖。
+`transferWatchdogMs` 默认 25000，仅测试注入。聊天窗状态路径可由 `DESKTOP_CHAT_WINDOW_STATE_PATH` 覆盖。会话 `approval_mode` 默认 `manual`，可取 `manual`、`auto_approve`、`full_access`。
 
 ## 限制与已知问题
 
 - 只保存最后一个 Desktop Chat 窗口的位置与尺寸，不按显示器分别保存。
+- 审批列表采用 5 秒轮询补偿通知丢失，出现请求到徽标更新之间最多可能延迟 5 秒。
 
 ## 测试用例
 
-TC-DSK-001 ～ TC-DSK-008、TC-DSK-010 ～ TC-DSK-025，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。
+TC-DSK-001 ～ TC-DSK-008、TC-DSK-010 ～ TC-DSK-027，见 [TC-desktop-shell-and-chat.md](../testing/TC-desktop-shell-and-chat.md)。

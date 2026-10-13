@@ -7,6 +7,7 @@ const CHANNELS = {
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  sessionControlRequest: 'live2d:session-control:request',
   shellStateRequest: 'live2d:shell-state:request',
   shellStateSync: 'live2d:shell-state:sync',
   avatarTransferRequest: 'live2d:avatar-transfer:request',
@@ -105,6 +106,9 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
   },
   modelConfigRequest(payload = {}) {
     return ipcRenderer.invoke(CHANNELS.modelConfigRequest, payload);
+  },
+  sessionControlRequest(payload = {}) {
+    return ipcRenderer.invoke(CHANNELS.sessionControlRequest, payload);
   },
   getShellState() {
     return ipcRenderer.invoke(CHANNELS.shellStateRequest);

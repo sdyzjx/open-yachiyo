@@ -35,6 +35,7 @@ const CHANNELS = Object.freeze({
   rendererError: 'live2d:renderer:error',
   getRuntimeConfig: 'live2d:get-runtime-config',
   modelConfigRequest: 'live2d:model-config:request',
+  sessionControlRequest: 'live2d:session-control:request',
   shellStateRequest: 'live2d:shell-state:request',
   shellStateSync: 'live2d:shell-state:sync',
   avatarTransferRequest: 'live2d:avatar-transfer:request',
@@ -1778,6 +1779,11 @@ async function startDesktopSuite({
     avatarVisible: !avatarWindow.isDestroyed() && avatarWindow.isVisible(),
     chatOpen: chatState?.visible === true
   });
+  const gatewayRuntimeClient = new GatewayRuntimeClient({
+    gatewayUrl: config.gatewayUrl,
+    sessionId: 'desktop-live2d-chat',
+    logger
+  });
   const modelConfigRequest = createModelConfigClient({ gatewayUrl: config.gatewayUrl });
   ipcMain.handle(CHANNELS.modelConfigRequest, (event, payload) => {
     if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
@@ -1790,6 +1796,31 @@ async function startDesktopSuite({
       throw new Error('shell state is only available to the chat window');
     }
     return shellSnapshot();
+  });
+  ipcMain.handle(CHANNELS.sessionControlRequest, async (event, payload) => {
+    if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
+      throw new Error('session controls are only available to the chat window');
+    }
+    const action = String(payload?.action || '').trim();
+    if (action === 'get') {
+      const [settings, pending] = await Promise.all([
+        gatewayRuntimeClient.getSessionSettings(),
+        gatewayRuntimeClient.listPendingApprovals()
+      ]);
+      return { session_id: gatewayRuntimeClient.getSessionId(), settings, pending };
+    }
+    if (action === 'set_approval_mode') {
+      const settings = await gatewayRuntimeClient.updateApprovalMode(payload?.approval_mode);
+      return { session_id: gatewayRuntimeClient.getSessionId(), settings };
+    }
+    if (action === 'decide_approval') {
+      return gatewayRuntimeClient.decideApproval({
+        approvalId: payload?.approval_id,
+        approved: payload?.approved,
+        scope: payload?.scope
+      });
+    }
+    throw new Error('unsupported session control action');
   });
   ipcMain.handle(CHANNELS.avatarTransferRequest, async (event, payload) => {
     if (chatWindow.isDestroyed() || event?.sender !== chatWindow.webContents) {
@@ -3080,11 +3111,7 @@ async function startDesktopSuite({
   });
   avatarWindow.webContents.on('console-message', rendererConsoleListener);
 
-  const gatewayRuntimeClient = new GatewayRuntimeClient({
-    gatewayUrl: config.gatewayUrl,
-    sessionId: 'desktop-live2d-chat',
-    logger,
-    onNotification: (desktopEvent) => {
+  gatewayRuntimeClient.onNotification = (desktopEvent) => {
       const notificationEventName = desktopEvent?.type === 'runtime.event'
         ? String(desktopEvent?.data?.event || desktopEvent?.data?.name || '')
         : null;
@@ -3233,8 +3260,7 @@ async function startDesktopSuite({
         output_chars: output.length,
         was_streaming: wasStreaming
       });
-    }
-  });
+  };
   function emitDesktopDebug(topic, msg, meta = {}) {
     if (shouldSuppressDesktopDebug(topic, meta)) {
       return;
@@ -3456,6 +3482,7 @@ async function startDesktopSuite({
 
     ipcMain.removeHandler(CHANNELS.getRuntimeConfig);
     ipcMain.removeHandler(CHANNELS.modelConfigRequest);
+    ipcMain.removeHandler(CHANNELS.sessionControlRequest);
     ipcMain.removeHandler(CHANNELS.shellStateRequest);
     ipcMain.removeHandler(CHANNELS.avatarTransferRequest);
     ipcMain.off(CHANNELS.avatarContextMenuRequest, avatarContextMenuListener);
