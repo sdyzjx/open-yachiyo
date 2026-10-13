@@ -47,6 +47,7 @@ const CHANNELS = Object.freeze({
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
   chatStreamSync: 'live2d:chat:stream-sync',
+  chatToolActivitySync: 'live2d:chat:tool-activity-sync',
   chatImagePreviewOpen: 'live2d:chat:image-preview-open',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
@@ -1813,6 +1814,19 @@ async function startDesktopSuite({
       ]);
       return { session_id: gatewayRuntimeClient.getSessionId(), settings, pending };
     }
+    if (action === 'list_sessions') {
+      return gatewayRuntimeClient.listSessions({ limit: payload?.limit });
+    }
+    if (action === 'select_session') {
+      const session = await gatewayRuntimeClient.selectSession(payload?.session_id);
+      replaceChatMessagesFromSession(session);
+      return { session_id: gatewayRuntimeClient.getSessionId(), session };
+    }
+    if (action === 'new_session') {
+      const sessionId = await gatewayRuntimeClient.createAndUseNewSession({ permissionLevel: 'high' });
+      clearChatMessages();
+      return { session_id: sessionId, session: await gatewayRuntimeClient.getSession(sessionId) };
+    }
     if (action === 'set_approval_mode') {
       const settings = await gatewayRuntimeClient.updateApprovalMode(payload?.approval_mode);
       return { session_id: gatewayRuntimeClient.getSessionId(), settings };
@@ -2190,6 +2204,20 @@ async function startDesktopSuite({
     chatState.messages = [];
     syncChatStateToRenderer();
     return { ok: true, count: 0 };
+  }
+
+  function replaceChatMessagesFromSession(session) {
+    const messages = Array.isArray(session?.messages) ? session.messages : [];
+    chatState.messages = messages
+      .filter((message) => message?.role === 'user' || message?.role === 'assistant')
+      .slice(-chatState.maxMessages)
+      .map((message) => ({
+        role: message.role,
+        text: String(message.content || ''),
+        timestamp: Date.parse(message.created_at || '') || Date.now(),
+        images: []
+      }));
+    syncChatStateToRenderer();
   }
 
   function getShellInputs() {
@@ -3134,6 +3162,14 @@ async function startDesktopSuite({
       const bridgedEventName = String(desktopEvent?.data?.name || desktopEvent?.data?.event || '');
       if (desktopEvent.type === 'runtime.event' && bridgedEventName) {
         const eventName = bridgedEventName;
+        if (eventName.startsWith('tool_call.') && !chatWindow.isDestroyed()) {
+          chatWindow.webContents.send(CHANNELS.chatToolActivitySync, {
+            session_id: desktopEvent.data?.session_id || null,
+            trace_id: desktopEvent.data?.trace_id || null,
+            event: eventName,
+            payload: desktopEvent.data?.payload || desktopEvent.data?.data || {}
+          });
+        }
         console.log('[desktop-live2d] gateway_event_forward', { eventName });
         const activeBridge = ipcBridgeRef;
 

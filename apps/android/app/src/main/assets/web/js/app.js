@@ -21,7 +21,7 @@
   document.body.dataset.mode = mode;
 
   const el = {
-    stage: $('stage'), bg: $('bg'), widgetsPanel: $('widgets-panel'), appsPanel: $('apps-panel'), canvas: $('canvas'),
+    stage: $('stage'), bg: $('bg'), widgetsPanel: $('widgets-panel'), appsPanel: $('apps-panel'), canvas: $('canvas'), toolActivity: $('tool-activity'),
     away: $('away'), awayWhere: $('away-where'), awayCall: $('away-call'), dot: $('hub-dot'),
     transfer: $('btn-transfer'), transferReason: $('transfer-reason'),
     mic: $('mic-level'), micBtn: $('btn-mic'), chatBtn: $('btn-chat'), chatForm: $('chat-form'), chatText: $('chat-text'),
@@ -31,7 +31,12 @@
     approvalButton: $('approval-control-button'), approvalLabel: $('approval-control-label'),
     approvalCount: $('approval-control-count'), approvalBackdrop: $('approval-backdrop'),
     approvalClose: $('approval-close'), approvalDescription: $('approval-mode-description'),
-    approvalList: $('approval-pending-list'), approvalEmpty: $('approval-empty'), approvalStatus: $('approval-list-status')
+    approvalList: $('approval-pending-list'), approvalEmpty: $('approval-empty'), approvalStatus: $('approval-list-status'),
+    sessionHistoryBackdrop: $('session-history-backdrop'), sessionHistoryPanel: $('session-history-panel'),
+    sessionHistoryList: $('session-history-list'), sessionHistoryMessages: $('session-history-messages'),
+    sessionHistoryStatus: $('session-history-status'), sessionHistoryClose: $('session-history-close'),
+    sessionHistoryNew: $('session-history-new'), sessionHistoryComposer: $('session-history-composer'),
+    sessionHistoryInput: $('session-history-input')
   };
 
   /* ------------------------------------------------------------------ state */
@@ -227,6 +232,7 @@
   let actions = null;
   let taskCanvas = null;
   let voice = null;
+  let sessionHistory = null;
   let presets = {};
   let manifest = null;
 
@@ -521,6 +527,7 @@
     const was = S.landscape;
     S.landscape = innerWidth > innerHeight;
     document.body.dataset.landscape = S.landscape ? '1' : '0';
+    if (oldLandscape !== S.landscape) sessionHistory?.onOrientationChange(S.landscape);
     geom = L.panelGeometry({ viewW: S.view.w, viewH: S.view.h });
     document.documentElement.style.setProperty('--panel-w', `${Math.round(geom.panelW)}px`);
     lastPanelKey = '';
@@ -559,7 +566,7 @@
   let dragging = null;   // 'panel' | 'drawer' | null
   let press = null;
   let longTimer = 0;
-  const IGNORE = 'button,input,textarea,form,.sheet,.menu,.away-card,.transfer-control,.drawer-list,.widget-card,.toast,.chat-scroll,.tc-bubble,.tc-task';
+  const IGNORE = 'button,input,textarea,form,.sheet,.menu,.away-card,.transfer-control,.drawer-list,.widget-card,.toast,.chat-scroll,.tc-bubble,.tc-task,.session-history-backdrop';
 
   const panelsEnabled = () => !lockscreen && S.landscape && !S.sheetOpen && !S.drawerOpen && !S.editing;
   const drawerEnabled = () => !lockscreen && (cfg.launcher || {}).enabled && !S.sheetOpen && S.panelState === 0;
@@ -571,7 +578,8 @@
     closeMenu();
     unlockAudio();
     tracker.down(e.clientX, e.clientY, e.timeStamp);
-    press = { x: e.clientX, y: e.clientY, t: e.timeStamp, startP: panel.value, startQ: drawer.value, hit: stage.hitTest(e.clientX, e.clientY), moved: false, axis: null };
+    const historyPullLimit = clamp(S.view.h * .22, 104, 168);
+    press = { x: e.clientX, y: e.clientY, t: e.timeStamp, startP: panel.value, startQ: drawer.value, hit: stage.hitTest(e.clientX, e.clientY), moved: false, axis: null, fromHistoryZone: e.clientY <= historyPullLimit };
     clearTimeout(longTimer);
     if (press.hit) longTimer = setTimeout(() => { if (press && !press.moved) { press.long = true; openMenu(press.x, press.y); } }, 520);
   }
@@ -581,6 +589,13 @@
     const r = tracker.move(e.clientX, e.clientY, e.timeStamp);
     if (!r) return;
     if (Math.hypot(r.dx, r.dy) > 10) { press.moved = true; clearTimeout(longTimer); }
+    if (!lockscreen && press.fromHistoryZone && r.axis === 'y' && r.dy > 36 && sessionHistory && !sessionHistory.isOpen) {
+      tracker.up();
+      press = null;
+      dragging = null;
+      sessionHistory.open();
+      return;
+    }
     if (!dragging && r.axis && !press.axis) {
       press.axis = r.axis;
       if (r.axis === 'x' && panelsEnabled()) dragging = 'panel';
@@ -907,13 +922,16 @@
   const openChat = () => { document.body.dataset.chat = '1'; el.chatForm.classList.add('open'); el.chatText.focus(); };
   el.chatBtn.onclick = openChat;
   if (el.activeModelBadge) el.activeModelBadge.onclick = openChat;
+  function submitChatText(value) {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    B.publish('chat.input', { text, model_ref: S.selectedModelRef || undefined });
+    taskCanvas?.showUser(text);
+    return true;
+  }
   el.chatForm.onsubmit = (e) => {
     e.preventDefault();
-    const text = el.chatText.value.trim();
-    if (!text) return;
-    B.publish('chat.input', { text, model_ref: S.selectedModelRef || undefined });
-    taskCanvas.showUser(text);
-    el.chatText.value = '';
+    if (submitChatText(el.chatText.value)) el.chatText.value = '';
   };
   el.chatText.addEventListener('blur', () => setTimeout(() => {
     if (!el.chatText.value && !el.chatForm.contains(document.activeElement)) {
@@ -945,6 +963,7 @@
 
   /* ------------------------------------------------------------------ back key */
   function consumeBack() {
+    if (sessionHistory?.isOpen) { sessionHistory.close(); return true; }
     if (S.approvalOpen) { setApprovalOpen(false); return true; }
     if (!el.menu.hidden) { closeMenu(); return true; }
     if (S.sheetOpen) { plugins.closeApp(); return true; }
@@ -1010,16 +1029,34 @@
     el.dot.dataset.state = S.hub.state;
     refreshTransferControl();
 
-    const taskCanvasApi = window.YachiyoTaskCanvas.createCanvas({ root: el.canvas });
+    const taskCanvasApi = window.YachiyoTaskCanvas.createCanvas({ root: el.canvas, taskRoot: el.toolActivity });
     taskCanvas = taskCanvasApi;
+    if (!lockscreen && window.YachiyoSessionHistory) {
+      sessionHistory = window.YachiyoSessionHistory.create({
+        bridge: B, backdrop: el.sessionHistoryBackdrop, panel: el.sessionHistoryPanel,
+        list: el.sessionHistoryList, messages: el.sessionHistoryMessages, status: el.sessionHistoryStatus,
+        closeButton: el.sessionHistoryClose, newButton: el.sessionHistoryNew,
+        composer: el.sessionHistoryComposer, input: el.sessionHistoryInput,
+        onSend: (text) => submitChatText(text),
+        onSessionChanged: () => {
+          taskCanvasApi.clear();
+          S.approvalPending = [];
+          void loadApprovalState();
+        }
+      });
+    }
     updateChatLayout();
     voice = window.YachiyoVoice.createVoice({ bridge: B, lipsync, getConfig: () => cfg, log });
 
-    B.subscribe('chat.delta', (d) => taskCanvasApi.delta(d && d.delta, d));
-    B.subscribe('chat.final', (d) => taskCanvasApi.final(d && d.output, d));
+    B.subscribe('chat.delta', (d) => { if (!sessionHistory || sessionHistory.accepts(d?.session_id)) taskCanvasApi.delta(d && d.delta, d); });
+    B.subscribe('chat.final', (d) => {
+      if (!sessionHistory || sessionHistory.accepts(d?.session_id)) taskCanvasApi.final(d && d.output, d);
+      sessionHistory?.scheduleRefresh();
+    });
     B.subscribe('ui.chat.post', (d) => {
       const text = String(d && d.text || '').trim();
-      if (text) taskCanvasApi.final(text, { trace_id: d.trace_id || d.message_id });
+      if (text && (!sessionHistory || sessionHistory.accepts(d?.session_id))) taskCanvasApi.final(text, { trace_id: d.trace_id || d.message_id });
+      sessionHistory?.scheduleRefresh();
     });
     B.subscribe('task.update', (d) => taskCanvasApi.updateTask(d));
     B.subscribe('audio.input.transcript', (d) => {
@@ -1095,7 +1132,7 @@
   window.YachiyoApp = {
     get plugins() { return plugins; },
     S, stage, cam, panel, drawer, kick, setPanel, setDrawer, toast, rebuildStage, ensureModel,
-    get actions() { return actions; }, get voice() { return voice; }, lipsync,
+    get actions() { return actions; }, get voice() { return voice; }, get sessionHistory() { return sessionHistory; }, lipsync,
     onPrepare, onExit, onEnter, onCancel: onCancel2, onHubState, onIme
   };
 

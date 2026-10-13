@@ -22,6 +22,7 @@
   </aside>
 
   <section id="canvas" class="task-canvas" aria-live="polite"></section>
+  <section id="tool-activity" class="tool-activity" aria-label="工具执行记录" aria-live="polite"></section>
 
   <div id="away" class="away" hidden>
     <div class="away-card">
@@ -63,6 +64,25 @@
       <input id="chat-text" type="text" enterkeyhint="send" placeholder="对八千代说点什么…">
       <button type="submit" class="btn-primary">发送</button>
     </form>
+  </div>
+
+  <div id="session-history-backdrop" class="session-history-backdrop" hidden>
+    <section id="session-history-panel" class="session-history-panel" role="dialog" aria-modal="true" aria-labelledby="session-history-title">
+      <div class="session-history-handle" aria-hidden="true"></div>
+      <header class="session-history-head">
+        <div><span class="panel-kicker">CONVERSATIONS</span><h2 id="session-history-title">聊天记录</h2></div>
+        <div class="session-history-actions"><button id="session-history-new" class="chip" type="button">新对话</button><button id="session-history-close" class="chip" type="button">收起</button></div>
+      </header>
+      <div class="session-history-body">
+        <nav id="session-history-list" class="session-history-list" aria-label="聊天会话"></nav>
+        <div id="session-history-messages" class="session-history-messages" aria-live="polite"></div>
+      </div>
+      <p id="session-history-status" class="session-history-status">下拉即可查看历史会话</p>
+      <form id="session-history-composer" class="session-history-composer" autocomplete="off">
+        <textarea id="session-history-input" rows="1" enterkeyhint="send" placeholder="在当前会话中继续说…" aria-label="发送消息到当前会话"></textarea>
+        <button class="btn-primary" type="submit">发送</button>
+      </form>
+    </section>
   </div>
 
   <div id="approval-backdrop" class="approval-backdrop" hidden>
@@ -128,6 +148,8 @@
   <script src="js/pluginProtocol.js"></script>
   <script src="js/pluginGrid.js"></script>
   <script src="js/sessionApproval.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/sessionHistory.js"></script>
   <script src="js/stage.js"></script>
   <script src="js/actions.js"></script>
   <script src="js/lipsync.js"></script>

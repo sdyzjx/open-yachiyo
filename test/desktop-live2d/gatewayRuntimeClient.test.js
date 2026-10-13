@@ -272,6 +272,27 @@ test('GatewayRuntimeClient createAndUseNewSession switches session id and boots 
   assert.equal(body.settings.permission_level, 'low');
 });
 
+test('TC-DSK-029 GatewayRuntimeClient lists and selects desktop sessions only', async () => {
+  const client = new GatewayRuntimeClient({
+    gatewayUrl: 'http://127.0.0.1:3000',
+    sessionId: 'desktop-current',
+    fetchImpl: async (url) => {
+      const pathname = new URL(String(url)).pathname;
+      if (pathname === '/api/sessions') return { ok: true, async json() { return { ok: true, data: { items: [
+        { session_id: 'desktop-current', title: 'Current' },
+        { session_id: 'device-phone', title: 'Phone' },
+        { session_id: 'desktop-older', title: 'Older' }
+      ] } }; } };
+      return { ok: true, async json() { return { ok: true, data: { session_id: 'desktop-older', title: 'Older', messages: [] } }; } };
+    }
+  });
+  const list = await client.listSessions();
+  assert.deepEqual(list.items.map((item) => item.session_id), ['desktop-current', 'desktop-older']);
+  await client.selectSession('desktop-older');
+  assert.equal(client.getSessionId(), 'desktop-older');
+  await assert.rejects(client.selectSession('device-phone'), /desktop session id required/);
+});
+
 test('GatewayRuntimeClient scopes approval controls to its active session', async () => {
   const calls = [];
   const client = new GatewayRuntimeClient({

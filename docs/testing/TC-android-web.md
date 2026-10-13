@@ -514,9 +514,9 @@
 |---|---|
 | 类型 | unit + manual-device |
 | 前置条件 | 回答只收到 `ui.chat.post` 或 `chat.final`，没有先收到流式 delta |
-| 步骤 | 显示一条足够长的完整回答并等待 24 s + 420 ms 淡出动画 |
-| 期望结果 | 气泡最迟 24 s 开始淡出并移除；它是最后一条消息时画布同步隐藏 |
-| 自动化 | `test/android-web/chatPanel.test.js`（TC-AWB-050 a direct final-only message always fades within 24 seconds）+ manual-device |
+| 步骤 | 显示一条完整回答并等待 10 s + 420 ms 淡出动画 |
+| 期望结果 | 用户与助手完整气泡约 10 s 开始淡出并移除；它是最后一条消息时画布同步隐藏 |
+| 自动化 | `test/android-web/chatPanel.test.js`（TC-AWB-050 completed chat bubbles fade after about 10 seconds）+ manual-device |
 
 ## TC-AWB-051 小米 6 横屏上半身取景对话可见
 
@@ -527,3 +527,53 @@
 | 步骤 | 1) 计算真实模型屏幕 bounds 与输入栏矩形；2) 注入用户消息和回答；3) 读取回答列、用户列的 visibility、矩形；4) 截图确认脸部边界 |
 | 期望结果 | 上半身取景使用 20% 脸部保护比例；宽屏面板宽约 612 dp、高至少 110 dp 且可见；上边界位于脸部保护线下 12 dp；气泡可覆盖胸口以下但不遮脸 |
 | 自动化 | `test/android-web/layout.test.js`（TC-AWB-051 Xiaomi 6 upper-body framing keeps the landscape chat panel visible）、`test/android-web/chatPanel.test.js`；2026-10-13 小米 6 截图与 CDP 验证通过，主题文字色 `#f7f3ff`，面板位于脸部下方 |
+
+## TC-AWB-052 顶部下拉历史会话面板
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 手机已连接 Device Hub，存在一个或多个本机聊天会话 |
+| 步骤 | 从屏幕上方约 22% 区域向下滑；再在聊天气泡和消息滚动区上下滑；选择旧会话；新建会话；横竖屏切换并滚动历史 |
+| 期望结果 | 不要求贴着状态栏即可使面板自顶部滑入；聊天气泡、消息滚动区、输入框和工具卡内的滚动不误触；竖屏为横向会话条+历史，横屏为左侧会话栏+右侧历史；切换后后续文字、语音、审批和 Pi 上下文使用同一会话 |
+| 自动化 | `test/android-web/sessionHistory.test.js`、`test/gateway/deviceHub/runtimeBridge.test.js` + manual-device |
+
+## TC-AWB-053 当前会话事件隔离
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + integration |
+| 前置条件 | 同一设备有两个会话，旧会话仍有迟到事件 |
+| 步骤 | 切换到新会话并向两个 session 发布消息事件 |
+| 期望结果 | 聊天画布只显示当前会话；历史接口只返回 user/assistant 可见消息；切换时清空旧瞬时气泡 |
+| 自动化 | `test/android-web/sessionHistory.test.js`、`test/gateway/deviceHub/runtimeBridge.test.js` |
+
+## TC-AWB-054 独立工具记录与横屏长回答
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 横屏且 agent 执行多个工具并返回长文本 |
+| 步骤 | 触发 running/done/failed 工具事件及超过 180 字的回答 |
+| 期望结果 | 工具卡逐项出现在右上角，不进入聊天气泡滚动区；完成/失败 8 秒后消失；长回答在脸部保护线下向上占满安全高度并可滚动，不遮住脸 |
+| 自动化 | `test/android-web/chatPanel.test.js`（TC-AWB-054）+ manual-device |
+
+## TC-AWB-055 两段式历史面板
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + manual-device |
+| 前置条件 | 普通模式主界面已连接 Device Hub |
+| 步骤 | 1) 从屏幕上方宽松区域下拉；2) 点击半屏卡片外空白遮罩并重新打开；3) 再次下拉；4) 从面板非滚动空白区上滑一次；5) 再上滑一次；6) 保持面板打开并旋转手机 |
+| 期望结果 | 第一次显示约半屏预览，点击卡片外空白遮罩可直接关闭；第二次铺满屏幕且底部不留缝；上滑不要求抓住顶部细条并逐级退回；竖屏顶部选项卡紧凑，横屏在左侧纵向排列；横竖屏重排有淡出位移动画 |
+| 自动化 | `test/android-web/sessionHistory.test.js`（TC-AWB-055）+ manual-device |
+
+## TC-AWB-056 历史 Markdown 与会话内发送
+
+| 字段 | 内容 |
+|---|---|
+| 类型 | unit + integration + manual-device |
+| 前置条件 | 当前会话已有含标题、列表、代码、表格和链接的消息 |
+| 步骤 | 打开历史面板；检查 Markdown；在底部输入框输入消息并发送；等待回复 |
+| 期望结果 | Markdown 结构可读；原始 HTML 和危险链接不执行；消息发往当前选中的 session，并立即出现在历史记录中；Enter 发送、Shift+Enter 换行 |
+| 自动化 | `test/android-web/sessionHistory.test.js`（TC-AWB-056）+ manual-device |

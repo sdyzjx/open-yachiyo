@@ -90,10 +90,11 @@ sequenceDiagram
 
 ### 2.6 对话面板（任务画布 / 聊天气泡）
 
-订阅 `chat.delta`（按 `trace_id` 流式追加到对应助手气泡）、`chat.final`（按同一 trace 定稿且重复 final 幂等；淡出延时 `16 s + 0.09 s × 字数`，上限 24 s，用户正在触摸/滚动时顺延）、`audio.input.transcript`（用户气泡）、`task.update`（任务卡：标题 + 最近 4 个不同的步骤状态，完成/失败 8 s 后淡出）。同一任务内名称与状态相同的重复步骤合并为一行并显示次数（如 `shell.exec ×3`），避免重试错误刷满画布。每张气泡独立持有淡出计时器；新回答开始只更新自己的计时，不会取消旧回答的自动收起。流式回答若 30 s 没有新增量且未收到 final，视为通道中断并自动淡出；新增量会重置该计时。并发的文字与语音 Realtime 请求分别维护气泡，不会交错或把同一 final 创建两次。文本输入框发送 `chat.input {text}`。
+订阅 `chat.delta`（按 `trace_id` 流式追加到对应助手气泡）、`chat.final`（按同一 trace 定稿且重复 final 幂等；完整消息约 10 秒后淡出，用户正在触摸/滚动时顺延）、`audio.input.transcript`（用户气泡）和 `task.update`。工具记录不再混入聊天画布，而是在右上角独立卡片队列展示标题、最近 4 个步骤和 running/done/failed 状态，完成/失败 8 秒后淡出。同一任务内名称与状态相同的重复步骤合并为一行并显示次数（如 `shell.exec ×3`）。每张气泡独立持有淡出计时器；新回答开始只更新自己的计时，不会取消旧回答。流式回答若 30 秒没有新增量且未收到 final，视为通道中断并自动淡出。文本输入框发送 `chat.input {text}`。
 
 - **竖屏**：以模型 bounds 顶部向下 24% 的脖子线为上界，面板位于脖子线 + 10 px 到输入栏上方，可覆盖身体而不覆盖脸；左右各留 14 px。`task_canvas.position` 在竖屏只有 `hidden` 生效。
-- **横屏**：居中态使用一块完整宽屏对话区，回答左对齐、用户消息右对齐并按时间顺序排列。全身取景以模型外框顶部向下 30% 为脸部保护线；默认上半身聚焦使用 20%，适配小米 6 的 640×360 dp 视口，避免保护线落到胸口并把可用高度压到隐藏阈值以下。面板横向填满安全区，可覆盖人物下半身而不遮挡表情。左右拖动时同一面板随弹簧连续收窄并移动到侧栏外，不经过双列交叉淡入。状态点、迁移控件、设置按钮、输入区、语音/聊天按钮、侧栏及插件面板均参与避让；右侧插件栏打开时设置齿轮同步移到栏外。
+- **横屏**：居中态使用一块完整宽屏对话区，回答左对齐、用户消息右对齐并按时间顺序排列。全身取景以模型外框顶部向下 30% 为脸部保护线；默认上半身聚焦使用 20%。面板横向填满安全区，长文本气泡超过 180 字时扩展到安全区全宽并从底部向上占用可用高度，触顶后内部滚动；面板上沿始终位于脸部保护线下，因此只覆盖人物下半身。左右拖动时同一面板随弹簧连续收窄并移动到侧栏外。状态点、迁移控件、设置按钮、输入区、语音/聊天按钮、侧栏及插件面板均参与避让。
+- **历史会话**：普通模式可从屏幕上方约 22% 的手势区向下滑超过 36 px 打开约半屏预览，不要求贴着状态栏开始；聊天气泡、消息滚动区、输入框和工具卡区域不会触发该手势。再次下拉扩展为 100% 高度且底部不留缝；上滑收起可从面板任意非滚动空白区开始并逐级退回，半屏预览也可点击卡片外空白遮罩直接关闭。竖屏用紧凑的顶部横向会话栏，横屏改为左侧自上而下的会话栏与右侧历史区；横竖屏切换以淡出位移动画重排。面板底部输入框可直接向当前会话发消息；历史消息安全渲染 Markdown 标题、列表、引用、代码、表格和链接。新建或选择会话后，文字、麦克风、Realtime、审批策略和工具执行共享同一 Pi `AgentSession`；旧会话的迟到消息不会进入当前气泡区。锁屏模式不提供历史入口。
 - **滚动**：回答列、用户列和合并视图各自拥有 `.chat-scroll`（`pointer-events:auto; touch-action:pan-y`），整个滚动区都在 `IGNORE` 选择器中，不会触发舞台滑动/抽屉。每列新内容默认自动滚到底；用户上滑离底超过 24 px 后只停止该列自动跟随。合并视图按事件发生顺序排列；保留最近 8 条气泡。
 - **动效**：面板首次出现 `translateY(16px)→0` 240 ms；消息 `translateY(8px)→0` 140 ms；淡出 420 ms（见 `UI_DESIGN_SYSTEM.md` §6）。不透明度 `task_canvas.opacity`，下限 0.9 以保证可读。
 - **软键盘**：主界面和锁屏 Activity 使用 `adjustNothing`。原生层以 `WindowInsetsCompat.Type.ime()` 读取高度（旧系统使用 visible-frame 差值兜底），通过 C2.2 `ime {visible,height_px,height_css}` 下发。Web 层只更新 `--ime` 并重算输入栏上方的面板端点；舞台 canvas、人物取景与面板弹簧坐标不变。键盘占用后可读高度不足 56 px 时，对话面板暂时隐藏，输入栏仍位于键盘上方。
@@ -110,7 +111,7 @@ sequenceDiagram
 
 - Web ↔ 原生：契约 C2（`nativeShim.js` → `window.YachiyoNative`；`window.__yachiyoNative.dispatch`）。
 - 设备总线：契约 C1。
-- 本功能新增/使用的约定见 `docs/plans/PLAN-android-ws5-web-ui.md` 「待统筹决策」。
+- 本功能新增/使用的约定见 `docs/plans/PLAN-android-companion-contracts.md` C1.6。
 
 ## 4. 配置项
 
@@ -128,4 +129,4 @@ sequenceDiagram
 
 ## 6. 测试用例
 
-TC-AWB-001..TC-AWB-044（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js` 与 `apps/android/app/src/test/**/ImeMetricsTest.kt`。
+TC-AWB-001..TC-AWB-056（`docs/testing/TC-android-web.md`）；自动化：`test/android-web/*.test.js`、`test/desktop-live2d/live2dParameterOverlay.test.js` 与 `apps/android/app/src/test/**/ImeMetricsTest.kt`。

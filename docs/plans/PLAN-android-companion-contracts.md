@@ -3,7 +3,7 @@
 > 类型: plan
 > 状态: active
 > 负责人: claude-coordinator（修改需经统筹者确认）
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: docs/plans/PLAN-android-companion.md
 
 本文件定义各工作流之间的接口。**任何工作流不得单方面修改这里的格式**；需要变更时在自己的施工文档「待统筹决策」里写明，由统筹者更新本文件。
@@ -87,7 +87,7 @@ ws://<gateway-host>:<port>/ws/device?token=<pairing_token>
 | `ui.chat.post` | runtime | `{ message_id, session_id, trace_id, role:"assistant", text, format:"plain"\|"markdown", bubble }`；完整可见消息，与音频和工具事件独立 |
 | `chat.delta` | gateway | `{ session_id, trace_id, delta }`（映射自 `message.delta`） |
 | `chat.final` | gateway | `{ session_id, trace_id, output }`（映射自未被 `ui.chat.post` 覆盖的 `runtime.final`，作为兼容回退） |
-| `chat.input` | device | `{ text, session_id? }` → 网关以设备会话执行 `runtime.run` |
+| `chat.input` | device | `{ text, model_ref? }` → 网关以该设备当前选中的会话执行 `runtime.run`；客户端不能在消息内覆盖会话 |
 | `task.update` | gateway | 任务画布：`{ task_id, title, status: running\|done\|failed, steps: [{name, status}], updated_at }`，由 tool_call 事件聚合 |
 | `avatar.*` | gateway / device | 设备间移交，见 C1.5 |
 | `voice.play` | gateway | `{ request_id, url, mime, text, session_id }`：设备拉取 `url`（同网关、带 token）播放 |
@@ -150,6 +150,17 @@ sequenceDiagram
 - 方法名规则：原生能力 `device.<name>`；插件 `plugin.<plugin_id>.<name>`（插件 SDK 自动加前缀）；Live2D 渲染方法沿用桌面 `RPC_METHODS_V1`（`state.get`、`model.motion.play`、`model.expression.set`、`model.param.batchSet`、`model.param.set`）及 `live2d.action.enqueue`，由 avatar host 实现，**不需要注册**。
 - `expose_as_tool: true` 的方法由网关通过 `deviceHub.listToolMethods()` 暴露给 agent 核心（C5），工具名 = 方法名中 `.` 替换为 `_`，前缀设备简称：`<device_alias>__<method>`，如 `mi6__device_vibrate`。
 - 网关调用设备：`rpc.req { method, params }`，默认超时 8 s。
+
+网关还提供不注册为 agent 工具的本地会话 RPC。每台手机只可访问默认会话 `device-<device_id>` 及其创建的 `device-<device_id>--<uuid>` 会话；会话选择保存在当前已认证连接上，重连后回到默认会话。
+
+| 方法 | 参数 | 返回 |
+|---|---|---|
+| `session.list` | `{limit?:1..80,offset?:number}` | `{current_session_id,total,items:[{session_id,title,updated_at,message_count,last_output_preview}]}` |
+| `session.history` | `{session_id?}` | `{session_id,title,messages:[{id,role,content,created_at}]}`，只含 user/assistant 可见消息，最多最近 200 条 |
+| `session.create` | `{title?}` | 创建并选中新的设备会话，返回与 `session.history` 相同的空历史 |
+| `session.select` | `{session_id}` | 校验所属设备后选中并返回该会话历史 |
+
+`session.settings.*` 与 `approval.*` 始终作用于当前选中会话。文字、转写、音频直通和 Realtime 输入也必须使用同一会话，以便 Pi `AgentSession` 的上下文、steering/follow-up、工具与审批保持一致。
 
 ### C1.7 麦克风上行
 

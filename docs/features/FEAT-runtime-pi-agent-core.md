@@ -43,6 +43,8 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 语音自动回复开启时，prompt 会标明本轮输入来自文字或音频。模型判断适合语音后，`voice.tts_aliyun_vc` 必须成为本轮第一个可观察动作，先于 Live2D、搜索、截图和其他工具：可立即口述短答案；如果仍需调用工具，则先口述简短确认，再继续处理。`force_on` 模式对所有非空用户回复强制采用同一顺序。音频输入、短对话、问候、确认与情感回应具有较高语音优先级；代码、表格、链接密集内容和详细排障仍保持文字输出。默认限流为同一会话间隔 0.5 秒、每分钟 12 次，以支持连续一问一答。
 
+所有模式还遵循用户交互优先规则：耗时工具前先给简短直接回应，适合语音时把说话作为第一动作；执行结束后说明实际做了什么、是否成功，并同步可见文字。音频、文字和工具状态分别投递，不能以工具卡代替对用户的回答，也不能静默执行后结束。
+
 发给模型 provider 的工具名统一满足 `^[a-zA-Z0-9_-]{1,64}$`：合法名称保持不变，名称中的 `.` 优先编码为 `__`，其他非法字符按 UTF-8 字节编码，过长名称使用稳定摘要；候选冲突时追加稳定摘要。桥接对象保留原名，实际 executor 调用、publishEvent、兼容事件和 Live2D/TTS 单次调用控制均使用原名。pi 内部为旧兼容 provider 返回的原始点号名保留隐藏声明，原名不会出现在发送给 provider 的工具 schema 中。
 
 用户图片转换成 pi image blocks；图片不经过 pi 自动缩放，网关沿用原有大小限制。v1 模型缺少视觉元数据时仍发送用户显式图片，由 provider 判断能力。desktop.capture 工具结果附加实际图像。网关仍先执行现有 ASR；直接使用工厂时可注入 transcribeAudio，或提供 inputAudio.transcribed_text。
@@ -155,6 +157,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…047，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、Pi 原生工具策略 extension、EventBus 订阅、消息框独立投递、工具空承诺纠偏与 Qwen Realtime 长音频分帧。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…048，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、标准 Skills/context 与文件/shell 工具、流式事件、图片/原始音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、运行中语音即时打断、长期会话、副作用感知并行、会话审批策略、Pi 原生工具策略 extension、EventBus 订阅、消息框独立投递、工具空承诺纠偏、Realtime 长音频分帧与用户交互优先反馈。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

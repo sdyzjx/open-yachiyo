@@ -92,3 +92,20 @@ test('TC-DSK-028 desktop chat records PCM WAV and sends it with the selected mod
   assert.match(suite, /inputAudio: \{ audio_ref: file, format: 'wav'/);
   assert.match(suite, /DESKTOP_VOICE_INPUT_MAX_BYTES/);
 });
+
+test('TC-DSK-029 desktop chat provides a persistent session sidebar and switches real sessions', () => {
+  const suite = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/desktopSuite.js'), 'utf8');
+  const preload = fs.readFileSync(path.resolve(__dirname, '../../apps/desktop-live2d/main/preload.js'), 'utf8');
+  assert.match(html, /id="chat-session-sidebar"/);
+  assert.match(html, /id="chat-session-list"/);
+  assert.match(html, /id="chat-tool-activity"/);
+  assert.match(script, /action: 'list_sessions'/);
+  assert.match(script, /action: 'select_session'/);
+  assert.match(script, /action: 'new_session'/);
+  assert.match(script, /onChatToolActivitySync/);
+  assert.match(preload, /chatToolActivitySync: 'live2d:chat:tool-activity-sync'/);
+  assert.match(preload, /onChatToolActivitySync\(handler\)/);
+  assert.match(suite, /gatewayRuntimeClient\.selectSession/);
+  assert.match(suite, /replaceChatMessagesFromSession/);
+  assert.match(suite, /CHANNELS\.chatToolActivitySync/);
+});

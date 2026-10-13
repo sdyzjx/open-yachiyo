@@ -30,9 +30,9 @@ Android WebView 的宿主源 `https://appassets.androidplatform.net` 可跨源�
 
 订阅 runtime bus 的 `*`，按 C1.4 前缀转发。设备发布附加可信的 `__from_device`，桥接忽略回流，避免重复投递。`message.delta` / `runtime.final` 映射 `chat.delta/final`；兼容旧 `runtime.event` 的流式 delta，按 session/trace/seq 去重。pi 同一 token 同步发出的 `runtime.event llm.stream.delta` 与 `message.delta` 被识别为别名，只向手机投递一次；合法的相同连续 token 仍会逐个投递。旧 done 事件同样映射 chat.final，并与新 runtime.final/入队回调按 trace 去重。tool_call 与旧 tool.call/tool.result 聚合为 `task.update`，失败结果不会短暂显示 done；内存最多保存 128 个任务。
 
-`chat.input` 固定使用 `device-<device_id>` 会话，通过现有网关入队入口执行，复用权限、历史记录与 workspace；设备提交的其他 session_id 不覆盖设备会话。TC-HUB-005 对应 `test/gateway/deviceHub/runtimeBridge.test.js`。
+`chat.input` 使用当前连接选中的设备会话，通过现有网关入队入口执行，复用权限、历史记录、workspace 和长生命周期 Pi `AgentSession`；设备提交的 session_id 不覆盖服务端选择。默认会话为 `device-<device_id>`，新增会话使用 `device-<device_id>--<uuid>`。运行时消息、显式消息和工具记录按当前 session 定向到设备，旧会话迟到事件不会广播到其他会话。
 
-会话控制使用四个网关本地 RPC：`session.settings.get`、`session.settings.update`、`approval.pending.list`、`approval.decision`。更新接口只接受三种 `approval_mode`，审批决定要求布尔 `approved` 与可选 `scope=once|always`。所有方法从已完成 hello 的设备身份计算 `device-<device_id>`，客户端不能读写或决定其他设备会话；非法模式、缺少参数及跨会话 approval_id 返回 `-32602`。
+会话控制包括 `session.list/history/create/select`、`session.settings.get/update` 和 `approval.pending.list/decision`。列表、历史和选择只接受已认证设备拥有的会话；历史只投影 user/assistant 可见消息。设置、审批、聊天和音频始终作用于当前选中会话。重连回到默认设备会话，客户端可在历史面板再次选择。非法模式、缺少参数和跨设备会话返回协议错误。
 
 ### 手机语音中继
 
@@ -64,4 +64,4 @@ ASR 只读加载 Model Catalog；旧 provider validator 尚不支持 asr 类型�
 
 ## 测试用例
 
-[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-001～032；自动化 `test/gateway/deviceHub/hub.test.js`，运行 `npm run test:ci`。
+[TC-device-hub-bus.md](../testing/TC-device-hub-bus.md)：TC-HUB-001～034；自动化 `test/gateway/deviceHub/hub.test.js` 与 `test/gateway/deviceHub/runtimeBridge.test.js`，运行 `npm run test:ci`。

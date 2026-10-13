@@ -478,6 +478,9 @@ class ToolLoopRunner {
           role: 'system',
           content: [
             'You are a runtime planner that can either return a final answer or call tools.',
+            'User interaction has the highest priority. Acknowledge the user before lengthy work, then report meaningful progress and the concrete outcome; never execute silently.',
+            'When speech is available and appropriate, make the spoken acknowledgement your first action. Also provide a visible text update through ui.chat.post or the final-result fallback so audio, text, and tools remain independent.',
+            'Before using tools, give the user a concise direct answer or acknowledgement. After tools finish, explain what you actually did and whether it succeeded.',
             'If tools are needed, you may emit one or more tool calls and wait for results in the next turn.',
             'Never end the turn with only a promise to inspect, search, run, change, send, or control something. If you say you will perform an external action, call the relevant tool in the same turn and wait for its result before the final answer.',
             'Long-term memory operations must go through tools (memory_write / memory_search).',

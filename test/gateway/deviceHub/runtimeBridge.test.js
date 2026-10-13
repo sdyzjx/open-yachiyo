@@ -41,8 +41,7 @@ test('Runtime bridge maps chat, aggregates tools and prevents publication loops'
   assert.equal(runs[0].params.model_ref, 'qwen/qwen3.8-omni-flash');
   bus.publish('runtime.event', { session_id: 'desktop', trace_id: 'legacy', seq: 3, event: 'done', payload: { output: 'complete' } });
   bus.publish('runtime.final', { session_id: 'desktop', trace_id: 'legacy', output: 'complete' });
-  assert.equal((await a.next((m) => m.topic === 'chat.final')).data.output, 'complete');
-  await a.sync(); assert.equal(a.inbox.some((m) => m.topic === 'chat.final'), false);
+  await a.sync(); assert.equal(a.inbox.some((m) => m.topic === 'chat.final' && m.data.output === 'complete'), false);
   bus.publish('tool_call.started', { trace_id: 'r', call_id: 'a', name: 'weather' });
   assert.equal((await a.next((m) => m.topic === 'task.update')).data.status, 'running');
   bus.publish('tool_call.completed', { trace_id: 'r', call_id: 'a', name: 'weather' });
@@ -122,6 +121,14 @@ test('Runtime bridge forwards approval requests and scopes phone decisions to it
 test('Device session control RPC isolates settings and approvals by authenticated device', async (t) => {
   const bus = new RuntimeEventBus();
   const settings = new Map();
+  const sessions = new Map([
+    ['device-phone', { session_id: 'device-phone', title: 'Phone chat', updated_at: '2026-10-13T00:00:00.000Z', messages: [
+      { id: 'u1', role: 'user', content: 'hello', created_at: '2026-10-13T00:00:00.000Z' },
+      { id: 's1', role: 'system', content: 'secret prompt', created_at: '2026-10-13T00:00:00.000Z' },
+      { id: 'a1', role: 'assistant', content: 'hi', created_at: '2026-10-13T00:00:01.000Z' }
+    ] }],
+    ['device-other', { session_id: 'device-other', title: 'Other', updated_at: '2026-10-13T00:00:00.000Z', messages: [] }]
+  ]);
   const decisions = [];
   const pending = [
     { approval_id: 'apr-phone', session_id: 'device-phone', command: 'pwd' },
@@ -133,6 +140,18 @@ test('Device session control RPC isolates settings and approvals by authenticate
       const value = { permission_level: 'high', approval_mode: 'manual', ...(settings.get(sessionId) || {}), ...patch };
       settings.set(sessionId, value);
       return value;
+    },
+    async listSessions() {
+      return { total: sessions.size, items: [...sessions.values()].map((session) => ({
+        session_id: session.session_id, title: session.title, updated_at: session.updated_at,
+        message_count: session.messages.length, last_output_preview: null
+      })) };
+    },
+    async getSession(sessionId) { return sessions.get(sessionId) || null; },
+    async createSessionIfNotExists({ sessionId, title }) {
+      const session = { session_id: sessionId, title, updated_at: new Date().toISOString(), messages: [] };
+      sessions.set(sessionId, session);
+      return session;
     }
   };
   const approvalCoordinator = {
@@ -170,4 +189,43 @@ test('Device session control RPC isolates settings and approvals by authenticate
     approved: true,
     scope: 'always'
   });
+
+  const listed = await rpc('session.list');
+  assert.equal(listed.current_session_id, 'device-phone');
+  assert.deepEqual(listed.items.map((entry) => entry.session_id), ['device-phone']);
+  const history = await rpc('session.history', { session_id: 'device-phone' });
+  assert.deepEqual(history.messages.map((message) => message.role), ['user', 'assistant']);
+  await assert.rejects(rpc('session.select', { session_id: 'device-other' }), /not owned/);
+  const created = await rpc('session.create', { title: 'Second phone chat' });
+  assert.match(created.session_id, /^device-phone--[a-f0-9-]+$/);
+  assert.equal((await rpc('session.list')).current_session_id, created.session_id);
+  assert.equal((await rpc('session.settings.update', { approval_mode: 'full_access' })).approval_mode, 'full_access');
+  assert.equal(settings.get(created.session_id).approval_mode, 'full_access');
+  const selected = await rpc('session.select', { session_id: 'device-phone' });
+  assert.equal(selected.session_id, 'device-phone');
+});
+
+test('Runtime bridge uses the session selected through device RPC', async (t) => {
+  const bus = new RuntimeEventBus();
+  const runs = [];
+  const sessions = new Map([['device-phone', { session_id: 'device-phone', title: 'First', messages: [] }]]);
+  const sessionStore = {
+    async getSessionSettings() { return { approval_mode: 'manual' }; },
+    async updateSessionSettings() { return { approval_mode: 'manual' }; },
+    async listSessions() { return { total: sessions.size, items: [...sessions.values()].map((s) => ({ ...s, message_count: 0 })) }; },
+    async getSession(id) { return sessions.get(id) || null; },
+    async createSessionIfNotExists({ sessionId, title }) { const s = { session_id: sessionId, title, messages: [] }; sessions.set(sessionId, s); return s; }
+  };
+  const f = await fixture(t, {
+    bus, sessionStore,
+    approvalCoordinator: { list: () => [], decide: () => false },
+    enqueueRun: async (_sink, request) => { runs.push(request); }
+  });
+  const phone = await f.client('phone');
+  phone.send('rpc.req', { method: 'session.create', params: {} }, { id: 'create-session' });
+  const created = await phone.next((message) => message.type === 'rpc.res' && message.id === 'create-session');
+  const selectedId = created.data.result.session_id;
+  phone.send('pub', { text: 'continue here' }, { topic: 'chat.input' });
+  await phone.sync();
+  assert.equal(runs[0].params.session_id, selectedId);
 });

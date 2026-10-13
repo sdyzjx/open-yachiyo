@@ -207,6 +207,28 @@ class GatewayRuntimeClient {
     return this.requestSessionApi(`/api/sessions/${encodeURIComponent(this.sessionId)}/settings`);
   }
 
+  async listSessions({ limit = 80 } = {}) {
+    const result = await this.requestSessionApi(`/api/sessions?limit=${Math.max(1, Math.min(Number(limit) || 80, 200))}`);
+    const items = Array.isArray(result?.items) ? result.items : [];
+    return {
+      current_session_id: this.sessionId,
+      total: items.filter((item) => String(item?.session_id || '').startsWith('desktop-')).length,
+      items: items.filter((item) => String(item?.session_id || '').startsWith('desktop-'))
+    };
+  }
+
+  getSession(sessionId = this.sessionId) {
+    return this.requestSessionApi(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
+  async selectSession(sessionId) {
+    const normalized = String(sessionId || '').trim();
+    if (!normalized.startsWith('desktop-')) throw new Error('desktop session id required');
+    const session = await this.getSession(normalized);
+    this.setSessionId(normalized);
+    return session;
+  }
+
   updateApprovalMode(approvalMode) {
     const normalized = String(approvalMode || '').trim().toLowerCase();
     if (!['manual', 'auto_approve', 'full_access'].includes(normalized)) {

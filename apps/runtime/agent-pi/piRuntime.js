@@ -76,7 +76,7 @@ async function createPiRuntime(deps) {
       WebSocketImpl: deps.realtimeWebSocket,
       onRealtimeAudio: ({ sessionId: audioSessionId, requestId, topic, data }) => {
         const target = String(audioSessionId || '').startsWith('device-')
-          ? String(audioSessionId).slice('device-'.length)
+          ? String(audioSessionId).slice('device-'.length).split('--', 1)[0]
           : undefined;
         deps.bus?.publish(topic, {
           ...data,
@@ -87,7 +87,7 @@ async function createPiRuntime(deps) {
       },
       onRealtimeTranscript: ({ sessionId: audioSessionId, streamId, text }) => {
         const target = String(audioSessionId || '').startsWith('device-')
-          ? String(audioSessionId).slice('device-'.length)
+          ? String(audioSessionId).slice('device-'.length).split('--', 1)[0]
           : undefined;
         deps.bus?.publish('audio.input.transcript', {
           stream_id: streamId || null,

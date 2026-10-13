@@ -243,3 +243,14 @@ flowchart TD
 - 修复提交 `04d7fb4` 后 Node 873/873、docs lint 通过。真实 Qwen3.8 Omni Realtime 在隔离 full_access 会话调用 Pi 原生 `bash` 查询主机名，4.37 秒完成；复放原先触发 1009 的 212844 bytes 手机录音后，7.68 秒完成 `bash → ui.chat.post → live2d.emote`，没有连接断开或工具解析错误。3002 网关已重启到该提交，手机和 Desktop 均重新上线，Avatar owner 保持手机，设备锁为空闲。
 - 手机随后出现“我这就帮您看看桌面上的文件”后无动作。对应 trace 正常 `DONE`，但没有任何 tool call；原因是空承诺纠偏器覆盖“查看”却漏掉口语叠词“看看”。现扩展中文承诺识别到“看看/查一下/找一下”等变体，并以真实日志原句补入 TC-PI-046；普通“我可以帮您看看”能力说明和已调用工具的回合仍不会误触发。Node 全量 874/874 与 docs lint 通过；3002 网关已重启，Desktop 与 mi6 均重连，Avatar owner 保持手机。
 - 真机复现横屏对话不可见：小米 6 的 640×360 dp 上半身聚焦把完整模型放大到约 628 dp 高，固定 30% 保护比例将对话上边界推到胸口，旧双列仅剩约 47 dp，低于 72 dp 阈值后被隐藏；双列到合并视图的过渡还可能暂时把回答列压到 0 高。横屏中心态改为统一宽屏时间顺序面板，upper 保护比例改为 20%；左右滑时同一面板连续收窄并移动到侧栏外，全身取景继续使用 30%，覆盖 TC-AWB-039/051。Node 876/876、Android 单测与 Debug 构建、docs lint 通过；同步共享主题资源后重装小米 6，CDP 实测中心态 612×118 dp、左右半程约 467×95 dp，全程 `visibility=visible`，截图确认面板位于脸部下方。系统旋转与 ADB 转发已恢复，设备锁已释放。
+
+### 跨端会话与历史界面（2026-10-13）
+
+- Device Hub 新增 `session.list/history/create/select` RPC，并把设备当前选择绑定到对应的长期 Pi `AgentSession`。文字、录音、Realtime、审批和工具执行继续使用同一会话；迟到事件按 `session_id` 隔离，历史接口只返回 user/assistant 可见消息。
+- Android 新增两段式历史面板：第一次下拉显示预览，再次下拉铺满整屏；全屏与预览支持对称上滑逐级收回，预览态点击卡片外空白遮罩可直接关闭。入口手势覆盖屏幕上方约 22%，聊天气泡、历史滚动、输入框和工具卡保持各自滚动，不会误触。
+- 竖屏会话项压缩为单行横向列表，横屏会话项改为左侧纵向列表，右侧保留消息阅读区；面板打开时旋转设备会先淡出并位移，再按新方向重排淡入。历史支持安全 Markdown，并可在面板底部直接向当前会话发送消息。
+- Desktop Chat 新增长期会话侧栏与新建/切换能力。两端把工具执行状态从聊天文本中分离：Android 右上角、Desktop Chat 右上角独立显示活动卡片；完成或失败约 8 秒后收起。完整聊天气泡统一约 10 秒后收起，横屏长文在脸部保护线下动态扩展。
+- Pi 提示词明确以用户交互为最高优先级：长任务先回应，适合语音时先发送语音，同时通过独立消息链路说明正在做什么和最终结果；工具状态不会冒充聊天回复。
+- 自动验证：`npm run test:ci` 885/885，`npm run docs:lint` 通过，Android `:app:testDebugUnitTest :app:assembleDebug` 成功。小米 6 经 Wi-Fi ADB 验证两段展开、全屏无底缝、宽松上滑收回、预览外部点击关闭、Markdown、会话内发送、横屏左侧会话栏、旋转后重排、独立工具卡和 10 秒气泡消失；临时旋转设置与设备锁均已恢复。
+- 关联文档：`docs/features/FEAT-runtime-chat-sessions.md`、`docs/features/FEAT-android-live2d-stage.md`、`docs/features/FEAT-desktop-shell-and-chat.md`；用例 TC-HUB-033/034、TC-AWB-052～056、TC-DSK-029、TC-PI-048。
+- 交付提交：见本节所在功能提交；提交完成后以追加记录固化哈希。

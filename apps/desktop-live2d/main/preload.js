@@ -19,6 +19,7 @@ const CHANNELS = {
   chatPanelToggle: 'live2d:chat:panel-toggle',
   chatStateSync: 'live2d:chat:state-sync',
   chatStreamSync: 'live2d:chat:stream-sync',
+  chatToolActivitySync: 'live2d:chat:tool-activity-sync',
   chatImagePreviewOpen: 'live2d:chat:image-preview-open',
   bubbleStateSync: 'live2d:bubble:state-sync',
   bubbleMetricsUpdate: 'live2d:bubble:metrics-update',
@@ -89,6 +90,11 @@ contextBridge.exposeInMainWorld('desktopLive2dBridge', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(CHANNELS.chatStreamSync, listener);
     return () => ipcRenderer.off(CHANNELS.chatStreamSync, listener);
+  },
+  onChatToolActivitySync(handler) {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(CHANNELS.chatToolActivitySync, listener);
+    return () => ipcRenderer.off(CHANNELS.chatToolActivitySync, listener);
   },
   onBubbleStateSync(handler) {
     const listener = (_event, payload) => handler(payload);

@@ -12,6 +12,9 @@
   const chatHideElement = document.getElementById('chat-hide');
   const openWebUiElement = document.getElementById('open-webui');
   const newChatElement = document.getElementById('new-chat');
+  const sessionNewElement = document.getElementById('chat-session-new');
+  const sessionListElement = document.getElementById('chat-session-list');
+  const sessionEmptyElement = document.getElementById('chat-session-empty');
   const presenceLabelElement = document.getElementById('presence-label');
   const transferSelectElement = document.getElementById('transfer-select');
   const transferButtonElement = document.getElementById('transfer-button');
@@ -33,6 +36,7 @@
   const sessionPendingListElement = document.getElementById('session-pending-list');
   const sessionApprovalEmptyElement = document.getElementById('session-approval-empty');
   const sessionApprovalCountElement = document.getElementById('session-approval-count');
+  const toolActivityElement = document.getElementById('chat-tool-activity');
   const MAX_UPLOAD_IMAGES = 4;
   const MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024;
   const MAX_COMPOSER_HEIGHT = 142;
@@ -46,6 +50,7 @@
     models: null,
     modelsLoading: false,
     selectedModelRef: '',
+    sessions: { currentId: '', items: [], busy: false, error: '' },
     sessionControl: { sessionId: '', mode: 'manual', pending: [], busy: false, available: false, error: '' },
     followOutput: true,
     shell: { connected: false, phones: [], send: { canSend: false, reason: '网关未连接' } },
@@ -62,6 +67,35 @@
       previewBody: null
     }
   };
+  const toolActivity = new Map();
+
+  function renderToolActivity() {
+    if (!toolActivityElement) return;
+    toolActivityElement.replaceChildren(...[...toolActivity.values()].slice(-5).map((item) => {
+      const card = document.createElement('article');
+      card.className = `chat-tool-card ${item.status}`;
+      const name = document.createElement('div');
+      name.className = 'chat-tool-name';
+      name.textContent = item.name;
+      const status = document.createElement('div');
+      status.className = 'chat-tool-status';
+      status.textContent = { running: '正在执行', done: '已完成', failed: '执行失败' }[item.status];
+      card.append(name, status);
+      return card;
+    }));
+  }
+
+  function handleToolActivity(event = {}) {
+    if (event.session_id && state.sessions.currentId && event.session_id !== state.sessions.currentId) return;
+    const payload = event.payload || {};
+    const key = String(payload.call_id || payload.tool_call_id || `${event.trace_id || 'run'}:${payload.name || payload.tool_name || 'tool'}`);
+    const failed = /failed|error/.test(String(event.event || '')) || payload.ok === false || payload.error === true;
+    const done = /completed|result/.test(String(event.event || ''));
+    const item = { name: String(payload.name || payload.tool_name || '工具调用'), status: failed ? 'failed' : done ? 'done' : 'running' };
+    toolActivity.set(key, item);
+    renderToolActivity();
+    if (item.status !== 'running') setTimeout(() => { toolActivity.delete(key); renderToolActivity(); }, 8000);
+  }
   let chatInputComposing = false;
   let voiceCapture = null;
   const allowedRoles = new Set(['user', 'assistant', 'system', 'tool']);
@@ -204,6 +238,86 @@
     sessionControlPanelElement.hidden = !open;
     sessionControlToggleElement?.setAttribute('aria-expanded', String(open));
     if (open) void refreshSessionControl();
+  }
+
+  function formatSessionDate(value) {
+    const date = new Date(value || 0);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+  }
+
+  function renderSessionList() {
+    if (!sessionListElement || !sessionEmptyElement) return;
+    sessionEmptyElement.hidden = state.sessions.items.length > 0;
+    sessionListElement.replaceChildren(...state.sessions.items.map((session) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `chat-session-item${session.session_id === state.sessions.currentId ? ' active' : ''}`;
+      button.dataset.sessionId = session.session_id;
+      button.disabled = state.sessions.busy;
+      const title = document.createElement('span');
+      title.className = 'chat-session-title';
+      title.textContent = String(session.title || '新对话');
+      const meta = document.createElement('span');
+      meta.className = 'chat-session-meta';
+      meta.textContent = `${Number(session.message_count) || 0} 条 · ${formatSessionDate(session.updated_at)}`;
+      button.append(title, meta);
+      return button;
+    }));
+    if (sessionNewElement) sessionNewElement.disabled = state.sessions.busy;
+  }
+
+  async function loadSessions() {
+    if (state.sessions.busy || typeof bridge?.sessionControlRequest !== 'function') return;
+    state.sessions.busy = true;
+    renderSessionList();
+    try {
+      const result = await bridge.sessionControlRequest({ action: 'list_sessions', limit: 80 });
+      state.sessions.currentId = String(result?.current_session_id || '');
+      state.sessions.items = Array.isArray(result?.items) ? result.items : [];
+      state.sessions.error = '';
+    } catch (err) {
+      state.sessions.error = String(err?.message || err);
+    } finally {
+      state.sessions.busy = false;
+      renderSessionList();
+    }
+  }
+
+  async function selectSession(sessionId) {
+    const normalized = String(sessionId || '').trim();
+    if (!normalized || state.sessions.busy || normalized === state.sessions.currentId) return;
+    state.sessions.busy = true;
+    renderSessionList();
+    try {
+      await bridge.sessionControlRequest({ action: 'select_session', session_id: normalized });
+      state.sessions.currentId = normalized;
+      await Promise.all([refreshSessionControl({ quiet: true }), loadModelConfig({ quiet: true })]);
+    } catch (err) {
+      state.sessions.error = String(err?.message || err);
+    } finally {
+      state.sessions.busy = false;
+      renderSessionList();
+      void loadSessions();
+    }
+  }
+
+  async function createSession() {
+    if (state.sessions.busy) return;
+    state.sessions.busy = true;
+    renderSessionList();
+    try {
+      const result = await bridge.sessionControlRequest({ action: 'new_session' });
+      state.sessions.currentId = String(result?.session_id || '');
+      state.pendingUploads = [];
+      renderUploadPreview();
+      await refreshSessionControl({ quiet: true });
+    } catch (err) {
+      state.sessions.error = String(err?.message || err);
+    } finally {
+      state.sessions.busy = false;
+      void loadSessions();
+    }
   }
 
   function setModelStatus(message, error = false) {
@@ -1175,6 +1289,7 @@
   bridge?.onChatStreamSync?.((payload) => {
     handleChatStreamSync(payload);
   });
+  bridge?.onChatToolActivitySync?.(handleToolActivity);
 
   chatSendElement?.addEventListener('click', submitInput);
   chatMicElement?.addEventListener('click', () => {
@@ -1273,8 +1388,11 @@
   openWebUiElement?.addEventListener('click', () => {
     bridge?.sendWindowControl?.({ action: 'open_webui' });
   });
-  newChatElement?.addEventListener('click', () => {
-    bridge?.sendChatInput?.({ role: 'user', text: '/new', input_images: [] });
+  newChatElement?.addEventListener('click', () => { void createSession(); });
+  sessionNewElement?.addEventListener('click', () => { void createSession(); });
+  sessionListElement?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-session-id]') : null;
+    if (button) void selectSession(button.dataset.sessionId);
   });
   modelActiveElement?.addEventListener('change', selectChatModel);
   transferSelectElement?.addEventListener('change', () => {
@@ -1327,6 +1445,7 @@
     if (transferStatusElement) transferStatusElement.textContent = `状态读取失败：${err?.message || err}`;
   });
   void loadModelConfig({ quiet: true });
+  void loadSessions();
   renderSessionControl();
   void refreshSessionControl({ quiet: true });
   setInterval(() => { void refreshSessionControl({ quiet: true }); }, 5000);

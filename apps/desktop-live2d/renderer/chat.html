@@ -37,7 +37,18 @@
       #transfer-select[hidden] { display: none; }
       #transfer-button { height: 32px; }
       .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
-      #chat-panel-messages { position: relative; z-index: 1; display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--y-sp-3); min-height: 0; padding: var(--y-sp-4); overflow: auto; scroll-behavior: smooth; }
+      #chat-workspace { position: relative; z-index: 1; display: flex; flex: 1 1 auto; min-height: 0; }
+      #chat-session-sidebar { width: 190px; flex: 0 0 190px; display: flex; min-height: 0; flex-direction: column; border-right: 1px solid var(--y-line); background: color-mix(in srgb, var(--y-surface) 72%, transparent); }
+      .chat-session-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 12px 9px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); letter-spacing: .08em; }
+      #chat-session-new { width: 28px; height: 28px; padding: 0; }
+      #chat-session-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 5px; padding: 0 8px 12px; overflow-y: auto; }
+      .chat-session-item { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--y-ink-dim); cursor: pointer; text-align: left; }
+      .chat-session-item:hover { background: var(--y-surface-hover); color: var(--y-ink); }
+      .chat-session-item.active { border-color: var(--y-gold-line); background: linear-gradient(135deg, rgba(182,161,255,.2), rgba(239,208,157,.08)); color: var(--y-ink); }
+      .chat-session-title { display: block; overflow: hidden; font-size: var(--y-fs-xs); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+      .chat-session-meta { display: block; margin-top: 4px; color: var(--y-ink-faint); font-size: 10px; }
+      #chat-session-empty { padding: 18px 10px; color: var(--y-ink-faint); font-size: var(--y-fs-xs); text-align: center; }
+      #chat-panel-messages { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--y-sp-3); min-width: 0; min-height: 0; padding: var(--y-sp-4); overflow: auto; scroll-behavior: smooth; }
       .chat-message-row { display: flex; width: 100%; align-items: flex-end; gap: 8px; }
       .chat-message-row.user { justify-content: flex-end; }
       .chat-message-row.system, .chat-message-row.tool { display: block; }
@@ -97,9 +108,15 @@
       .session-approval-actions .approve { border-color: var(--y-gold-line); background: var(--y-grad-primary); color: var(--y-accent-ink); }
       #session-approval-empty { margin: 18px 0 4px; color: var(--y-ink-dim); font-size: var(--y-fs-xs); text-align: center; }
       #session-approval-empty[hidden] { display: none; }
+      #chat-tool-activity { position: absolute; z-index: 4; top: 120px; right: 14px; display: flex; width: min(300px, calc(100% - 28px)); max-height: 42%; flex-direction: column; gap: 7px; overflow-y: auto; pointer-events: none; }
+      #chat-tool-activity:empty { display: none; }
+      .chat-tool-card { padding: 10px 12px; border: 1px solid var(--y-line); border-radius: 14px; background: color-mix(in srgb, var(--y-surface-strong) 94%, transparent); box-shadow: var(--y-shadow); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); pointer-events: auto; animation: message-in var(--y-dur-fast) var(--y-ease-out); }
+      .chat-tool-card.running { border-color: var(--y-accent); } .chat-tool-card.done { border-color: var(--y-good); } .chat-tool-card.failed { border-color: var(--y-bad); }
+      .chat-tool-name { overflow: hidden; font-size: var(--y-fs-xs); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; } .chat-tool-status { margin-top: 3px; color: var(--y-ink-dim); font-size: 10px; }
       @keyframes message-in { from { opacity: 0; transform: translateY(8px); } }
       @keyframes blink { 50% { opacity: .2; } }
-      @media (max-width: 380px) { #chat-panel-header { padding-right: 10px; padding-left: 10px; } .chat-title-row { padding-left: 70px; } .chat-toolbar, .toolbar-actions, #transfer-wrap { gap: 8px; } .model-control { flex-basis: 110px; } .y-btn { padding-right: 9px; padding-left: 9px; } #transfer-button { padding-right: 8px; padding-left: 8px; } #chat-panel-messages { padding: 12px; } #chat-panel-composer { padding-right: 10px; padding-left: 10px; } }
+      @media (max-width: 620px) { #chat-session-sidebar { width: 146px; flex-basis: 146px; } }
+      @media (max-width: 440px) { #chat-session-sidebar { width: 112px; flex-basis: 112px; } .chat-session-head { padding-inline: 8px; } #chat-session-list { padding-inline: 5px; } }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
@@ -126,7 +143,15 @@
         <div id="session-pending-list"></div>
         <p id="session-approval-empty">当前没有等待处理的请求</p>
       </aside>
-      <section id="chat-panel-messages" class="y-scroll" aria-live="polite"></section>
+      <aside id="chat-tool-activity" aria-label="工具执行记录" aria-live="polite"></aside>
+      <div id="chat-workspace">
+        <aside id="chat-session-sidebar" aria-label="聊天会话">
+          <div class="chat-session-head"><strong>会话</strong><button id="chat-session-new" class="y-btn" type="button" title="新对话" aria-label="新对话">＋</button></div>
+          <div id="chat-session-list" class="y-scroll"></div>
+          <p id="chat-session-empty">暂无历史对话</p>
+        </aside>
+        <section id="chat-panel-messages" class="y-scroll" aria-live="polite"></section>
+      </div>
       <footer id="chat-panel-composer">
         <div id="chat-upload-preview" class="y-scroll"></div>
         <div id="chat-composer-input-row"><button id="chat-image-pick" class="y-btn" type="button" title="添加图片" aria-label="添加图片">＋</button><button id="chat-mic" class="y-btn" type="button" title="开始录音" aria-label="开始录音">🎙</button><textarea id="chat-input" class="y-input" maxlength="4000" rows="1" placeholder="对八千代说点什么…"></textarea><button id="chat-send" class="y-btn y-btn--primary" type="button">发送</button></div>

@@ -127,7 +127,7 @@ test('a newer streamed reply does not cancel an older bubble fade timer', () => 
   const oldBubble = bubbles.children[0];
   canvas.delta('新回答正在生成', { trace_id: 'trace-new' });
 
-  advance(16090);
+  advance(10000);
   assert.equal(oldBubble.classList.contains('tc-out'), true);
   advance(420);
   assert.equal(oldBubble.isConnected, false);
@@ -135,7 +135,7 @@ test('a newer streamed reply does not cancel an older bubble fade timer', () => 
   assert.equal(root.classList.contains('has-content'), true);
 });
 
-test('TC-AWB-050 a direct final-only message always fades within 24 seconds', () => {
+test('TC-AWB-050 completed chat bubbles fade after about 10 seconds', () => {
   const { api, advance } = load();
   const root = fakeDom().createElement('section');
   const canvas = api.createCanvas({ root });
@@ -143,13 +143,31 @@ test('TC-AWB-050 a direct final-only message always fades within 24 seconds', ()
 
   canvas.final('这是一条没有流式增量的完整长消息。'.repeat(40), { trace_id: 'trace-final-only' });
   const bubble = bubbles.children[0];
-  advance(23999);
+  advance(9999);
   assert.equal(bubble.classList.contains('tc-out'), false);
   advance(1);
   assert.equal(bubble.classList.contains('tc-out'), true);
   advance(420);
   assert.equal(bubble.isConnected, false);
   assert.equal(root.classList.contains('has-content'), false);
+});
+
+test('TC-AWB-054 tool activity renders outside chat bubbles and long replies expand in the safe panel', () => {
+  const { api, advance } = load();
+  const dom = fakeDom();
+  const root = dom.createElement('section');
+  const taskRoot = dom.createElement('section');
+  const canvas = api.createCanvas({ root, taskRoot });
+  canvas.updateTask({ task_id: 't1', title: 'Agent tools', status: 'running', steps: [{ name: 'shell.exec', status: 'running' }] });
+  assert.equal(taskRoot.children.length, 1);
+  assert.equal(root.children.every((view) => view.children[1].children.length === 0), true);
+  canvas.final('长'.repeat(181), { trace_id: 'long' });
+  assert.equal(canvas.mergedScrollEl.children[0].children[0].classList.contains('tc-long'), true);
+  canvas.updateTask({ task_id: 't1', title: 'Agent tools', status: 'done', steps: [{ name: 'shell.exec', status: 'done' }] });
+  advance(8000);
+  assert.equal(taskRoot.children[0].classList.contains('tc-out'), true);
+  advance(420);
+  assert.equal(taskRoot.children[0].isConnected, false);
 });
 
 test('an interrupted assistant stream expires after 30 seconds without a final event', () => {
@@ -176,7 +194,8 @@ test('an interrupted assistant stream expires after 30 seconds without a final e
 test('repeated task failures are compacted into one counted row', () => {
   const { api } = load();
   const root = fakeDom().createElement('section');
-  const canvas = api.createCanvas({ root });
+  const taskRoot = fakeDom().createElement('section');
+  const canvas = api.createCanvas({ root, taskRoot });
 
   canvas.updateTask({
     task_id: 'task-retries', status: 'failed', title: '执行电脑操作',
@@ -188,7 +207,7 @@ test('repeated task failures are compacted into one counted row', () => {
     ]
   });
 
-  const task = canvas.mergedScrollEl.children[1].children[0];
+  const task = taskRoot.children[0];
   assert.deepEqual(task.children[1].children.map((node) => node.textContent), [
     '✓ live2d.gesture',
     '✕ shell.exec ×3'

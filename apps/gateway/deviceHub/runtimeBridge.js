@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { fault } = require('./hub');
+const { deviceSessionId } = require('./sessionControl');
 
 function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
   const tasks = new Map();
@@ -11,7 +12,14 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
     if (seen.size > 2048) seen.delete(seen.values().next().value);
     return true;
   };
-  const sendChat = (topic, payload) => hub.publish(topic, payload);
+  const publishForSession = (topic, payload) => {
+    const sessionId = String(payload?.session_id || '');
+    if (!sessionId) { hub.publish(topic, payload); return; }
+    for (const device of hub.devices.values()) {
+      if (deviceSessionId(device) === sessionId) hub.publish(topic, payload, { target: device.device_id, direct: true });
+    }
+  };
+  const sendChat = publishForSession;
   const deltaKey = (data) => JSON.stringify([
     data.session_id || null,
     data.trace_id || null,
@@ -60,11 +68,12 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
     tasks.set(taskId, task);
     if (tasks.size > 128) tasks.delete(tasks.keys().next().value);
     const steps = [...task.steps.values()];
-    hub.publish('task.update', { task_id: taskId, title: task.title, status: steps.some((s) => s.status === 'failed') ? 'failed' : steps.some((s) => s.status === 'running') ? 'running' : 'done', steps, updated_at: Date.now() });
+    publishForSession('task.update', { session_id: data.session_id, task_id: taskId, title: task.title, status: steps.some((s) => s.status === 'failed') ? 'failed' : steps.some((s) => s.status === 'running') ? 'running' : 'done', steps, updated_at: Date.now() });
   };
   const handle = (topic, data = {}) => {
     if (!data || typeof data !== 'object' || data.__from_device) return; // Publications were already delivered by the Hub.
-    if (/^(ui|client|voice|avatar|task|plugin|sys|approval)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
+    if (topic === 'ui.chat.post' && data.session_id) publishForSession(topic, data);
+    else if (/^(ui|client|voice|avatar|task|plugin|sys|approval)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
     if (topic === 'message.delta' && data.ui_hidden !== true) relayDelta(data);
     if (topic === 'runtime.final' && data.ui_hidden !== true && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
     if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(topic)) aggregate(topic, data);
@@ -80,7 +89,7 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
   hub.runInput = async (device, { text, input_audio, model_ref } = {}) => {
     if ((typeof text !== 'string' || !text.trim()) && !input_audio) throw fault(-32602, 'Text or input_audio required');
     if (!enqueueRun) throw fault(-32601, 'Runtime unavailable');
-    const request = { jsonrpc: '2.0', id: randomUUID(), method: 'runtime.run', params: { session_id: `device-${device.device_id}`, input: typeof text === 'string' ? text : '', ...(input_audio ? { input_audio } : {}), ...(typeof model_ref === 'string' && model_ref.trim() ? { model_ref: model_ref.trim() } : {}) } };
+    const request = { jsonrpc: '2.0', id: randomUUID(), method: 'runtime.run', params: { session_id: deviceSessionId(device), input: typeof text === 'string' ? text : '', ...(input_audio ? { input_audio } : {}), ...(typeof model_ref === 'string' && model_ref.trim() ? { model_ref: model_ref.trim() } : {}) } };
     // Reuse gateway persistence, permission and queue hooks via a WS-compatible sink.
     const sink = { readyState: 1, send(raw) {
       const msg = JSON.parse(raw);
@@ -93,7 +102,7 @@ function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
     if (/^(plugin|device|avatar|audio|chat|sys)\./.test(topic)) bus.publish(topic, { ...data, __from_device: device.device_id });
     if (topic === 'chat.input') hub.runInput(device, data).catch((err) => hub.send(device.ws, 'error', { code: err.code || -32600, message: err.message }));
     if (topic === 'approval.decision') {
-      const sessionId = `device-${device.device_id}`;
+      const sessionId = deviceSessionId(device);
       const decided = approvalCoordinator?.decide({
         approvalId: data.approval_id,
         sessionId,

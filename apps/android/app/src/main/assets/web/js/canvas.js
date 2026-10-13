@@ -12,7 +12,7 @@
   const STATUS_ICON = { running: '◔', done: '✓', failed: '✕', pending: '○' };
   const MAX_BUBBLES = 8;
   const STALE_STREAM_MS = 30000;
-  const COMPLETED_BUBBLE_MAX_MS = 24000;
+  const COMPLETED_BUBBLE_MS = 10000;
 
   function compactTaskSteps(steps) {
     const compact = [];
@@ -33,7 +33,7 @@
     return compact.slice(-4);
   }
 
-  function createCanvas({ root }) {
+  function createCanvas({ root, taskRoot = root }) {
     const L = global.YachiyoLayout;
 
     function createView(name) {
@@ -91,7 +91,7 @@
       group.fadeTimer = 0;
       group.alive = false;
       for (const entry of group.nodes) entry.node.remove();
-      liveCount = Math.max(0, liveCount - 1);
+      if (group.kind === 'bubble') liveCount = Math.max(0, liveCount - 1);
       refreshVisibility();
     }
 
@@ -110,9 +110,14 @@
       return group;
     }
 
+    function applyBubbleText(node, text) {
+      node.textContent = text;
+      node.classList.toggle('tc-long', String(text || '').length > 180);
+    }
+
     function fade(group) {
       if (!group || !group.alive) return;
-      if (group.nodes.some(({ view }) => Date.now() - view.lastTouch < 4000)) {
+      if (group.nodes.some(({ view }) => view && Date.now() - view.lastTouch < 4000)) {
         scheduleFade(group, 2000);
         return;
       }
@@ -143,7 +148,7 @@
       refreshVisibility();
       pin(userView, true);
       pin(mergedView, true);
-      scheduleFade(group, 12000);
+      scheduleFade(group, COMPLETED_BUBBLE_MS);
     }
 
     function delta(text, meta) {
@@ -156,7 +161,7 @@
         assistants.set(key, state);
       }
       state.text += text;
-      for (const { node } of state.group.nodes) node.textContent = state.text;
+      for (const { node } of state.group.nodes) applyBubbleText(node, state.text);
       scheduleStreamExpiry(key, state);
       refreshVisibility();
       pin(agentView);
@@ -170,7 +175,7 @@
       if (text) {
         if (!state) state = { group: makeBubble('assistant', ''), text: '' };
         state.text = String(text);
-        for (const { node } of state.group.nodes) node.textContent = state.text;
+        for (const { node } of state.group.nodes) applyBubbleText(node, state.text);
       }
       const group = state && state.group;
       assistants.delete(key);
@@ -179,8 +184,7 @@
       pin(agentView);
       pin(mergedView);
       if (group) {
-        const length = group.nodes[0].node.textContent.length;
-        scheduleFade(group, Math.min(COMPLETED_BUBBLE_MAX_MS, 16000 + length * 90));
+        scheduleFade(group, COMPLETED_BUBBLE_MS);
       }
     }
 
@@ -188,19 +192,14 @@
       if (!task || !task.task_id) return;
       let card = taskEls.get(task.task_id);
       if (!card) {
-        const nodes = [agentView, mergedView].map((view) => {
-          const node = el('div', 'tc-task');
-          const title = el('div', 'tc-task-title');
-          const steps = el('ul', 'tc-steps');
-          node.append(title, steps);
-          view.tasks.appendChild(node);
-          return { view, node, title, steps };
-        });
-        card = { kind: 'task', nodes, alive: true, timer: 0 };
+        const node = el('article', 'tc-task');
+        const title = el('div', 'tc-task-title');
+        const steps = el('ul', 'tc-steps');
+        node.append(title, steps);
+        taskRoot.appendChild(node);
+        card = { kind: 'task', nodes: [{ view: null, node, title, steps }], alive: true, timer: 0 };
         groups.push(card);
-        liveCount += 1;
         taskEls.set(task.task_id, card);
-        refreshVisibility();
       }
       for (const entry of card.nodes) {
         entry.node.dataset.status = task.status || 'running';
@@ -209,8 +208,6 @@
           el('li', `tc-step st-${step.status}`,
             `${STATUS_ICON[step.status] || '·'} ${step.name}${step.count > 1 ? ` ×${step.count}` : ''}`)));
       }
-      pin(agentView);
-      pin(mergedView);
       clearTimeout(card.timer);
       if (task.status === 'done' || task.status === 'failed') {
         card.timer = setTimeout(() => { fade(card); taskEls.delete(task.task_id); }, 8000);
@@ -238,8 +235,21 @@
       setViewLayout(mergedView, presentation.merged, !splitInteractive);
     }
 
+    function clear() {
+      for (const group of [...groups]) {
+        if (group.kind === 'task') {
+          clearTimeout(group.timer);
+          for (const entry of group.nodes) entry.node.remove();
+          group.alive = false;
+        } else removeGroup(group);
+      }
+      assistants.clear();
+      completedTraces.clear();
+      taskEls.clear();
+    }
+
     return {
-      showUser, delta, final, updateTask, setPresentation, element: root,
+      showUser, delta, final, updateTask, setPresentation, clear, element: root,
       scrollEl: mergedView.scroll, mergedScrollEl: mergedView.scroll,
       agentScrollEl: agentView.scroll, userScrollEl: userView.scroll,
       get stuck() { return mergedView.stick; },

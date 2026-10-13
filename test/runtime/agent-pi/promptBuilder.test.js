@@ -98,3 +98,13 @@ test('TC-PI-046 prompt forbids ending with an unexecuted action promise', async 
   assert.match(systemPrompt, /Never end the turn with only a promise/i);
   assert.match(systemPrompt, /call the relevant tool in the same turn/i);
 });
+
+test('TC-PI-048 prompt requires user feedback before and after tool work', async () => {
+  const { systemPrompt } = await buildPrompt({
+    sessionId: 'interaction-first', input: '帮我检查一下', runtimeContext: { permission_level: 'high', explicit_ui_delivery: true }
+  });
+  assert.match(systemPrompt, /User interaction has the highest priority/i);
+  assert.match(systemPrompt, /Before using tools, give the user a concise direct answer or acknowledgement/i);
+  assert.match(systemPrompt, /After tools finish, explain what you actually did/i);
+  assert.match(systemPrompt, /spoken acknowledgement your first action/i);
+});
