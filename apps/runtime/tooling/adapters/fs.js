@@ -2,8 +2,9 @@ const fs = require('fs/promises');
 const path = require('path');
 const { ToolingError, ErrorCode } = require('../errors');
 
-function resolveWorkspacePath(workspaceRoot, targetPath) {
+function resolveWorkspacePath(workspaceRoot, targetPath, { allowOutside = false } = {}) {
   const absolute = path.resolve(workspaceRoot, targetPath);
+  if (allowOutside) return absolute;
   const normalizedRoot = path.resolve(workspaceRoot) + path.sep;
   if (!absolute.startsWith(normalizedRoot) && absolute !== path.resolve(workspaceRoot)) {
     throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'path escapes workspace');
@@ -14,7 +15,9 @@ function resolveWorkspacePath(workspaceRoot, targetPath) {
 async function writeFile(args, context = {}) {
   const workspaceRoot = context.workspaceRoot || process.cwd();
   const mode = args.mode || 'overwrite';
-  const abs = resolveWorkspacePath(workspaceRoot, args.path);
+  const abs = resolveWorkspacePath(workspaceRoot, args.path, {
+    allowOutside: context.approval_mode === 'full_access'
+  });
   await fs.mkdir(path.dirname(abs), { recursive: true });
 
   if (mode === 'append') {

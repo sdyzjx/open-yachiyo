@@ -18,6 +18,7 @@ function buildMeta(context = {}) {
     step_index: context.step_index ?? context.meta?.step_index ?? null,
     call_id: context.call_id || context.meta?.call_id || null,
     permission_level: context.permission_level || context.meta?.permission_level || null,
+    approval_mode: context.approval_mode || context.meta?.approval_mode || null,
     workspace_root: context.workspace_root || context.meta?.workspace_root || null
   };
 }
@@ -67,6 +68,7 @@ class ToolExecutor {
           step_index: meta.step_index ?? null,
           call_id: meta.call_id || null,
           permission_level: meta.permission_level || null,
+          approval_mode: meta.approval_mode || null,
           workspace_root: meta.workspace_root || null,
           publishEvent: ctx.publishEvent || null,
           bus: ctx.bus || null

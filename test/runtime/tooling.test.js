@@ -432,6 +432,40 @@ test('shell.exec supports approval flow for operator commands', async () => {
   assert.equal(alwaysRun2.ok, true);
 });
 
+test('TC-PI-035 full access skips workspace and per-command approval but retains hard safety blocks', async () => {
+  __resetShellApprovalStoreForTests();
+  const executor = buildExecutor();
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'tooling-full-access-workspace-'));
+  const external = await fs.mkdtemp(path.join(os.tmpdir(), 'tooling-full-access-external-'));
+  const externalFile = path.join(external, 'written.txt');
+  const context = {
+    permission_level: 'high',
+    approval_mode: 'full_access',
+    session_id: 'session-full-access',
+    workspaceRoot: workspace
+  };
+
+  const write = await executor.execute(
+    { name: 'shell.exec', args: { command: `touch ${externalFile}` } },
+    context
+  );
+  assert.equal(write.ok, true);
+
+  const operator = await executor.execute(
+    { name: 'shell.exec', args: { command: 'echo full && echo access' } },
+    context
+  );
+  assert.equal(operator.ok, true);
+  assert.match(operator.result, /full[\s\S]*access/);
+
+  const dangerous = await executor.execute(
+    { name: 'shell.exec', args: { command: 'sudo whoami' } },
+    context
+  );
+  assert.equal(dangerous.ok, false);
+  assert.equal(dangerous.code, 'PERMISSION_DENIED');
+});
+
 test('persona.update_profile is callable at low permission and updates via curl', async () => {
   const reqBodies = [];
   const server = http.createServer((req, res) => {

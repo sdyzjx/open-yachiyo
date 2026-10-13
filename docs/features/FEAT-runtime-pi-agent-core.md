@@ -3,7 +3,7 @@
 > 类型: feature
 > 状态: active
 > 负责人: Codex (gpt-6-astra)
-> 更新: 2026-10-12
+> 更新: 2026-10-13
 > 关联: ../plans/PLAN-android-ws1-pi-core.md, ../plans/PLAN-android-companion-contracts.md §C4/§C5, ../testing/TC-runtime-pi-agent-core.md, ../../apps/runtime/agent-pi/
 
 ## 1. 概述
@@ -51,6 +51,8 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 `run({ sessionId, input, inputImages, inputAudio, seedMessages, runtimeContext, permissionLevel, model_ref, modelRef, deliveryMode, signal, onEvent })` 返回 `{ output, traceId, state, metrics }`。模型覆盖优先级：model_ref → modelRef → runtimeContext.model_ref → session settings.model_ref → catalog.active。
 
+会话设置 `approval_mode` 可取 `manual|auto_approve|full_access`。本机界面使用 `PUT /api/sessions/:sessionId/settings` 更新；`GET /api/approvals?session_id=...` 列出待处理项，`POST /api/approvals/:approvalId/decision` 以 `{session_id,approved,scope:'once'|'always'}` 决定。手机订阅 `approval.**`，并发布 `approval.decision`；服务端忽略客户端提交的 session_id，固定使用已认证设备对应的会话。
+
 同一 `sessionId` 由 `AgentSessionRegistry` 复用一个长生命周期 Pi `AgentSession`。默认最多驻留 32 个会话，空闲 30 分钟后回收内存对象；Pi JSONL 会话不删除，后续请求从原 `SessionManager` 恢复。每次运行的 `plan` 与 `metrics` 同时记录 `requested_model_ref` 和 `resolved_model_ref`，用于区分界面选择、会话覆盖、全局默认和 fallback 的实际结果。
 
 RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入默认 `steer`，文字输入默认 `followUp`。每条排队输入由 `TurnCoordinator` 在 Pi user message 边界激活，工具上下文、流式 delta、tool_call 事件和 final 不跨请求串线；队列最后一条输入等待 `agent_settled` 后返回。
@@ -74,6 +76,10 @@ RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入
 bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 worker 继续将事件映射到 WS runtime.start/message.delta/tool_call.event/runtime.final。pi 工具直接调用 executor，不发布 dispatcher 的 tool.call.requested 命令，避免重复执行。
 
 工具批次使用 Pi 原生并行调度。`side_effect_level` 为 `none` 或 `read` 且 `requires_lock=false` 的工具可以同批并发；写操作、未知副作用和显式锁会把整批降为串行。动态 Device Hub 方法默认按写操作处理，只有设备声明安全调度元数据后才能并行。TTS、Live2D 与屏幕捕获保留现有锁，因此不会产生重叠播放、动作状态竞争或并发截图。
+
+工具审批位于 `ApprovalCoordinator`，不进入模型上下文。`shell.approve` 从 Pi 可见工具目录中移除；`shell.exec` 返回 `APPROVAL_REQUIRED` 后，桥接层按当前会话策略等待用户、自动签发一次性许可，或在 full access 下直接执行，再把唯一一次最终工具结果交回 Pi。`manual` 的待审批项通过 HTTP 与 Device Hub 的 `approval.requested`/`approval.decision` 交互；审批 ID 必须同时匹配当前 session，手机只能决定自己的 `device-<device_id>` 会话。
+
+三种审批模式与普通 `permission_level` 分离。`manual` 保留逐次确认；`auto_approve` 只自动确认 shell operator，仍受原权限级别、工作区、工具 allow/deny 与设备 ACL 约束；`full_access` 同时采用 high 权限、允许文件及 shell 路径离开会话工作区，并跳过 operator 逐次确认。三种模式都保留参数 schema、工具全局 deny、设备归属/协议 ACL 以及 sudo、根目录递归删除、关机/重启等硬阻断。
 
 | 新工具 | 参数 | 路由 |
 |---|---|---|
@@ -99,6 +105,8 @@ bus 另发 runtime.start、message.delta、runtime.final、runtime.error；原 w
 | RUNTIME_MAX_RESIDENT_SESSIONS | 32 | 同时驻留内存的 AgentSession 上限；只回收非 busy 的最久未使用会话 |
 | tools[].side_effect_level | 未知 | `none` / `read` 可参与 Pi 并行；`write` 与未知值串行 |
 | tools[].requires_lock | false | true 时强制所在工具批次串行 |
+| session.settings.approval_mode | manual | manual / auto_approve / full_access；full_access 同时将执行权限提升为 high |
+| ApprovalCoordinator.timeoutMs | 120000 | manual 待审批时限；超时或会话取消后以 PERMISSION_DENIED 收口 |
 | RUNTIME_STREAMING_ENABLED | true | false 时保留 llm.final，由 worker 按原协议发送 final preview |
 | compaction.enabled | true | 工厂布尔参数，交给 pi 自动压缩 |
 | compaction.reserveTokens | 16384 | 工厂非负整数 |
@@ -118,6 +126,7 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 - RuntimeRpcWorker 原生透传单次 `model_ref`，会话 settings 提供持久覆盖；gatewayAssembly 的旧兼容入口仅保留为无操作导出，待网关装配移除调用后删除。
 - AgentSession 忙碌时不能切换模型；带不同 `model_ref` 的排队输入会返回明确错误，客户端应在当前 turn settled 后重试选择。
+- `shell.approve` 仍保留在 legacy 回滚核心的工具注册表中；Pi 核心不会把它发给 provider。legacy 模式尚未获得本节的策略层审批语义。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
 - Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
@@ -126,6 +135,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…034，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话及副作用感知并行。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…035，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话、副作用感知并行与会话审批策略。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

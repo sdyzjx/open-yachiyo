@@ -462,6 +462,7 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     const legacySettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`).then((r) => r.json());
     assert.equal(legacySettings.ok, true);
     assert.equal(legacySettings.data.permission_level, 'high');
+    assert.equal(legacySettings.data.approval_mode, 'manual');
 
     const patchedSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',
@@ -474,6 +475,30 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     }).then((r) => r.json());
     assert.equal(patchedSettings.ok, true);
     assert.equal(patchedSettings.data.permission_level, 'low');
+
+    const patchedApprovalSettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ settings: { approval_mode: 'auto_approve' } })
+    }).then((r) => r.json());
+    assert.equal(patchedApprovalSettings.ok, true);
+    assert.equal(patchedApprovalSettings.data.approval_mode, 'auto_approve');
+
+    const pendingApprovals = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/approvals?session_id=${encodeURIComponent('legacy-s1')}`
+    ).then((r) => r.json());
+    assert.equal(pendingApprovals.ok, true);
+    assert.deepEqual(pendingApprovals.data, []);
+
+    const missingApprovalDecision = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/approvals/not-pending/decision`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: 'legacy-s1', approved: false })
+      }
+    );
+    assert.equal(missingApprovalDecision.status, 404);
 
     const patchedVoiceAutoReplySettings = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',
@@ -505,6 +530,15 @@ test('gateway end-to-end covers health, config api, legacy ws and json-rpc ws', 
     assert.equal(invalidPermissionSettingsResp.status, 400);
     const invalidPermissionSettings = await invalidPermissionSettingsResp.json();
     assert.equal(invalidPermissionSettings.ok, false);
+
+    const invalidApprovalSettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ settings: { approval_mode: 'unrestricted' } })
+    });
+    assert.equal(invalidApprovalSettingsResp.status, 400);
+    const invalidApprovalSettings = await invalidApprovalSettingsResp.json();
+    assert.equal(invalidApprovalSettings.ok, false);
 
     const invalidWorkspaceSettingsResp = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/legacy-s1/settings`, {
       method: 'PUT',

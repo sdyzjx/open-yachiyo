@@ -73,7 +73,7 @@ function basePrompt(toolErrorMaxRetries = 5) {
             'When live2d tools are available, call exactly one live2d.* tool with valid preset/action names and explicit duration_sec before final text response.',
             'When user asks to modify persona/addressing/custom title (e.g. 修改人格/修改称呼/叫我xxx), call persona.update_profile with {custom_name}.',
             'For requests that mention named targets (e.g. playlist/file/tab), avoid assuming exact names: first list/search candidates via tools, then choose the best semantic match before action.',
-            'If shell.exec returns APPROVAL_REQUIRED, call shell.approve with approval_id, then retry shell.exec.',
+            'Tool approvals are handled by the runtime policy layer. Never request, forge, or retry an approval token yourself.',
             `If a tool returns an error, use the error details to re-plan and retry with an alternative approach. Maximum tool-error retries per run: ${toolErrorMaxRetries}.`,
             'Use persona.update_profile even in low permission sessions; this is globally allowed.',
             'Keep answers concise.'
@@ -95,6 +95,7 @@ async function buildPrompt({ personaContextBuilder, resolvePersonaContext, resol
     buildVoiceAutoReplyPrompt(runtimeContext), buildDesktopCapturePrompt(tools),
     ...seeds.map((message) => message.content),
     `Session permission level: ${runtimeContext.permission_level || 'medium'}. Tool permission checks remain authoritative.`,
+    `Session approval mode: ${runtimeContext.approval_mode || 'manual'}. Approval decisions remain outside the model.`,
     allowMemory ? null : 'Long-term memory access is disabled for this low permission session.'
   ].filter(Boolean);
   return { systemPrompt: sections.join('\n\n'), persona, skills };

@@ -72,3 +72,37 @@ test('Runtime bridge relays real pi deltas once and never reports failed tools a
   assert.equal(statuses.includes('failed'), true);
   assert.equal(statuses.includes('done'), false);
 });
+
+test('Runtime bridge forwards approval requests and scopes phone decisions to its session', async (t) => {
+  const bus = new RuntimeEventBus();
+  const decisions = [];
+  const approvalCoordinator = {
+    decide(decision) {
+      decisions.push(decision);
+      return decision.approvalId === 'apr-phone' && decision.sessionId === 'device-phone';
+    }
+  };
+  const f = await fixture(t, { bus, approvalCoordinator });
+  const phone = await f.client('phone');
+  phone.send('sub', { topics: ['approval.**'] });
+  await phone.sync();
+
+  bus.publish('approval.requested', {
+    approval_id: 'apr-phone',
+    session_id: 'device-phone',
+    command: 'pwd'
+  });
+  const request = await phone.next((message) => message.topic === 'approval.requested');
+  assert.equal(request.data.approval_id, 'apr-phone');
+
+  phone.send('pub', { approval_id: 'apr-phone', approved: true, scope: 'once' }, {
+    topic: 'approval.decision'
+  });
+  await phone.sync();
+  assert.deepEqual(decisions[0], {
+    approvalId: 'apr-phone',
+    sessionId: 'device-phone',
+    approved: true,
+    scope: 'once'
+  });
+});

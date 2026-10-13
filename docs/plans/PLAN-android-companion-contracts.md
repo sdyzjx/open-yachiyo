@@ -505,7 +505,7 @@ Pi 是唯一 Agent 编排核心。普通 request provider 与 Realtime provider 
 - Apple Music 只作为 `apple-events-music` Skill 存在，通过 Pi 标准 Skill 发现和通用 shell/bash 工具执行其 `scripts/music_control.sh`；不得注册 Apple Music 专用工具。
 - Yachiyo 自定义工具分为 `voice.*`、`live2d.*`、`device.*`、`avatar.*`、`bus.*`、`memory.*` 与 `persona.*`。Device Hub RPC 方法可以动态加入工具目录；在线状态变化不得要求重建或丢弃 Pi 会话。
 - 事件总线工具至少包含：`bus.publish`、`bus.subscribe`、`bus.unsubscribe`、`bus.events.pull`、`bus.channels.list`。订阅归属于 Pi 会话，默认使用有界队列 pull；仅显式 `delivery=steer` 的高优先级订阅可以把事件转换成 Pi steering 输入。
-- 权限模式为 `manual`、`auto_approve`、`full_access`。权限只能由用户通过 Android、Desktop 或本机配置界面修改，Agent 不得自行提权。`manual` 等待用户审批；`auto_approve` 自动通过需要审批的调用但保留工具策略、工作区边界与设备 ACL；`full_access` 跳过逐次审批并解除普通工作区/shell operator 限制，但仍执行参数校验、设备所有权和协议 ACL。
+- 权限模式为 `manual`、`auto_approve`、`full_access`。权限只能由用户通过 Android、Desktop 或本机配置界面修改，Agent 不得自行提权。`manual` 等待用户审批；`auto_approve` 自动通过需要审批的调用但保留工具策略、工作区边界与设备 ACL；`full_access` 跳过逐次审批并解除普通工作区/shell operator 限制，但仍执行参数校验、工具全局 deny、设备所有权、协议 ACL 与硬危险命令阻断。
 - 审批由 `ApprovalCoordinator` 在工具执行前等待 UI 决策；不得把 `APPROVAL_REQUIRED` 交给模型，也不得要求模型调用 `shell.approve` 后重试原命令。
 - Realtime provider 必须实现 Pi 流接口：模型 function call 转换为 Pi tool call，Pi tool result 再转换为 Realtime `function_call_output`。原生音频 delta 是独立 side channel，不得替代 Pi transcript。Realtime 正常语音输出时 `voice.tts` 保持已注册但默认不激活，避免双重语音；显式朗读或指定音色请求可以激活。
 - Realtime provider 不支持兼容 function call 时，允许把 Realtime 降级为 ASR/音频输出传输，但 Agent 推理仍必须进入同一个 Pi `AgentSession`，不得创建第二份历史或第二套工具循环。

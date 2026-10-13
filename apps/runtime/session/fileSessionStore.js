@@ -52,6 +52,7 @@ function buildSummary(session) {
     event_count: session.events.length,
     run_count: session.runs.length,
     permission_level: session.settings?.permission_level || null,
+    approval_mode: session.settings?.approval_mode || null,
     last_state: lastRun?.state || null,
     last_output_preview: lastRun?.output ? String(lastRun.output).slice(0, 120) : null
   };

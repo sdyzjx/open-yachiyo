@@ -9,6 +9,8 @@ const { createResourceLoader } = require('./skillBridge');
 const { EventBridge } = require('./eventBridge');
 const { AgentSessionRegistry } = require('./agentSessionRegistry');
 const { TurnCoordinator } = require('./turnCoordinator');
+const { ApprovalCoordinator } = require('../approval/approvalCoordinator');
+const { normalizeSessionApprovalMode } = require('../session/sessionPermissions');
 
 function imageParts(images) {
   return images.map((image) => {
@@ -37,6 +39,8 @@ async function createPiRuntime(deps) {
   const streaming = deps.runtimeStreamingEnabled !== false;
   const maxStep = deps.maxStep || 128;
   const toolErrorMaxRetries = deps.toolErrorMaxRetries || 5;
+  const approvalCoordinator = deps.approvalCoordinator || new ApprovalCoordinator({ bus: deps.bus });
+  const ownsApprovalCoordinator = !deps.approvalCoordinator;
 
   const createEntry = async (sessionId, initial) => {
     const { catalog, chain, cwd, seedMessages = [], systemPrompt = '' } = initial;
@@ -52,7 +56,7 @@ async function createPiRuntime(deps) {
       };
     };
     const onlineNames = new Map();
-    const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames });
+    const localTools = bridgeTools({ executor: deps.executor, bus: deps.bus, context, onlineNames, approvalCoordinator });
     const devices = new DeviceTools({ deviceHub: typeof deps.deviceHub === 'function' ? deps.deviceHub() : deps.deviceHub,
       bus: deps.bus, avatar: deps.avatar, policy: deps.executor.policy });
     const tools = [...localTools, ...devices.snapshot(context, localTools.map((tool) => tool.originalName), onlineNames)];
@@ -131,7 +135,10 @@ async function createPiRuntime(deps) {
     toolErrorMaxRetries,
     supportsNativeQueueing: true,
     sessionRegistry: registry,
-    async dispose() { await registry.disposeAll?.(); },
+    async dispose() {
+      await registry.disposeAll?.();
+      if (ownsApprovalCoordinator) approvalCoordinator.dispose();
+    },
     async run(args) {
       const { sessionId, onEvent, seedMessages = [] } = args;
       const runtimeContext = { ...args.runtimeContext };
@@ -154,6 +161,10 @@ async function createPiRuntime(deps) {
         const images = imageParts(args.inputImages || []);
         if (!input.trim() && !images.length) throw new Error('Input is empty after audio transcription');
         const settings = await deps.sessionStore?.getSessionSettings(sessionId);
+        runtimeContext.approval_mode = normalizeSessionApprovalMode(
+          args.approvalMode || runtimeContext.approval_mode || settings?.approval_mode
+        );
+        if (runtimeContext.approval_mode === 'full_access') runtimeContext.permission_level = 'high';
         const requestedModelRef = args.model_ref || args.modelRef || runtimeContext.model_ref || settings?.model_ref || null;
         catalog = typeof deps.modelCatalog === 'function' ? await deps.modelCatalog({ modelRef: requestedModelRef }) : deps.modelCatalog;
         const chain = selectModels(catalog, requestedModelRef);
@@ -168,13 +179,15 @@ async function createPiRuntime(deps) {
         events.setToolNameResolver((name) => entry.toolNames.get(name) || name);
         const { systemPrompt, persona, skills } = await buildPrompt({ ...deps, sessionId, input, tools: entry.tools,
           runtimeContext, seedMessages: entry.systemSeeds, toolErrorMaxRetries });
-        unsubscribe = ['voice.playback.electron', 'tool.call.progress'].map((topic) => deps.bus?.subscribe(topic, (payload) => {
+        unsubscribe = ['voice.playback.electron', 'tool.call.progress', 'approval.requested', 'approval.resolved']
+          .map((topic) => deps.bus?.subscribe(topic, (payload) => {
           if ((!payload.session_id || payload.session_id === sessionId)
             && entry.state.coordinator.current()?.events === events) {
             events.emit(topic === 'tool.call.progress' ? 'tool.progress' : topic, payload);
           }
-        }));
-        await sessions.start(sessionId, input, { permission_level: runtimeContext.permission_level, input_audio: inputAudio || null,
+          }));
+        await sessions.start(sessionId, input, { permission_level: runtimeContext.permission_level,
+          approval_mode: runtimeContext.approval_mode, input_audio: inputAudio || null,
           requested_model_ref: requestedModelRef, resolved_model_ref: resolvedModelRef });
         deps.bus?.publish('runtime.start', { session_id: sessionId, trace_id: events.traceId,
           requested_model_ref: requestedModelRef, resolved_model_ref: resolvedModelRef });

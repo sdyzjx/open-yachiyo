@@ -49,21 +49,14 @@ test('TC-PI-007 desktop capture result includes an actual image block', async (t
   assert.deepEqual(result.content[1], { type: 'image', data: Buffer.from('offline-image').toString('base64'), mimeType: 'image/png' });
 });
 
-test('TC-PI-026 APPROVAL_REQUIRED is returned as an observation carrying approval_id, not a tool error', async () => {
-  const { ToolingError, ErrorCode } = require('../../../apps/runtime/tooling/errors');
+test('TC-PI-026 model-visible tools exclude the approval capability', async () => {
   const executor = new ToolExecutor({
-    'shell.exec': { run: () => { throw new ToolingError(ErrorCode.APPROVAL_REQUIRED, 'shell command requires approval before execution', { approval_id: 'appr-123', scope_options: ['once'] }); } },
+    'shell.exec': { run: () => 'ok' },
     'shell.approve': { run: () => 'ok' }
   });
-  const reported = [];
-  const tools = bridgeTools({ executor, context: { reportToolError: (id, r) => reported.push(r) } });
-  const exec = tools.find((t) => t.name === 'shell__exec');
-  const result = await exec.execute('call-1', {});
-  const payload = JSON.parse(result.content[0].text);
-  assert.equal(payload.code, 'APPROVAL_REQUIRED');
-  assert.equal(payload.details.approval_id, 'appr-123');
-  assert.match(payload.next_step, /shell__approve/);
-  assert.equal(reported.length, 0);
+  const tools = bridgeTools({ executor });
+  assert.ok(tools.some((tool) => tool.originalName === 'shell.exec'));
+  assert.equal(tools.some((tool) => tool.originalName === 'shell.approve'), false);
 });
 
 test('TC-PI-027 other tool failures keep their code and details in the error text', async () => {

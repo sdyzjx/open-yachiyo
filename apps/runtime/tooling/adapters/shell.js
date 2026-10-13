@@ -261,7 +261,9 @@ function runShellWithApproval(command, context = {}) {
   }
 
   const sessionId = getSessionIdFromContext(context);
-  const approval = consumeShellApproval({ sessionId, command });
+  const approval = context.approval_mode === 'full_access'
+    ? { approved: true, scope: 'full_access' }
+    : consumeShellApproval({ sessionId, command });
   if (!approval.approved) {
     const pending = createShellApprovalRequest({
       sessionId,
@@ -293,6 +295,9 @@ function runShellWithApproval(command, context = {}) {
 function runExec(args, context = {}) {
   const command = String(args.command || '').trim();
   if (!command) throw new ToolingError(ErrorCode.VALIDATION_ERROR, 'command is empty');
+  if (containsKnownDangerousPattern(command)) {
+    throw new ToolingError(ErrorCode.PERMISSION_DENIED, 'command blocked by shell safety policy');
+  }
 
   if (hasShellOperators(command)) {
     return runShellWithApproval(command, {
@@ -320,13 +325,15 @@ function runExec(args, context = {}) {
     }
 
     const { readPaths, writePaths } = collectPathIntent(bin, argv, cwd);
-    enforcePermissionPathPolicy({
-      level: profile.level,
-      workspaceRoot,
-      bin,
-      readPaths,
-      writePaths
-    });
+    if (context.approval_mode !== 'full_access') {
+      enforcePermissionPathPolicy({
+        level: profile.level,
+        workspaceRoot,
+        bin,
+        readPaths,
+        writePaths
+      });
+    }
   } else {
     const safeBins = context.safeBins || [];
     if (context.security === 'allowlist' && !safeBins.includes(bin)) {

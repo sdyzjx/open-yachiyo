@@ -113,7 +113,7 @@ class DeviceHub extends EventEmitter {
           this.emit('tools.changed');
         }
         // Device publications cannot impersonate gateway/runtime control events.
-        if (!/^(plugin\.|device\.|avatar\.transfer\.(ready|exited|entered)$|audio\.input\.(start|chunk|end)$|chat\.input$|sys\.device\.mode$|voice\.playback\.(started|ended)$)/.test(msg.topic)) throw fault(-32006, 'Topic is server-owned');
+        if (!/^(plugin\.|device\.|avatar\.transfer\.(ready|exited|entered)$|audio\.input\.(start|chunk|end)$|chat\.input$|approval\.decision$|sys\.device\.mode$|voice\.playback\.(started|ended)$)/.test(msg.topic)) throw fault(-32006, 'Topic is server-owned');
         this.publish(msg.topic, data, { from: device.device_id, target: data.__target });
         this.emit('publication', { topic: msg.topic, data, device });
         return;

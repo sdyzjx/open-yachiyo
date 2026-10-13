@@ -1,5 +1,7 @@
 const SESSION_PERMISSION_LEVELS = Object.freeze(['low', 'medium', 'high']);
 const DEFAULT_SESSION_PERMISSION_LEVEL = 'high';
+const SESSION_APPROVAL_MODES = Object.freeze(['manual', 'auto_approve', 'full_access']);
+const DEFAULT_SESSION_APPROVAL_MODE = 'manual';
 const DEFAULT_SESSION_WORKSPACE_MODE = 'session';
 const DEFAULT_VOICE_AUTO_REPLY_ENABLED = false;
 const SESSION_VOICE_AUTO_REPLY_MODES = Object.freeze(['policy', 'force_on', 'force_off']);
@@ -24,6 +26,15 @@ function normalizeSessionPermissionLevel(value, { fallback = DEFAULT_SESSION_PER
   return fallback;
 }
 
+function isSessionApprovalMode(value) {
+  return typeof value === 'string' && SESSION_APPROVAL_MODES.includes(value);
+}
+
+function normalizeSessionApprovalMode(value, { fallback = DEFAULT_SESSION_APPROVAL_MODE } = {}) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return isSessionApprovalMode(normalized) ? normalized : fallback;
+}
+
 function normalizeVoiceAutoReplyEnabled(value, { fallback = DEFAULT_VOICE_AUTO_REPLY_ENABLED } = {}) {
   if (value === true || value === false) return value;
   return Boolean(fallback);
@@ -44,6 +55,7 @@ function normalizeModelRef(value) {
 function buildDefaultSessionSettings() {
   return {
     permission_level: DEFAULT_SESSION_PERMISSION_LEVEL,
+    approval_mode: DEFAULT_SESSION_APPROVAL_MODE,
     workspace: normalizeWorkspaceSettings(),
     voice_auto_reply_enabled: DEFAULT_VOICE_AUTO_REPLY_ENABLED,
     voice_auto_reply_mode: DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE
@@ -54,6 +66,7 @@ function normalizeSessionSettings(settings = {}) {
   const modelRef = normalizeModelRef(settings.model_ref);
   return {
     permission_level: normalizeSessionPermissionLevel(settings.permission_level),
+    approval_mode: normalizeSessionApprovalMode(settings.approval_mode),
     workspace: normalizeWorkspaceSettings(settings.workspace),
     voice_auto_reply_enabled: normalizeVoiceAutoReplyEnabled(settings.voice_auto_reply_enabled),
     voice_auto_reply_mode: normalizeVoiceAutoReplyMode(settings.voice_auto_reply_mode),
@@ -69,6 +82,10 @@ function mergeSessionSettings(currentSettings = {}, patch = {}) {
 
   if (Object.prototype.hasOwnProperty.call(patch, 'permission_level')) {
     next.permission_level = normalizeSessionPermissionLevel(patch.permission_level, { fallback: current.permission_level });
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'approval_mode')) {
+    next.approval_mode = normalizeSessionApprovalMode(patch.approval_mode, { fallback: current.approval_mode });
   }
 
   if (patch.workspace && typeof patch.workspace === 'object' && !Array.isArray(patch.workspace)) {
@@ -104,12 +121,16 @@ function mergeSessionSettings(currentSettings = {}, patch = {}) {
 module.exports = {
   SESSION_PERMISSION_LEVELS,
   DEFAULT_SESSION_PERMISSION_LEVEL,
+  SESSION_APPROVAL_MODES,
+  DEFAULT_SESSION_APPROVAL_MODE,
   DEFAULT_SESSION_WORKSPACE_MODE,
   DEFAULT_VOICE_AUTO_REPLY_ENABLED,
   SESSION_VOICE_AUTO_REPLY_MODES,
   DEFAULT_SESSION_VOICE_AUTO_REPLY_MODE,
   isSessionPermissionLevel,
+  isSessionApprovalMode,
   normalizeSessionPermissionLevel,
+  normalizeSessionApprovalMode,
   normalizeVoiceAutoReplyEnabled,
   normalizeVoiceAutoReplyMode,
   normalizeWorkspaceSettings,

@@ -35,11 +35,6 @@ function allocateToolName(originalName, onlineNames) {
   throw new Error(`Unable to allocate collision-free tool name: ${originalName}`);
 }
 
-function onlineNameOf(onlineNames, originalName) {
-  for (const [online, original] of onlineNames) if (original === originalName) return online;
-  return encodeToolName(originalName);
-}
-
 function textResult(value, details = {}) {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) ?? '' }], details };
 }
@@ -50,9 +45,9 @@ function toolExecutionMode(definition = {}) {
   return sideEffectLevel === 'none' || sideEffectLevel === 'read' ? 'parallel' : 'sequential';
 }
 
-function bridgeTools({ executor, bus, context = {}, onlineNames = new Map() }) {
+function bridgeTools({ executor, bus, context = {}, onlineNames = new Map(), approvalCoordinator = null }) {
   const originalNames = new Set();
-  return executor.listTools().map((definition) => {
+  return executor.listTools().filter((definition) => definition.name !== 'shell.approve').map((definition) => {
     if (originalNames.has(definition.name)) throw new Error(`Duplicate tool name: ${definition.name}`);
     originalNames.add(definition.name);
     const name = allocateToolName(definition.name, onlineNames);
@@ -69,24 +64,17 @@ function bridgeTools({ executor, bus, context = {}, onlineNames = new Map() }) {
         signal?.throwIfAborted();
         const current = typeof context === 'function' ? context() : context;
         const meta = { ...current, call_id: callId };
-        const result = await executor.execute({ name: definition.name, args }, {
+        const execute = () => executor.execute({ name: definition.name, args }, {
           ...meta, bus, workspaceRoot: current.workspace_root || process.cwd(),
           publishEvent: (topic, payload = {}) => bus?.publish(topic, {
             ...payload, trace_id: current.trace_id, session_id: current.session_id,
             step_index: current.step_index, call_id: callId, tool_name: definition.name
           })
         });
-        if (!result.ok && result.code === 'APPROVAL_REQUIRED') {
-          // Same contract as the legacy loop: an approval request is an observation, not a
-          // failure. The model needs details.approval_id to call shell.approve, then retry.
-          return textResult({
-            ok: false,
-            code: result.code,
-            error: result.error,
-            details: result.details || null,
-            next_step: `Call ${onlineNameOf(onlineNames, 'shell.approve')} with this approval_id, then retry the same tool call.`
-          }, { ...result });
-        }
+        let result = await execute();
+        if (approvalCoordinator) result = await approvalCoordinator.coordinate({
+          result, execute, context: current, signal, toolName: definition.name
+        });
         if (!result.ok) {
           current.reportToolError?.(callId, result);
           const detail = result.details ? ` details=${JSON.stringify(result.details)}` : '';

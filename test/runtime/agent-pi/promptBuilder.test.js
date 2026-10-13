@@ -21,9 +21,15 @@ test('TC-PI-010 prompt migration preserves each legacy system paragraph', async 
   await runner.run(args);
   const { systemPrompt } = await buildPrompt({ ...args, ...deps });
   for (const message of legacyMessages.filter((m) => m.role === 'system')) {
-    assert.ok(systemPrompt.includes(message.content), `Missing paragraph: ${message.content}`);
+    const stableContent = message.content.replace(
+      'If shell.exec returns APPROVAL_REQUIRED, call shell.approve with approval_id, then retry shell.exec.',
+      'Tool approvals are handled by the runtime policy layer. Never request, forge, or retry an approval token yourself.'
+    );
+    assert.ok(systemPrompt.includes(stableContent), `Missing paragraph: ${stableContent}`);
   }
   assert.match(systemPrompt, /Session permission level: high/);
+  assert.doesNotMatch(systemPrompt, /call shell\.approve/i);
+  assert.match(systemPrompt, /approvals are handled by the runtime policy layer/i);
 });
 
 test('TC-PI-011 low permission omits memory seeds and voice force-off instructions', async () => {

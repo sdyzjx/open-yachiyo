@@ -27,10 +27,13 @@ const { loadMemorySop } = require('../runtime/session/memorySopLoader');
 const { getDefaultSessionWorkspaceManager } = require('../runtime/session/workspaceManager');
 const {
   isSessionPermissionLevel,
+  isSessionApprovalMode,
   normalizeSessionPermissionLevel,
+  normalizeSessionApprovalMode,
   normalizeWorkspaceSettings,
   normalizeVoiceAutoReplyMode
 } = require('../runtime/session/sessionPermissions');
+const { ApprovalCoordinator } = require('../runtime/approval/approvalCoordinator');
 const { canReadLongTermMemory } = require('../runtime/security/sessionPermissionPolicy');
 const { SkillRuntimeManager } = require('../runtime/skills/skillRuntimeManager');
 const { getRuntimePaths } = require('../runtime/skills/runtimePaths');
@@ -80,6 +83,7 @@ app.use('/theme', express.static(path.join(__dirname, '..', 'desktop-live2d', 's
 app.use(express.static(path.join(__dirname, 'public')));
 
 const bus = new RuntimeEventBus();
+const approvalCoordinator = new ApprovalCoordinator({ bus });
 let debugMode = String(process.env.DEBUG_MODE || '').trim().toLowerCase() === 'true';
 bus.isDebugMode = () => debugMode;
 
@@ -299,7 +303,7 @@ async function loadRuntimeModelCatalog({ modelRef } = {}) {
   });
 }
 const piRunner = createGatewayRunner({
-  bus, executor, sessionStore, personaContextBuilder, skillConfigStore,
+  bus, executor, sessionStore, personaContextBuilder, skillConfigStore, approvalCoordinator,
   modelCatalog: loadRuntimeModelCatalog,
   deviceHub: getDeviceHub,
   runtimeStreamingEnabled: parseBooleanEnv('RUNTIME_STREAMING_ENABLED', true),
@@ -730,6 +734,14 @@ app.put('/api/sessions/:sessionId/settings', async (req, res) => {
     return;
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'approval_mode')
+    && !isSessionApprovalMode(settings.approval_mode)
+  ) {
+    res.status(400).json({ ok: false, error: 'settings.approval_mode must be manual|auto_approve|full_access' });
+    return;
+  }
+
   if (Object.prototype.hasOwnProperty.call(settings, 'workspace')) {
     if (!settings.workspace || typeof settings.workspace !== 'object' || Array.isArray(settings.workspace)) {
       res.status(400).json({ ok: false, error: 'settings.workspace must be an object' });
@@ -762,6 +774,30 @@ app.put('/api/sessions/:sessionId/settings', async (req, res) => {
 
   const updated = await sessionStore.updateSessionSettings(req.params.sessionId, settings);
   res.json({ ok: true, data: updated });
+});
+
+app.get('/api/approvals', (req, res) => {
+  const sessionId = String(req.query.session_id || '').trim();
+  res.json({ ok: true, data: approvalCoordinator.list({ ...(sessionId ? { sessionId } : {}) }) });
+});
+
+app.post('/api/approvals/:approvalId/decision', (req, res) => {
+  const sessionId = String(req.body?.session_id || '').trim();
+  if (!sessionId || typeof req.body?.approved !== 'boolean') {
+    res.status(400).json({ ok: false, error: 'session_id and boolean approved are required' });
+    return;
+  }
+  const decided = approvalCoordinator.decide({
+    approvalId: req.params.approvalId,
+    sessionId,
+    approved: req.body.approved,
+    scope: req.body?.scope
+  });
+  if (!decided) {
+    res.status(404).json({ ok: false, error: 'approval not found for session' });
+    return;
+  }
+  res.json({ ok: true, data: { approval_id: req.params.approvalId, approved: req.body.approved } });
 });
 
 app.get('/api/memory', async (req, res) => {
@@ -1137,7 +1173,8 @@ const discovery = attachGatewayDiscovery({ server });
 
 const wss = new WebSocketServer({ noServer: true });
 const deviceHub = require('./deviceHub').attachDeviceHub({
-  server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, llmManager, config: deviceHubConfig,
+  server, app, wss, bus, enqueueRun: enqueueRpc, executor, sessionStore, llmManager, approvalCoordinator,
+  config: deviceHubConfig,
   resolvePersonaContext: ({ sessionId, input }) => personaContextBuilder.build({ sessionId, input }),
   resolveSkillsContext: ({ sessionId, input }) => skillRuntimeManager.buildTurnContext({ sessionId, input })
 });
@@ -1149,6 +1186,7 @@ function shutdownGateway() {
     await discovery.stop();
     worker.stop();
     await runner.dispose?.();
+    approvalCoordinator.dispose();
     dispatcher.stop();
     skillRuntimeManager.stop();
     debugEventStream.dispose();
@@ -1399,7 +1437,8 @@ async function enqueueRpc(ws, rpcPayload, mode) {
     },
     buildRunContext: async ({ session_id: sessionId }) => {
       const existingSettings = await sessionStore.getSessionSettings(sessionId);
-      const permissionLevel = normalizeSessionPermissionLevel(
+      const approvalMode = normalizeSessionApprovalMode(existingSettings?.approval_mode);
+      const permissionLevel = approvalMode === 'full_access' ? 'high' : normalizeSessionPermissionLevel(
         requestedPermissionLevel !== undefined
           ? requestedPermissionLevel
           : existingSettings?.permission_level
@@ -1416,6 +1455,7 @@ async function enqueueRpc(ws, rpcPayload, mode) {
 
       await sessionStore.updateSessionSettings(sessionId, {
         permission_level: permissionLevel,
+        approval_mode: approvalMode,
         workspace: normalizedWorkspace,
         voice_auto_reply_enabled: voiceAutoReplyEnabled,
         voice_auto_reply_mode: voiceAutoReplyMode
@@ -1423,6 +1463,7 @@ async function enqueueRpc(ws, rpcPayload, mode) {
 
       return {
         permission_level: permissionLevel,
+        approval_mode: approvalMode,
         workspace_root: normalizedWorkspace.root_dir,
         voice_auto_reply_enabled: voiceAutoReplyEnabled,
         voice_auto_reply_mode: voiceAutoReplyMode,

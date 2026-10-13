@@ -28,6 +28,7 @@ test('FileSessionStore persists session messages/events/runs', async () => {
   assert.equal(session.title, 'hello');
   assert.ok(session.memory);
   assert.equal(session.settings.permission_level, 'high');
+  assert.equal(session.settings.approval_mode, 'manual');
   assert.equal(session.settings.workspace.mode, 'session');
   assert.equal(session.settings.workspace.root_dir, null);
   assert.equal(session.memory.archived_message_count, 1);
@@ -37,6 +38,7 @@ test('FileSessionStore persists session messages/events/runs', async () => {
   assert.equal(summary.total, 1);
   assert.equal(summary.items[0].session_id, 's1');
   assert.equal(summary.items[0].run_count, 1);
+  assert.equal(summary.items[0].approval_mode, 'manual');
 
   const events = await store.getSessionEvents('s1', { limit: 10, offset: 0 });
   assert.equal(events.total, 1);
@@ -61,13 +63,15 @@ test('FileSessionStore updates per-session settings', async () => {
   await store.createSessionIfNotExists({ sessionId: 's3', title: 'New chat' });
   const initialSettings = await store.getSessionSettings('s3');
   assert.equal(initialSettings.permission_level, 'high');
+  assert.equal(initialSettings.approval_mode, 'manual');
 
-  await store.updateSessionSettings('s3', { permission_level: 'high' });
+  await store.updateSessionSettings('s3', { permission_level: 'high', approval_mode: 'auto_approve' });
   await store.updateSessionSettings('s3', {
     workspace: { root_dir: '/tmp/test-workspace-s3' }
   });
   const updatedSettings = await store.getSessionSettings('s3');
   assert.equal(updatedSettings.permission_level, 'high');
+  assert.equal(updatedSettings.approval_mode, 'auto_approve');
   assert.equal(updatedSettings.workspace.mode, 'session');
   assert.equal(updatedSettings.workspace.root_dir, '/tmp/test-workspace-s3');
 

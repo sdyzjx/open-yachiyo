@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { fault } = require('./hub');
 
-function attachRuntimeBridge({ hub, bus, enqueueRun }) {
+function attachRuntimeBridge({ hub, bus, enqueueRun, approvalCoordinator }) {
   const tasks = new Map();
   const seen = new Set();
   const pendingDeltaAliases = new Map();
@@ -64,7 +64,7 @@ function attachRuntimeBridge({ hub, bus, enqueueRun }) {
   };
   const handle = (topic, data = {}) => {
     if (!data || typeof data !== 'object' || data.__from_device) return; // Publications were already delivered by the Hub.
-    if (/^(ui|client|voice|avatar|task|plugin|sys)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
+    if (/^(ui|client|voice|avatar|task|plugin|sys|approval)\./.test(topic)) hub.publish(topic, data, { from: 'runtime', target: data.__target });
     if (topic === 'message.delta') relayDelta(data);
     if (topic === 'runtime.final' && (!data.trace_id || mark(`final:${data.session_id}:${data.trace_id}`))) sendChat('chat.final', { session_id: data.session_id, trace_id: data.trace_id, output: data.output });
     if (/^tool[._]call\.(requested|started|dispatched|completed|failed|result)$/.test(topic)) aggregate(topic, data);
@@ -91,6 +91,16 @@ function attachRuntimeBridge({ hub, bus, enqueueRun }) {
   const publication = ({ topic, data, device }) => {
     if (/^(plugin|device|avatar|audio|chat|sys)\./.test(topic)) bus.publish(topic, { ...data, __from_device: device.device_id });
     if (topic === 'chat.input') hub.runInput(device, data).catch((err) => hub.send(device.ws, 'error', { code: err.code || -32600, message: err.message }));
+    if (topic === 'approval.decision') {
+      const sessionId = `device-${device.device_id}`;
+      const decided = approvalCoordinator?.decide({
+        approvalId: data.approval_id,
+        sessionId,
+        approved: data.approved === true,
+        scope: data.scope
+      });
+      if (!decided) hub.send(device.ws, 'error', { code: -32602, message: 'approval not found for this device session' });
+    }
   };
   const off = bus.subscribe('*', handle);
   hub.on('publication', publication);
