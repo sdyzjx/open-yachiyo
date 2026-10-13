@@ -77,6 +77,7 @@
 - [WS5 施工文档：Android Web 前端（Live2D 舞台 / 手势布局 / 插件宿主 / 配置界面）](plans/PLAN-android-ws5-web-ui.md)
 - [电脑端完善 + 配置 WebUI 重构 + UI 统一 施工计划（v2）](plans/PLAN-desktop-companion-v2.md)
 - [ChatGPT 订阅用量接入施工计划](plans/PLAN-llm-chatgpt-plan.md)
+- [Pi 长生命周期会话与统一工具平面施工计划](plans/PLAN-runtime-pi-session-v2.md)
 - [pi 到手机与桌面的实时 TTS 路由计划](plans/PLAN-voice-realtime-tts-routing.md)
 - [Real-time TTS + LipSync 分阶段施工方案（主线基线）](plans/REALTIME_TTS_LIPSYNC_PHASED_PLAN.md)
 - [Session Context Isolation + Workspace Isolation + Permission Levels](plans/SESSION_WORKSPACE_PERMISSION_IMPLEMENTATION.md)

@@ -494,6 +494,22 @@ OAuth 为公开客户端 Authorization Code + PKCE：每次 attempt 生成新的
 
 `apps/gateway/deviceHub/index.js` 导出 `getDeviceHub()`；Device Hub 未启用时返回空实现（`listToolMethods()` → `[]`，`invoke` → 抛 `-32010`）。
 
+### C5.1 长生命周期 AgentSession 与统一工具平面（2026-10-13）
+
+Pi 是唯一 Agent 编排核心。普通 request provider 与 Realtime provider 都必须把 assistant 文本、tool call、tool result 和终态映射到同一个 `AgentSession`；禁止在 Device Hub、Realtime 音频服务或 Gateway route 内再实现独立的模型工具循环。
+
+- `AgentSessionRegistry` 以 Gateway `session_id` 为键，持有长生命周期 `AgentSession`、`SessionManager`、当前模型、权限快照、动态工具目录和事件订阅。空闲回收只释放内存资源；Pi JSONL 会话继续保留，下一次请求从相同 `SessionManager` 恢复。
+- 空闲会话输入调用 `session.prompt()`；运行中输入必须显式选择 `session.steer()` 或 `session.followUp()`。新的语音输入和用户纠正默认 `steer`，普通排队文本默认 `followUp`。完成判定以 `agent_settled` 为准，不以单个 `agent_end` 为准。
+- 模型选择为会话状态：请求 `params.model_ref` 在会话空闲时调用 `session.setModel()` 并写入 `settings.model_ref`；运行中的模型切换在本轮 settled 后生效。运行事件和消息元数据必须同时记录 `requested_model_ref` 与 `resolved_model_ref`。
+- Pi 工具默认并行；只有明确共享不可重入资源的工具才标记 `executionMode: sequential`。同一工具调用的权限检查在 Pi `beforeToolCall` 中完成，结果在 `afterToolCall` 中审计。
+- Apple Music 只作为 `apple-events-music` Skill 存在，通过 Pi 标准 Skill 发现和通用 shell/bash 工具执行其 `scripts/music_control.sh`；不得注册 Apple Music 专用工具。
+- Yachiyo 自定义工具分为 `voice.*`、`live2d.*`、`device.*`、`avatar.*`、`bus.*`、`memory.*` 与 `persona.*`。Device Hub RPC 方法可以动态加入工具目录；在线状态变化不得要求重建或丢弃 Pi 会话。
+- 事件总线工具至少包含：`bus.publish`、`bus.subscribe`、`bus.unsubscribe`、`bus.events.pull`、`bus.channels.list`。订阅归属于 Pi 会话，默认使用有界队列 pull；仅显式 `delivery=steer` 的高优先级订阅可以把事件转换成 Pi steering 输入。
+- 权限模式为 `manual`、`auto_approve`、`full_access`。权限只能由用户通过 Android、Desktop 或本机配置界面修改，Agent 不得自行提权。`manual` 等待用户审批；`auto_approve` 自动通过需要审批的调用但保留工具策略、工作区边界与设备 ACL；`full_access` 跳过逐次审批并解除普通工作区/shell operator 限制，但仍执行参数校验、设备所有权和协议 ACL。
+- 审批由 `ApprovalCoordinator` 在工具执行前等待 UI 决策；不得把 `APPROVAL_REQUIRED` 交给模型，也不得要求模型调用 `shell.approve` 后重试原命令。
+- Realtime provider 必须实现 Pi 流接口：模型 function call 转换为 Pi tool call，Pi tool result 再转换为 Realtime `function_call_output`。原生音频 delta 是独立 side channel，不得替代 Pi transcript。Realtime 正常语音输出时 `voice.tts` 保持已注册但默认不激活，避免双重语音；显式朗读或指定音色请求可以激活。
+- Realtime provider 不支持兼容 function call 时，允许把 Realtime 降级为 ASR/音频输出传输，但 Agent 推理仍必须进入同一个 Pi `AgentSession`，不得创建第二份历史或第二套工具循环。
+
 **Device Hub 服务端 API（统筹决策 2026-10-12，WS3 实现，WS1 / live2d adapter 调用）**：
 
 | 成员 | 签名 | 说明 |
