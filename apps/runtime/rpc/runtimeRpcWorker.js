@@ -95,12 +95,15 @@ class RuntimeRpcWorker {
     this.bus = bus;
     this.running = false;
     this.activeRun = null;
+    this.activeRuns = new Map();
+    this.inFlight = new Set();
     this.voiceRunTimeoutMs = voiceRunTimeoutMs;
     this.runTimeoutMs = runTimeoutMs;
     this.unsubscribeSubmit = this.queue.onSubmit?.((envelope) => this.interruptForNewVoice(envelope)) || (() => {});
   }
 
   interruptForNewVoice(envelope) {
+    if (this.runner.supportsNativeQueueing) return false;
     const request = envelope?.request;
     const params = request?.params || {};
     const sessionId = typeof params.session_id === 'string' ? params.session_id : '';
@@ -120,13 +123,29 @@ class RuntimeRpcWorker {
   stop() {
     this.running = false;
     this.activeRun?.controller.abort({ code: 'WORKER_STOPPED', message: '运行时已停止。' });
+    for (const active of this.activeRuns.values()) {
+      active.controller.abort({ code: 'WORKER_STOPPED', message: '运行时已停止。' });
+    }
   }
 
   async loop() {
     while (this.running) {
       const envelope = await this.queue.pop();
       if (!envelope || !this.running) continue;
-      await this.processEnvelope(envelope);
+      if (!this.runner.supportsNativeQueueing) {
+        await this.processEnvelope(envelope);
+        continue;
+      }
+      const work = this.processEnvelope(envelope).catch((error) => {
+        publishChainEvent(this.bus, 'worker.envelope.failed', {
+          request_id: envelope?.request?.id ?? null,
+          error: String(error?.message || error)
+        });
+        if (envelope?.request?.id !== undefined) {
+          envelope.context?.send?.(createRpcError(envelope.request.id, RpcErrorCode.INTERNAL_ERROR, 'runtime execution failed'));
+        }
+      }).finally(() => this.inFlight.delete(work));
+      this.inFlight.add(work);
     }
   }
 
@@ -151,6 +170,14 @@ class RuntimeRpcWorker {
     }
 
     const params = request.params || {};
+    const requestedDeliveryMode = params.delivery_mode === undefined ? null : String(params.delivery_mode);
+    if (requestedDeliveryMode && !['steer', 'followUp'].includes(requestedDeliveryMode)) {
+      if (request.id !== undefined) {
+        context.send?.(createRpcError(request.id, RpcErrorCode.INVALID_PARAMS,
+          'params.delivery_mode must be steer or followUp'));
+      }
+      return;
+    }
     let input = typeof params.input === 'string' ? params.input : '';
     const inputImages = normalizeInputImages(params.input_images);
     const inputAudio = normalizeInputAudio(params.input_audio);
@@ -396,7 +423,10 @@ class RuntimeRpcWorker {
       code: 'RUN_TIMEOUT',
       message: inputAudio ? '语音任务执行超时，已停止。请重试或换一种说法。' : '任务执行超时，已停止。'
     }), timeoutMs);
-    this.activeRun = { sessionId, requestId: request?.id ?? null, controller };
+    const activeKey = Symbol(String(request?.id ?? 'runtime.run'));
+    const activeRecord = { sessionId, requestId: request?.id ?? null, controller };
+    if (this.runner.supportsNativeQueueing) this.activeRuns.set(activeKey, activeRecord);
+    else this.activeRun = activeRecord;
     let result;
     try {
       result = await this.runner.run({
@@ -406,6 +436,7 @@ class RuntimeRpcWorker {
         seedMessages,
         runtimeContext,
         modelRef,
+        deliveryMode: requestedDeliveryMode || (inputAudio ? 'steer' : 'followUp'),
         signal: controller.signal,
         onEvent: (event) => {
         if (shouldPublishRuntimeEventToDebugBus(event)) {
@@ -435,7 +466,8 @@ class RuntimeRpcWorker {
       result = null;
     } finally {
       clearTimeout(timer);
-      if (this.activeRun?.controller === controller) this.activeRun = null;
+      if (this.runner.supportsNativeQueueing) this.activeRuns.delete(activeKey);
+      else if (this.activeRun?.controller === controller) this.activeRun = null;
     }
     if (controller.signal.aborted) {
       const reason = controller.signal.reason || {};

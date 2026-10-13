@@ -364,6 +364,59 @@ test('a newer voice request interrupts the active turn for the same session', as
   worker.stop();
 });
 
+test('TC-PI-034 native queueing dispatches concurrent envelopes as steer/followUp without aborting', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  const seen = [];
+  const runner = {
+    supportsNativeQueueing: true,
+    async run({ input, deliveryMode, signal }) {
+      seen.push({ input, deliveryMode, signal });
+      await new Promise((resolve) => setTimeout(resolve, input === 'first' ? 70 : 5));
+      return { output: `ok:${input}`, traceId: `trace:${input}`, state: 'DONE' };
+    }
+  };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus, voiceRunTimeoutMs: 1000 });
+  worker.start();
+  const responses = [];
+  const audio = { audio_ref: '/tmp/voice.wav', format: 'wav', transcribed_text: 'second' };
+  await queue.submit({ jsonrpc: '2.0', id: 'native-first', method: 'runtime.run', params: {
+    session_id: 'native-session', input: 'first'
+  } }, { send: (value) => responses.push(value) });
+  await queue.submit({ jsonrpc: '2.0', id: 'native-second', method: 'runtime.run', params: {
+    session_id: 'native-session', input: 'second', input_audio: audio
+  } }, { send: (value) => responses.push(value) });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(seen.map(({ input, deliveryMode }) => ({ input, deliveryMode })), [
+    { input: 'first', deliveryMode: 'followUp' },
+    { input: 'second', deliveryMode: 'steer' }
+  ]);
+  assert.equal(seen.every(({ signal }) => !signal.aborted), true);
+  assert.deepEqual(responses.map((item) => item.id).sort(), ['native-first', 'native-second']);
+  assert.equal(worker.activeRuns.size, 0);
+  worker.stop();
+});
+
+test('TC-PI-034 clients can explicitly mark a text correction as steering', async () => {
+  const queue = new RpcInputQueue();
+  const bus = new RuntimeEventBus();
+  let deliveryMode;
+  const runner = { supportsNativeQueueing: true, async run(args) {
+    deliveryMode = args.deliveryMode;
+    return { output: 'corrected', traceId: 'text-steer', state: 'DONE' };
+  } };
+  const worker = new RuntimeRpcWorker({ queue, runner, bus });
+  worker.start();
+  const sends = [];
+  await queue.submit({ jsonrpc: '2.0', id: 'text-steer', method: 'runtime.run', params: {
+    session_id: 'text-steer-session', input: '不是这个意思', delivery_mode: 'steer'
+  } }, { send: (value) => sends.push(value) });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(deliveryMode, 'steer');
+  assert.equal(sends[0].result.output, 'corrected');
+  worker.stop();
+});
+
 test('a voice turn has a bounded execution time and releases the worker', async () => {
   const queue = new RpcInputQueue();
   const bus = new RuntimeEventBus();

@@ -35,7 +35,7 @@ sequenceDiagram
 
 每次 run 重新读取 Model Catalog、skills.yaml 和设备方法；同一 session 由长生命周期 AgentSession 管理，session_id 的 SHA-256 对应固定 pi JSONL。恢复由 SessionManager 完成，旧 UI 历史只在首次建立 pi 会话时导入。系统 memory SOP/bootstrap seeds 随 pi 会话保留，后续不会重复导入 user/assistant seeds。
 
-模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。同一手机会话提交新语音时，RuntimeRpcWorker 通过 `AbortSignal` 停止仍在执行的旧 turn，使新语音不需等待旧工具链；音频 turn 默认最长 90 s，其他 turn 默认最长 180 s，超时以 `ABORTED` final 收尾并释放 worker。
+模型以请求覆盖、会话覆盖、active 的顺序选择，继而使用 catalog.fallbackChain() 去重。仅网络/超时/429/5xx 且尚未输出文本、未启动工具时尝试后续模型；401、工具执行后的失败不会回退重放。错误以 ERROR 状态返回。步数和工具错误次数有上限。RuntimeRpcWorker 会并发把同一会话的新输入交给长生命周期 AgentSession：语音和显式用户纠正使用 Pi 原生 `steer`，普通文字使用 `followUp`。steer 在当前 assistant turn 的工具结束后、下一次模型调用前插入；被接续的旧 RPC 以 `ABORTED` 收口，新输入拥有独立 trace、事件和最终结果。音频 turn 默认最长 90 s，其他 turn 默认最长 180 s。
 
 PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和 memory system seeds 保留；每轮加入权限说明。low 权限不注入 SOP/bootstrap seeds。技能先按原有来源优先级、enabled、eligibility 筛选，再由 pi 解析；使用 pi 官方 formatter 显式展示技能清单，因为内置 read/bash 禁用后 pi 不会自动展示它们。
 
@@ -49,9 +49,11 @@ PersonaContextBuilder、旧核心语音回复、persona 修改、截图规则和
 
 `await createPiRuntime({ bus, executor, modelCatalog, deviceHub, personaContextBuilder, sessionStore, ... })` 返回具有 `run()` 的运行器。modelCatalog/deviceHub 也可为每次调用获取最新对象的函数。
 
-`run({ sessionId, input, inputImages, inputAudio, seedMessages, runtimeContext, permissionLevel, model_ref, modelRef, signal, onEvent })` 返回 `{ output, traceId, state, metrics }`。模型覆盖优先级：model_ref → modelRef → runtimeContext.model_ref → session settings.model_ref → catalog.active。
+`run({ sessionId, input, inputImages, inputAudio, seedMessages, runtimeContext, permissionLevel, model_ref, modelRef, deliveryMode, signal, onEvent })` 返回 `{ output, traceId, state, metrics }`。模型覆盖优先级：model_ref → modelRef → runtimeContext.model_ref → session settings.model_ref → catalog.active。
 
 同一 `sessionId` 由 `AgentSessionRegistry` 复用一个长生命周期 Pi `AgentSession`。默认最多驻留 32 个会话，空闲 30 分钟后回收内存对象；Pi JSONL 会话不删除，后续请求从原 `SessionManager` 恢复。每次运行的 `plan` 与 `metrics` 同时记录 `requested_model_ref` 和 `resolved_model_ref`，用于区分界面选择、会话覆盖、全局默认和 fallback 的实际结果。
+
+RPC `params.delivery_mode` 可选 `steer|followUp`。未指定时，音频输入默认 `steer`，文字输入默认 `followUp`。每条排队输入由 `TurnCoordinator` 在 Pi user message 边界激活，工具上下文、流式 delta、tool_call 事件和 final 不跨请求串线；队列最后一条输入等待 `agent_settled` 后返回。
 
 事件保留 `{trace_id,session_id,task_id:null,step_index,seq,event,source:'runtime',latency_budget_ms:1200,payload}`：
 
@@ -115,6 +117,7 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 ## 5. 限制与已知问题
 
 - RuntimeRpcWorker 原生透传单次 `model_ref`，会话 settings 提供持久覆盖；gatewayAssembly 的旧兼容入口仅保留为无操作导出，待网关装配移除调用后删除。
+- AgentSession 忙碌时不能切换模型；带不同 `model_ref` 的排队输入会返回明确错误，客户端应在当前 turn settled 后重试选择。
 - WS3 未启用时设备离线；Avatar/设备真实行为需合并 WS3 后验收。默认 tools.yaml 非空 allowlist 不含新增工具，统筹需明确加入获准名称；expose_as_tool 不覆盖全局 deny/allow。
 - Pi 使用副作用感知的批次并行；当前没有额外的并发宽度上限，批次大小由模型单次响应决定。取消可阻止后续调用；正在执行的旧 executor 工具沿用自身超时，不能保证立即中断。
 - 降低会话权限不能撤回已经进入历史的内容；本次 low 规则控制新注入和新工具访问。
@@ -123,6 +126,6 @@ ESM 包仅经 loadPi 动态加载并缓存。三个 pi 包精确固定为 1.1.0�
 
 ## 6. 测试用例
 
-完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…033，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话及副作用感知并行。
+完整步骤及自动化映射见 [TC-runtime-pi-agent-core.md](../testing/TC-runtime-pi-agent-core.md)：TC-PI-001…034，覆盖模型、权限、设备刷新、provider 合法工具名与原名反向映射、prompt 等价、会话恢复、技能、流式事件、图片/音频、回退、循环限制、双模式网关、实际压缩、TTS 首动作优先级、语音最新输入打断、长期会话及副作用感知并行。
 
 `npm run test:ci` 为提交前必跑验收。TC-PI-021 额外在子进程分别完整执行既有 gateway.e2e 的五项测试，确认子进程确实运行测试而非空通过。

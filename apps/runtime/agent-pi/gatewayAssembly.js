@@ -8,6 +8,7 @@ function createGatewayRunner({ core = process.env.AGENT_CORE || 'pi', legacyFact
     runtimeStreamingEnabled: deps.runtimeStreamingEnabled !== false,
     toolAsyncMode: 'parallel', toolEarlyDispatch: false, maxParallelTools: null,
     toolErrorMaxRetries: deps.toolErrorMaxRetries || 5,
+    supportsNativeQueueing: true,
     async run(args) {
       runtime ||= createPiRuntime({ ...deps, mirrorHistory: false }).catch((error) => {
         runtime = null;

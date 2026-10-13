@@ -291,3 +291,57 @@ test('TC-PI-033 real pi loop executes independent read tools in parallel', async
   assert.equal(plan.payload.runtime_flags.tool_async_mode, 'parallel');
   assert.equal(plan.payload.runtime_flags.max_parallel_tools, null);
 });
+
+test('TC-PI-034 one persistent pi session assigns queued follow-up output to each request', async (t) => {
+  const f = await fixture(t, async (body, requestNumber) => {
+    if (requestNumber === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return { text: 'first answer' };
+    }
+    const latestUser = [...body.messages].reverse().find((message) => message.role === 'user');
+    return { text: latestUser?.content === 'second' ? 'second answer' : `unexpected:${latestUser?.content}` };
+  });
+  const firstEvents = [];
+  const secondEvents = [];
+  const firstRun = f.runtime.run({ sessionId: 'native-queue', input: 'first', onEvent: (event) => firstEvents.push(event) });
+  while (f.requests.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+  const secondRun = f.runtime.run({ sessionId: 'native-queue', input: 'second', deliveryMode: 'followUp',
+    onEvent: (event) => secondEvents.push(event) });
+  const [first, second] = await Promise.all([firstRun, secondRun]);
+  assert.equal(first.output, 'first answer');
+  assert.equal(second.output, 'second answer');
+  assert.notEqual(first.traceId, second.traceId);
+  assert.equal(firstEvents.filter((event) => event.event === 'done').length, 1);
+  assert.equal(secondEvents.filter((event) => event.event === 'done').length, 1);
+  assert.equal(secondEvents.some((event) => event.event === 'llm.stream.delta'
+    && event.payload.delta === 'first answer'), false);
+  assert.equal(f.runtime.sessionRegistry.peek('native-queue').session.isIdle, true);
+});
+
+test('TC-PI-034 native steering supersedes an unfinished tool turn before its next model call', async (t) => {
+  let releaseTool;
+  let toolStarted;
+  const started = new Promise((resolve) => { toolStarted = resolve; });
+  const toolGate = new Promise((resolve) => { releaseTool = resolve; });
+  const executor = new ToolExecutor({
+    hold: { side_effect_level: 'read', run: async () => {
+      toolStarted();
+      await toolGate;
+      return 'held';
+    } }
+  });
+  const f = await fixture(t, (body, requestNumber) => requestNumber === 1
+    ? { tool: 'hold' }
+    : { text: [...body.messages].reverse().find((message) => message.role === 'user')?.content === 'second voice'
+      ? 'steered answer' : 'old answer' }, { executor });
+  const firstRun = f.runtime.run({ sessionId: 'native-steer', input: 'first task' });
+  await started;
+  const secondRun = f.runtime.run({ sessionId: 'native-steer', input: 'second voice', deliveryMode: 'steer' });
+  releaseTool();
+  const [first, second] = await Promise.all([firstRun, secondRun]);
+  assert.equal(first.state, 'ABORTED');
+  assert.match(first.output, /steering/);
+  assert.equal(second.state, 'DONE');
+  assert.equal(second.output, 'steered answer');
+  assert.equal(f.requests.length, 2);
+});
